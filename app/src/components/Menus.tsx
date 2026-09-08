@@ -175,7 +175,7 @@ export function TabContextMenu({
   onRevealInExplorer: () => void;
 }) {
   const { ref, pos } = useClampedMenuPosition(state.x, state.y);
-  const { language, text } = useAppLanguage();
+  const { text } = useAppLanguage();
   const run = (action: () => void) => () => {
     action();
     onDismiss();
@@ -253,7 +253,7 @@ export function TabContextMenu({
               key={color.value}
               className={`ctx-color-swatch ${tabColor === color.value ? "ctx-color-active" : ""}`}
               style={{ background: color.value }}
-              title={language === "ko" ? color.name : color.nameEn}
+              title={text(color.name, color.nameEn)}
               onClick={run(() => onSetColor(color.value))}
             />
           ))}

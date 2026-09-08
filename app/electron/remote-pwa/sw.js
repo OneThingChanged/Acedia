@@ -1,9 +1,14 @@
-const CACHE_NAME = "multiagent-remote-v59";
+const CACHE_NAME = "multiagent-remote-v61";
 const STATIC_ASSETS = [
   "/",
   "/pwa/styles.css",
   "/pwa/terminal-touch.js",
   "/pwa/app.js",
+  "/pwa/dom.js",
+  "/pwa/chat-markup.js",
+  "/pwa/chat-render.js",
+  "/pwa/chat-history.js",
+  "/pwa/requests.js",
   "/pwa/xterm.js",
   "/pwa/xterm.css",
   "/manifest.webmanifest",
@@ -46,6 +51,11 @@ self.addEventListener("fetch", (event) => {
   // Vendor/static assets (xterm, icons) stay cache-first for speed.
   const isAppShell =
     url.pathname === "/pwa/app.js" ||
+    url.pathname === "/pwa/dom.js" ||
+    url.pathname === "/pwa/chat-markup.js" ||
+    url.pathname === "/pwa/chat-render.js" ||
+    url.pathname === "/pwa/chat-history.js" ||
+    url.pathname === "/pwa/requests.js" ||
     url.pathname === "/pwa/styles.css" ||
     url.pathname === "/pwa/terminal-touch.js";
   if (isAppShell) {

@@ -9,10 +9,10 @@ import { SessionWorkerFields } from "./SessionWorkerFields";
 import { SessionStorageList } from "./SessionStorageList";
 import { useAppLanguage } from "../lib/appLanguage";
 
-function formatDate(ms: number | undefined) {
+function formatDate(ms: number | undefined, language: string) {
   if (!ms) return "—";
   try {
-    return new Date(ms).toLocaleString();
+    return new Date(ms).toLocaleString(language);
   } catch {
     return "—";
   }
@@ -112,12 +112,12 @@ export function SessionPropertiesModal({
     { label: text("이름", "Name"), value: agent.name },
     { label: text("프로젝트", "Project"), value: project?.name ?? "—" },
     { label: text("도구", "Tool"), value: tool.label },
-    { label: text("상태", "Status"), value: language === "ko" ? STATUS_LABEL[agent.status] ?? agent.status : agent.status },
+    { label: text("상태", "Status"), value: text(STATUS_LABEL[agent.status] ?? agent.status, agent.status) },
     ...(agent.activity
       ? [
           {
             label: text("작업 상태", "Work status"),
-            value: language === "ko" ? STATUS_LABEL[agent.activity.workStatus] ?? agent.activity.workStatus : agent.activity.workStatus,
+            value: text(STATUS_LABEL[agent.activity.workStatus] ?? agent.activity.workStatus, agent.activity.workStatus),
           },
           {
             label: text("최근 Hook", "Latest hook"),
@@ -141,7 +141,7 @@ export function SessionPropertiesModal({
         : text("(원격 미지원)", "(not supported remotely)"),
       mono: true,
     },
-    { label: text("생성 시각", "Created"), value: formatDate(agent.createdAt), mono: true },
+    { label: text("생성 시각", "Created"), value: formatDate(agent.createdAt, language), mono: true },
     ...(sshHost
       ? []
       : [

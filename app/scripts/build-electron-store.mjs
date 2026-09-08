@@ -61,6 +61,7 @@ const npm = process.env.npm_execpath
   ? { command: process.execPath, prefix: [process.env.npm_execpath] }
   : { command: "npm.cmd", prefix: [] };
 const makeAppx = findWindowsSdkTool("makeappx.exe");
+const makePri = findWindowsSdkTool("makepri.exe");
 const signTool = findWindowsSdkTool("signtool.exe");
 
 function run(command, args, { env = process.env, capture = false, shell = false } = {}) {
@@ -102,6 +103,10 @@ function copyStoreAssets() {
     if (!existsSync(source)) throw new Error(`Store logo asset is missing: ${source}`);
     copyFileSync(source, join(targetDir, file));
   }
+  // Shell icons need explicit default, dark and light target-size resources.
+  const iconEnv = { ...process.env };
+  delete iconEnv.ELECTRON_RUN_AS_NODE;
+  run(require("electron"), [join(appDir, "scripts", "generate-store-icons.cjs"), targetDir], { env: iconEnv });
 }
 
 console.log(`[store-msix] mode=${identity.mode} app=${packageJson.version} package=${identity.packageVersion}`);
@@ -122,6 +127,11 @@ copyStoreAssets();
 
 const manifest = renderManifest(readFileSync(manifestTemplatePath, "utf8"), identity);
 writeFileSync(manifestPath, manifest, "utf8");
+// Index qualified images so the Windows shell can select unplated variants.
+const priConfigPath = join(outputDir, "priconfig.xml");
+run(makePri, ["createconfig", "/cf", priConfigPath, "/dq", "en-US", "/o"], { capture: true });
+run(makePri, ["new", "/pr", stagingDir, "/cf", priConfigPath, "/mn", manifestPath,
+  "/of", join(stagingDir, "resources.pri"), "/o"], { capture: true });
 if (existsSync(artifactPath)) rmSync(artifactPath, { force: true });
 const packageOutput = run(
   makeAppx,

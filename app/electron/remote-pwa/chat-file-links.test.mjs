@@ -1,35 +1,11 @@
+import * as links from "./chat-markup.js";
 import fs from "node:fs";
-import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const appScript = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.url)), "utf8");
 
-function loadChatFileLinkFunctions() {
-  const source = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.url)), "utf8");
-  const start = source.indexOf("const CHAT_FILE_PATH_RE");
-  const end = source.indexOf("function mdToHtml", start);
-  if (start < 0 || end < 0) throw new Error("Remote chat file-link helpers were not found.");
-  const context = {
-    escapeHtml: (value) => String(value).replace(/[&<>\"]/g, (character) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      "\"": "&quot;",
-    })[character]),
-    text: (value) => String(value ?? "").trim(),
-  };
-  context.globalThis = context;
-  vm.runInNewContext(
-    `${source.slice(start, end)}\n` +
-      "globalThis.chatFileLinks = { cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd };",
-    context,
-  );
-  return context.chatFileLinks;
-}
-
 describe("Remote chat file links", () => {
-  const links = loadChatFileLinkFunctions();
   const agent = { id: "agent-1", projectId: "project-1" };
 
   it("links plain, code-formatted, and Markdown-linked project files", () => {

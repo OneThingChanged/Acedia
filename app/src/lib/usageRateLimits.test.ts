@@ -26,6 +26,13 @@ function limitOf(limitId: string, limitName: string | null): UsageRateLimit {
 }
 
 describe("usage rate limit formatting", () => {
+  it("uses the selected locale for usage units and relative time", () => {
+    expect(formatUsageWindow(300, "es")).toBe("5 horas · Límite de uso");
+    expect(formatUsageWindow(10080, "zh-TW")).toBe("每週額度");
+    expect(formatResetRemaining(null, 0, "ja")).toBe("リセット時刻は不明です");
+    expect(formatUpdatedAgo(1000, 121000, "es")).toBe("hace 2 minutos");
+    expect(formatUpdatedAgo(1000, 1001, "zh-CN")).toBe("刚刚更新");
+  });
   it("formats common rate-limit windows", () => {
     expect(formatUsageWindow(300)).toBe("5시간 한도");
     expect(formatUsageWindow(10_080)).toBe("주간 한도");

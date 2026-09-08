@@ -36,6 +36,12 @@ sources:
   - id: document-viewer
     resource: ../app/src/components/DocViewer.tsx
     title: "Document viewer"
+  - id: agent-settings
+    resource: ../app/src/components/AgentsSettings.tsx
+    title: "Per-tool settings tabs"
+  - id: agent-defaults
+    resource: ../app/src/lib/agentDefaults.ts
+    title: "New session launch defaults"
   - id: settings
     resource: ../app/src/components/SettingsModal.tsx
     title: "Settings surface"
@@ -163,17 +169,43 @@ in the same Screen layout without becoming agents.[^document-viewer]
 
 ## Settings and notifications
 
+Application display language has its own **Language** navigation tab next to
+General. System default, Korean, English, Simplified Chinese, Traditional Chinese
+(Taiwan), Japanese, and Spanish apply immediately and persist on this PC.
+General contains theme, notification sound, and Desktop Pet settings.
+
+Agents settings has General, Codex, Claude, Qwen, and Cline tabs with keyboard
+arrow/Home/End navigation. General owns the usage-bar toggle and installation
+status overview. Each tool owns its enabled toggle; Codex contains account
+management, Qwen contains region selection, and Claude/Cline describe their
+existing CLI login environments. Claude multi-account switching remains unsupported.
+
+New-session defaults are stored in `multiagent.agentDefaults.v1`. Codex supports
+a default local account, Dangerous mode, Alt-screen, and document/HTML workers;
+Claude and Qwen support Dangerous mode. New Session and New Project creation
+load these defaults and allow overrides. Explicitly disabled workers remain off
+after reload. Existing sessions retain their own accounts and options. Local
+Codex accounts are not applied to SSH sessions. Failed preference writes are
+shown as errors rather than reported as saved.
+
 Settings govern available tools, hooks, shortcuts, Remote, SSH, appearance,
 session defaults, and the conversation-store directory. Moving that directory
 uses a verified database migration; resetting returns to the application-data
 default. Launch-only settings apply on the next PTY start rather than mutating
 an existing process.[^settings][^conversation-store]
 
-The General settings page provides System default, Korean, and English language
-choices. The preference is stored locally, applies immediately to all React
-surfaces, and updates the document language. System default resolves Korean
-for a Korean OS/browser locale and English otherwise; isolated previews retain
-the historical Korean fallback.[^settings][^app-language]
+The Language page stores the preference in `multiagent.appLanguage.v1` and updates
+the document language. System default uses the first supported OS/browser language;
+Chinese Hant/Taiwan/Hong Kong/Macau resolves to `zh-TW`, while Hans and other Chinese
+locales resolve to `zh-CN`. An explicit script takes priority over the region.
+Unsupported languages fall back to English; isolated previews retain Korean.
+The catalogs in `app/src/lib/locales/` translate settings navigation, account
+management, session/project creation, and common workspace controls. Some legacy
+technical help, dynamic messages, and backend errors still use English fallback.
+User-entered account/project names and terminal output are not translated.
+Electron smoke coverage exercises all four added languages, account-name
+preservation, preference persistence across remounts, and switching back to Korean.
+[^settings][^app-language]
 
 Completion attention is visual and can also drive desktop/Remote notifications.
 Notification state must never be treated as authoritative work completion; hook

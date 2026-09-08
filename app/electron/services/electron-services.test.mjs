@@ -238,6 +238,7 @@ describe("browser MCP stdio bridge", () => {
         "browser_clear",
         "browser_scroll_into_view",
         "browser_wait_for",
+        "browser_upload_files",
       ]));
     } finally {
       child.stdin.end();

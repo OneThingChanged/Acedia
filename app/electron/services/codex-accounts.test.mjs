@@ -13,6 +13,7 @@ function temporary() {
 }
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) {
     if (!path.basename(root).startsWith("multiagent-accounts-test-") || path.dirname(root) !== path.resolve(os.tmpdir())) throw new Error("Unexpected cleanup path");
     fs.rmSync(root, { recursive: true, force: true });
@@ -20,6 +21,34 @@ afterEach(() => {
 });
 
 describe("Codex account isolation", () => {
+  it("uses the native physical account home for external login and session environments", () => {
+    const service = new CodexAccounts(temporary(), { baseEnv: { CODEX_HOME: "default-unchanged" } });
+    const id = service.create("Store account");
+    const logical = path.join(service.root, id, ".codex");
+    const physical = path.join(temporary(), "physical-home");
+    fs.mkdirSync(physical);
+    const native = fs.realpathSync.native;
+    const resolve = vi.spyOn(fs.realpathSync, "native").mockImplementation(value => value === logical ? physical : native(value));
+    expect(service.home(id)).toBe(physical);
+    expect(service.environment(id).CODEX_HOME).toBe(physical);
+    expect(service.roots()).toContain(path.join(physical, "sessions"));
+    expect(service.home()).toBe("default-unchanged");
+    expect(resolve).toHaveBeenCalledWith(logical);
+  });
+
+  it("reports a safe setup failure code without exposing CLI output and clears it on retry", () => {
+    let output, finish;
+    const service = new CodexAccounts(temporary(), { startLogin: () => ({ onData(fn) { output = fn; }, onExit(fn) { finish = fn; }, kill() {} }) });
+    const id = service.create("Work"); service.beginLogin(id);
+    output('CODEX_HOME points to "private-path", but that path ');
+    output('does not exist\nhttps://auth.example/?secret=fixture');
+    finish({ exitCode: 1 });
+    expect(service.list()[1]).toMatchObject({ state: "failed", failureReason: "home_unavailable" });
+    expect(JSON.stringify(service.list())).not.toMatch(/private-path|secret|auth\.example/);
+    service.beginLogin(id);
+    expect(service.list()[1].failureReason).toBeUndefined();
+    service.cancelLogin();
+  });
   it("keeps independent quota snapshots for different Codex accounts", () => {
     const root = temporary();
     const accounts = new CodexAccounts(root);

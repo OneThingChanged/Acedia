@@ -32,6 +32,8 @@ const INVOKE_COMMANDS = Object.freeze([
   "list_markdown_files",
   "document_browser_open",
   "document_browser_list",
+  "document_browser_activity_list",
+  "document_browser_activity_action",
   "document_browser_attach",
   "document_browser_hub_close",
   "document_browser_ready",
@@ -339,6 +341,10 @@ function assertInvokeRequest(command, rawArgs) {
       assertNonNegativeInteger(args.y, "document browser y");
       assertPositiveInteger(args.width, "document browser width");
       assertPositiveInteger(args.height, "document browser height");
+      break;
+    case "document_browser_activity_action":
+      if (!["clear-history", "clear-downloads", "remove-history", "cancel", "show-folder"].includes(args.action)) throw new TypeError("Invalid browser activity action");
+      if (!["clear-history", "clear-downloads"].includes(args.action) && (typeof args.id !== "string" || !args.id || args.id.length > 128)) throw new TypeError("Invalid browser activity ID");
       break;
     case "document_browser_attach":
     case "document_browser_hub_close":

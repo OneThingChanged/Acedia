@@ -22,14 +22,15 @@ sources:
 
 ## User workflow
 
-Open **Settings → Agents → Codex accounts**, enter a label, and add an account.
+Open **Settings → Agents → Codex → Login accounts**, enter a label, and add an account.
 Choose **Browser login** and complete Codex's browser authentication with the
 intended ChatGPT account. The label is user supplied; MultiAgent does not infer
 or verify the account email. Only one managed login runs at a time. A pending
 login can be cancelled and expires after five minutes. Reauthentication is
 blocked while a local session is running with that profile.
 
-Select the account when creating a local project or session. For an existing
+The Codex tab also stores the default account for new local sessions.
+Select or override the account when creating a local project or session. For an existing
 session, deactivate it first and select the account under **Session properties
 → Launch options**. A newly selected profile starts a new conversation. Switching
 back restores that profile's last conversation, if its transcript is available.
@@ -43,6 +44,12 @@ when unset. Additional profiles live under Electron's user-data directory:
 different user-data directories; accounts registered in the development app
 must be registered and authenticated again in the installed app. The registry
 contains only UUIDs and labels.
+Store/MSIX virtualizes the logical AppData directory into the package's
+`LocalCache/Roaming` tree. Added profile homes use `fs.realpathSync.native` before
+passing `CODEX_HOME` to the external CLI, and the same physical home is used for
+session startup, transcript lookup, and quota attribution. Ordinary
+`fs.realpathSync` leaves the logical Store path unchanged on Windows and is not
+sufficient here. The existing/default login home is not rewritten.
 Authentication remains in each profile's Codex-managed `auth.json`; credentials
 and OAuth process output are never returned to the renderer or written to the
 application logs by this integration. Login status indicates saved credentials,
@@ -54,6 +61,11 @@ and remove inherited API-key/access-token environment variables. The default
 profile's environment is unchanged. Global settings, skills, plugins, and login
 credentials are not copied from the existing home. Project-level configuration
 and MultiAgent's existing project hook/MCP setup continue to apply.
+
+Login failures may include a fixed `failureReason` code for an inaccessible
+account home or missing saved credentials. OAuth output is never sent to the UI
+or persisted; only a bounded in-memory tail is inspected for the known home-path
+error and discarded on completion/cancellation. Retry clears the prior code.
 
 Profile bindings and per-profile conversation IDs persist with the session.
 Switching clears terminal scrollback and group session pins for that session.
@@ -84,3 +96,10 @@ UI and registry with a simulated authentication process in an isolated Electron
 profile. The user confirmed successful account login and use in the development app on
 2026-09-07. See [session lifecycle](session-lifecycle-and-resume.md) and
 [usage accounting](usage-accounting.md) for the shared runtime behavior.
+
+On 2026-09-08, the installed 1.8.1.0 Store package reproduced a logical
+`CODEX_HOME` path-not-found error. Running the corrected resolver under that
+package identity produced the physical account path, and an external
+`codex login status` reached the expected unauthenticated state instead of a
+configuration error. This verifies path resolution, not completed browser OAuth;
+the installed binary still requires an update for the correction.

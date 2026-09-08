@@ -447,10 +447,13 @@ The following boundaries are mandatory:
   log option index/label only after sensitivity filtering; redact URL query
   values and all error details that could contain submitted data. Keep audit
   retention bounded and local to the existing app diagnostics policy.
-* Keep file upload manual in phase one. Any later explicit upload API would
-  need user confirmation, project/path allowlisting, one-shot handles, and a
-  separate security review; it must not accept a raw arbitrary path from an
-  agent.
+* Phase one kept file upload manual. The subsequent user-requested
+  `browser_upload_files` extension accepts explicit absolute file paths through
+  the authenticated agent bridge, with regular-file validation and native
+  file-input targeting. The agent must obtain authorization for the files and
+  destination from the task context. See [the current contract](embedded-browser-mcp.md)
+  for behavior, validation, and unsupported cases; the original one-shot-handle
+  proposal was not implemented.
 * Preserve the existing authenticated loopback token and agent ownership
   checks. A browser action must operate only on the requesting agent's
   associated tab and must not cross sessions.

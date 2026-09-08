@@ -1,3 +1,5 @@
+import { captureBrowserPng } from "./services/browser-capture.mjs";
+import { BrowserActivity } from "./services/browser-activity.mjs";
 import {
   app,
   BrowserWindow,
@@ -78,6 +80,7 @@ import {
   sanitizeElementDescriptor,
 } from "./services/browser-context.mjs";
 import { browserFormRuntimeExpression } from "./services/browser-form-automation.mjs";
+import { uploadBrowserFiles } from "./services/browser-file-upload.mjs";
 import { isGitRepository, runGit } from "./services/git-command.mjs";
 import {
   buildWindowSessionUsage,
@@ -351,6 +354,10 @@ const codexAccounts = new CodexAccounts(app.getPath("userData"), {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const browserActivity = new BrowserActivity({
+  directory: app.getPath("userData"), downloadsDirectory: app.getPath("downloads"), shell,
+  ownerOf: id => [...documentBrowserWindows.values()].find(record => record.view.webContents.id === id),
+});
 sessionService.codexRoots = () => codexAccounts.roots();
 const hookBaseDir = process.env.MULTIAGENT_LOCAL_DATA?.trim() || path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
@@ -457,7 +464,7 @@ const hookService = new HookService({
   integrationProvider: () => miraControlSnapshot(),
   activateAgent: (agentId) => activateMiraControlAgent(agentId),
   writeAgentInput: (request) => writeMiraControlAgentInput(request),
-  browserProvider: (request) => handleBrowserIntegration(request),
+  browserProvider: (request) => handleBrowserIntegration({ ...request, reveal: false }),
   mcpScriptPath: browserMcpScriptPath,
   sendEvent: publishAgentHookEvent,
   sessionService,
@@ -1372,8 +1379,7 @@ async function saveBrowserScreenshot(record, rect = null, viewport = null) {
   const options = rect
     ? normalizeBrowserCaptureRect(rect, viewport || record.bounds || {}) || undefined
     : undefined;
-  const image = await record.view.webContents.capturePage(options);
-  const data = image.toPNG();
+  const data = await captureBrowserPng(record.view.webContents, options);
   if (!data?.length) return null;
   const directory = path.join(app.getPath("userData"), "browser-annotations");
   await fsPromises.mkdir(directory, { recursive: true });
@@ -1508,6 +1514,14 @@ function browserAnnotationPrompt(annotation) {
 
 function installDocumentBrowserViewPolicy(record) {
   const contents = record.view.webContents;
+  browserActivity.attach(contents);
+  contents.on("did-navigate", (_event, url) => {
+    if (!documentPreviewService.isPreviewUrl(url, record.token)) browserActivity.visit(contents, url, contents.getTitle());
+  });
+  contents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame && !documentPreviewService.isPreviewUrl(url, record.token)) browserActivity.visit(contents, url, contents.getTitle());
+  });
+  contents.on("page-title-updated", (_event, title) => browserActivity.visit(contents, contents.getURL(), title, { replace: true }));
   contents.setWindowOpenHandler(({ url }) => {
     // Keep preview links and normal web links in this same isolated view. A
     // popup never creates a second native window; it is promoted to a normal
@@ -1922,11 +1936,12 @@ async function browserRecordForIntegration(agentId, body = {}, { create = true }
     return record;
   }
   if (!create) return null;
-  const parentWindow = browserParentWindowForAgent(agentId);
+  const parentWindow = ensureBrowserHostWindow();
   if (!parentWindow) throw new Error("브라우저를 연결할 작업창이 없습니다.");
   const created = await createDocumentBrowserWindow({
     parentWindow,
     agentId,
+    background: true,
     initialUrl: "about:blank",
   });
   return documentBrowserWindows.get(created.browserId) ?? null;
@@ -1960,14 +1975,14 @@ async function browserIntegrationStatus(agentId) {
   };
 }
 
-async function handleBrowserIntegration({ agentId, action, body = {}, reveal = true }) {
+async function handleBrowserIntegration({ agentId, action, body = {}, reveal = false }) {
   const normalizedAgentId = String(agentId || "").trim();
   if (!normalizedAgentId) return { ok: false, httpStatus: 400, error: "agent id is required" };
   if (action === "status") return browserIntegrationStatus(normalizedAgentId);
   if (action === "open") {
     const target = new URL(String(body.url || "https://www.google.com/").trim());
     if (!isHttpUrl(target.href)) return { ok: false, httpStatus: 400, error: "HTTP 또는 HTTPS 주소만 열 수 있습니다." };
-    const parentWindow = browserParentWindowForAgent(normalizedAgentId) || ensureBrowserHostWindow();
+    const parentWindow = reveal ? browserParentWindowForAgent(normalizedAgentId) || ensureBrowserHostWindow() : ensureBrowserHostWindow();
     if (!parentWindow) return { ok: false, httpStatus: 503, error: "브라우저를 연결할 작업창이 없습니다." };
     const created = await createDocumentBrowserWindow({
       parentWindow,
@@ -2011,6 +2026,10 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = t
       const result = await browserType(record, body.selector, body.text);
       if (result?.ok === false) return { ok: false, httpStatus: 409, error: result.error };
       return { ok: true, result, tab: browserIntegrationTabSnapshot(record) };
+    }
+    case "upload-files": {
+      const result = await uploadBrowserFiles(record.view.webContents, body);
+      return { ok: result.ok, error: result.error, result, tab: browserIntegrationTabSnapshot(record) };
     }
     case "get-control":
     case "form-state":
@@ -4813,6 +4832,14 @@ async function invokeCommand(event, command, rawArgs) {
         initialUrl: asString(args.initialUrl).trim(),
         parentWindow: eventSenderWindow(event),
       });
+    }
+    case "document_browser_activity_list":
+    case "document_browser_activity_action": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (!runtime?.workspace_window) throw new Error("작업창에서만 브라우저 기록을 관리할 수 있습니다.");
+      if (command === "document_browser_activity_list") return browserActivity.list();
+      browserActivity.action(args.action, args.id);
+      return null;
     }
     case "document_browser_list": {
       const runtime = runtimeByWebContents.get(event.sender.id);

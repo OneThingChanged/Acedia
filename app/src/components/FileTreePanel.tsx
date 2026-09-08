@@ -373,7 +373,7 @@ export function FileTreePanel({
   ) => void;
   onClose: () => void;
 }) {
-  const { language, text } = useAppLanguage();
+  const { text } = useAppLanguage();
   // ---- Shown project: follows the active project unless pinned ----
   const initialPin = useRef(loadPinState());
   const [pinned, setPinned] = useState(initialPin.current.pinned);
@@ -1373,7 +1373,7 @@ export function FileTreePanel({
                 aria-pressed={on}
               >
                 <span className="file-tree-kind-dot" />
-                <span className="file-tree-kind-label">{language === "ko" ? kind.label : kind.labelEn}</span>
+                <span className="file-tree-kind-label">{text(kind.label, kind.labelEn)}</span>
               </button>
             );
           })}

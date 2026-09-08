@@ -1,5 +1,37 @@
 # OKF Update Log
 
+## 2026-09-09
+
+* **Standard 1.8.0.1 release preparation**: Grouped settings/languages, Codex Store path fix, browser uploads/downloads/history/background control, Remote refactor/reliability, and Store release tooling into one source revision. Product and mobile versionName advance to 1.8.0.1, npm stays 1.8.0, and Android versionCode advances to 18. Windows installer/APK build and packaged validation follow this commit; no Store submission or GitHub publication is requested.
+
+* **Background AI browser control**: Disabled automatic MCP tab reveal, placed AI-created tabs on the hidden host, and changed screenshots to CDP viewport capture without showing the native view. Regression tests and an isolated Electron hidden-navigation/input/screenshot smoke passed without show/focus events. Manual tab selection remains available; installed-app rollout is pending.
+
+* **Embedded browser downloads and history**: Added native save-dialog download tracking, progress/cancel/folder actions, searchable persistent visits, and record deletion without file removal. Browser panels hide the native view while open. Focused tests, build, and real Electron download/persistence smoke passed; installed Store verification and rollout remain pending.
+
+* **Remote submission and recovery reliability**: Preserved newer composer drafts and attachments, locked concurrent submissions, added durable request-ID deduplication to both HTTP servers, paused failed queue heads for explicit retry, and bounded state requests with latest-response ordering. All 470 app tests and desktop/mobile composer smoke passed. Updated worker cache to v61; installed/public-tunnel rollout remains pending.
+
+## 2026-09-08
+
+* **Store Codex account login path**: Reproduced 1.8.1.0 passing a virtual AppData home that external Codex cannot see. Added native physical-home resolution for extra accounts and fixed safe failure-reason reporting without exposing OAuth output. The installed package identity confirmed ordinary/native realpath differ, and corrected external CLI status no longer failed on the home path. Tests (465) and build passed. Browser OAuth completion and updated Store binary rollout remain pending; no release/version change is included.
+
+* **Remote PWA structure refactor**: Separated chat markup, DOM rendering, history merging and common DOM helpers into native browser modules; direct imports replace source-slicing helper tests. Extracted project document/preview handling and shared JSON framing from the web server, replacing duplicate Dashboard/Remote document routes with one dispatcher behind the existing access checks. Updated static asset serving and service-worker cache v60. All 463 tests passed; the new Electron PWA smoke passed at desktop/mobile widths with chat, document links, module loading and worker activation. No package deployment/version change is included.
+
+* **Store Submission 5 accepted**: Created draft 1152921505701833091 through Partner Center UI; the user uploaded 1.8.1.0 and the agent saved the validated replacement package, updated Korean/English release notes, and submitted for certification. Confirmed In certification and automatic publishing after approval. Publication/install verification remains pending. API credentials remain absent; the local CLI run must not be resubmitted.
+
+* **Browser file upload tool**: Added `browser_upload_files` to the managed MCP bridge and native Chromium file-input selection for explicit host-local paths. Supports hidden inputs and multiple files; rejects invalid paths, directories, ambiguous/non-file/disabled targets. Distinguishes selection from server acceptance and preserves applied-but-unverified results for safe retries. Electron fixture smoke verified actual multipart bytes at a local HTTP receiver and snapshot redaction. Iframe/directory/OS-dialog automation and live Partner Center upload remain unverified or unsupported as documented. No release/version change in this implementation step.
+
+* **1.8.1.0 Store build test**: Built an isolated settings/language release with source tests (458), Electron and packaged/lifecycle checks, settings UI smoke and WACK overall PASS. Preserved the optional Blocked executables warning. Fixed external-site submodule/example-file handling, WACK optional-test parsing and completed-local promotion (automation tests: 17). API submission was attempted but stopped before upload because Entra credentials are not configured. [Release record](store-release-1-8-1-0-2026-09-08.md).
+
+* **Store release automation**: Added isolated source/version snapshots, Store API upload/commit/status, resumable local checks with exact-package WACK evidence, DPAPI credential setup and Windows worker/monitor task installers. Store build requests authorize certification and immediate publication after validation; build-only/draft-only remain bounded. Real API credentials, task installation and live end-to-end verification are still pending; no product was submitted by this implementation task. See [Store automation](store-release-automation.md).
+
+* **Acedia 1.8.x release handoff**: Recorded the completed `1.8.0.0` GitHub release, current Partner Center Submission 4 draft and package hash, updated Store listings, pending certification decision, uncommitted language/settings UX work, channel boundaries, upload recovery procedure, and a safe next-session starting prompt. The Store draft has not been submitted for certification.
+
+* **Additional UI languages**: Added Simplified Chinese, Traditional Chinese (Taiwan), Japanese, and Spanish to Language settings with native language names, prioritized system locale detection, script-aware Chinese resolution, and immediate persisted switching. Added translation catalogs for core settings, accounts, session/project forms, and workspace controls; untranslated legacy help/dynamic/backend messages fall back to English. Electron smoke verifies all four locales and persistence; Spanish layout was visually checked. User content is preserved. This change does not build an installer or increment the release version.
+
+* **Language settings tab**: Moved application display language out of General into its own navigation tab and search entry. Existing immediate language switching and persistence are unchanged.
+
+* **Per-tool agent settings**: Implemented the approved tabbed settings mockup with General/Codex/Claude/Qwen/Cline tabs, account cards, and persisted new-session defaults. New Session and New Project creation apply explicit account, permission, Alt-screen, and worker defaults without changing existing sessions. Tests (438), build, and the extended Electron account/settings smoke passed; visually checked the rendered Codex tab. No commit/version or installer change in this implementation step.
+
 ## 2026-09-07
 
 * **1.7.3.3 local update**: User confirmed Codex account login/use in the development app. Built the Standard local installer and signed APK; npm remains 1.7.3 and Android versionCode is 16. Desktop tests (433), mobile tests (24), mobile typecheck, account UI/standby smoke tests, packaged runtime/lifecycle checks, and local update discovery from 1.7.3.2 passed. Windows installer file version is 1.7.3.3 and Authenticode status is NotSigned. Installation remains user-controlled.

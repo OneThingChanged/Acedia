@@ -1,4 +1,5 @@
-import { CodexAccountsPanel } from "./CodexAccounts";
+import { APP_LOCALES, LOCALE_LABELS } from "../lib/locales/translate";
+import { AgentsSettings } from "./AgentsSettings";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { invoke } from "../platform/runtime";
@@ -38,7 +39,6 @@ import { SshSetupGuide } from "./SshSetupGuide";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import type { CommandShortcuts } from "../lib/commandRegistry";
 import type { SshHost } from "../types";
-import { toolForId } from "../types";
 import type { ConversationStorageStatus } from "../platform/ipcContract";
 import {
   useAppLanguage,
@@ -159,6 +159,7 @@ type DiagnosticExportState =
   | { status: "error"; message: string };
 
 type SettingsCategory =
+  | "language"
   | "general"
   | "agents"
   | "data"
@@ -222,8 +223,9 @@ type NavEntry = {
 };
 
 const ALL_NAV_ENTRIES: NavEntry[] = [
-  { id: "general", group: "Workspace", label: "General", labelKo: "일반", title: "General", titleKo: "일반", sub: "언어 · 테마 · 알림음 · 데스크톱 펫", subEn: "Language · theme · notifications · Desktop Pet", keywords: "language 언어 theme 테마 appearance sound 알림음 notification pet 펫", icon: <IconSliders /> },
-  { id: "agents", group: "Workspace", label: "Agents", labelKo: "에이전트", title: "Agents", titleKo: "에이전트", sub: "연결 상황 · 사용량 바 · Qwen 리전", subEn: "Connections · usage bar · Qwen region", keywords: "agent 에이전트 연결 connection status usage 사용량 bar qwen region 리전 나라 country", icon: <IconActivity /> },
+  { id: "general", group: "Workspace", label: "General", labelKo: "일반", title: "General", titleKo: "일반", sub: "테마 · 알림음 · 데스크톱 펫", subEn: "Theme · notifications · Desktop Pet", keywords: "theme 테마 appearance sound 알림음 notification pet 펫", icon: <IconSliders /> },
+  { id: "language", group: "Workspace", label: "Language", labelKo: "언어", title: "Language", titleKo: "언어", sub: "앱 표시 언어", subEn: "Application display language", keywords: "language 언어 한국어 korean english 영어 system 시스템", icon: <IconGlobe /> },
+  { id: "agents", group: "Workspace", label: "Agents", labelKo: "에이전트", title: "Agents", titleKo: "에이전트", sub: "도구별 계정 · 실행 기본값", subEn: "Accounts · launch defaults", keywords: "agent 에이전트 연결 connection status usage 사용량 bar qwen region 리전 나라 country", icon: <IconActivity /> },
   { id: "data", group: "Workspace", label: "Data & Sessions", labelKo: "데이터 및 세션", title: "Data & Sessions", titleKo: "데이터 및 세션", sub: "세션별 대화 · 산출물 저장 위치", subEn: "Per-session conversations · artifact storage", keywords: "data 데이터 conversation 대화 session 세션 storage 저장소 path 경로 artifact 산출물", icon: <IconDatabase /> },
   { id: "shortcuts", group: "Workspace", label: "Shortcuts", labelKo: "단축키", title: "Shortcuts", titleKo: "단축키", sub: "명령별 키보드 단축키", subEn: "Keyboard shortcuts by command", keywords: "keyboard 단축키 hotkey shortcut", icon: <IconKeyboard /> },
   { id: "hooks", group: "Workspace", label: "Agent Hooks", labelKo: "에이전트 훅", title: "Agent Hooks", titleKo: "에이전트 훅", sub: "Codex/Claude Hook 자동 점검·복구", subEn: "Automatic Codex/Claude hook checks and repair", keywords: "agent hook codex claude repair 복구", icon: <IconActivity /> },
@@ -240,8 +242,7 @@ const LANGUAGE_OPTIONS: Array<{
   en: string;
 }> = [
   { id: "system", ko: "시스템 기본", en: "System default" },
-  { id: "ko", ko: "한국어", en: "Korean" },
-  { id: "en", ko: "영어", en: "English" },
+  ...APP_LOCALES.map(id => ({ id, ko: LOCALE_LABELS[id], en: LOCALE_LABELS[id] })),
 ];
 const NAV_ENTRIES = ALL_NAV_ENTRIES.filter(
   (entry) => !IS_COMPANY_BUILD || entry.id !== "remote"
@@ -268,159 +269,6 @@ function formatBytes(n: number) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-type QwenRegionInfo = {
-  available: boolean;
-  region: string | null;
-  regions: { id: string; label: string }[];
-};
-
-type ToolAvailability = Record<string, { available: boolean; path: string | null }>;
-
-// Tools that can be availability-checked + offered in the new-session picker.
-const CHECKABLE_TOOL_IDS = ["claude", "codex", "qwen", "cline"];
-
-function AgentsSettings({
-  disabledTools,
-  onToggleTool,
-  showUsageBar,
-  onShowUsageBarChange,
-}: {
-  disabledTools: string[];
-  onToggleTool: (toolId: string, enabled: boolean) => void;
-  showUsageBar: boolean;
-  onShowUsageBarChange: (show: boolean) => void;
-}) {
-  const { text } = useAppLanguage();
-  const [avail, setAvail] = useState<ToolAvailability | null>(null);
-  const [checking, setChecking] = useState(false);
-  const refreshAvail = () => {
-    setChecking(true);
-    void invoke<ToolAvailability>("check_tools")
-      .then(setAvail)
-      .catch(() => setAvail(null))
-      .finally(() => setChecking(false));
-  };
-  useEffect(refreshAvail, []);
-
-  const [qwen, setQwen] = useState<QwenRegionInfo | null>(null);
-  const [qwenBusy, setQwenBusy] = useState(false);
-  const [qwenMsg, setQwenMsg] = useState("");
-  useEffect(() => {
-    void invoke<QwenRegionInfo>("qwen_region_get")
-      .then(setQwen)
-      .catch(() => setQwen(null));
-  }, []);
-  const chooseRegion = (region: string) => {
-    setQwenBusy(true);
-    setQwenMsg("");
-    void invoke<{ ok: boolean; changed: boolean }>("qwen_region_set", { region })
-      .then((r) => {
-        setQwen((q) => (q ? { ...q, region } : q));
-        setQwenMsg(
-          r.changed
-            ? text("변경됨 · 실행 중 Qwen 세션은 재시작해야 적용됩니다", "Changed · restart active Qwen sessions to apply")
-            : text("이미 해당 리전입니다", "This region is already selected"),
-        );
-      })
-      .catch((e) => setQwenMsg(text(`실패: ${String(e)}`, `Failed: ${String(e)}`)))
-      .finally(() => setQwenBusy(false));
-  };
-
-  return (
-    <div className="app-settings-section">
-      <div className="agent-block">
-        <div className="agent-row-title-wrap">
-        <div className="agent-row-title">{text("사용 가능한 도구", "Available tools")}</div>
-          <button type="button" className="agent-refresh" onClick={refreshAvail} disabled={checking}>
-            {checking ? text("확인 중…", "Checking…") : text("새로고침", "Refresh")}
-          </button>
-        </div>
-        <div className="agent-row-sub">
-          {text(
-            "체크한 도구만 새 세션 만들기 드롭박스에 표시됩니다. (설치 여부는 오른쪽에 표시)",
-            "Only selected tools appear when creating a session. Installation status is shown on the right.",
-          )}
-        </div>
-        <div className="agent-tool-list">
-          {CHECKABLE_TOOL_IDS.map((id) => {
-            const tool = toolForId(id);
-            const info = avail?.[id];
-            const enabled = !disabledTools.includes(id);
-            return (
-              <label className="agent-tool-row" key={id}>
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => onToggleTool(id, e.target.checked)}
-                />
-                <span className="agent-conn-icon" style={{ color: tool.iconColor }}>
-                  {tool.icon}
-                </span>
-                <span className="agent-tool-name">{tool.label}</span>
-                <span
-                  className="agent-tool-avail"
-                  style={{
-                    color: avail == null ? "#8b949e" : info?.available ? "#3fb950" : "#f0883e",
-                  }}
-                  title={info?.path ?? ""}
-                >
-                  {avail == null
-                    ? text("확인 중…", "Checking…")
-                    : info?.available
-                      ? text("✓ 사용 가능", "✓ Available")
-                      : text("✗ 미설치", "✗ Not installed")}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      <label className="agent-toggle-row">
-        <div>
-          <div className="agent-row-title">{text("작업표시줄 사용량 표시", "Show usage status bar")}</div>
-          <div className="agent-row-sub">{text("하단 바에 Codex/Claude 사용량·한도를 표시합니다.", "Show Codex and Claude usage limits in the bottom bar.")}</div>
-        </div>
-        <input
-          type="checkbox"
-          checked={showUsageBar}
-          onChange={(e) => onShowUsageBarChange(e.target.checked)}
-        />
-      </label>
-
-      <div className="agent-block">
-        <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}</div>
-        <div className="agent-row-sub">
-          {text(
-            "Qwen Code(~/.qwen/settings.json)의 ModelStudio 엔드포인트 리전. 계정 지역과 맞춰야 합니다.",
-            "ModelStudio endpoint region in Qwen Code (~/.qwen/settings.json). It must match your account region.",
-          )}
-        </div>
-        {qwen == null ? (
-          <div className="agent-hint">{text("불러오는 중…", "Loading…")}</div>
-        ) : !qwen.available ? (
-          <div className="agent-hint">{text("~/.qwen/settings.json 이 없습니다 (Qwen 미설정).", "~/.qwen/settings.json was not found (Qwen is not configured).")}</div>
-        ) : (
-          <div className="agent-region-row">
-            {qwen.regions.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                disabled={qwenBusy}
-                className={`agent-region-btn ${qwen.region === r.id ? "on" : ""}`}
-                onClick={() => chooseRegion(r.id)}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {qwenMsg && <div className="agent-hint">{qwenMsg}</div>}
-      </div>
-    </div>
-  );
 }
 
 export function SettingsModal({
@@ -1149,6 +997,7 @@ export function SettingsModal({
     !query ||
     entry.label.toLowerCase().includes(query) ||
     entry.labelKo.toLowerCase().includes(query) ||
+    text(entry.labelKo, entry.label).toLowerCase().includes(query) ||
     entry.keywords.toLowerCase().includes(query);
   const activeEntry =
     NAV_ENTRIES.find((entry) => entry.id === tab) ?? NAV_ENTRIES[0];
@@ -1161,6 +1010,7 @@ export function SettingsModal({
       (entry) =>
         entry.label.toLowerCase().includes(next) ||
         entry.labelKo.toLowerCase().includes(next) ||
+        text(entry.labelKo, entry.label).toLowerCase().includes(next) ||
         entry.keywords.toLowerCase().includes(next)
     );
     if (firstHit) setTab(firstHit.id);
@@ -1217,7 +1067,7 @@ export function SettingsModal({
                       onClick={() => setTab(entry.id)}
                     >
                       <span className="app-settings-nav-icon">{entry.icon}</span>
-                      {language === "ko" ? entry.labelKo : entry.label}
+                      {text(entry.labelKo, entry.label)}
                     </button>
                   ))}
                 </div>
@@ -1234,10 +1084,10 @@ export function SettingsModal({
         <div className="app-settings-content-head">
           <div>
             <h2 className="modal-title">
-              {language === "ko" ? activeEntry.titleKo : activeEntry.title}
+              {text(activeEntry.titleKo, activeEntry.title)}
             </h2>
             <div className="app-settings-content-sub">
-              {language === "ko" ? activeEntry.sub : activeEntry.subEn}
+              {text(activeEntry.sub, activeEntry.subEn)}
             </div>
           </div>
           <button className="app-icon-btn" onClick={onClose} title={text("닫기", "Close")}>
@@ -1246,8 +1096,7 @@ export function SettingsModal({
         </div>
 
         <div className="app-settings-body">
-        {tab === "general" && (
-        <>
+        {tab === "language" && (
         <div className="app-settings-section">
           <div className="field-label">{text("언어", "Language")}</div>
           <div className="app-theme-options" role="radiogroup" aria-label={text("앱 언어", "App language")}>
@@ -1262,7 +1111,7 @@ export function SettingsModal({
                 }`}
                 onClick={() => setPreference(option.id)}
               >
-                {language === "ko" ? option.ko : option.en}
+                {text(option.ko, option.en)}
               </button>
             ))}
           </div>
@@ -1273,7 +1122,10 @@ export function SettingsModal({
             )}
           </div>
         </div>
+        )}
 
+        {tab === "general" && (
+        <>
         <div className="app-settings-section">
           <div className="field-label">{text("테마", "Theme")}</div>
           <div className="app-theme-options">
@@ -1402,15 +1254,12 @@ export function SettingsModal({
         )}
 
         {tab === "agents" && (
-          <>
-          <CodexAccountsPanel />
           <AgentsSettings
             disabledTools={disabledTools}
             onToggleTool={onToggleTool}
             showUsageBar={showUsageBar}
             onShowUsageBarChange={onShowUsageBarChange}
           />
-          </>
         )}
 
         {tab === "data" && (

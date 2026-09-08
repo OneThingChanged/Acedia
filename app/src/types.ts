@@ -244,6 +244,7 @@ export type TerminalEntry = {
 };
 
 export type NewAgentPayload = {
+  useAltScreen?: boolean;
   codexAccountId?: string;
   name: string;
   aiToolId: string;
@@ -252,6 +253,8 @@ export type NewAgentPayload = {
 };
 
 export type NewProjectPayload = {
+  useAltScreen?: boolean;
+  workerSettings?: SessionWorkerSettings;
   codexAccountId?: string;
   name: string;
   folder: string;

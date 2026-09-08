@@ -1,3 +1,4 @@
+import { useAppLanguage } from "../lib/appLanguage";
 import { useState } from "react";
 import { CodexAccountSelect } from "./CodexAccounts";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
@@ -5,7 +6,7 @@ import { AI_TOOLS, toolForId } from "../types";
 import type { NewAgentPayload, Project } from "../types";
 import { folderTail } from "../lib/path";
 import { defaultAiToolId } from "../lib/projectCreation";
-import { defaultSessionWorkerSettings } from "../lib/sessionWorkers";
+import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 import type { SessionWorkerSettings } from "../types";
 
@@ -23,6 +24,7 @@ export function NewAgentModal({
   disabledTools?: string[];
 }) {
   useNativeViewOcclusion();
+  const { text } = useAppLanguage();
 
   // Only tools enabled in Settings → Agents ("none" always available).
   const visibleTools = AI_TOOLS.filter(
@@ -32,11 +34,12 @@ export function NewAgentModal({
   const [aiToolId, setAiToolId] = useState<string>(() =>
     defaultAiToolId(disabledTools)
   );
-  const [codexAccountId, setCodexAccountId] = useState("default");
-  const [dangerous, setDangerous] = useState(false);
+  const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
+  const [dangerous, setDangerous] = useState(() => loadAgentDefaults(aiToolId).dangerous);
+  const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState<
     SessionWorkerSettings | undefined
-  >(() => defaultSessionWorkerSettings("codex"));
+  >(() => loadAgentDefaults("codex").workerSettings);
   const selectedTool = toolForId(aiToolId);
   const supportsDangerous = !!selectedTool.dangerousFlag;
 
@@ -49,6 +52,7 @@ export function NewAgentModal({
       aiToolId,
       codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
       dangerous: dangerous && supportsDangerous,
+      useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
       workerSettings: aiToolId === "codex" ? workerSettings : undefined,
     });
   };
@@ -56,12 +60,12 @@ export function NewAgentModal({
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2 className="modal-title">New Session</h2>
+        <h2 className="modal-title">{text("새 세션", "New Session")}</h2>
 
         <div className="session-project-summary">
-          <span className="session-project-label">Project</span>
+          <span className="session-project-label">{text("프로젝트", "Project")}</span>
           <span className="session-project-name">
-            {project ? project.name : "No project selected"}
+            {project ? project.name : text("선택한 프로젝트 없음", "No project selected")}
           </span>
           {project && (
             <span className="session-project-folder" title={project.folder}>
@@ -71,7 +75,7 @@ export function NewAgentModal({
         </div>
 
         <label className="field">
-          <span className="field-label">Session alias</span>
+          <span className="field-label">{text("세션 별칭", "Session alias")}</span>
           <input
             autoFocus
             value={name}
@@ -85,10 +89,14 @@ export function NewAgentModal({
         </label>
 
         <label className="field">
-          <span className="field-label">AI tool</span>
+          <span className="field-label">{text("AI 도구", "AI tool")}</span>
           <select
             value={aiToolId}
-            onChange={(e) => setAiToolId(e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value; const defaults = loadAgentDefaults(id);
+              setAiToolId(id); setDangerous(defaults.dangerous);
+              if (id === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
+            }}
           >
             {visibleTools.map((t) => (
               <option key={t.id} value={t.id}>
@@ -108,14 +116,15 @@ export function NewAgentModal({
               onChange={(e) => setDangerous(e.target.checked)}
             />
             <span>
-              <span className="check-label">Dangerous mode</span>
+              <span className="check-label">{text("Dangerous 모드", "Dangerous mode")}</span>
               <span className="check-hint">
-                Skip permission prompts — runs commands without confirmation
+                {text("권한 확인을 생략하고 명령을 실행합니다.", "Skip permission prompts — runs commands without confirmation")}
               </span>
             </span>
           </label>
         )}
 
+        {aiToolId === "codex" && <label className="field-check"><input type="checkbox" checked={useAltScreen} onChange={e => setUseAltScreen(e.target.checked)} /><span>{text("Alt-screen 모드", "Alt-screen mode")}</span></label>}
         {aiToolId === "codex" && (
           <SessionWorkerFields
             settings={workerSettings}
@@ -126,14 +135,14 @@ export function NewAgentModal({
 
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onCancel}>
-            Cancel
+            {text("취소", "Cancel")}
           </button>
           <button
             className="btn-primary"
             disabled={!canSubmit}
             onClick={submit}
           >
-            Create
+            {text("만들기", "Create")}
           </button>
         </div>
       </div>

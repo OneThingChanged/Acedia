@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.0",
-  "multiAgentReleaseVersion": "1.8.0.0",
+  "multiAgentReleaseVersion": "1.8.0.1",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -14,7 +14,10 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:smoke": "electron electron/pty-smoke.mjs",
     "electron:bridge-smoke": "node scripts/electron-bridge-smoke.mjs",
+    "electron:browser-background-smoke": "electron scripts/electron-browser-background-smoke.mjs",
+    "electron:browser-download-smoke": "electron scripts/electron-browser-download-smoke.mjs",
     "electron:browser-form-smoke": "electron scripts/electron-browser-form-smoke.mjs",
+    "electron:remote-pwa-smoke": "electron scripts/electron-remote-pwa-smoke.mjs",
     "electron:lifecycle-smoke": "node scripts/electron-lifecycle-smoke.mjs",
     "electron:single-instance-smoke": "node scripts/electron-single-instance-smoke.mjs",
     "electron:packaged-lifecycle-smoke": "node scripts/electron-lifecycle-smoke.mjs --packaged",
@@ -36,6 +39,7 @@
     "release:build:github": "node scripts/build-electron-standard.mjs",
     "release:build:store": "node scripts/build-electron-store.mjs",
     "release:verify:store": "node scripts/verify-electron-store-msix.mjs",
+    "release:store": "node scripts/release-store.mjs",
     "release:build:all": "node scripts/build-electron-all.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -101,9 +105,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.0.0-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.0.1-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.0.0",
+      "uninstallDisplayName": "Acedia 1.8.0.1",
       "include": "electron/installer.nsh"
     },
     "publish": [

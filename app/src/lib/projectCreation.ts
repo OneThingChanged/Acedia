@@ -5,7 +5,8 @@ import {
   type NewProjectPayload,
   type Project,
 } from "../types";
-import { defaultSessionWorkerSettings } from "./sessionWorkers";
+import { normalizeSessionWorkerSettings } from "./sessionWorkers";
+import { loadAgentDefaults } from "./agentDefaults";
 
 export function defaultAiToolId(disabledTools: readonly string[]): string {
   return (
@@ -48,7 +49,9 @@ export function buildNewProjectWithFirstAgent(
     aiLabel: tool.label,
     codexAccountId: !sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
     dangerous: payload.dangerous && !!tool.dangerousFlag,
-    workerSettings: defaultSessionWorkerSettings(tool.id),
+    useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
+    workerSettings: tool.id === "codex" ? Object.prototype.hasOwnProperty.call(payload, "workerSettings")
+      ? normalizeSessionWorkerSettings(payload.workerSettings) : loadAgentDefaults(tool.id).workerSettings : undefined,
     status: "starting",
     runtimeStatus: "starting",
     createdAt: now,

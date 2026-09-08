@@ -314,14 +314,17 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain("async function openChatHtmlDocument(agentId, projectId, rawPath)");
     expect(appScriptBody).toContain('if (kind === "html")');
     expect(appScriptBody).toContain("await openRemoteHtmlPreview(projectId, path, agentId)");
-    expect(appScriptBody).toContain('if (/\\.(?:html|htm)$/i.test(path)) return "html";');
+    const markupResponse = await fetch(`${status.url}/pwa/chat-markup.js`);
+    expect(markupResponse.status).toBe(200);
+    const markupBody = await markupResponse.text();
+    expect(markupBody).toContain('if (/\\.(?:html|htm)$/i.test(path)) return "html";');
     expect(appScriptBody).toContain("async function openRemoteHtmlPreview(projectId, relativePath, agentId");
     expect(appScriptBody).toContain("window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__");
     expect(appScriptBody).toContain('anchor.href = `/api/docs/preview?${query}`');
     expect(appScriptBody).not.toContain("function inlineRemoteHtmlAssets(html, context)");
     expect(appScriptBody).toContain('fetch(`/api/files/image?${query}`');
     expect(appScriptBody).toContain('closest(".chat-file-link")');
-    expect(appScriptBody).toContain("CHAT_FILE_PATH_RE");
+    expect(markupBody).toContain("CHAT_FILE_PATH_RE");
     expect(appScriptBody).toContain("function syncMobileAppDownload(info)");
     expect(appScriptBody).toContain("function ensureBackgroundPush(registration)");
     expect(appScriptBody).toContain("function syncVisualViewport()");
@@ -385,7 +388,15 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v59');
+    expect(workerBody).toContain('multiagent-remote-v61');
+    expect(pageBody).toContain('type="module" src="/pwa/app.js"');
+    for (const name of ["dom.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
+      const module = await fetch(`${status.url}/pwa/${name}`);
+      expect(module.status).toBe(200);
+      expect(module.headers.get("content-type")).toContain("javascript");
+      expect(module.headers.get("cache-control")).toBe("no-cache");
+      expect(workerBody).toContain(`/pwa/${name}`);
+    }
     expect(workerBody).toContain('addEventListener("push"');
     expect(workerBody).toContain('url.pathname.startsWith("/downloads/")');
     expect(workerBody).toContain('url.pathname.startsWith("/preview/")');
@@ -783,11 +794,15 @@ describe("Electron dashboard server", () => {
       headers: { "content-type": "application/json", origin: "https://attacker.invalid", "sec-fetch-site": "cross-site" },
       body: JSON.stringify({ id: "agent-1", data: "malicious\r" }),
     });
-    const submitted = await fetch(`${status.url}/api/session/submit`, {
+    const requestId = `${Date.now()}-0123456789abcdef`;
+    const submitOptions = {
       method: "POST",
       headers: { "content-type": "application/json", origin: status.url },
-      body: JSON.stringify({ id: "agent-1", message: "한 번에 전송" }),
-    });
+      body: JSON.stringify({ id: "agent-1", message: "한 번에 전송", requestId }),
+    };
+    const submitted = await fetch(`${status.url}/api/session/submit`, submitOptions);
+    const replayed = await fetch(`${status.url}/api/session/submit`, submitOptions);
+    expect(replayed.status).toBe(200);
     const blockedSubmit = await fetch(`${status.url}/api/session/submit`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: "https://attacker.invalid", "sec-fetch-site": "cross-site" },
@@ -1258,11 +1273,15 @@ describe("Electron dashboard server", () => {
     });
     expect(input.status).toBe(200);
     expect(writes).toEqual([{ id: "agent-9", data: "go\r" }]);
-    const submitted = await fetch(`${status.url}/api/session/submit`, {
+    const requestId = `${Date.now()}-0123456789abcdef`;
+    const submitOptions = {
       method: "POST",
       headers: { "content-type": "application/json", origin: status.url },
-      body: JSON.stringify({ id: "agent-9", message: "submit once" }),
-    });
+      body: JSON.stringify({ id: "agent-9", message: "submit once", requestId }),
+    };
+    const submitted = await fetch(`${status.url}/api/session/submit`, submitOptions);
+    const replayed = await fetch(`${status.url}/api/session/submit`, submitOptions);
+    expect(replayed.status).toBe(200);
     expect(submitted.status).toBe(200);
     expect(submissions).toEqual([{ id: "agent-9", message: "submit once" }]);
     const cancelled = await fetch(`${status.url}/api/session/cancel`, {

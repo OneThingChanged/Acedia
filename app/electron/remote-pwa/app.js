@@ -1,3 +1,9 @@
+import { submissionId, requestJson, LatestRequest } from "./requests.js";
+import { text, make } from "./dom.js";
+import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
+import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
+import { mergeChatPages, rawChatKey } from "./chat-history.js";
+
 const $ = (selector) => document.querySelector(selector);
 
 const ui = {
@@ -230,6 +236,9 @@ const documentListLoads = new Map();
 const documentExpandedFolders = new Map();
 const attachmentDrafts = new Map();
 const sessionDrafts = new Map();
+const composerRevisions = new Map();
+const sendingAgents = new Set();
+const pendingSubmissions = new Map();
 const sessionQueues = new Map();
 const sessionLastSendAt = new Map();
 const sessionQueueErrors = new Map();
@@ -280,17 +289,6 @@ let usageSelection = {
 let usageRequestSerial = 0;
 let usageQuickRenderKey = "";
 let usageRefreshPollTimer = 0;
-
-function text(value) {
-  return String(value ?? "").trim();
-}
-
-function make(tag, className, value) {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (value != null) element.textContent = value;
-  return element;
-}
 
 function questionDetails(agent) {
   const raw = text(agent?.hook?.interactive_question);
@@ -2774,17 +2772,16 @@ function selectUsage() {
   }
 }
 
-async function sendInput(agentId, message, { quiet = false } = {}) {
+async function sendInput(agentId, message, { quiet = false, requestId = submissionId() } = {}) {
   const text = message.trim();
   if (!agentId || !text) return false;
   try {
-    const response = await fetch("/api/session/submit", {
+    const { response, data: result } = await requestJson("/api/session/submit", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: agentId, message: text }),
+      body: JSON.stringify({ id: agentId, message: text, requestId }),
     });
-    const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
     if (text === "/clear") clearRemoteChatHistory(agentId);
     setTimeout(() => fetchState({ quiet: true }), 250);
@@ -2832,7 +2829,7 @@ function updateComposerSendState() {
       ? "세션 초기화가 끝나면 입력할 수 있습니다"
       : "비활성 세션은 채팅 모드에서 활성화할 수 있습니다"
     : "메시지 입력";
-  ui.sendButton.disabled = inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
+  ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
     ? "SSH 세션은 이미지 첨부를 지원하지 않습니다"
@@ -3131,16 +3128,19 @@ function syncComposerAgent(agent) {
   refreshComposerAc();
 }
 
-function clearAcceptedComposer(agentId) {
-  sessionDrafts.delete(agentId);
-  if (composerAgentId === agentId) {
+function clearAcceptedComposer(agentId, snapshot) {
+  const currentDraft = composerAgentId === agentId ? ui.messageInput.value : sessionDrafts.get(agentId);
+  const unchanged = !snapshot || ((composerRevisions.get(agentId) || 0) === snapshot.revision && currentDraft === snapshot.draft);
+  if (unchanged) sessionDrafts.delete(agentId);
+  if (unchanged && composerAgentId === agentId) {
     ui.messageInput.value = "";
     resizeComposerInput();
     refreshComposerAc();
   }
   const attachments = attachmentDrafts.get(agentId) || [];
-  attachments.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
-  attachmentDrafts.delete(agentId);
+  const accepted = snapshot ? snapshot.attachments : attachments;
+  accepted.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
+  attachmentDrafts.set(agentId, attachments.filter(attachment => !accepted.includes(attachment)));
   if (selectedAgent()?.id === agentId) renderComposerAttachments();
 }
 
@@ -3161,15 +3161,19 @@ function renderComposerQueue() {
   const head = make("div", "composer-queue-head", `예약 대기열 ${queue.length} · 이 세션이 준비되면 순서대로 전송`);
   const error = sessionQueueErrors.get(agent.id);
   if (error) {
-    const retry = make("button", "composer-queue-retry", "세션 다시 활성화");
+    const retry = make("button", "composer-queue-retry", error === "send-failed" ? "전송 다시 확인" : "세션 다시 활성화");
     retry.type = "button";
-    retry.addEventListener("click", () => { void requestSessionActivation(agent.id, { queuedMessage: true }); });
+    retry.addEventListener("click", () => {
+      sessionQueueErrors.delete(agent.id);
+      if (error === "send-failed") void drainQueues();
+      else void requestSessionActivation(agent.id, { queuedMessage: true });
+    });
     head.append(" · ", retry);
   }
   el.appendChild(head);
   queue.forEach((message, index) => {
     const row = make("div", "composer-queue-item");
-    row.appendChild(make("span", "composer-queue-text", message));
+    row.appendChild(make("span", "composer-queue-text", message.text));
     const cancel = make("button", "composer-queue-cancel", "×");
     cancel.type = "button";
     cancel.title = "예약 취소";
@@ -3193,7 +3197,7 @@ async function drainQueues() {
     for (const [agentId, queue] of sessionQueues) {
       if (!queue.length) { sessionQueues.delete(agentId); continue; }
       const agent = agentMap().get(agentId);
-      if (!agent) continue;
+      if (!agent || sendingAgents.has(agentId) || sessionQueueErrors.has(agentId)) continue;
       const activationDeadline = sessionActivationDeadlines.get(agentId);
       if (activationDeadline && Date.now() >= activationDeadline) {
         sessionActivationDeadlines.delete(agentId);
@@ -3205,13 +3209,15 @@ async function drainQueues() {
       const lastSendAt = sessionLastSendAt.get(agentId) || 0;
       if (Date.now() - lastSendAt < QUEUE_COOLDOWN_MS) continue;
       sessionLastSendAt.set(agentId, Date.now());
-      const sent = await sendInput(agentId, queue[0], { quiet: selectedAgent()?.id !== agentId });
+      const head = queue[0];
+      const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId });
       if (!sent) {
         sessionQueueErrors.set(agentId, "send-failed");
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
-      queue.shift();
+      const sentIndex = queue.indexOf(head);
+      if (sentIndex >= 0) queue.splice(sentIndex, 1);
       sessionQueueErrors.delete(agentId);
       if (activationDeadline) sessionActivationDeadlines.delete(agentId);
       if (!queue.length) sessionQueues.delete(agentId);
@@ -3272,40 +3278,54 @@ async function sendSelectedMessage() {
   const agent = selectedAgent();
   const message = ui.messageInput.value.trim();
   const attachments = currentAttachments();
-  if (!agent || attachments.some((attachment) => attachment.uploading)) return;
+  if (!agent || sendingAgents.has(agent.id) || attachments.some((attachment) => attachment.uploading)) return;
   const outgoing = attachmentMessage(message, attachments);
   if (!outgoing) return;
-  followAgentTerminal(agent.id);
-  const inactive = statusOf(agent) === "offline";
-  if (inactive && sessionViewMode !== "chat") {
-    showToast("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다.");
-    return;
-  }
-  if (inactive && !(await requestSessionActivation(agent.id, { queuedMessage: true }))) {
-    return;
-  }
-  const queue = queueForAgent(agent.id);
-  if (inactive) {
-    queue.push(outgoing);
-    clearAcceptedComposer(agent.id);
-    renderComposerQueue();
-    return;
-  }
-  const cooled = Date.now() - (sessionLastSendAt.get(agent.id) || 0) >= QUEUE_COOLDOWN_MS;
-  if (agentReady(agent) && !agentBusy(agent) && queue.length === 0 && cooled) {
-    ui.sendButton.disabled = true;
-    sessionLastSendAt.set(agent.id, Date.now());
-    const sent = await sendInput(agent.id, outgoing);
-    if (sent) {
-      clearAcceptedComposer(agent.id);
-      lastChatFetch = { id: null, at: 0 };
+  const snapshot = { revision: composerRevisions.get(agent.id) || 0, draft: ui.messageInput.value, attachments: attachments.slice() };
+  const previous = pendingSubmissions.get(agent.id);
+  const entry = previous?.text === outgoing ? previous : { text: outgoing, requestId: submissionId() };
+  pendingSubmissions.set(agent.id, entry);
+  sendingAgents.add(agent.id);
+  updateComposerSendState();
+  try {
+    followAgentTerminal(agent.id);
+    const inactive = statusOf(agent) === "offline";
+    if (inactive && sessionViewMode !== "chat") {
+      showToast("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다.");
+      return;
     }
+    if (inactive && !(await requestSessionActivation(agent.id, { queuedMessage: true }))) {
+      return;
+    }
+    const queue = queueForAgent(agent.id);
+    if (inactive) {
+      queue.push(entry);
+      pendingSubmissions.delete(agent.id);
+      clearAcceptedComposer(agent.id, snapshot);
+      renderComposerQueue();
+      return;
+    }
+    const cooled = Date.now() - (sessionLastSendAt.get(agent.id) || 0) >= QUEUE_COOLDOWN_MS;
+    if (agentReady(agent) && !agentBusy(agent) && queue.length === 0 && cooled) {
+      ui.sendButton.disabled = true;
+      sessionLastSendAt.set(agent.id, Date.now());
+      const sent = await sendInput(agent.id, outgoing, { requestId: entry.requestId });
+      if (sent) {
+        pendingSubmissions.delete(agent.id);
+        clearAcceptedComposer(agent.id, snapshot);
+        lastChatFetch = { id: null, at: 0 };
+      }
+      updateComposerSendState();
+    } else {
+      queue.push(entry);
+      pendingSubmissions.delete(agent.id);
+      clearAcceptedComposer(agent.id, snapshot);
+      renderComposerQueue();
+      showToast("작업 중 — 대기열에 예약했습니다.");
+    }
+  } finally {
+    sendingAgents.delete(agent.id);
     updateComposerSendState();
-  } else {
-    queue.push(outgoing);
-    clearAcceptedComposer(agent.id);
-    renderComposerQueue();
-    showToast("작업 중 — 대기열에 예약했습니다.");
   }
 }
 
@@ -3998,183 +4018,6 @@ let sessionViewMode = ["chat", "term", "browser"].includes(storedSessionViewMode
   : "chat";
 let chatRequestSeq = 0;
 
-function escapeHtml(text) {
-  return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:md|markdown|html?|png|jpe?g|gif|webp|bmp|svg|ico)(?::\d+(?::\d+)?)?/gi;
-
-function cleanChatFilePath(value) {
-  let result = String(value ?? "").trim()
-    .replace(/^[<`"']+/, "")
-    .replace(/[>`"']+$/, "")
-    .replace(/(:\d+)(?::\d+)?$/, "")
-    .split(/[?#]/)[0];
-  try { result = decodeURIComponent(result); } catch {}
-  result = result.trim();
-  return /^\/[A-Za-z]:[\\/]/.test(result) ? result.slice(1) : result;
-}
-
-function isAbsoluteChatFilePath(value) {
-  return /^[A-Za-z]:[\\/]/.test(cleanChatFilePath(value));
-}
-
-function chatFileKind(value) {
-  const path = cleanChatFilePath(value);
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) return null;
-  if (/\.(?:md|markdown)$/i.test(path)) return "markdown";
-  if (/\.(?:html|htm)$/i.test(path)) return "html";
-  if (/\.(?:png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(path)) return "image";
-  return null;
-}
-
-function chatFileMarkup(rawPath, label, agent, { code = false } = {}) {
-  const kind = chatFileKind(rawPath);
-  const agentId = text(agent?.id);
-  const projectId = text(agent?.projectId);
-  const path = cleanChatFilePath(rawPath);
-  const safeLabel = escapeHtml(label || path);
-  if (!kind || !agentId || !projectId || !path) return code ? `<code>${safeLabel}</code>` : safeLabel;
-  return `<button type="button" class="chat-file-link${code ? " chat-file-code" : ""}" data-chat-file-agent="${escapeHtml(agentId)}" data-chat-file-project="${escapeHtml(projectId)}" data-chat-file-path="${escapeHtml(path)}" data-chat-file-kind="${kind}" title="${escapeHtml(path)}">${safeLabel}</button>`;
-}
-
-function inlineMd(text, agent = null) {
-  const tokens = [];
-  const stash = (html) => {
-    const token = `\u0000CHAT${tokens.length}\u0000`;
-    tokens.push(html);
-    return token;
-  };
-  let source = String(text ?? "");
-  source = source.replace(/`([^`\n]+)`/g, (_match, code) => (
-    chatFileKind(code)
-      ? stash(chatFileMarkup(code, code, agent, { code: true }))
-      : stash(`<code>${escapeHtml(code)}</code>`)
-  ));
-  source = source.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, rawTarget) => {
-    const target = String(rawTarget).trim().replace(/^<|>$/g, "");
-    if (/^https?:\/\//i.test(target)) {
-      return stash(`<a href="${escapeHtml(target)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
-    }
-    return chatFileKind(target) ? stash(chatFileMarkup(target, label, agent)) : match;
-  });
-  source = source.replace(/https?:\/\/[^\s<]+/g, (url) => (
-    stash(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`)
-  ));
-  source = source.replace(CHAT_FILE_PATH_RE, (path) => stash(chatFileMarkup(path, path, agent, { code: true })));
-  let out = escapeHtml(source);
-  out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
-  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  out = out.replace(/\u0000CHAT(\d+)\u0000/g, (_match, index) => tokens[Number(index)] || "");
-  return out;
-}
-function mdToHtml(text, agent = null) {
-  const lines = String(text).split(/\r?\n/);
-  let html = "";
-  let inList = false;
-  const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,4})\s+(.*)$/);
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    if (heading) { closeList(); html += `<h4>${inlineMd(heading[2], agent)}</h4>`; }
-    else if (bullet) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inlineMd(bullet[1], agent)}</li>`; }
-    else if (!line.trim()) { closeList(); }
-    else { closeList(); html += `<p>${inlineMd(line, agent)}</p>`; }
-  }
-  closeList();
-  return html;
-}
-
-function renderChatUser(text, agent) {
-  const node = make("div", "chat-user");
-  node.innerHTML = inlineMd(text, agent);
-  return node;
-}
-
-function toolLabel(tool) {
-  let arg = tool.summary || "";
-  if (!arg) {
-    const input = tool.input;
-    if (typeof input === "string") arg = input;
-    else if (input && typeof input === "object") {
-      arg = input.command || input.cmd || input.file_path || input.path || input.pattern || JSON.stringify(input);
-    }
-  }
-  return { name: tool.name || "tool", arg: String(arg).replace(/\s+/g, " ").slice(0, 110) };
-}
-
-// Render a diff (from an edit tool call or diff-like output) as colored lines.
-function renderDiff(diff) {
-  const box = make("div", "chat-diff");
-  for (const line of diff) {
-    const row = make("div", `chat-diff-line ${line.type}`);
-    const gutter = make("span", "chat-diff-gutter", line.type === "add" ? "+" : line.type === "del" ? "-" : " ");
-    row.append(gutter, document.createTextNode(line.text || " "));
-    box.appendChild(row);
-  }
-  return box;
-}
-
-function renderAssistantTurn(run, agent = null) {
-  const turn = make("div", "chat-turn");
-  const role = make("div", "chat-role");
-  role.append(make("span", "av", "✦"), document.createTextNode("Assistant"));
-  turn.appendChild(role);
-
-  const tools = [];
-  let pendingCall = null;
-  const bodyNodes = [];
-  for (const block of run) {
-    if (block.kind === "tool-call") {
-      pendingCall = { name: block.name, input: block.input, summary: block.summary, diff: block.diff || null, output: null, isError: false };
-      tools.push(pendingCall);
-    } else if (block.kind === "tool-result") {
-      if (pendingCall && pendingCall.output === null) {
-        pendingCall.output = block.output; pendingCall.isError = block.isError;
-        if (!pendingCall.diff && block.diff) pendingCall.diff = block.diff;
-        pendingCall = null;
-      } else {
-        tools.push({ name: "result", input: null, output: block.output, isError: block.isError, diff: block.diff || null });
-      }
-    } else if (block.kind === "reasoning") {
-      const d = make("details", "chat-work");
-      d.append(make("summary", "", "추론"));
-      const wrap = make("div", "chat-tools");
-      const pre = make("pre", "", block.text);
-      wrap.appendChild(pre);
-      d.appendChild(wrap);
-      bodyNodes.push(d);
-    } else if (block.kind === "text") {
-      const md = make("div", "chat-md");
-      md.innerHTML = mdToHtml(block.text, agent);
-      bodyNodes.push(md);
-    } else if (block.kind === "image") {
-      bodyNodes.push(make("div", "chat-md", "🖼 이미지"));
-    }
-  }
-
-  if (tools.length) {
-    const group = make("details", "chat-work");
-    group.append(make("summary", "", `작업 · 툴 ${tools.length}개`));
-    const list = make("div", "chat-tools");
-    for (const tool of tools) {
-      const label = toolLabel(tool);
-      const item = make("details", "chat-tool");
-      const summary = make("summary", "");
-      summary.append(make("span", "k", "$"), make("span", "cmd", label.arg ? `${label.name} · ${label.arg}` : label.name));
-      item.appendChild(summary);
-      if (tool.diff) item.appendChild(renderDiff(tool.diff));
-      if (tool.output !== undefined && tool.output !== null || !tool.diff) {
-        item.appendChild(make("pre", tool.isError ? "err" : "", tool.output ?? "(출력 없음)"));
-      }
-      list.appendChild(item);
-    }
-    group.appendChild(list);
-    turn.appendChild(group);
-  }
-  for (const node of bodyNodes) turn.appendChild(node);
-  return turn;
-}
-
 const CHAT_PAGE = 10;
 let chatVisible = CHAT_PAGE;
 let lastChatData = null;
@@ -4186,54 +4029,6 @@ let chatOlderLoading = false;
 const chatHistoryStore = new Map();
 const rawChatKeys = new Map();
 const pendingChatClears = new Map();
-
-function chatBlockKey(block) {
-  return JSON.stringify(block);
-}
-
-function mergeChatHistory(previous, incoming) {
-  if (!incoming.length) return previous;
-  if (!previous.length) return incoming.slice();
-  const previousOffset = Math.max(0, previous.length - incoming.length);
-  const previousKeys = previous.slice(previousOffset).map(chatBlockKey);
-  const incomingKeys = incoming.map(chatBlockKey);
-  const maxOverlap = Math.min(previousKeys.length, incomingKeys.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    const previousStart = previousKeys.length - overlap;
-    let matches = true;
-    for (let index = 0; index < overlap; index += 1) {
-      if (previousKeys[previousStart + index] !== incomingKeys[index]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return previous.concat(incoming.slice(overlap));
-  }
-  return previous.concat(incoming);
-}
-
-function mergeChatPages(previous, incoming, { prepend = false } = {}) {
-  if (!previous.length) return incoming.slice();
-  if (!incoming.length) return previous.slice();
-  const sequenced = [...previous, ...incoming]
-    .every((block) => Number.isSafeInteger(Number(block?.sequence)));
-  if (sequenced) {
-    const bySequence = new Map();
-    for (const block of (prepend ? [...incoming, ...previous] : [...previous, ...incoming])) {
-      bySequence.set(Number(block.sequence), block);
-    }
-    return [...bySequence.values()]
-      .sort((left, right) => Number(left.sequence) - Number(right.sequence));
-  }
-  return prepend
-    ? mergeChatHistory(incoming, previous)
-    : mergeChatHistory(previous, incoming);
-}
-
-function rawChatKey(blocks) {
-  if (!blocks.length) return "0";
-  return `${blocks.length}|${chatBlockKey(blocks[0])}|${chatBlockKey(blocks[blocks.length - 1])}`;
-}
 
 function clearRemoteChatHistory(agentId) {
   pendingChatClears.set(agentId, rawChatKeys.get(agentId) || "0");
@@ -4659,41 +4454,42 @@ function syncMobileAppDownload(info) {
   );
 }
 
+const stateRequests = new LatestRequest();
 async function fetchState({ quiet = false } = {}) {
-  try {
-    const response = await fetch("/api/state", { cache: "no-store", credentials: "same-origin" });
-    if (response.status === 401 || response.status === 403) {
-      location.reload();
-      return;
-    }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const state = await response.json();
-    remoteState = {
-      ...state,
-      agents: Array.isArray(state.agents) ? state.agents : [],
-      view: state.view && typeof state.view === "object"
-        ? {
-            ...state.view,
-            projects: Array.isArray(state.view.projects) ? state.view.projects : [],
-            agents: Array.isArray(state.view.agents) ? state.view.agents : [],
-            groups: Array.isArray(state.view.groups) ? state.view.groups : [],
-          }
-        : { projects: [], agents: [], groups: [] },
-    };
-    syncMobileAppDownload(remoteState.mobileApp);
-    validateSelection();
-    processActivityNotifications(allAgents());
-    renderSummary();
-    renderNavigation();
-    renderSelection();
-    updateUrl();
-    setConnection("online", "연결됨");
-    ui.updated.textContent = `마지막 동기화 ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
-  } catch (error) {
-    setConnection("offline", "연결 끊김");
-    ui.updated.textContent = navigator.onLine ? "PC에 연결할 수 없습니다" : "네트워크가 오프라인입니다";
-    if (!quiet) showToast("Remote 서버에 연결할 수 없습니다.");
-  }
+  await stateRequests.run(
+    () => requestJson("/api/state", { cache: "no-store", credentials: "same-origin" }),
+    ({ response, data: state }) => {
+      if (response.status === 401 || response.status === 403) {
+        location.reload();
+        return;
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      remoteState = {
+        ...state,
+        agents: Array.isArray(state.agents) ? state.agents : [],
+        view: state.view && typeof state.view === "object"
+          ? {
+              ...state.view,
+              projects: Array.isArray(state.view.projects) ? state.view.projects : [],
+              agents: Array.isArray(state.view.agents) ? state.view.agents : [],
+              groups: Array.isArray(state.view.groups) ? state.view.groups : [],
+            }
+          : { projects: [], agents: [], groups: [] },
+      };
+      syncMobileAppDownload(remoteState.mobileApp);
+      validateSelection();
+      processActivityNotifications(allAgents());
+      renderSummary();
+      renderNavigation();
+      renderSelection();
+      updateUrl();
+      setConnection("online", "연결됨");
+      ui.updated.textContent = `마지막 동기화 ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    }, (error) => {
+      setConnection("offline", "연결 끊김");
+      ui.updated.textContent = navigator.onLine ? "PC에 연결할 수 없습니다" : "네트워크가 오프라인입니다";
+      if (!quiet) showToast("Remote 서버에 연결할 수 없습니다.");
+  });
 }
 
 function schedulePoll(delay = 1600) {
@@ -5324,6 +5120,7 @@ function acceptComposerAc(i) {
   ui.messageInput.focus();
 }
 ui.messageInput.addEventListener("input", () => {
+  if (composerAgentId) composerRevisions.set(composerAgentId, (composerRevisions.get(composerAgentId) || 0) + 1);
   if (composerAgentId) sessionDrafts.set(composerAgentId, ui.messageInput.value);
   resizeComposerInput();
   refreshComposerAc();

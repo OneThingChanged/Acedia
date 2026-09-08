@@ -61,6 +61,15 @@ const tools = [
     inputSchema: { type: "object", properties: { tabId: { type: "string" }, selector: { type: "string" }, text: { type: "string" } }, required: ["selector", "text"], additionalProperties: false },
   },
   {
+    name: "browser_upload_files",
+    description: "Select explicitly authorized local files in a unique input[type=file] using its CSS selector, including hidden inputs. Paths must be absolute on the Acedia host PC. Supports 1–20 files when the input allows multiple. Selection may immediately transmit files to the site: use only files authorized by the user for this destination. Do not click the OS file chooser first. Verify upload completion with browser_snapshot/browser_wait_for; selection is not server acceptance. Top-level document only; no directories or iframe inputs.",
+    inputSchema: {
+      type: "object",
+      properties: { tabId: { type: "string" }, selector: { type: "string", minLength: 1, maxLength: 500 }, files: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 20 } },
+      required: ["selector", "files"], additionalProperties: false,
+    },
+  },
+  {
     name: "browser_get_control",
     description: "Read the current sanitized state of one browser form control. Prefer a targetId from browser_snapshot.",
     inputSchema: { type: "object", properties: { tabId: { type: "string" }, target: targetSchema, selector: { type: "string" } }, anyOf: [{ required: ["target"] }, { required: ["selector"] }], additionalProperties: false },
@@ -173,7 +182,7 @@ async function callBrowser(action, body = {}, method = "POST") {
   const text = await response.text();
   let payload;
   try { payload = text ? JSON.parse(text) : {}; } catch { payload = { raw: text }; }
-  if (!response.ok) throw new Error(payload?.error || `browser request failed (${response.status})`);
+  if (!response.ok && !(action === "upload-files" && payload?.result)) throw new Error(payload?.error || `browser request failed (${response.status})`);
   return payload;
 }
 
@@ -187,6 +196,7 @@ async function callTool(name, args) {
     case "browser_screenshot": return callBrowser("screenshot", body);
     case "browser_click": return callBrowser("click", body);
     case "browser_type": return callBrowser("type", body);
+    case "browser_upload_files": return callBrowser("upload-files", body);
     case "browser_get_control": return callBrowser("get-control", body);
     case "browser_form_state": return callBrowser("form-state", body);
     case "browser_set_checked": return callBrowser("set-checked", body);
@@ -236,6 +246,7 @@ async function handle(message) {
         result: {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           structuredContent: result,
+          ...(result?.ok === false ? { isError: true } : {}),
         },
       });
     } catch (error) {

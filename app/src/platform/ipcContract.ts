@@ -12,6 +12,7 @@ export type RuntimeCommand =
   | "update_desktop_pet" | "desktop_pet_snapshot" | "reset_desktop_pet_position"
   | "show_open_dialog" | "open_external_url" | "open_store_product" | "open_local_path"
   | "open_folder_path" | "reveal_local_path" | "list_markdown_files"
+  | "document_browser_activity_list" | "document_browser_activity_action"
   | "document_browser_open" | "document_browser_list" | "document_browser_attach"
   | "document_browser_hub_close" | "document_browser_ready" | "document_browser_bounds"
   | "document_browser_visibility"
@@ -374,6 +375,14 @@ export type RuntimeCommandContract = {
     };
     result: { browserId: string };
   };
+  document_browser_activity_list: {
+    args: Record<string, never>;
+    result: BrowserActivitySnapshot;
+  };
+  document_browser_activity_action: {
+    args: { action: "clear-history" | "clear-downloads" | "remove-history" | "cancel" | "show-folder"; id?: string };
+    result: null;
+  };
   document_browser_list: {
     args: Record<string, never>;
     result: DocumentBrowserCatalog;
@@ -576,3 +585,9 @@ export type RuntimeCommandArgs<C extends TypedRuntimeCommand> =
   RuntimeCommandContract[C]["args"];
 export type RuntimeCommandResult<C extends TypedRuntimeCommand> =
   RuntimeCommandContract[C]["result"];
+
+export type BrowserActivitySnapshot = {
+  history: Array<{ id: string; title: string; url: string; visitedAt: number }>;
+  downloads: Array<{ id: string; filename: string; url: string; path: string; state: string; active: boolean; receivedBytes: number; totalBytes: number; startedAt: number }>;
+  error: string | null;
+};

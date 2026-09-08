@@ -15,6 +15,7 @@ export class CodexAccounts {
     this.accounts = [];
     this.login = null;
     this.results = new Map();
+    this.failures = new Map();
     try {
       if (fs.existsSync(this.registry)) {
         const accounts = JSON.parse(fs.readFileSync(this.registry, "utf8"));
@@ -31,7 +32,11 @@ export class CodexAccounts {
   home(id) {
     if (!id || id === "default") return this.baseEnv.CODEX_HOME || path.join(os.homedir(), ".codex");
     if (!this.accounts.some((a) => a.id === id)) throw new Error("Codex 계정을 찾을 수 없습니다.");
-    return path.join(this.root, id, ".codex");
+    // Store/MSIX redirects AppData inside the package. External Codex cannot
+    // resolve the logical AppData path. Native realpath uses the Windows file
+    // handle to return the physical LocalCache path (regular realpath does not).
+    const logicalHome = path.join(this.root, id, ".codex");
+    return fs.existsSync(logicalHome) ? fs.realpathSync.native(logicalHome) : logicalHome;
   }
 
   roots() {
@@ -64,6 +69,7 @@ export class CodexAccounts {
       ...a,
       state: this.login?.id === a.id ? "pending" : this.results.get(a.id) ||
         (fs.existsSync(path.join(this.home(a.id), "auth.json")) ? "saved" : "empty"),
+      ...(this.failures.has(a.id) ? { failureReason: this.failures.get(a.id) } : {}),
     }))];
   }
 
@@ -84,22 +90,33 @@ export class CodexAccounts {
     if (!id || id === "default") throw new Error("추가 계정을 선택하세요.");
     this.home(id);
     if (this.login) throw new Error("진행 중인 로그인을 완료하거나 취소하세요.");
-    const job = { id, process: null, timer: null };
+    const job = { id, process: null, timer: null, outputTail: "", failureReason: null };
     this.login = job;
     this.results.delete(id);
+    this.failures.delete(id);
     try {
+      job.timer = setTimeout(() => this.cancelLogin(), 5 * 60_000);
+      job.timer.unref?.();
       job.process = this.startLogin(this.environment(id));
-      // OAuth output can include authentication URLs. Do not forward or persist it.
-      job.process.onData(() => {});
+      // Retain only a bounded transient tail to classify a known setup failure.
+      // Never forward/persist OAuth URLs, tokens or arbitrary CLI output.
+      job.process.onData((chunk) => {
+        if (this.login !== job) return;
+        job.outputTail = (job.outputTail + String(chunk)).slice(-4096);
+        if (/CODEX_HOME[\s\S]*?(?:does not exist|not a directory)/i.test(job.outputTail)) job.failureReason = "home_unavailable";
+      });
       job.process.onExit(({ exitCode }) => {
         if (this.login !== job) return;
         clearTimeout(job.timer);
         this.login = null;
-        this.results.set(id, exitCode === 0 && fs.existsSync(path.join(this.home(id), "auth.json")) ? "saved" : "failed");
+        const saved = exitCode === 0 && fs.existsSync(path.join(this.home(id), "auth.json"));
+        this.results.set(id, saved ? "saved" : "failed");
+        if (!saved) this.failures.set(id, job.failureReason || (exitCode === 0 ? "credentials_not_saved" : "login_failed"));
+        job.outputTail = "";
       });
-      job.timer = setTimeout(() => this.cancelLogin(), 5 * 60_000);
-      job.timer.unref?.();
     } catch (error) {
+      clearTimeout(job.timer);
+      job.outputTail = "";
       this.login = null;
       this.results.set(id, "failed");
       throw error;
@@ -112,6 +129,7 @@ export class CodexAccounts {
     if (!job) return;
     this.login = null;
     clearTimeout(job.timer);
+    job.outputTail = "";
     try { job.process?.kill(); } catch { /* login process already exited */ }
     this.results.set(job.id, "cancelled");
   }

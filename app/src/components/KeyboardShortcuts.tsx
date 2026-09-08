@@ -16,7 +16,7 @@ export function KeyboardShortcuts({
   shortcuts: CommandShortcuts;
   onChange: (shortcuts: CommandShortcuts) => void;
 }) {
-  const { language, text } = useAppLanguage();
+  const { text } = useAppLanguage();
   const [recording, setRecording] = useState<CommandId | null>(null);
   const conflicts = useMemo(() => conflictingShortcutIds(shortcuts), [shortcuts]);
 
@@ -25,8 +25,8 @@ export function KeyboardShortcuts({
       {COMMAND_DEFINITIONS.map((command) => (
         <div className="shortcut-row" key={command.id}>
           <span className="shortcut-copy">
-            <strong>{language === "ko" ? command.title : command.titleEn}</strong>
-            <small>{language === "ko" ? command.description : command.descriptionEn}</small>
+            <strong>{text(command.title, command.titleEn)}</strong>
+            <small>{text(command.description, command.descriptionEn)}</small>
           </span>
           <button
             type="button"

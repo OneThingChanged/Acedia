@@ -1,26 +1,9 @@
-import fs from "node:fs";
-import vm from "node:vm";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-
-function loadMergeChatHistory() {
-  const source = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.url)), "utf8");
-  const start = source.indexOf("function chatBlockKey");
-  const end = source.indexOf("function rawChatKey", start);
-  if (start < 0 || end < 0) throw new Error("Remote chat history helpers were not found.");
-  const context = {};
-  context.globalThis = context;
-  vm.runInNewContext(
-    `${source.slice(start, end)}\nglobalThis.mergeChatHistory = mergeChatHistory;globalThis.mergeChatPages = mergeChatPages;`,
-    context,
-  );
-  return { mergeChatHistory: context.mergeChatHistory, mergeChatPages: context.mergeChatPages };
-}
+import { mergeChatHistory, mergeChatPages } from "./chat-history.js";
 
 const block = (text) => ({ role: "assistant", kind: "text", text });
 
 describe("Remote chat history", () => {
-  const { mergeChatHistory, mergeChatPages } = loadMergeChatHistory();
 
   it("retains the prefix that moved out of the server transcript window", () => {
     const previous = [block("a"), block("b"), block("c"), block("d")];

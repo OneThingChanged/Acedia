@@ -1,3 +1,4 @@
+import { APP_LOCALES, translateText, type AppLocale } from "./locales/translate";
 import {
   createContext,
   useCallback,
@@ -8,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
-export type AppLanguagePreference = "system" | "ko" | "en";
+export type AppLanguagePreference = "system" | AppLocale;
 export type ResolvedAppLanguage = Exclude<AppLanguagePreference, "system">;
 
 export const LS_APP_LANGUAGE = "multiagent.appLanguage.v1";
@@ -16,8 +17,8 @@ export const LS_APP_LANGUAGE = "multiagent.appLanguage.v1";
 export function normalizeAppLanguagePreference(
   value: unknown,
 ): AppLanguagePreference {
-  return value === "ko" || value === "en" || value === "system"
-    ? value
+  return value === "system" || APP_LOCALES.includes(value as AppLocale)
+    ? value as AppLanguagePreference
     : "system";
 }
 
@@ -26,7 +27,17 @@ export function resolveAppLanguage(
   locales: readonly string[] = [],
 ): ResolvedAppLanguage {
   if (preference !== "system") return preference;
-  return locales.some((locale) => /^ko(?:-|$)/i.test(locale)) ? "ko" : "en";
+  for (const raw of locales) {
+    const locale = raw.replace(/_/g, "-").toLowerCase();
+    if (/^zh(?:-|$)/.test(locale)) {
+      if (locale.includes("-hant")) return "zh-TW";
+      if (locale.includes("-hans")) return "zh-CN";
+      return /-(tw|hk|mo)(?:-|$)/.test(locale) ? "zh-TW" : "zh-CN";
+    }
+    const supported = APP_LOCALES.find(candidate => candidate === locale.split("-")[0]);
+    if (supported) return supported;
+  }
+  return "en";
 }
 
 export function loadAppLanguagePreference(): AppLanguagePreference {
@@ -96,7 +107,7 @@ export function AppLanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = language === "ko" ? "ko-KR" : "en-US";
+    document.documentElement.lang = language;
   }, [language]);
 
   const value = useMemo<AppLanguageContextValue>(
@@ -104,7 +115,7 @@ export function AppLanguageProvider({ children }: { children: ReactNode }) {
       preference,
       language,
       setPreference,
-      text: (korean, english) => (language === "ko" ? korean : english),
+      text: (korean, english) => translateText(language, korean, english),
     }),
     [language, preference, setPreference],
   );

@@ -6389,6 +6389,38 @@ body.files-resizing .files-resizer::after {
   color: var(--app-danger);
 }
 
+.agent-settings-tabs { min-width: 0; max-width: 760px; }
+.agent-settings-tablist { display: flex; gap: 24px; position: sticky; top: -18px; z-index: 2; background: var(--app-panel); border-bottom: 1px solid var(--app-border); margin: -18px -20px 22px; padding: 0 20px; overflow-x: auto; }
+.agent-settings-tablist button { display: flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 16px 0 13px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--app-muted); cursor: pointer; font-size: 13px; }
+.agent-settings-tablist button[aria-selected="true"] { color: var(--app-text); border-bottom-color: var(--app-accent, #64adff); }
+.agent-settings-tablist button:focus-visible { outline: 2px solid var(--app-accent, #64adff); outline-offset: -3px; }
+.agent-tab-dot { width: 7px; height: 7px; border-radius: 50%; }
+.agent-settings-toolhead { display: flex; align-items: center; gap: 12px; margin: 0 0 22px; }
+.agent-settings-toolhead h3 { font-size: 17px; margin: 0; }
+.agent-settings-toolhead p { font-size: 12px; color: var(--app-muted); margin: 5px 0 0; }
+.agent-settings-toolhead .agent-tool-avail { margin-left: auto; }
+.agent-settings-toolicon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--app-border); border-radius: 10px; font-size: 23px; flex-shrink: 0; }
+.agent-settings-card { background: var(--app-input-bg, var(--app-panel)); border: 1px solid var(--app-border); border-radius: 8px; overflow: hidden; }
+.agent-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 16px; min-width: 0; }
+.agent-settings-row + .agent-settings-row { border-top: 1px solid var(--app-border); }
+.agent-settings-row input[role="switch"] { appearance: none; width: 33px; min-width: 33px; height: 19px; border: 0; border-radius: 20px; background: var(--app-muted); position: relative; cursor: pointer; }
+.agent-settings-row input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.agent-settings-row input[role="switch"]:checked { background: var(--app-accent, #498bd0); }
+.agent-settings-row input[role="switch"]:checked::after { transform: translateX(14px); }
+.agent-settings-row input:focus-visible { outline: 2px solid var(--app-accent, #64adff); outline-offset: 3px; }
+.agent-settings-sectionhead { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 12px; }
+.agent-settings-sectionhead h4 { margin: 0; font-size: 13px; }
+.agent-account-count { font-weight: normal; font-size: 11px; color: var(--app-muted); margin-left: 7px; }
+.agent-account-identity { display: flex; gap: 12px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
+.agent-account-avatar { width: 31px; height: 31px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--app-button-bg); color: var(--app-muted); font-size: 12px; }
+.agent-account-badge { display: inline-block; margin-left: 8px; padding: 2px 5px; font-size: 10px; font-weight: normal; border: 1px solid var(--app-border); border-radius: 4px; color: var(--app-muted); }
+.agent-account-add input { flex: 1; min-width: 0; padding: 8px 10px; color: var(--app-text); background: var(--app-input-bg); border: 1px solid var(--app-border); border-radius: 5px; font-size: 12px; }
+.agent-settings-row button { flex-shrink: 0; }
+.agent-defaults .field, .agent-defaults .session-worker-fields { width: 100%; margin: 0; }
+.agent-defaults summary { cursor: pointer; padding: 14px 16px; font-size: 13px; border-top: 1px solid var(--app-border); }
+.agent-settings-info { border-left: 2px solid var(--app-accent, #64adff); padding: 12px 14px; background: var(--app-button-bg); color: var(--app-muted); font-size: 12px; line-height: 1.8; }
+.codex-account-management > .check-hint { display: block; margin: 0 0 12px; line-height: 1.8; }
+@media (max-width: 700px) { .agent-settings-tablist { gap: 18px; } .agent-settings-row { padding: 12px; gap: 10px; } .agent-settings-toolhead { flex-wrap: wrap; } .agent-account-identity { gap: 8px; } }
 .app-settings-section {
   margin-bottom: 14px;
 }

@@ -1,3 +1,4 @@
+import { BrowserActivityPanel } from "./BrowserActivityPanel";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
   areNativeViewsOccluded,
@@ -68,7 +69,8 @@ export function EmbeddedDocumentBrowser({
   });
   const [address, setAddress] = useState(documentPath);
   const [nativeViewsOccluded, setNativeViewsOccluded] = useState(areNativeViewsOccluded);
-  const browserVisible = active && !nativeViewsOccluded;
+  const [activity, setActivity] = useState<"history" | "downloads" | null>(null);
+  const browserVisible = active && !nativeViewsOccluded && !activity;
 
   useEffect(
     () => subscribeNativeViewOcclusion(setNativeViewsOccluded),
@@ -254,6 +256,8 @@ export function EmbeddedDocumentBrowser({
           )}
         </form>
         <div className="document-browser-actions">
+          <button className="document-browser-btn" onClick={() => setActivity(value => value === "downloads" ? null : "downloads")}>{text("다운로드", "Downloads")}</button>
+          <button className="document-browser-btn" onClick={() => setActivity(value => value === "history" ? null : "history")}>{text("방문 기록", "History")}</button>
           <button
             className={`document-browser-btn${snapshot.inspectionMode && !snapshot.inspectionSendToSession ? " is-active" : ""}`}
             onClick={() => toggleInspection(false)}
@@ -302,7 +306,8 @@ export function EmbeddedDocumentBrowser({
           )}
         </div>
       )}
-      <div ref={hostRef} className="embedded-document-browser-host" aria-label={text("HTML 문서 브라우저", "HTML document browser")} />
+      {activity && <BrowserActivityPanel key={activity} mode={activity} onClose={() => setActivity(null)} onNavigate={url => invoke("document_browser_navigate", { browserId, url }).then(() => {})} />}
+      <div style={activity ? { display: "none" } : undefined} ref={hostRef} className="embedded-document-browser-host" aria-label={text("HTML 문서 브라우저", "HTML document browser")} />
     </div>
   );
 }

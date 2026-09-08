@@ -13,12 +13,12 @@ describe("NewProjectModal", () => {
       />
     );
 
-    expect(html).toContain("First session tool");
-    expect(html).toContain("Select a tool");
+    expect(html).toContain("첫 세션 도구");
+    expect(html).toContain("도구 선택");
     expect(html).toContain('<option value="" disabled="" selected="">');
     expect(html).toContain('value="claude"');
     expect(html).toContain('value="codex"');
-    expect(html).not.toContain("Dangerous mode");
+    expect(html).not.toContain("Dangerous 모드");
     expect(html).toContain("<button class=\"btn-primary\" disabled=\"\">");
   });
 

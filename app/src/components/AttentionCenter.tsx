@@ -18,6 +18,11 @@ const KIND_LABEL_EN: Record<AttentionKind, string> = {
 
 function relativeTime(timestamp: number, language: ResolvedAppLanguage) {
   const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (language !== "ko" && language !== "en") {
+    const value = seconds < 60 ? 0 : seconds < 3600 ? Math.floor(seconds / 60) : seconds < 86400 ? Math.floor(seconds / 3600) : Math.floor(seconds / 86400);
+    const unit = seconds < 60 ? "second" : seconds < 3600 ? "minute" : seconds < 86400 ? "hour" : "day";
+    return new Intl.RelativeTimeFormat(language, { numeric: "auto" }).format(-value, unit);
+  }
   if (seconds < 60) return language === "ko" ? "방금" : "Just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return language === "ko" ? `${minutes}분 전` : `${minutes}m ago`;
@@ -86,7 +91,7 @@ export function AttentionCenter({
               onClick={() => onSelect(item)}
             >
               <span className={`attention-kind attention-kind-${item.kind}`}>
-                {language === "ko" ? KIND_LABEL[item.kind] : KIND_LABEL_EN[item.kind]}
+                {text(KIND_LABEL[item.kind], KIND_LABEL_EN[item.kind])}
               </span>
               <span className="attention-copy">
                 <strong>{item.title}</strong>

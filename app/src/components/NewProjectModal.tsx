@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { loadAgentDefaults } from "../lib/agentDefaults";
+import { SessionWorkerFields } from "./SessionWorkerFields";
 import { CodexAccountSelect } from "./CodexAccounts";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { openDialog } from "../platform/plugins";
@@ -33,7 +35,9 @@ export function NewProjectModal({
   const [name, setName] = useState(defaultName);
   const [folder, setFolder] = useState("");
   const [aiToolId, setAiToolId] = useState("");
-  const [codexAccountId, setCodexAccountId] = useState("default");
+  const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
+  const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
+  const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
   const [dangerous, setDangerous] = useState(false);
   const [remote, setRemote] = useState(false);
   const [sshHosts] = useState(() => loadSshHosts());
@@ -75,6 +79,8 @@ export function NewProjectModal({
         folder: "",
         aiToolId,
         dangerous: dangerous && supportsDangerous,
+        useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
+        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
         sshHostId,
         remoteFolder: remoteFolder.trim(),
         projectFolderId: projectFolderId || undefined,
@@ -86,6 +92,8 @@ export function NewProjectModal({
         aiToolId,
         codexAccountId: aiToolId === "codex" ? codexAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
+        useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
+        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
         projectFolderId: projectFolderId || undefined,
       });
     }
@@ -94,10 +102,10 @@ export function NewProjectModal({
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2 className="modal-title">New Project</h2>
+        <h2 className="modal-title">{text("새 프로젝트", "New Project")}</h2>
 
         <label className="field">
-          <span className="field-label">Project name</span>
+          <span className="field-label">{text("프로젝트 이름", "Project name")}</span>
           <input
             autoFocus
             value={name}
@@ -111,19 +119,22 @@ export function NewProjectModal({
         </label>
 
         <label className="field">
-          <span className="field-label">First session tool</span>
+          <span className="field-label">{text("첫 세션 도구", "First session tool")}</span>
           <select
             value={aiToolId}
             onChange={(event) => {
               const nextToolId = event.target.value;
               setAiToolId(nextToolId);
+              const defaults = loadAgentDefaults(nextToolId);
+              setDangerous(defaults.dangerous);
+              if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
               if (!toolForId(nextToolId).dangerousFlag) {
                 setDangerous(false);
               }
             }}
           >
             <option value="" disabled>
-              Select a tool…
+              {text("도구 선택…", "Select a tool…")}
             </option>
             {visibleTools.map((tool) => (
               <option key={tool.id} value={tool.id}>
@@ -138,6 +149,10 @@ export function NewProjectModal({
 
         {aiToolId === "codex" && !remote && <CodexAccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
 
+        {aiToolId === "codex" && <>
+          <label className="field-check"><input type="checkbox" checked={useAltScreen} onChange={e => setUseAltScreen(e.target.checked)} /><span>{text("Alt-screen 모드", "Alt-screen mode")}</span></label>
+          <SessionWorkerFields settings={workerSettings} disabledTools={disabledTools} onChange={setWorkerSettings} />
+        </>}
         {supportsDangerous && (
           <label className="field-check">
             <input
@@ -146,7 +161,7 @@ export function NewProjectModal({
               onChange={(event) => setDangerous(event.target.checked)}
             />
             <span>
-              <span className="check-label">Dangerous mode</span>
+              <span className="check-label">{text("Dangerous 모드", "Dangerous mode")}</span>
               <span className="check-hint">
                 {text(`${selectedTool.dangerousFlag} — 권한 확인을 생략합니다.`, `${selectedTool.dangerousFlag} — skips permission prompts.`)}
               </span>
@@ -161,16 +176,16 @@ export function NewProjectModal({
             onChange={(event) => setRemote(event.target.checked)}
           />
           <span>
-            <span className="check-label">Run on remote host (SSH)</span>
+            <span className="check-label">{text("원격 호스트에서 실행 (SSH)", "Run on remote host (SSH)")}</span>
             <span className="check-hint">
-              Sessions of this project run on another machine over SSH
+              {text("이 프로젝트의 세션을 SSH로 다른 컴퓨터에서 실행합니다.", "Sessions of this project run on another machine over SSH")}
             </span>
           </span>
         </label>
 
         {!remote && (
           <label className="field">
-            <span className="field-label">Project folder</span>
+            <span className="field-label">{text("프로젝트 폴더", "Project folder")}</span>
             <div className="folder-row">
               <input
                 value={folder}
@@ -182,7 +197,7 @@ export function NewProjectModal({
                 }}
               />
               <button type="button" className="browse-btn" onClick={browse}>
-                Browse...
+                {text("찾아보기…", "Browse…")}
               </button>
             </div>
           </label>
@@ -191,13 +206,13 @@ export function NewProjectModal({
         {remote && (
           <>
             <label className="field">
-              <span className="field-label">SSH host</span>
+              <span className="field-label">{text("SSH 호스트", "SSH host")}</span>
               {sshHosts.length > 0 ? (
                 <select
                   value={sshHostId}
                   onChange={(event) => setSshHostId(event.target.value)}
                 >
-                  <option value="">Select a host…</option>
+                  <option value="">{text("호스트 선택…", "Select a host…")}</option>
                   {sshHosts.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.label} ({h.user}@{h.host})
@@ -211,7 +226,7 @@ export function NewProjectModal({
               )}
             </label>
             <label className="field">
-              <span className="field-label">Remote folder</span>
+              <span className="field-label">{text("원격 폴더", "Remote folder")}</span>
               <input
                 value={remoteFolder}
                 onChange={(event) => setRemoteFolder(event.target.value)}
@@ -244,14 +259,14 @@ export function NewProjectModal({
 
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onCancel}>
-            Cancel
+            {text("취소", "Cancel")}
           </button>
           <button
             className="btn-primary"
             disabled={!canSubmit}
             onClick={submit}
           >
-            Create
+            {text("만들기", "Create")}
           </button>
         </div>
       </div>

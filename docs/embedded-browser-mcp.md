@@ -18,9 +18,21 @@ sources:
   - id: browser-form-automation
     resource: ../app/electron/services/browser-form-automation.mjs
     title: "Semantic form targeting and verified browser actions"
+  - id: browser-file-upload
+    resource: ../app/electron/services/browser-file-upload.mjs
+    title: "Explicit native browser file selection"
   - id: browser-form-smoke
     resource: ../app/scripts/electron-browser-form-smoke.mjs
     title: "Fixture-driven Electron browser form smoke"
+  - id: browser-activity
+    resource: ../app/electron/services/browser-activity.mjs
+    title: "Local download and visit history"
+  - id: browser-activity-panel
+    resource: ../app/src/components/BrowserActivityPanel.tsx
+    title: "Download and history management panel"
+  - id: browser-download-smoke
+    resource: ../app/scripts/electron-browser-download-smoke.mjs
+    title: "Real Electron download and persistence smoke"
   - id: browser-ui
     resource: ../app/src/components/EmbeddedDocumentBrowser.tsx
     title: "Embedded browser toolbar and selection UI"
@@ -117,6 +129,7 @@ The fixed tools are:
 * `browser_tabs`, `browser_open`, and `browser_navigate`;
 * `browser_snapshot` and `browser_screenshot`;
 * `browser_click` and `browser_type`;
+* `browser_upload_files`;
 * `browser_get_control` and `browser_form_state`;
 * `browser_set_checked`, `browser_select_option`, and `browser_clear`;
 * `browser_scroll_into_view` and `browser_wait_for`;
@@ -148,17 +161,37 @@ with React, Angular, Vue, and ordinary HTML controls. A local Electron fixture
 smoke covers native controls, DOM replacement, an ARIA combobox, wait behavior,
 and password/file redaction.[^browser-form-smoke]
 
-File chooser automation remains deliberately unavailable; Store listing or
-other uploads still require an explicit user file selection. Password controls
-and credential-like values cannot be typed, read, waited on by value, or
-returned in action results.
+`browser_upload_files({ tabId, selector, files })` selects explicitly authorized
+local files directly in a unique `input[type=file]`. Supply absolute paths on
+the desktop host, not paths on a remote CLI machine. Hidden inputs and multiple
+selection (up to 20 files, when the input has `multiple`) are supported. Do not
+click the OS chooser first. Missing/unreadable files, directories, duplicate
+files, ambiguous selectors, disabled inputs, and non-file controls are rejected.
+The implementation uses Chromium's native `DOM.setFileInputFiles`, so ordinary
+input/change handlers and browser file transport run without loading the whole
+file into a tool response. Snapshots still redact file paths and contents.
+[^browser-file-upload]
 
-An agent MCP action that opens, navigates, clicks, types, reloads, or moves
-through browser history also attaches the target browser ID to that agent's
-current pane and selects it. The user can therefore watch the shared browser as
-the agent searches or interacts with a page. `browser_open` accepts an omitted
-URL and opens Google by default. A browser tab already moved to another split
-keeps that split instead of being duplicated.[^browser-server][^electron-main]
+Selection can immediately transmit files; the agent must have user authorization
+for the files and destination before calling it. A successful result means
+`files_selected`, not server acceptance. Check page progress/errors with a
+snapshot or wait afterward. If `applied: true` accompanies an unverifiable result
+(for example, the page clears/replaces the input), inspect the page before any
+retry. Iframe inputs, directory uploads, drag-only drop zones, and OS dialog
+automation are not supported. An already-attached debugger returns a busy result.
+Restart the desktop app and the CLI session to load the new tool after updating.
+
+Password controls and credential-like values cannot be typed, read, waited on by
+value, or returned in action results.
+
+Agent MCP actions run without selecting or revealing a desktop browser tab.
+New AI tabs belong to the hidden, non-focusable browser host; actions on existing
+tabs retain their placement. Users reveal tabs explicitly through the Browser Hub
+or pane tabs. `browser_open` still opens Google when its URL is omitted.
+Screenshots use CDP viewport capture rather than making a hidden native view
+visible. The isolated `electron-browser-background-smoke.mjs` verifies hidden
+navigation, DOM input and non-empty capture with no window show/focus events.
+Installed-app typing continuity remains a rollout check.[^browser-server][^electron-main]
 
 ## Remote human control
 
@@ -170,8 +203,8 @@ wheel events, allowlisted keys, and explicit text are translated into native
 Electron input events using the frame's source dimensions.[^electron-main]
 
 Remote relay actions update the shared browser but do not select a desktop tab
-or steal focus from the local operator. Only session-owned MCP actions request
-automatic desktop reveal.[^electron-main]
+or steal focus from the local operator. Session-owned MCP actions likewise do not
+request automatic desktop reveal.[^electron-main]
 
 This relay is deliberately narrower than MCP. It returns tab metadata and
 pixels, not DOM snapshots, cookies, storage, or profile files. Frames are never
@@ -207,6 +240,7 @@ configuration changes because MCP clients load configuration at startup.
 [^browser-server]: Managed browser MCP server
 [^browser-context]: Snapshot and annotation sanitization
 [^browser-form-automation]: Semantic form targeting and verified browser actions
+[^browser-file-upload]: Explicit native browser file selection
 [^browser-form-smoke]: Fixture-driven Electron browser form smoke
 [^browser-ui]: Embedded browser toolbar and selection UI
 [^browser-tabs-ui]: Pane browser tabs and reveal UI
@@ -217,3 +251,25 @@ configuration changes because MCP clients load configuration at startup.
 [^electron-main]: Native browser ownership and integration routes
 [^image-viewer]: Image viewer native-view occlusion
 [^native-view-occlusion]: Renderer overlay blockers for native views
+
+## Downloads and visit history
+
+The embedded toolbar exposes Downloads and History panels. The shared browser
+partition records owned-tab downloads once through Electron's `will-download`;
+Electron's save dialog chooses the destination. The panel shows progress and
+completion/cancellation, supports cancelling active downloads, and reveals completed
+files in their folder. Files are never opened automatically. Clearing download
+records retains active transfers and never deletes downloaded files.
+
+HTTP(S) main-frame visits and page titles are saved in the app-local
+`browser-activity.json` alongside download records. History supports search,
+reopening URLs, individual removal, and clearing. Local preview capabilities and
+recognized OAuth credential URLs are excluded. At most 2,000 visits and 500 old
+download records are retained; active transfers are preserved. On restart unfinished
+transfers are shown as interrupted; automatic download resume is not implemented.
+The native web view is hidden while the management panel is open.[^browser-activity][^browser-activity-panel]
+
+`npx electron scripts/electron-browser-download-smoke.mjs` from `app/` verifies a
+real fixture download, exact saved bytes, completed state, and restored history
+with a temporary profile and destination. The production save-dialog interaction
+and installed Store behavior still require installation-level verification.[^browser-download-smoke]

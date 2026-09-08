@@ -57,6 +57,11 @@ sources:
 
 # Microsoft Store 배포 운영 가이드
 
+> 2026-09-08 자동화 절차는 [Store 자동 배포 실행기](store-release-automation.md)를
+> 우선한다. “스토어 빌드해줘”는 인증 제출과 통과 후 즉시 게시까지 승인하는 요청이다.
+> 이 문서 아래의 수동 최종 확인/CLI 도입 절차는 과거 운영 기록이며, 전체 배포
+> 요청에 같은 승인을 다시 요구하지 않는다. 날짜가 붙은 상태는 실시간 조회로 재확인한다.
+
 이 문서는 Acedia의 **Microsoft Store 채널만** 다루는 실무 런북이다.
 Standard 개발자 NSIS와 Company GitHub 배포는 [전체 릴리스 플레이북](release-playbook.md)을
 따른다. `deploy live` 또는 GitHub Release 요청만으로 Store 제출까지 진행하지

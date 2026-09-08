@@ -1,3 +1,4 @@
+import { BrowserActivityPanel } from "./BrowserActivityPanel";
 import { useEffect, useMemo, useState } from "react";
 import { docKindForPath } from "../lib/docTabs";
 import { invoke } from "../platform/runtime";
@@ -64,6 +65,7 @@ export function BrowserHub({
   const [attachRequest, setAttachRequest] = useState(0);
   const [busyBrowserId, setBusyBrowserId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [activity, setActivity] = useState<"history" | "downloads" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedBrowser = useMemo(
     () => browsers.find((browser) => browser.browserId === selectedBrowserId) ?? null,
@@ -92,6 +94,7 @@ export function BrowserHub({
   }, [attachRequest, selectedBrowserExists, selectedBrowserId]);
 
   const selectBrowser = (browserId: string) => {
+    setActivity(null);
     if (browserId === selectedBrowserId) {
       // A browser may have been claimed by another workspace window. Clicking
       // the already-selected tab explicitly reattaches it here.
@@ -172,11 +175,16 @@ export function BrowserHub({
           +
         </button>
         <span className="browser-hub-tab-spacer" />
+        <button className="document-browser-btn" onClick={() => setActivity("downloads")}>{text("다운로드", "Downloads")}</button>
+        <button className="document-browser-btn" onClick={() => setActivity("history")}>{text("방문 기록", "History")}</button>
         <span className="browser-hub-count">{text(`${browsers.length}개`, String(browsers.length))}</span>
       </div>
 
       <div className="browser-hub-content">
-        {selectedBrowser && attachedBrowserId === selectedBrowser.browserId ? (
+        {activity ? <BrowserActivityPanel key={activity} mode={activity} onClose={() => setActivity(null)} onNavigate={async url => {
+          const result = await invoke("document_browser_open", { folder: "", relativePath: "", initialUrl: url });
+          onSelectBrowser(result.browserId);
+        }} /> : selectedBrowser && attachedBrowserId === selectedBrowser.browserId ? (
           <EmbeddedDocumentBrowser
             key={selectedBrowser.browserId}
             browserId={selectedBrowser.browserId}

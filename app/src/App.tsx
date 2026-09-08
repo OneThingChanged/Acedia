@@ -1,3 +1,4 @@
+import { loadAgentDefaults } from "./lib/agentDefaults";
 import { switchCodexAccount } from "./lib/codexAccounts";
 import {
   useCallback,
@@ -77,7 +78,6 @@ import { applyTerminalTheme, createEntry, notifyDone } from "./lib/terminal";
 import { playNotificationSound, loadNotificationSound, shouldSilenceOsNotification } from "./lib/notificationSound";
 import { buildSpawnArgs } from "./lib/spawn";
 import {
-  defaultSessionWorkerSettings,
   normalizeSessionWorkerSettings,
 } from "./lib/sessionWorkers";
 import {
@@ -526,7 +526,7 @@ function relativeIfInside(folder: string, absolutePath: string): string | null {
 }
 
 function App() {
-  const { language, text } = useAppLanguage();
+  const { text } = useAppLanguage();
   const workspace = workspaceWindowContext();
   migrateLegacyWorkspaceStorage(workspace);
   // One-shot bootstrap: read localStorage exactly once at mount.
@@ -2678,11 +2678,12 @@ function App() {
             aiLabel: tool.label,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
+            useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
             workerSettings:
               tool.id === "codex"
                 ? hasExplicitWorkerSettings
                   ? normalizeSessionWorkerSettings(payload.workerSettings)
-                  : defaultSessionWorkerSettings(tool.id)
+                  : loadAgentDefaults(tool.id).workerSettings
                 : undefined,
             status: "starting",
             runtimeStatus: "starting",
@@ -3725,16 +3726,16 @@ function App() {
     const commandItems: QuickOpenItem[] = COMMAND_DEFINITIONS.map((command) => ({
       id: `command:${command.id}`,
       kind: "command",
-      title: language === "ko" ? command.title : command.titleEn,
+      title: text(command.title, command.titleEn),
       subtitle: [
-        language === "ko" ? command.description : command.descriptionEn,
+        text(command.description, command.descriptionEn),
         commandShortcuts[command.id],
       ].filter(Boolean).join(" · "),
       searchText: command.keywords,
       commandId: command.id,
     }));
     return [...projectItems, ...sessionItems, ...screenItems, ...documentItems, ...commandItems];
-  }, [agents, commandShortcuts, groups, language, projects, quickDocuments]);
+  }, [agents, commandShortcuts, groups, text, projects, quickDocuments]);
 
   const handleQuickOpenSelect = useCallback((item: QuickOpenItem) => {
     setQuickOpen(false);

@@ -22,6 +22,30 @@ sources:
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
+  - id: remote-documents
+    resource: ../app/electron/services/remote-documents.mjs
+    title: "Shared project document routes and preview capabilities"
+  - id: remote-submissions
+    resource: ../app/electron/services/remote-submissions.mjs
+    title: "Durable submission deduplication"
+  - id: remote-requests
+    resource: ../app/electron/remote-pwa/requests.js
+    title: "Request deadlines and latest-response ordering"
+  - id: remote-http
+    resource: ../app/electron/services/remote-http.mjs
+    title: "Shared HTTP JSON response framing"
+  - id: chat-markup
+    resource: ../app/electron/remote-pwa/chat-markup.js
+    title: "Chat markup escaping and project file links"
+  - id: chat-render
+    resource: ../app/electron/remote-pwa/chat-render.js
+    title: "Chat turn and tool DOM rendering"
+  - id: chat-history
+    resource: ../app/electron/remote-pwa/chat-history.js
+    title: "Chat page merging and sequence ordering"
+  - id: remote-ui-smoke
+    resource: ../app/scripts/electron-remote-pwa-smoke.mjs
+    title: "Desktop and mobile Remote PWA runtime smoke"
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Desktop browser ownership and Remote frame provider"
@@ -54,6 +78,38 @@ Remote is an authenticated external projection of the same sessions owned by
 the Electron desktop process. It reuses the web-service core and static client
 of the loopback Dashboard, then adds identity, approval, tunnel, mobile-return,
 and device-monitoring controls.[^web-services][^remote-client]
+
+## Code boundaries
+
+The PWA is a dependency-free browser ES module application. It is shared by the
+loopback Dashboard, authenticated Remote site, and Android's retained WebView.
+It does not use the desktop React/Vite entry point. The main client still owns
+navigation, mutable session state, polling, terminal lifecycle, and event wiring;
+the extracted modules have these responsibilities:
+
+| Module (under `app/electron/`) | Responsibility |
+| --- | --- |
+| `remote-pwa/dom.js` | Small text and DOM creation helpers; no page initialization |
+| `remote-pwa/chat-markup.js` | Escaping, Markdown fragments and project file-link markup |
+| `remote-pwa/chat-render.js` | User/assistant turns, tool details and diffs |
+| `remote-pwa/chat-history.js` | Pure sequence deduplication, ordering and overlapping-page merging |
+| `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, HTML capabilities and one shared document API dispatcher |
+| `services/remote-http.mjs` | JSON headers, body length and response serialization |
+| `services/web-services.mjs` | Server lifecycle, authentication, session APIs, static asset allowlist and tunnel orchestration |
+
+Both server variants call the document dispatcher **after their existing access
+checks**. Each server retains its own preview-token map. Capability preview URLs
+keep their separate token gate; extraction does not make workspace files public.
+The client modules are individually allowlisted as JavaScript assets and included
+in the service-worker precache and network-first application assets. Additions
+must update both the server map and worker asset list.[^remote-documents][^remote-http]
+
+Chat helper tests import the production modules directly instead of slicing
+functions out of the main source. `npm --prefix app run electron:remote-pwa-smoke`
+starts an isolated Remote server and checks the real module graph, chat rendering,
+document-link preview, history ordering and service-worker activation at desktop
+and mobile widths. This does not verify live GitHub OAuth, public tunnels, or an
+installed Android WebView.[^chat-markup][^chat-render][^chat-history][^remote-ui-smoke]
 
 ## Authentication and approval
 
@@ -88,6 +144,21 @@ consume the submit key while still parsing pasted lines. A failed immediate
 submission leaves the draft and attachments available,
 while an activation timeout keeps its queued message and exposes retry instead
 of silently deleting it.[^web-services][^remote-client][^web-tests][^pty-submit]
+
+Submission handling locks each session while its composer request is pending.
+Successful replies clear only the accepted draft revision and attachments, preserving
+new edits made while waiting. Queued entries retain a request ID across retries;
+failed queue heads pause until explicit retry. Both HTTP servers persist a bounded
+seven-day request ledger before PTY submission, storing content hashes rather than
+message text. Matching retries reuse the outcome, while an interrupted/unknown
+outcome is rejected for manual conversation inspection. Older clients without a
+request ID retain their previous submission behavior.[^remote-submissions]
+
+State and submission requests have a 12-second deadline including body reads.
+Only the latest state request may update the screen or connection indicator;
+late successes and failures are ignored. The polling loop resumes after timeout.
+These behaviors are covered by unit/API tests and the desktop/mobile Electron
+composer smoke; real public-tunnel interruptions remain unverified.[^remote-requests]
 
 Remote chat reads from the desktop conversation store with bounded sequence
 cursors. The browser keeps a rendering cache, but that cache is not the source
@@ -191,6 +262,12 @@ Operational Dashboard behavior is documented separately in
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker
 [^remote-client]: Remote PWA client
+[^remote-documents]: Shared project document routes and preview capabilities
+[^remote-http]: Shared HTTP JSON response framing
+[^chat-markup]: Chat markup escaping and project file links
+[^chat-render]: Chat turn and tool DOM rendering
+[^chat-history]: Chat page merging and sequence ordering
+[^remote-ui-smoke]: Desktop and mobile Remote PWA runtime smoke
 [^electron-main]: Desktop browser ownership and Remote frame provider
 [^pty-submit]: PTY message formatting and ordered submission
 [^device-monitor]: Android foreground-monitor token service

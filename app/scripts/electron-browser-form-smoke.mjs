@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { browserFormRuntimeExpression } from "../electron/services/browser-form-automation.mjs";
+import { uploadBrowserFiles } from "../electron/services/browser-file-upload.mjs";
+import http from "node:http";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
@@ -65,6 +67,53 @@ async function run() {
 
   const passwordBlocked = await execute(window.webContents, "type", { target: { id: "password" }, text: "blocked" });
   assert(passwordBlocked.ok === false && passwordBlocked.error === "sensitive_control", "password typing was not blocked");
+
+  const firstFile = path.join(temporaryRoot, "upload 한글 file.txt");
+  const secondFile = path.join(temporaryRoot, "second.txt");
+  fs.writeFileSync(firstFile, "browser-upload-fixture-one");
+  fs.writeFileSync(secondFile, "browser-upload-fixture-two");
+  let received = "";
+  const server = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    received = Buffer.concat(chunks).toString("utf8");
+    response.writeHead(200, { "Access-Control-Allow-Origin": "*" }); response.end("accepted");
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await window.webContents.executeJavaScript(`(() => {
+      const input = document.querySelector('#upload'); input.hidden = true;
+      window.uploadEvents = [];
+      input.addEventListener('input', () => window.uploadEvents.push('input'));
+      input.addEventListener('change', () => {
+        window.uploadEvents.push('change');
+        const data = new FormData(); for (const file of input.files) data.append('files', file);
+        window.uploadResult = fetch('http://127.0.0.1:${server.address().port}/upload', { method:'POST', body:data }).then(r => r.text());
+      });
+    })()`);
+    const single = await uploadBrowserFiles(window.webContents, { selector: "#upload", files: [firstFile] });
+    assert(single.ok && single.selectedCount === 1, `Hidden upload failed: ${JSON.stringify(single)}`);
+    assert(await window.webContents.executeJavaScript("window.uploadResult") === "accepted", "Upload response missing");
+    assert(received.includes("browser-upload-fixture-one"), "File bytes did not reach the local upload server");
+    const events = await window.webContents.executeJavaScript("window.uploadEvents");
+    assert(events.includes("input") && events.includes("change"), "Native upload events missing");
+    const multipleRejected = await uploadBrowserFiles(window.webContents, { selector: "#upload", files: [firstFile, secondFile] });
+    assert(multipleRejected.error === "file_input_does_not_allow_multiple", "Single-file input accepted multiple files");
+    await window.webContents.executeJavaScript("document.querySelector('#upload').multiple = true");
+    const multiple = await uploadBrowserFiles(window.webContents, { selector: "#upload", files: [firstFile, secondFile] });
+    assert(multiple.ok && multiple.selectedCount === 2, "Multiple file selection failed");
+    await window.webContents.executeJavaScript("window.uploadResult");
+    assert(received.includes("browser-upload-fixture-one") && received.includes("browser-upload-fixture-two"), "Multiple file bytes missing");
+    const redacted = await execute(window.webContents, "snapshot");
+    assert(!JSON.stringify(redacted).includes(firstFile) && !JSON.stringify(redacted).includes("browser-upload-fixture-one"), "Upload paths or contents leaked through snapshot");
+    assert((await uploadBrowserFiles(window.webContents, { selector: "input", files: [firstFile] })).error === "ambiguous_file_input", "Ambiguous selector accepted");
+    assert((await uploadBrowserFiles(window.webContents, { selector: "#password", files: [firstFile] })).error === "not_a_file_input", "Non-file input accepted");
+    await window.webContents.executeJavaScript("document.querySelector('#upload').disabled = true");
+    assert((await uploadBrowserFiles(window.webContents, { selector: "#upload", files: [firstFile] })).error === "file_input_unavailable_or_disabled", "Disabled input accepted");
+    assert(!window.webContents.debugger.isAttached(), "Upload debugger was not released");
+  } finally {
+    server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+  }
 
   window.destroy();
   console.log("MULTIAGENT_BROWSER_FORM_SMOKE_OK");
