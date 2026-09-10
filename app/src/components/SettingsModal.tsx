@@ -419,7 +419,7 @@ export function SettingsModal({
   useEffect(refreshConversationStorage, []);
 
   useEffect(() => {
-    if (buildVariant !== "standard") return;
+    if (updateProvider !== "local-developer") return;
     void getDeveloperUpdateSettings()
       .then((settings) => {
         setDeveloperUpdateDirectoryState(settings.directory);
@@ -2136,10 +2136,10 @@ export function SettingsModal({
                   ? "Company"
                   : buildVariant === "store"
                     ? "Microsoft Store"
-                    : "Standard"}
+                    : "EXE · GitHub"}
               </span>
             </div>
-            {buildVariant === "standard" && developerUpdateDirectory && (
+            {updateProvider === "local-developer" && developerUpdateDirectory && (
               <div className="app-about-row">
                 <span className="app-about-label">
                   {text("출력 폴더", "Output folder")}
@@ -2153,7 +2153,7 @@ export function SettingsModal({
                 </span>
               </div>
             )}
-            {buildVariant === "standard" &&
+            {updateProvider === "local-developer" &&
               (developerUpdate.status === "available" ||
                 developerUpdate.status === "installing") && (
                 <div className="app-about-row">
@@ -2163,7 +2163,7 @@ export function SettingsModal({
                   </span>
                 </div>
               )}
-            {buildVariant !== "standard" && updateCheck.status === "available" && (
+            {updateProvider !== "local-developer" && updateCheck.status === "available" && (
               <div className="app-about-row">
                 <span className="app-about-label">Latest</span>
                 <span className="app-about-value">
@@ -2193,36 +2193,36 @@ export function SettingsModal({
                 text(`Microsoft Store 열기 실패: ${storeLaunch.message}`, `Failed to open Microsoft Store: ${storeLaunch.message}`)}
               {updateProvider === "microsoft-store" && storeLaunch.status !== "error" &&
                 text("업데이트는 Microsoft Store에서 자동으로 관리됩니다. 새 버전을 직접 확인하려면 Store 제품 페이지를 여세요.", "Updates are managed automatically by Microsoft Store. Open the Store product page to check for a new version manually.")}
-              {buildVariant === "standard" && developerUpdate.status === "idle" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "idle" &&
                 (developerUpdateDirectory
                   ? text("출력 폴더에서 새 개발자 빌드를 확인하세요.", "Check the output folder for a newer developer build.")
                   : text("먼저 개발자 빌드 출력 폴더를 지정하세요.", "Choose the developer build output folder first."))}
-              {buildVariant === "standard" && developerUpdate.status === "checking" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "checking" &&
                 text("출력 폴더를 확인하는 중입니다...", "Checking the output folder…")}
-              {buildVariant === "standard" && developerUpdate.status === "available" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "available" &&
                 text(
                   `새 설치 파일을 찾았습니다: ${tailPath(developerUpdate.update.path)} (${formatBytes(developerUpdate.update.size)})`,
                   `A newer installer was found: ${tailPath(developerUpdate.update.path)} (${formatBytes(developerUpdate.update.size)})`,
                 )}
-              {buildVariant === "standard" && developerUpdate.status === "current" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "current" &&
                 text("현재 버전보다 새로운 설치 파일이 없습니다.", "No installer newer than the current version was found.")}
-              {buildVariant === "standard" && developerUpdate.status === "installing" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "installing" &&
                 text("세션을 저장한 뒤 설치 프로그램을 실행합니다...", "Saving sessions, then launching the installer…")}
-              {buildVariant === "standard" && developerUpdate.status === "error" &&
+              {updateProvider === "local-developer" && developerUpdate.status === "error" &&
                 text(`로컬 업데이트 실패: ${developerUpdate.message}`, `Local update failed: ${developerUpdate.message}`)}
-              {buildVariant === "company" && install.status === "idle" &&
+              {updateProvider === "github" && install.status === "idle" &&
                 updateCheck.status === "idle" &&
                 "Click Check to see if a new release is available."}
-              {buildVariant === "company" && install.status === "idle" &&
+              {updateProvider === "github" && install.status === "idle" &&
                 updateCheck.status === "checking" &&
                 "Checking for updates..."}
-              {buildVariant === "company" && install.status === "idle" &&
+              {updateProvider === "github" && install.status === "idle" &&
                 updateCheck.status === "available" &&
                 "A newer release is available."}
-              {buildVariant === "company" && install.status === "idle" &&
+              {updateProvider === "github" && install.status === "idle" &&
                 updateCheck.status === "current" &&
                 "You are using the latest release."}
-              {buildVariant === "company" && install.status === "idle" &&
+              {updateProvider === "github" && install.status === "idle" &&
                 updateCheck.status === "error" &&
                 `Update check failed: ${updateCheck.message}`}
             </div>
@@ -2239,7 +2239,7 @@ export function SettingsModal({
                 </button>
               </div>
             )}
-            {buildVariant === "standard" && (
+            {updateProvider === "local-developer" && (
               <div className="app-update-actions">
                 <button
                   className="btn-secondary app-update-btn"
@@ -2271,7 +2271,7 @@ export function SettingsModal({
                 )}
               </div>
             )}
-            {buildVariant === "company" && <div className="app-update-actions">
+            {updateProvider === "github" && <div className="app-update-actions">
               <button
                 className="btn-secondary app-update-btn"
                 onClick={handleCheckForUpdates}

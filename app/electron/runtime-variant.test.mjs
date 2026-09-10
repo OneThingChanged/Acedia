@@ -15,7 +15,7 @@ describe("Electron runtime variant", () => {
       userDataDirectory: "MultiAgent",
       updaterChannel: "latest",
       remoteEnabled: true,
-      updateProvider: "local-developer",
+      updateProvider: "github",
       storeProductId: null,
     });
   });

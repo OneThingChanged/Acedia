@@ -2,6 +2,9 @@
 
 ## 배포 채널 분리
 
+- Standard는 공개 EXE 채널이며 GitHub Release에서 네 자리 버전으로 업데이트한다. EXE와 Store는 설치 ID·데이터·업데이트 경로를 분리한다. 이전 Standard 로컬 개발자 전용/Store 단독 공개 배포 지침보다 이 규칙을 우선한다.
+- EXE 배포 시 `docs/exe-release-workflow.md`를 따른다. 설치 파일과 같은 빌드의 `latest-exe.json`을 함께 게시한다. EXE 요청만으로 Store를 재제출하지 않는다.
+
 - 사용자가 **“라이브 배포”** 또는 이에 준하는 표현을 사용하면 Git 저장소와 GitHub Release 채널만 배포한다.
 - 라이브 배포만 요청된 경우 Microsoft Store용 MSIX 빌드, 검증, Partner Center 업로드 및 제출을 실행하지 않는다.
 - Microsoft Store 배포는 사용자가 **“Microsoft Store 배포”**를 별도로 명시한 경우에만 진행한다.

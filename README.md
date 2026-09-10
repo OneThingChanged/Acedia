@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-[![Version](https://img.shields.io/badge/version-1.8.0.2-blue)](https://github.com/OneThingChanged/Multiagent/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.0.3-blue)](https://github.com/OneThingChanged/Multiagent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -55,7 +55,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 - **Quick Open** (`Ctrl+K`) — projects, sessions, Screens, docs, and commands in one search
 - **Attention Center** — unread waiting/blocked/completed items that jump to the session
 - Customizable keyboard shortcuts, four themes (Soft / GitHub / Warm / Light), multi-window, always-on-top
-- Separate updates by build: Standard developer installs scan a chosen local output folder, Company uses its private GitHub channel, and Store installs are updated by Microsoft Store
+- Separate updates by build: EXE installs update from GitHub Releases using four-part versions; Store installs are updated by Microsoft Store. Both channels use separate data folders
 
 ## Supported Agents
 

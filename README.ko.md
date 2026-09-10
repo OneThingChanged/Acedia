@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.0.2-blue)](https://github.com/OneThingChanged/Multiagent/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.0.3-blue)](https://github.com/OneThingChanged/Multiagent/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -55,7 +55,7 @@
 - **Quick Open** (`Ctrl+K`) — 프로젝트·세션·Screen·문서·명령 통합 검색
 - **Attention Center** — 읽지 않은 대기/차단/완료 항목을 모아 보고 클릭 시 해당 세션으로 이동
 - 커스터마이즈 가능한 단축키, 4종 테마(Soft / GitHub / Warm / Light), 멀티 윈도우, 항상 위
-- 빌드별 업데이트 분리: Standard 개발자 설치본은 지정한 로컬 출력 폴더, Company는 비공개 GitHub 채널, Store 설치본은 Microsoft Store 사용
+- 빌드별 업데이트 분리: EXE 설치본은 GitHub Release의 네 자리 버전 업데이트, Store 설치본은 Microsoft Store 사용. 두 채널은 데이터 폴더가 분리되어 병행 설치 가능
 
 ## 지원 에이전트
 

@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -61,7 +62,7 @@ function run(command, args) {
 
 let verified;
 try {
-  verified = verifyMobileReleaseApk({ expectedVersionName: releaseVersion });
+  verified = verifyMobileReleaseApk({ expectedVersionName: process.argv.includes("--desktop-only") ? undefined : releaseVersion });
 } catch (error) {
   console.error(`[mobile-release] ${error.message}`);
   process.exit(2);
@@ -103,3 +104,13 @@ writeFileSync(
   }, null, 2)}\n`,
   "utf8",
 );
+
+if (!process.argv.includes("--dir")) {
+  const fileName = `Acedia-Setup-${releaseVersion}-x64.exe`;
+  const bytes = readFileSync(join(appDir, "electron-dist", fileName));
+  writeFileSync(join(appDir, "electron-dist", "latest-exe.json"), JSON.stringify({
+    schemaVersion: 1, channel: "exe", version: releaseVersion, fileName,
+    size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"),
+    bundledMobileVersion: verified.versionName,
+  }, null, 2) + "\n");
+}

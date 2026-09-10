@@ -4051,7 +4051,7 @@ function App() {
           showUsageBar={showUsageBar}
           onShowUsageBarChange={handleShowUsageBarChange}
           buildVariant={runtimeFlags?.build_variant ?? "standard"}
-          updateProvider={runtimeFlags?.update_provider ?? "local-developer"}
+          updateProvider={runtimeFlags?.update_provider ?? "github"}
           onClose={() => setSettingsOpen(false)}
         />
       )}

@@ -28,6 +28,11 @@ sources:
 
 # MultiAgent product overview
 
+> 2026-09-10 채널 변경: Standard는 GitHub에서 업데이트하는 공개 EXE 채널이다.
+> Store와 설치·데이터·업데이트를 분리한다. 아래의 과거 개발자 전용/Store 단독 공개 정책보다
+> [EXE와 Store 배포 채널](exe-release-workflow.md)의 현재 절차를 우선한다.
+
+
 MultiAgent is an Electron desktop workspace for running several AI CLI sessions
 as projects, Screens, tabs, and splits. The Electron main process owns PTYs and
 privileged OS services; the React renderer owns workspace interaction and uses

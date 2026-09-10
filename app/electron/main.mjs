@@ -67,6 +67,7 @@ import {
 import { UsageService } from "./services/usage-service.mjs";
 import { DiagnosticsService } from "./services/diagnostics-service.mjs";
 import { UpdaterLifecycle } from "./services/updater-lifecycle.mjs";
+import { GithubExeUpdateService } from "./services/github-exe-update.mjs";
 import { LocalDeveloperUpdateService } from "./services/local-developer-update.mjs";
 import { cleanupLegacyElectronShortcuts } from "./services/windows-shortcut-cleanup.mjs";
 import { discoverGitSubmodules } from "./services/git-submodules.mjs";
@@ -859,6 +860,7 @@ if (runtimeVariant.updateProvider === "github") {
 }
 const electronTestUpdateFeed =
   "https://github.com/OneThingChanged/Multiagent/releases/download/electron-test/";
+const githubExeUpdater = new GithubExeUpdateService({ currentVersion: productVersion, cacheDir: path.join(app.getPath("userData"), "exe-updates") });
 let updateDownloaded = false;
 let pendingLocalInstaller = null;
 const localDeveloperUpdateService = new LocalDeveloperUpdateService({
@@ -930,6 +932,7 @@ async function checkForElectronUpdate() {
         : "Standard 빌드는 지정한 로컬 출력 폴더에서 업데이트합니다."
     );
   }
+  if (runtimeVariant.id === "standard") return app.isPackaged ? githubExeUpdater.check() : null;
   if (!app.isPackaged && !process.env.MULTIAGENT_UPDATE_FEED_URL) return null;
   updaterLifecycle.record("check-started");
   const result = await updaterLifecycle.withTimeout(
@@ -970,6 +973,11 @@ async function downloadElectronUpdate() {
         ? "Microsoft Store 빌드는 앱 내부에서 업데이트를 설치할 수 없습니다."
         : "Standard 빌드는 지정한 로컬 출력 폴더의 설치 파일을 사용합니다."
     );
+  }
+  if (runtimeVariant.id === "standard") {
+    await githubExeUpdater.download((progress) => sendEventToAll("update:progress", progress));
+    updateDownloaded = true;
+    return;
   }
   updaterLifecycle.record("download-started");
   let lastTransferred = 0;
@@ -2613,6 +2621,17 @@ function completeCloseAction(action, trigger) {
   if (action === "install-update") {
     if (isStoreBuild) {
       throw new Error("Microsoft Store 빌드는 Windows Store에서 업데이트를 설치합니다.");
+    }
+    if (runtimeVariant.id === "standard") {
+      const installerPath = githubExeUpdater.validatedInstaller();
+      const installer = spawn(installerPath, [], { detached: true, stdio: "ignore", windowsHide: false });
+      installer.once("error", (error) => {
+        updaterLifecycle.record("exe-install-launch-failed", error);
+        sendEventToAll("app:close-cancelled", { action, message: String(error) });
+        showWorkspaceWindow();
+      });
+      installer.once("spawn", () => { installer.unref(); closeEverything(); });
+      return;
     }
     forceClosing = true;
     updaterLifecycle.record("install-requested", trigger);

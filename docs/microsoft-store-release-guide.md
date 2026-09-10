@@ -57,6 +57,11 @@ sources:
 
 # Microsoft Store 배포 운영 가이드
 
+> 2026-09-10 채널 변경: Standard는 GitHub에서 업데이트하는 공개 EXE 채널이다.
+> Store와 설치·데이터·업데이트를 분리한다. 아래의 과거 개발자 전용/Store 단독 공개 정책보다
+> [EXE와 Store 배포 채널](exe-release-workflow.md)의 현재 절차를 우선한다.
+
+
 > 2026-09-08 자동화 절차는 [Store 자동 배포 실행기](store-release-automation.md)를
 > 우선한다. “스토어 빌드해줘”는 인증 제출과 통과 후 즉시 게시까지 승인하는 요청이다.
 > 이 문서 아래의 수동 최종 확인/CLI 도입 절차는 과거 운영 기록이며, 전체 배포
