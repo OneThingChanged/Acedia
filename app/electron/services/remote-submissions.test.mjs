@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
+import { submitPtyMessage } from "./pty-submit.mjs";
 
 const roots = [];
 afterEach(() => roots.splice(0).forEach(root => fs.rmSync(root, { recursive: true, force: true })));
@@ -47,4 +48,17 @@ it("fails closed for persisted pending work, corrupt history and expired request
   expect((await new RemoteSubmissions(file).submit(id, "a", "hello", execute)).status).toBe(503);
   expect((await ledger.submit(`1000000000000-0123456789abcdef`, "a", "hello", execute)).status).toBe(409);
   expect(execute).not.toHaveBeenCalled();
+});
+it("does not replay image text after its PTY disappears between paste and Enter", async () => {
+  const {file,ledger,id} = fixture();
+  let current = true, clock = 0;
+  const write = vi.fn();
+  const execute = vi.fn(()=>submitPtyMessage({
+    ptyProcess:{write},message:'image\npath',isCurrent:()=>current,now:()=>clock,
+    wait:async ms=>{clock+=ms;current=false;},
+  }));
+  expect((await ledger.submit(id,'a','image\npath',execute)).status).toBe(409);
+  expect((await new RemoteSubmissions(file).submit(id,'a','image\npath',execute)).status).toBe(409);
+  expect(execute).toHaveBeenCalledOnce();
+  expect(write).toHaveBeenCalledTimes(1);
 });

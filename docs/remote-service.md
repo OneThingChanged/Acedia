@@ -51,7 +51,7 @@ sources:
     title: "Desktop browser ownership and Remote frame provider"
   - id: pty-submit
     resource: ../app/electron/services/pty-submit.mjs
-    title: "Atomic single-line and bracketed multiline PTY submission"
+    title: "Paste settling, discrete Enter and per-PTY submission exclusion"
   - id: device-monitor
     resource: ../app/electron/services/remote-device-monitor-service.mjs
     title: "Android foreground-monitor token service"
@@ -139,11 +139,27 @@ of the page, so changing the selected session does not move a draft or discard
 an accepted queue. Normal chat submission uses one same-origin HTTP operation;
 the desktop then writes the text and the discrete Enter key to the same verified
 PTY. Multiline input, including image-tagged messages, is normalized and enclosed
-as a terminal bracketed paste before the separate Enter so Codex and Claude cannot
-consume the submit key while still parsing pasted lines. A failed immediate
+as a terminal bracketed paste. Before the separate Enter, the backend waits at
+least 500ms, observes PTY output, and then waits for 250ms of quiet output (bounded at 3 seconds). A nonresponsive terminal is not treated as a settled paste. The old
+80ms delay could overlap a CLI's paste handling. A failed immediate
 submission leaves the draft and attachments available,
 while an activation timeout keeps its queued message and exposes retry instead
 of silently deleting it.[^web-services][^remote-client][^web-tests][^pty-submit]
+
+Only one composer submission may write a given PTY at a time. If the terminal
+changes or output does not settle after text was written, the request is marked
+uncertain and its request ID is retained: the backend does not resend the image
+paths or blindly retry Enter. HTTP success means the Enter write completed, not
+that a model response has finished. Codex 0.153.4's
+[paste-burst implementation](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/tui/src/bottom_pane/paste_burst.rs)
+documents Windows burst handling and a 120ms Enter suppression window.
+
+`npm run electron:remote-image-submit-smoke` (from `app/`) requires an installed
+Codex CLI. It uses a temporary CODEX_HOME and a local mock model endpoint, uploads
+a PNG through the loopback PWA API, submits its path, and verifies that Codex
+initiates a model request. Repeating the HTTP request must not write a second
+Enter. No real account or external model is used. This does not reproduce every
+CLI/version or prove that an already-installed desktop build has this fix.
 
 Submission handling locks each session while its composer request is pending.
 Successful replies clear only the accepted draft revision and attachments, preserving
