@@ -1,0 +1,30 @@
+.account-flow { border: 1px solid var(--app-accent, #64adff); border-radius: 8px; margin: 14px 0; padding: 18px; background: var(--app-input-bg, var(--app-panel)); }
+.account-flow h4 { margin: 18px 0 12px; font-size: 15px; color: var(--app-text); }
+.account-flow h4:focus { outline: none; }
+.account-flow-steps { display: flex; gap: 24px; list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--app-muted); }
+.account-flow-steps li { display: flex; gap: 7px; align-items: center; }
+.account-flow-steps li > span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--app-border); border-radius: 50%; }
+.account-flow-steps [aria-current] { color: var(--app-text); font-weight: 600; }
+.account-flow-steps [aria-current] > span { background: var(--app-accent, #64adff); color: var(--app-bg); border-color: transparent; }
+.account-flow-steps [data-complete="true"] > span { color: var(--app-accent, #64adff); }
+.account-flow-form .field { margin: 0; }
+.account-flow-form input { width: 100%; box-sizing: border-box; padding: 9px 11px; color: var(--app-text); background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 5px; }
+.account-flow-form input:focus-visible { outline: 2px solid var(--app-accent, #64adff); outline-offset: 2px; }
+.account-flow-info { margin: 0; display: grid; gap: 10px; font-size: 12px; }
+.account-flow-info > div { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: 14px; }
+.account-flow-info dt { color: var(--app-muted); }
+.account-flow-info dd { margin: 0; color: var(--app-text); overflow-wrap: anywhere; }
+.account-flow .check-hint { line-height: 1.6; }
+.account-flow-actions, .account-list-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.account-flow-actions { margin-top: 16px; }
+.account-flow-actions button { min-height: 32px; white-space: normal; text-align: center; }
+.account-flow-error { color: var(--app-danger, #ef8181); font-size: 12px; line-height: 1.6; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.account-flow-success { color: var(--app-accent, #64adff); font-size: 12px; }
+.account-list-row { flex-wrap: wrap; }
+.account-list-row .agent-account-identity { flex: 1 1 170px; }
+.account-list-actions { margin-left: auto; }
+@media (max-width: 700px) {
+  .account-flow { padding: 14px; }
+  .account-flow-steps { gap: 14px; }
+  .account-flow-info > div { grid-template-columns: 1fr; gap: 3px; }
+}

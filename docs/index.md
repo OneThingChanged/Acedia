@@ -18,8 +18,8 @@ configuration that supports it.
 
 ## Sessions and integrations
 
+* [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
-
 * [Codex account profiles](codex-accounts.md) - Independent local logins, session account selection, and account-scoped recovery and quotas.
 * [Claude account profiles](claude-accounts.md) - Separate configuration homes for simultaneous local accounts, scoped conversation recovery, and account usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.

@@ -13,6 +13,7 @@ sources:
   - resource: ../app/electron/services/provider-accounts.test.mjs
   - resource: ../app/electron/main.mjs
   - resource: ../app/src/components/ProviderAccounts.tsx
+  - resource: ../app/electron/services/account-identity.mjs
   - resource: ../app/src/lib/codexAccounts.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/session-service.mjs
@@ -24,10 +25,13 @@ sources:
 
 ## User workflow
 
-Open **Settings → Agents → Claude → Login accounts**, add a label, and choose
-**Browser login**. MultiAgent runs `claude auth login` with that account's own
-configuration directory. Complete authentication with the intended account in
-the browser. A label is user supplied, not a verified account identity.
+Open **Settings → Agents → Claude → Login accounts → Add account**, enter a
+display name, and choose **Add and sign in**. The app runs `claude auth login` with
+that account's own configuration directory. Complete authentication in the browser,
+then review the result and optionally set the new-session default in the completion
+card. A display name is user supplied. An email is shown only when available in
+the selected profile's local account metadata; it is not live identity verification.
+See [account registration](account-registration.md) for retries and result states.
 
 Select the default for new local Claude sessions in the same settings tab.
 New Session and New Project allow an override. Existing sessions retain their
@@ -64,7 +68,8 @@ On Windows the removal also handles differently cased environment names.
 Other accounts and the parent environment remain unchanged.
 
 One managed login per provider can be pending at a time, with cancellation and
-a five-minute deadline. Reauthentication is rejected while that profile has a
+a five-minute deadline. Cancellation and timeout are reported separately, and
+retry reuses the same profile. Reauthentication is rejected while that profile has a
 live local PTY. A session cannot start while its selected profile is logging in.
 OAuth process output is not returned to the renderer or persisted; only bounded
 in-memory output is examined for a known configuration-path failure. Login status

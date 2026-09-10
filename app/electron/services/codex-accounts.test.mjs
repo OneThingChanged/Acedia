@@ -100,7 +100,7 @@ describe("Codex account isolation", () => {
     expect(startLogin.mock.calls[0][0].CODEX_HOME).toBe(service.home(id));
   });
 
-  it("cancels only its login process and ignores late completion", () => {
+  it("times out only its login process and ignores late completion", () => {
     vi.useFakeTimers();
     let finish; const kill = vi.fn();
     const service = new CodexAccounts(temporary(), { startLogin: () => ({ onData() {}, onExit(fn) { finish = fn; }, kill }) });
@@ -108,7 +108,7 @@ describe("Codex account isolation", () => {
     vi.advanceTimersByTime(5 * 60_000);
     expect(kill).toHaveBeenCalledTimes(1);
     finish({ exitCode: 0 });
-    expect(service.list()[1].state).toBe("cancelled");
+    expect(service.list()[1].state).toBe("timed_out");
     expect(service.login).toBeNull();
   });
 

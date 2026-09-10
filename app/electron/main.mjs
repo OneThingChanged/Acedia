@@ -5383,7 +5383,7 @@ async function invokeCommand(event, command, rawArgs) {
         throw new Error("이 계정의 세션을 비활성화한 뒤 로그인하세요.");
       }
       return codexAccounts.beginLogin(args.accountId);
-    case "codex_accounts_cancel_login": codexAccounts.cancelLogin(); return null;
+    case "codex_accounts_cancel_login": codexAccounts.cancelLogin({ accountId: args.accountId }); return null;
     case "claude_accounts_list": return claudeAccounts.list();
     case "claude_accounts_create": return claudeAccounts.create(args.label);
     case "claude_accounts_login":
@@ -5391,7 +5391,7 @@ async function invokeCommand(event, command, rawArgs) {
         throw new Error("이 계정의 세션을 비활성화한 뒤 로그인하세요.");
       }
       return claudeAccounts.beginLogin(args.accountId);
-    case "claude_accounts_cancel_login": claudeAccounts.cancelLogin(); return null;
+    case "claude_accounts_cancel_login": claudeAccounts.cancelLogin({ accountId: args.accountId }); return null;
     case "resolve_cli_session": {
       const previousBinding = accountBindings.get(args.agentId);
       if (accountSwitches.has(args.agentId) || (previousBinding &&

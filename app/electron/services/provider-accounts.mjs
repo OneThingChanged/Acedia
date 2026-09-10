@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { storedAccountIdentity } from "./account-identity.mjs";
 
 const validId = (id) => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id);
 
@@ -77,12 +78,17 @@ export class ProviderAccounts {
 
   list() {
     if (this.loadError) throw this.loadError;
-    return [{ id: "default", label: "기존 로그인", state: "default" }, ...this.accounts.map((a) => ({
-      ...a,
-      state: this.login?.id === a.id ? "pending" : this.results.get(a.id) ||
-        (fs.existsSync(path.join(this.home(a.id), this.credentialFile)) ? "saved" : "empty"),
-      ...(this.failures.has(a.id) ? { failureReason: this.failures.get(a.id) } : {}),
-    }))];
+    return [{ id: "default", label: "기존 로그인", state: "default" }, ...this.accounts.map((a) => {
+      const home = this.home(a.id);
+      const credentialsSaved = fs.existsSync(path.join(home, this.credentialFile));
+      const result = this.results.get(a.id);
+      const state = this.login?.id === a.id ? "pending" : result && result !== "saved" ? result : credentialsSaved ? "saved" : "empty";
+      return {
+        ...a, state,
+        ...(state === "saved" ? { identity: storedAccountIdentity(this.provider, home) } : {}),
+        ...(this.failures.has(a.id) ? { failureReason: this.failures.get(a.id) } : {}),
+      };
+    })];
   }
 
   create(label) {
@@ -107,7 +113,9 @@ export class ProviderAccounts {
     this.results.delete(id);
     this.failures.delete(id);
     try {
-      job.timer = setTimeout(() => this.cancelLogin(), 5 * 60_000);
+      job.timer = setTimeout(() => {
+        if (this.login === job) this.cancelLogin({ accountId: id, timedOut: true });
+      }, 5 * 60_000);
       job.timer.unref?.();
       job.process = this.startLogin(this.environment(id));
       // Retain only a bounded transient tail to classify a known setup failure.
@@ -131,18 +139,20 @@ export class ProviderAccounts {
       job.outputTail = "";
       this.login = null;
       this.results.set(id, "failed");
+      this.failures.set(id, "login_start_failed");
       throw error;
     }
     return null;
   }
 
-  cancelLogin() {
+  cancelLogin({ accountId, timedOut = false } = {}) {
     const job = this.login;
     if (!job) return;
+    if (accountId && job.id !== accountId) throw new Error("진행 중인 로그인 계정이 변경되었습니다. 목록을 새로고침하세요.");
     this.login = null;
     clearTimeout(job.timer);
     job.outputTail = "";
     try { job.process?.kill(); } catch { /* login process already exited */ }
-    this.results.set(job.id, "cancelled");
+    this.results.set(job.id, timedOut ? "timed_out" : "cancelled");
   }
 }

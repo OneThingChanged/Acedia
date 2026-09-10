@@ -102,9 +102,8 @@ try {
           const input = document.querySelector('input');
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input, 'Work');
           input.dispatchEvent(new Event('input', {bubbles:true})); await wait();
-          click('계정 추가'); await wait();
+          click('추가하고 로그인'); await wait(2300);
           check(document.body.textContent.includes('Work'), 'Account was not listed');
-          click('브라우저 로그인'); await wait(2300);
           check(document.body.textContent.includes('로그인 저장됨'), 'Login completion was not shown');
           const account = (await window.multiAgentElectron.invoke('codex_accounts_list'))[1];
           window.showSettings(); await wait();
@@ -150,7 +149,7 @@ try {
           const claudeInput = document.querySelector('[data-account-provider=claude] input');
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(claudeInput, 'Claude Work');
           claudeInput.dispatchEvent(new Event('input', {bubbles:true})); await wait();
-          click('계정 추가'); await wait(); click('브라우저 로그인'); await wait(2300);
+          click('추가하고 로그인'); await wait(2300);
           check(document.body.textContent.includes('로그인 저장됨'), 'Claude login completion missing');
           const claudeAccount = (await window.multiAgentElectron.invoke('claude_accounts_list'))[1];
           const claudeDefault = document.querySelector('.agent-defaults select');

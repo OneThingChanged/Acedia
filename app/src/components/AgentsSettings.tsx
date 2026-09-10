@@ -80,8 +80,8 @@ export function AgentsSettings({
   const tabs = ["common", "codex", "claude", "qwen", "cline"];
   const selectTab = (id: string) => { setTab(id); setDefaults(loadAgentDefaults(id)); setSaveError(""); };
   const updateDefaults = (patch: Partial<AgentDefaults>) => {
-    try { setDefaults(saveAgentDefaults(tab, { ...loadAgentDefaults(tab), ...patch })); setSaveError(""); }
-    catch { setSaveError(text("기본값을 저장하지 못했습니다. 다시 시도하세요.", "Could not save defaults. Please try again.")); }
+    try { setDefaults(saveAgentDefaults(tab, { ...loadAgentDefaults(tab), ...patch })); setSaveError(""); return true; }
+    catch { setSaveError(text("기본값을 저장하지 못했습니다. 다시 시도하세요.", "Could not save defaults. Please try again.")); return false; }
   };
   const tool = toolForId(tab);
   const availability = (id: string) => <span className="agent-tool-avail" title={avail?.[id]?.path || ""}>
@@ -109,7 +109,9 @@ export function AgentsSettings({
     </> : <>
       <div className="agent-settings-toolhead"><span className="agent-settings-toolicon" style={{ color: tool.iconColor }}>{tool.icon}</span><div><h3>{tool.label}</h3><p>{text("로그인 환경과 새 세션의 실행 설정", "Login environment and defaults for new sessions")}</p></div>{availability(tab)}</div>
       <div className="agent-settings-card"><label className="agent-settings-row"><div><div className="agent-row-title">{tool.label} {text("사용", "enabled")}</div><div className="agent-row-sub">{text("새 세션을 만들 때 도구 목록에 표시합니다.", "Show this tool in the new session picker.")}</div></div><input type="checkbox" role="switch" checked={!disabledTools.includes(tab)} onChange={e => onToggleTool(tab, e.target.checked)} /></label></div>
-      {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId} />}
+      {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab}
+        defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId}
+        onMakeDefault={accountId => updateDefaults(tab === "codex" ? { codexAccountId: accountId } : { claudeAccountId: accountId })} />}
       {tab === "qwen" && <>
       <div className="agent-block">
         <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}</div>

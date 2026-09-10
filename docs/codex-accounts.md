@@ -12,6 +12,8 @@ sources:
   - resource: ../app/electron/services/codex-accounts.mjs
   - resource: ../app/electron/main.mjs
   - resource: ../app/src/components/CodexAccounts.tsx
+  - resource: ../app/src/components/ProviderAccounts.tsx
+  - resource: ../app/electron/services/account-identity.mjs
   - resource: ../app/src/lib/codexAccounts.ts
   - resource: ../app/src/lib/persistence.ts
   - resource: ../app/src/lib/spawn.ts
@@ -23,12 +25,16 @@ sources:
 
 ## User workflow
 
-Open **Settings → Agents → Codex → Login accounts**, enter a label, and add an account.
-Choose **Browser login** and complete Codex's browser authentication with the
-intended ChatGPT account. The label is user supplied; MultiAgent does not infer
-or verify the account email. Only one managed login runs at a time. A pending
-login can be cancelled and expires after five minutes. Reauthentication is
-blocked while a local session is running with that profile.
+Open **Settings → Agents → Codex → Login accounts → Add account**, enter a display
+name, and choose **Add and sign in**. Complete browser authentication with the
+intended account, then review the result and optionally use it as the default
+for new sessions. Failed attempts retry the same profile. Cancellation and the
+five-minute timeout have separate results. Reauthentication is blocked while a
+local session is running with that profile. See [account registration](account-registration.md).
+
+The display name is user supplied. A stored email is shown only when the selected
+profile's ID token contains a usable email field; unavailable metadata stays unknown.
+This does not validate token signatures, expiry or current server-side identity.
 
 The Codex tab also stores the default account for new local sessions.
 Select or override the account when creating a local project or session. For an existing
@@ -59,8 +65,9 @@ session startup, transcript lookup, and quota attribution. Ordinary
 sufficient here. The existing/default login home is not rewritten.
 Authentication remains in each profile's Codex-managed `auth.json`; credentials
 and OAuth process output are never returned to the renderer or written to the
-application logs by this integration. Login status indicates saved credentials,
-not a live validation of token expiry or account identity.
+application logs by this integration. Only the selected stored email is returned
+as local metadata. Login status indicates saved credentials, not a live validation
+of token expiry or account identity.
 
 Each additional profile receives its own `CODEX_HOME` and uses file credential
 storage. Managed CLI launches also override `cli_auth_credentials_store=file`
