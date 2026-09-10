@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AGENT_DEFAULTS_KEY, loadAgentDefaults, normalizeAgentDefaults, saveAgentDefaults } from "./agentDefaults";
 import { buildNewProjectWithFirstAgent } from "./projectCreation";
+import { loadStoredAgents } from "./persistence";
 
 afterEach(() => vi.unstubAllGlobals());
 function storage() {
@@ -9,6 +10,30 @@ function storage() {
   return data;
 }
 describe("per-tool new session defaults", () => {
+  it("snapshots advanced options on creation and restores them independently from later defaults", () => {
+    storage();
+    const launchOptions = { executable: "", args: ["--profile", "work space"], env: [{ name: "LANG", value: "ko_KR.UTF-8" }] };
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), launchOptions });
+    const payload = { name: "P", folder: "project", aiToolId: "codex", dangerous: false };
+    const { project, agent } = buildNewProjectWithFirstAgent(payload);
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), launchOptions: undefined });
+    expect(agent.launchOptions).toEqual(launchOptions);
+    expect(loadStoredAgents([JSON.parse(JSON.stringify(agent))], [project])[0].launchOptions).toEqual(launchOptions);
+    expect(loadAgentDefaults("claude").launchOptions).toBeUndefined();
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), launchOptions });
+    expect(buildNewProjectWithFirstAgent({ ...payload, launchOptions: undefined }).agent.launchOptions).toBeUndefined();
+    expect(buildNewProjectWithFirstAgent({ ...payload, sshHostId: "remote" }).agent.launchOptions).toBeUndefined();
+    expect(buildNewProjectWithFirstAgent({ ...payload, aiToolId: "none" }).agent.launchOptions).toBeUndefined();
+    const { launchOptions: _ignored, ...legacy } = agent;
+    expect(loadStoredAgents([legacy], [project])[0].launchOptions).toBeUndefined();
+  });
+  it("refuses invalid advanced defaults without overwriting saved data", () => {
+    storage();
+    const before = loadAgentDefaults("codex");
+    saveAgentDefaults("codex", before);
+    expect(() => saveAgentDefaults("codex", { ...before, launchOptions: { executable: "", args: [], env: [{ name: "CODEX_HOME", value: "bad" }] } })).toThrow("envReserved");
+    expect(loadAgentDefaults("codex")).toEqual(before);
+  });
   it("persists Claude account defaults and excludes them from SSH project launches", () => {
     storage();
     const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";

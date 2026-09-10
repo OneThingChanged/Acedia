@@ -2,6 +2,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
 import type { SerializeAddon } from "@xterm/addon-serialize";
+import type { LaunchOptions } from "./lib/launchOptions";
 import type {
   SpawnTerminalResult,
   TerminalDataPayload,
@@ -146,6 +147,7 @@ export type SshHost = {
 };
 
 export type Agent = {
+  launchOptions?: LaunchOptions;
   codexAccountId?: string;
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
@@ -181,6 +183,7 @@ export type Agent = {
 };
 
 export type StoredAgent = {
+  launchOptions?: LaunchOptions;
   codexAccountId?: string;
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
@@ -248,6 +251,7 @@ export type TerminalEntry = {
 };
 
 export type NewAgentPayload = {
+  launchOptions?: LaunchOptions;
   useAltScreen?: boolean;
   codexAccountId?: string;
   claudeAccountId?: string;
@@ -258,6 +262,7 @@ export type NewAgentPayload = {
 };
 
 export type NewProjectPayload = {
+  launchOptions?: LaunchOptions;
   useAltScreen?: boolean;
   workerSettings?: SessionWorkerSettings;
   codexAccountId?: string;

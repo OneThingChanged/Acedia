@@ -31,6 +31,7 @@ import {
   validateLayout,
 } from "./layout";
 import { normalizeSessionWorkerSettings } from "./sessionWorkers";
+import { normalizeLaunchOptions } from "./launchOptions";
 
 function projectNameFromFolder(folder: string) {
   const normalized = folder.replace(/\\/g, "/").replace(/\/$/, "");
@@ -161,6 +162,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         dangerous: !!c.dangerous,
         useAltScreen: c.useAltScreen || undefined,
         workerSettings: normalizeSessionWorkerSettings(c.workerSettings),
+        launchOptions: normalizeLaunchOptions(c.launchOptions),
         pinned: c.pinned || undefined,
         tabColor: c.tabColor || undefined,
         createdAt: c.createdAt,

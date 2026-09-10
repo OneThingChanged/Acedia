@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionWorkerFields } from "./SessionWorkerFields";
+import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
+import type { LaunchOptions } from "../lib/launchOptions";
 import { AccountSelect } from "./ProviderAccounts";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { openDialog } from "../platform/plugins";
@@ -40,6 +42,8 @@ export function NewProjectModal({
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
   const [dangerous, setDangerous] = useState(false);
+  const [launchOptions, setLaunchOptions] = useState<LaunchOptions>();
+  const [launchValid, setLaunchValid] = useState(true);
   const [remote, setRemote] = useState(false);
   const [sshHosts] = useState(() => loadSshHosts());
   const [sshHostId, setSshHostId] = useState<string>("");
@@ -69,6 +73,7 @@ export function NewProjectModal({
 
   const canSubmit =
     name.trim().length > 0 &&
+    (remote || !selectedTool.command || launchValid) &&
     visibleTools.some((tool) => tool.id === aiToolId) &&
     (remote ? sshHostId.length > 0 : folder.trim().length > 0);
 
@@ -90,6 +95,7 @@ export function NewProjectModal({
       onCreate({
         name: name.trim(),
         folder: folder.trim(),
+        launchOptions: selectedTool.command ? launchOptions : undefined,
         aiToolId,
         codexAccountId: aiToolId === "codex" ? codexAccountId : undefined,
         claudeAccountId: aiToolId === "claude" ? claudeAccountId : undefined,
@@ -129,6 +135,7 @@ export function NewProjectModal({
               setAiToolId(nextToolId);
               const defaults = loadAgentDefaults(nextToolId);
               setDangerous(defaults.dangerous);
+              setLaunchOptions(defaults.launchOptions); setLaunchValid(true);
               if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
               if (nextToolId === "claude") setClaudeAccountId(defaults.claudeAccountId);
               if (!toolForId(nextToolId).dangerousFlag) {
@@ -157,6 +164,8 @@ export function NewProjectModal({
           <label className="field-check"><input type="checkbox" checked={useAltScreen} onChange={e => setUseAltScreen(e.target.checked)} /><span>{text("Alt-screen 모드", "Alt-screen mode")}</span></label>
           <SessionWorkerFields settings={workerSettings} disabledTools={disabledTools} onChange={setWorkerSettings} />
         </>}
+        {!!selectedTool.command && !remote && <AdvancedLaunchOptions key={aiToolId} toolId={aiToolId}
+          value={launchOptions} onChange={setLaunchOptions} onValidityChange={setLaunchValid} />}
         {supportsDangerous && (
           <label className="field-check">
             <input

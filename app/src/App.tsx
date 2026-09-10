@@ -1,4 +1,5 @@
 import { loadAgentDefaults } from "./lib/agentDefaults";
+import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { switchProviderAccount } from "./lib/codexAccounts";
 import {
   useCallback,
@@ -289,6 +290,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     dangerous: agent.dangerous,
     useAltScreen: agent.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(agent.workerSettings),
+    launchOptions: normalizeLaunchOptions(agent.launchOptions),
     pinned: agent.pinned || undefined,
     tabColor: agent.tabColor || undefined,
     createdAt: agent.createdAt,
@@ -423,6 +425,7 @@ function agentFromStored(
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
+    launchOptions: normalizeLaunchOptions(stored.launchOptions),
     pinned: stored.pinned || undefined,
     tabColor: stored.tabColor || undefined,
     createdAt: stored.createdAt || existing?.createdAt || Date.now(),
@@ -2681,6 +2684,10 @@ function App() {
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
             claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
+            launchOptions: !project.sshHostId && tool.command ? normalizeLaunchOptions(
+              Object.prototype.hasOwnProperty.call(payload, "launchOptions")
+                ? payload.launchOptions : loadAgentDefaults(tool.id).launchOptions
+            ) : undefined,
             useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
             workerSettings:
               tool.id === "codex"
@@ -3418,7 +3425,7 @@ function App() {
           const group = groupsRef.current.find((g) =>
             collectAgentIds(g.layout).has(agentId)
           );
-          const { initCommand, ssh, cwd } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId
@@ -3428,6 +3435,7 @@ function App() {
             shell: null,
             cwd,
             initCommand,
+            launchOptions,
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
             claudeAccountId: agent.claudeAccountId,

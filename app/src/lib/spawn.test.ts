@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent } from "../types";
+import { LS_SSH_HOSTS, type Agent } from "../types";
 import {
   addTerminalCompatibilityArgs,
   buildSpawnArgs,
@@ -12,6 +12,7 @@ vi.mock("../platform/runtime", () => ({ invoke: invokeMock }));
 
 beforeEach(() => {
   invokeMock.mockReset();
+  vi.unstubAllGlobals();
 });
 
 describe("resolveLocalToolCommand", () => {
@@ -100,6 +101,25 @@ describe("buildSpawnArgs resume recovery", () => {
     status: "idle",
     createdAt: 1,
   } as Agent;
+  it("transports advanced settings without merging them into generated shell text", async () => {
+    const launchOptions = { executable: "", args: ["--profile", "work space"], env: [{ name: "LANG", value: "ko" }] };
+    invokeMock.mockImplementation(async command => command === "runtime_flags" ? { advanced_launch_options: true } : "saved-session");
+    const result = await buildSpawnArgs({ ...agent, launchOptions }, null, vi.fn());
+    expect(result.initCommand).toBe("codex resume saved-session --no-alt-screen");
+    expect(result.launchOptions).toEqual(launchOptions);
+    expect(result.launchOptions).not.toBe(launchOptions);
+  });
+  it("requires a capable backend rather than silently ignoring new options in a stale dev process", async () => {
+    invokeMock.mockResolvedValue({});
+    await expect(buildSpawnArgs({ ...agent, launchOptions: { executable: "", args: ["--profile", "work"], env: [] } }, null, vi.fn())).rejects.toThrow("Restart the app");
+  });
+  it("does not send local advanced settings to SSH", async () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === LS_SSH_HOSTS ? JSON.stringify([{ id: "remote", host: "example.test", user: "user", remoteOs: "windows" }]) : null });
+    const result = await buildSpawnArgs({ ...agent, sshHostId: "remote", launchOptions: { executable: "C:/local/cli.exe", args: ["local"], env: [] } }, null, vi.fn());
+    expect(result.launchOptions).toBeUndefined();
+    expect(result.initCommand).toBe("codex.cmd --no-alt-screen");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
 
   it("recovers a missing localStorage id from the per-agent backend index", async () => {
     invokeMock.mockResolvedValueOnce("session-from-hook-index");

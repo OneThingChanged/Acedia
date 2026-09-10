@@ -6,6 +6,8 @@ import type { Agent, Project } from "../types";
 import { toolForId } from "../types";
 import { findSshHost, sshHostSummary } from "../lib/sshHosts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
+import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
+import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionStorageList } from "./SessionStorageList";
 import { useAppLanguage } from "../lib/appLanguage";
 
@@ -64,7 +66,7 @@ export function SessionPropertiesModal({
   onUpdateAgent: (
     id: string,
     patch: Partial<
-      Pick<Agent, "dangerous" | "useAltScreen" | "workerSettings">
+      Pick<Agent, "dangerous" | "useAltScreen" | "workerSettings" | "launchOptions">
     >
   ) => void;
   onAccountChange?: (accountId: string) => Promise<void>;
@@ -90,7 +92,7 @@ export function SessionPropertiesModal({
   const supportsAltScreen = agent.aiToolId === "codex";
   const supportsWorkers = agent.aiToolId === "codex";
   const supportsOptions =
-    supportsDangerous || supportsAltScreen || supportsWorkers;
+    supportsDangerous || supportsAltScreen || supportsWorkers || !!tool.command;
   const tabs: SessionPropertiesTab[] = [
     { id: "overview", label: text("기본 정보", "Overview") },
     { id: "storage", label: text("세션 데이터", "Session data") },
@@ -329,6 +331,10 @@ export function SessionPropertiesModal({
                   className="session-worker-fields session-worker-fields-props"
                 />
               )}
+              {tool.command && !sshHostId && <AdvancedLaunchOptions key={agent.id} toolId={agent.aiToolId}
+                value={agent.launchOptions} onChange={launchOptions => onUpdateAgent(agent.id, { launchOptions })}
+                onLoadDefaults={() => loadAgentDefaults(agent.aiToolId).launchOptions} />}
+              {tool.command && sshHostId && <p className="agent-hint">{text("CLI 경로·추가 인수·환경변수 편집은 로컬 세션에서 지원합니다.", "CLI path, additional arguments, and environment editing are available for local sessions.")}</p>}
               <div className="session-props-toggle-note">
                 {text("변경은 세션을 비활성화한 뒤 다시 열면 적용됩니다", "Changes apply after deactivating and reopening the session")}
               </div>

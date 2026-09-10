@@ -101,6 +101,7 @@ export type TerminalReplay = Required<
 export type SpawnTerminalResult = { reattached: boolean; cancelled?: boolean };
 
 export type SpawnTerminalArgs = {
+  launchOptions?: import("../lib/launchOptions").LaunchOptions;
   codexAccountId?: string;
   claudeAccountId?: string;
   id: string;

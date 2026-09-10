@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from "react";
 import { invoke } from "../platform/runtime";
 import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
-import { loadAgentDefaults, saveAgentDefaults, type AgentDefaults } from "../lib/agentDefaults";
+import { AGENT_DEFAULTS_KEY, loadAgentDefaults, saveAgentDefaults, type AgentDefaults } from "../lib/agentDefaults";
+import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 
@@ -69,10 +70,17 @@ export function AgentsSettings({
   const tabPrefix = useId();
   const [defaults, setDefaults] = useState(() => loadAgentDefaults("codex"));
   const [saveError, setSaveError] = useState("");
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key === AGENT_DEFAULTS_KEY || event.key === null) setDefaults(loadAgentDefaults(tab));
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [tab]);
   const tabs = ["common", "codex", "claude", "qwen", "cline"];
   const selectTab = (id: string) => { setTab(id); setDefaults(loadAgentDefaults(id)); setSaveError(""); };
   const updateDefaults = (patch: Partial<AgentDefaults>) => {
-    try { setDefaults(saveAgentDefaults(tab, { ...defaults, ...patch })); setSaveError(""); }
+    try { setDefaults(saveAgentDefaults(tab, { ...loadAgentDefaults(tab), ...patch })); setSaveError(""); }
     catch { setSaveError(text("기본값을 저장하지 못했습니다. 다시 시도하세요.", "Could not save defaults. Please try again.")); }
   };
   const tool = toolForId(tab);
@@ -144,8 +152,13 @@ export function AgentsSettings({
             {tab === "codex" && <><label className="agent-settings-row"><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}</div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label><div className="agent-settings-row"><SessionWorkerFields settings={defaults.workerSettings} disabledTools={disabledTools} onChange={workerSettings => updateDefaults({ workerSettings })} /></div></>}
           </details>
         </div><p className="agent-hint">{text("자동 저장됩니다. 기존 세션의 계정과 실행 옵션은 변경되지 않습니다.", "Saved automatically. Existing session accounts and options remain unchanged.")}</p>
-        {saveError && <p role="alert">{saveError}</p>}
       </>}
+      {tool.command && <>
+        <AdvancedLaunchOptions key={tab} toolId={tab} value={defaults.launchOptions}
+          detectedPath={avail?.[tab]?.path} onChange={launchOptions => updateDefaults({ launchOptions })} />
+        <p className="agent-hint">{text("고급 설정은 자동 저장되며 새 로컬 세션부터 적용됩니다. 기존 세션은 세션 속성에서 변경하세요.", "Advanced settings are saved automatically for new local sessions. Edit existing sessions in Session properties.")}</p>
+      </>}
+      {saveError && <p role="alert">{saveError}</p>}
     </>}
     </div>
   </div>;

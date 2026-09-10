@@ -1,0 +1,33 @@
+.advanced-launch-options { margin: 16px 0; min-width: 0; container-type: inline-size; }
+.advanced-launch-options details { background: var(--app-input-bg, var(--app-panel)); border: 1px solid var(--app-border); border-radius: 8px; }
+.advanced-launch-options summary { cursor: pointer; padding: 14px 16px; font-size: 13px; }
+.advanced-launch-summary { float: right; margin-left: 10px; color: var(--app-muted); font-size: 11px; }
+.advanced-launch-section { padding: 15px 16px; border-top: 1px solid var(--app-border); }
+.advanced-launch-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13px; flex-wrap: wrap; }
+.advanced-launch-mode { display: flex; border: 1px solid var(--app-border); border-radius: 5px; padding: 2px; }
+.advanced-launch-mode button, .advanced-launch-add, .advanced-launch-value button, .advanced-launch-remove { border: 0; background: transparent; color: var(--app-muted); cursor: pointer; border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+.advanced-launch-mode button[aria-pressed="true"] { background: var(--app-button-bg); color: var(--app-accent, #64adff); }
+.advanced-launch-path { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.advanced-launch-path code { flex: 1; overflow-wrap: anywhere; min-width: 0; color: var(--app-muted); font-size: 12px; }
+.advanced-launch-options input { min-width: 0; width: 100%; padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 5px; background: var(--app-panel); color: var(--app-text); font: 12px var(--font-mono, Consolas, monospace); }
+.advanced-launch-path input { flex: 1; }
+.advanced-launch-path > button { flex-shrink: 0; }
+.advanced-launch-list { display: grid; gap: 7px; }
+.advanced-launch-arg { display: grid; grid-template-columns: 18px minmax(0, 1fr) 30px; gap: 7px; align-items: center; }
+.advanced-launch-arg > span { font-size: 11px; text-align: center; color: var(--app-muted); }
+.advanced-launch-env { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 30px; gap: 7px; align-items: center; }
+.advanced-launch-value { display: flex; align-items: center; min-width: 0; background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 5px; }
+.advanced-launch-value input { border: 0; background: transparent; }
+.advanced-launch-value button { flex-shrink: 0; }
+.advanced-launch-add { color: var(--app-accent, #64adff); }
+.advanced-launch-remove:hover { color: var(--app-danger, #e88b8b); }
+.advanced-launch-hint { color: var(--app-muted); font-size: 11px; line-height: 1.6; margin: 8px 0 0; }
+.advanced-launch-error { color: var(--app-danger, #e88b8b); font-size: 12px; line-height: 1.6; margin: 8px 0; }
+.advanced-launch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--app-border); }
+.advanced-launch-options button:focus-visible { outline: 2px solid var(--app-accent, #64adff); outline-offset: 2px; }
+@container (max-width: 480px) {
+  .advanced-launch-summary { display: block; float: none; margin: 5px 0 0 16px; }
+  .advanced-launch-env { grid-template-columns: minmax(0, 1fr) 30px; }
+  .advanced-launch-env > input, .advanced-launch-value { grid-column: 1; }
+  .advanced-launch-env > .advanced-launch-remove { grid-column: 2; grid-row: 1 / 3; }
+}

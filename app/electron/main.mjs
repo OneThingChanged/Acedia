@@ -16,6 +16,7 @@ import {
   Tray,
 } from "electron";
 import fs from "node:fs";
+import { prepareLaunchCommand, mergeLaunchEnvironment } from "./services/agent-launch.mjs";
 import { promises as fsPromises } from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -2912,6 +2913,7 @@ async function spawnPty(args, event) {
   }
 
   const ssh = args.ssh ? asObject(args.ssh) : null;
+  if (ssh && args.launchOptions) throw new Error("Advanced launch settings are available for local sessions only.");
   let executable;
   let shellArgs;
   let reversePort = null;
@@ -2957,6 +2959,10 @@ async function spawnPty(args, event) {
     throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
   }
   const ptyCols = asPositiveInt(args.cols, 120);
+  const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions);
+  const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
+    shell: executable, toolId: aiToolId, env: launchEnvironment,
+  });
   const ptyRows = asPositiveInt(args.rows, 30);
   const outputFilter =
     aiToolId === "codex"
@@ -2975,7 +2981,7 @@ async function spawnPty(args, event) {
       rows: ptyRows,
       cwd,
       env: {
-        ...(devUrl ? devElectronEnvironment(accountEnv) : accountEnv),
+        ...(devUrl ? devElectronEnvironment(launchEnvironment) : launchEnvironment),
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
         MULTIAGENT_AGENT_ID: id,
@@ -3035,7 +3041,7 @@ async function spawnPty(args, event) {
     return { reattached: false, cancelled: true };
   }
 
-  const initCommand = ssh ? "" : asString(args.initCommand).trim();
+  const initCommand = launchCommand;
   if (initCommand) {
     entry.initTimer = setTimeout(() => {
       entry.initTimer = null;
@@ -4759,6 +4765,7 @@ async function invokeCommand(event, command, rawArgs) {
           open_agent_id: null,
         }),
         build_variant: runtimeVariant.id,
+        advanced_launch_options: true,
         remote_enabled: runtimeVariant.remoteEnabled,
         update_provider: runtimeVariant.updateProvider,
         live_agent_ids: [...terminalSessions.keys()],

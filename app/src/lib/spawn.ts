@@ -3,8 +3,10 @@ import { toolForId } from "../types";
 import type { Agent, SshHost } from "../types";
 import { findSshHost } from "./sshHosts";
 import { addSessionWorkerArgs } from "./sessionWorkers";
+import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
 
 export type SpawnArgs = {
+  launchOptions?: LaunchOptions;
   initCommand: string | null;
   ssh: {
     host: string;
@@ -79,6 +81,13 @@ export async function buildSpawnArgs(
 ): Promise<SpawnArgs> {
   const tool = toolForId(agent.aiToolId);
   const sshHost = agent.sshHostId ? findSshHost(agent.sshHostId) : null;
+  const launchOptions = !agent.sshHostId && tool.command ? normalizeLaunchOptions(agent.launchOptions) : undefined;
+  if (launchOptions) {
+    const flags = await invoke<{ advanced_launch_options?: boolean }>("runtime_flags");
+    if (!flags?.advanced_launch_options) {
+      throw new Error("고급 실행 설정을 적용하려면 앱을 다시 시작하세요. Restart the app to use advanced launch settings.");
+    }
+  }
   let initCommand: string | null = null;
 
   if (tool.command) {
@@ -189,5 +198,6 @@ export async function buildSpawnArgs(
       }
     : null;
 
-  return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null };
+  return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null,
+    launchOptions };
 }

@@ -8,6 +8,7 @@ import { folderTail } from "../lib/path";
 import { defaultAiToolId } from "../lib/projectCreation";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionWorkerFields } from "./SessionWorkerFields";
+import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { SessionWorkerSettings } from "../types";
 
 export function NewAgentModal({
@@ -42,15 +43,18 @@ export function NewAgentModal({
     SessionWorkerSettings | undefined
   >(() => loadAgentDefaults("codex").workerSettings);
   const selectedTool = toolForId(aiToolId);
+  const [launchOptions, setLaunchOptions] = useState(() => loadAgentDefaults(aiToolId).launchOptions);
+  const [launchValid, setLaunchValid] = useState(true);
   const supportsDangerous = !!selectedTool.dangerousFlag;
 
-  const canSubmit = !!project && name.trim().length > 0;
+  const canSubmit = !!project && name.trim().length > 0 && (!!project.sshHostId || !selectedTool.command || launchValid);
 
   const submit = () => {
     if (!canSubmit) return;
     onCreate({
       name: name.trim(),
       aiToolId,
+      launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
       codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
       claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
       dangerous: dangerous && supportsDangerous,
@@ -97,6 +101,7 @@ export function NewAgentModal({
             onChange={(e) => {
               const id = e.target.value; const defaults = loadAgentDefaults(id);
               setAiToolId(id); setDangerous(defaults.dangerous);
+              setLaunchOptions(defaults.launchOptions); setLaunchValid(true);
               if (id === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
               if (id === "claude") setClaudeAccountId(defaults.claudeAccountId);
             }}
@@ -137,6 +142,8 @@ export function NewAgentModal({
           />
         )}
 
+        {!!selectedTool.command && !project?.sshHostId && <AdvancedLaunchOptions key={aiToolId} toolId={aiToolId}
+          value={launchOptions} onChange={setLaunchOptions} onValidityChange={setLaunchValid} />}
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onCancel}>
             {text("취소", "Cancel")}

@@ -7,6 +7,7 @@ import {
 } from "../types";
 import { normalizeSessionWorkerSettings } from "./sessionWorkers";
 import { loadAgentDefaults } from "./agentDefaults";
+import { normalizeLaunchOptions } from "./launchOptions";
 
 export function defaultAiToolId(disabledTools: readonly string[]): string {
   return (
@@ -47,6 +48,10 @@ export function buildNewProjectWithFirstAgent(
     folder: project.folder,
     aiToolId: tool.id,
     aiLabel: tool.label,
+    launchOptions: !sshHostId && tool.command ? normalizeLaunchOptions(
+      Object.prototype.hasOwnProperty.call(payload, "launchOptions")
+        ? payload.launchOptions : loadAgentDefaults(tool.id).launchOptions
+    ) : undefined,
     codexAccountId: !sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
     claudeAccountId: !sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
     dangerous: payload.dangerous && !!tool.dangerousFlag,
