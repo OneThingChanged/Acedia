@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.0",
-  "multiAgentReleaseVersion": "1.8.0.5",
+  "multiAgentReleaseVersion": "1.8.0.6",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -12,6 +12,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:terminal-settings-smoke": "node scripts/electron-terminal-settings-smoke.mjs",
+    "electron:terminal-colors-smoke": "node scripts/electron-terminal-colors-smoke.mjs",
     "electron:shared-profile-smoke": "node scripts/electron-shared-profile-smoke.mjs",
     "electron:remote-image-submit-smoke": "node scripts/electron-remote-image-submit-smoke.mjs",
     "electron:smoke": "electron electron/pty-smoke.mjs",
@@ -107,9 +109,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.0.5-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.0.6-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.0.5",
+      "uninstallDisplayName": "Acedia 1.8.0.6",
       "include": "electron/installer.nsh"
     },
     "publish": [

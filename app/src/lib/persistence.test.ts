@@ -157,3 +157,12 @@ describe("Codex account persistence", () => {
     expect(restored[0]).toMatchObject({ codexAccountId: "work", codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" });
   });
 });
+
+describe("Claude account persistence", () => {
+  it("retains both the selected account and its conversation history on restart", () => {
+    const restored = loadStoredAgents([{ id: "a", projectId: "p", name: "A", folder: "project", aiToolId: "claude", createdAt: 0,
+      claudeAccountId: "work", claudeAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" }],
+      [{ id: "p", name: "P", folder: "project", createdAt: 0 }]);
+    expect(restored[0]).toMatchObject({ claudeAccountId: "work", claudeAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" });
+  });
+});

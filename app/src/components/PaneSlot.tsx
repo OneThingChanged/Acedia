@@ -13,6 +13,7 @@ import type {
 } from "../platform/ipcContract";
 import { toolForId, toolSupportsChat } from "../types";
 import { buildSpawnArgs } from "../lib/spawn";
+import { subscribeTerminalSettings } from "../lib/terminalSettings";
 import type {
   Agent,
   AgentStatus,
@@ -286,6 +287,7 @@ export function PaneSlot({
             initCommand,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
+            claudeAccountId: cur.claudeAccountId,
             ssh,
             cols,
             rows,
@@ -385,6 +387,7 @@ export function PaneSlot({
             initCommand,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
+            claudeAccountId: cur.claudeAccountId,
             ssh,
             cols,
             rows,
@@ -408,6 +411,7 @@ export function PaneSlot({
 
     const ro = new ResizeObserver(scheduleApply);
     ro.observe(entry.el);
+    const stopSettingsSubscription = subscribeTerminalSettings(scheduleApply);
     scheduleApply();
 
     let pendingLinkClick: TerminalMouseLink | null = null;
@@ -501,30 +505,6 @@ export function PaneSlot({
         const next = clampTerminalFontSize(current + (e.deltaY < 0 ? 1 : -1));
         if (next === current) return;
         saveTerminalFontSize(next);
-
-        for (const [entryId, entry] of termsRef.current) {
-          entry.term.options.fontSize = next;
-          if (
-            !entry.spawned ||
-            !entry.el.isConnected ||
-            entry.el.clientWidth === 0 ||
-            entry.el.clientHeight === 0
-          ) {
-            continue;
-          }
-          try {
-            entry.fit.fit();
-          } catch {
-            continue;
-          }
-          const { cols, rows } = entry.term;
-          if (cols < 2 || rows < 2) continue;
-          if (entryId === agentId) {
-            lastCols = cols;
-            lastRows = rows;
-          }
-          invoke("resize_pty", { id: entryId, cols, rows }).catch(() => {});
-        }
         return;
       }
       if (targetEntry.term.buffer.active.type === "alternate") {
@@ -587,6 +567,7 @@ export function PaneSlot({
         invoke("detach_terminal", { id: agentId }).catch(() => {});
       }
       ro.disconnect();
+      stopSettingsSubscription();
       window.clearTimeout(debounceTimer);
       container.removeEventListener("mousedown", linkMouseDownHandler, {
         capture: true,

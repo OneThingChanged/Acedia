@@ -65,6 +65,12 @@ limits are fetched from the local Claude Code OAuth usage endpoint only when a
 usable local credential exists. These percentages describe provider reset
 windows, not “tokens remaining” in the local history database.[^usage-service][^status-bar]
 
+Managed Claude profiles use their own credential files for usage refresh. Each
+account has separately keyed overall/model windows labeled with its profile name;
+the default login retains its existing keys. Unavailable profiles preserve their
+last snapshot without overwriting another account. The transcript scan includes
+every managed Claude `projects/` root. See [Claude account profiles](claude-accounts.md).
+
 Refresh failures preserve the last useful snapshot and expose an error/staleness
 state rather than replacing it with a fabricated zero.
 

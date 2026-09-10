@@ -48,6 +48,7 @@ export function buildNewProjectWithFirstAgent(
     aiToolId: tool.id,
     aiLabel: tool.label,
     codexAccountId: !sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
+    claudeAccountId: !sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
     dangerous: payload.dangerous && !!tool.dangerousFlag,
     useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
     workerSettings: tool.id === "codex" ? Object.prototype.hasOwnProperty.call(payload, "workerSettings")

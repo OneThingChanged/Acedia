@@ -1,6 +1,7 @@
 import { APP_LOCALES, LOCALE_LABELS } from "../lib/locales/translate";
 import { AgentsSettings } from "./AgentsSettings";
-import { useEffect, useState, type ReactNode } from "react";
+import { TerminalSettingsPanel } from "./TerminalSettingsPanel";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { invoke } from "../platform/runtime";
 import {
@@ -159,6 +160,7 @@ type DiagnosticExportState =
   | { status: "error"; message: string };
 
 type SettingsCategory =
+  | "terminal"
   | "language"
   | "general"
   | "agents"
@@ -199,6 +201,9 @@ const IconGlobe = () => (
 const IconServer = () => (
   <svg {...svgProps}><rect x="3" y="4" width="18" height="7" rx="1.6" /><rect x="3" y="13" width="18" height="7" rx="1.6" /><line x1="7" y1="7.5" x2="7" y2="7.5" /><line x1="7" y1="16.5" x2="7" y2="16.5" /></svg>
 );
+const IconTerminal = () => (
+  <svg {...svgProps}><path d="m4 6 5 5-5 5M12 17h8" /></svg>
+);
 const IconInfo = () => (
   <svg {...svgProps}><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="7.6" x2="12" y2="7.6" /></svg>
 );
@@ -226,6 +231,7 @@ const ALL_NAV_ENTRIES: NavEntry[] = [
   { id: "general", group: "Workspace", label: "General", labelKo: "일반", title: "General", titleKo: "일반", sub: "테마 · 알림음 · 데스크톱 펫", subEn: "Theme · notifications · Desktop Pet", keywords: "theme 테마 appearance sound 알림음 notification pet 펫", icon: <IconSliders /> },
   { id: "language", group: "Workspace", label: "Language", labelKo: "언어", title: "Language", titleKo: "언어", sub: "앱 표시 언어", subEn: "Application display language", keywords: "language 언어 한국어 korean english 영어 system 시스템", icon: <IconGlobe /> },
   { id: "agents", group: "Workspace", label: "Agents", labelKo: "에이전트", title: "Agents", titleKo: "에이전트", sub: "도구별 계정 · 실행 기본값", subEn: "Accounts · launch defaults", keywords: "agent 에이전트 연결 connection status usage 사용량 bar qwen region 리전 나라 country", icon: <IconActivity /> },
+  { id: "terminal", group: "Workspace", label: "Terminal", labelKo: "터미널", title: "Terminal", titleKo: "터미널", sub: "글꼴 · 커서 · 스크롤 이력 · 클립보드", subEn: "Font · cursor · scrollback · clipboard", keywords: "terminal 터미널 font 글꼴 폰트 size 크기 line height 줄 간격 cursor 커서 scrollback 스크롤 이력 clipboard 클립보드 copy 복사 paste 붙여넣기", icon: <IconTerminal /> },
   { id: "data", group: "Workspace", label: "Data & Sessions", labelKo: "데이터 및 세션", title: "Data & Sessions", titleKo: "데이터 및 세션", sub: "세션별 대화 · 산출물 저장 위치", subEn: "Per-session conversations · artifact storage", keywords: "data 데이터 conversation 대화 session 세션 storage 저장소 path 경로 artifact 산출물", icon: <IconDatabase /> },
   { id: "shortcuts", group: "Workspace", label: "Shortcuts", labelKo: "단축키", title: "Shortcuts", titleKo: "단축키", sub: "명령별 키보드 단축키", subEn: "Keyboard shortcuts by command", keywords: "keyboard 단축키 hotkey shortcut", icon: <IconKeyboard /> },
   { id: "hooks", group: "Workspace", label: "Agent Hooks", labelKo: "에이전트 훅", title: "Agent Hooks", titleKo: "에이전트 훅", sub: "Codex/Claude Hook 자동 점검·복구", subEn: "Automatic Codex/Claude hook checks and repair", keywords: "agent hook codex claude repair 복구", icon: <IconActivity /> },
@@ -305,6 +311,28 @@ export function SettingsModal({
   onClose: () => void;
 }) {
   useNativeViewOcclusion();
+  const screenRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement : null,
+  );
+  useEffect(() => {
+    const screen = screenRef.current;
+    const workspace = screen?.closest(".app");
+    if (!screen || !workspace) return;
+    // Keep sessions mounted and running, but exclude the covered workspace from
+    // keyboard navigation and assistive technology while settings are open.
+    const covered = Array.from(workspace.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement &&
+        !element.contains(screen) && !element.matches(".app-topbar, .modal-backdrop"),
+    ).map(element => ({ element, inert: element.inert }));
+    for (const { element } of covered) element.inert = true;
+    screen.querySelector<HTMLElement>(".app-settings-back")?.focus();
+    return () => {
+      for (const { element, inert } of covered) element.inert = inert;
+      if (previousFocus.current?.isConnected) previousFocus.current.focus();
+    };
+  }, []);
   const { preference: languagePreference, language, setPreference, text } =
     useAppLanguage();
 
@@ -480,6 +508,17 @@ export function SettingsModal({
     { status: "idle" | "testing" } | { status: "ok" | "error"; message: string }
   >({ status: "idle" });
   const [sshGuideOpen, setSshGuideOpen] = useState(false);
+  useEffect(() => {
+    if (sshGuideOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, sshGuideOpen]);
   // Password for the host being edited. Never stored in the host object /
   // localStorage — persisted via the ssh_password_* commands (Rust-side file).
   const [sshPasswordInput, setSshPasswordInput] = useState("");
@@ -1019,31 +1058,45 @@ export function SettingsModal({
   return (
     <>
     {sshGuideOpen && <SshSetupGuide onClose={() => setSshGuideOpen(false)} />}
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop app-settings-layer">
       <div
-        className="modal app-settings-modal"
+        ref={screenRef}
+        className="app-settings-screen"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="app-settings-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-label={text("설정", "Settings")}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]',
+          )).filter(element => element.getClientRects().length > 0);
+          const first = controls[0];
+          const last = controls[controls.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first?.focus();
+          }
+        }}
       >
         <aside className="app-settings-side">
           <div className="app-settings-side-head">
-            <span className="app-settings-brand">M</span>
-            <h2 id="app-settings-title" className="modal-title">
-              {text("설정", "Settings")}
-            </h2>
+            <button type="button" className="app-settings-back" onClick={onClose} autoFocus>
+              <svg {...svgProps} aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h15" /></svg>
+              {text("앱으로 돌아가기", "Back to app")}
+            </button>
           </div>
           <label className="app-settings-search">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
             <input
               type="search"
               value={search}
+              aria-label={text("설정 검색", "Search settings")}
               placeholder={text("설정 검색…", "Search settings…")}
               onChange={(e) => handleSearch(e.target.value)}
             />
           </label>
-          <nav className="app-settings-nav">
+          <nav className="app-settings-nav" aria-label={text("설정 카테고리", "Settings categories")}>
             {NAV_GROUPS.map((group) => {
               const entries = NAV_ENTRIES.filter(
                 (entry) => entry.group === group && matchesSearch(entry)
@@ -1064,6 +1117,7 @@ export function SettingsModal({
                       className={`app-settings-nav-item ${
                         tab === entry.id ? "app-settings-nav-item-active" : ""
                       }`}
+                      aria-current={tab === entry.id ? "page" : undefined}
                       onClick={() => setTab(entry.id)}
                     >
                       <span className="app-settings-nav-icon">{entry.icon}</span>
@@ -1076,7 +1130,6 @@ export function SettingsModal({
           </nav>
           <div className="app-settings-side-foot">
             <span className="app-settings-ver">v{APP_VERSION}</span>
-            <button className="btn-primary" onClick={onClose}>{text("완료", "Done")}</button>
           </div>
         </aside>
 
@@ -1090,12 +1143,10 @@ export function SettingsModal({
               {text(activeEntry.sub, activeEntry.subEn)}
             </div>
           </div>
-          <button className="app-icon-btn" onClick={onClose} title={text("닫기", "Close")}>
-            ×
-          </button>
         </div>
 
         <div className="app-settings-body">
+        {tab === "terminal" && <TerminalSettingsPanel />}
         {tab === "language" && (
         <div className="app-settings-section">
           <div className="field-label">{text("언어", "Language")}</div>

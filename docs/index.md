@@ -14,10 +14,12 @@ configuration that supports it.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
+* [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Incremental settings work, acceptance criteria, terminal preferences, and the next implementation step.
 
 ## Sessions and integrations
 
 * [Codex account profiles](codex-accounts.md) - Independent local logins, session account selection, and account-scoped recovery and quotas.
+* [Claude account profiles](claude-accounts.md) - Separate configuration homes for simultaneous local accounts, scoped conversation recovery, and account usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, and usage surfaces.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.

@@ -1,5 +1,10 @@
 # OKF Update Log
 
+## 2026-09-11
+
+* **Acedia 1.8.0.6 — accounts, settings and terminal colors**: Added independent Claude account profiles and per-session selection, with account-scoped conversations, hooks and quota snapshots. Settings now covers the workspace and returns to preserved sessions through Back to app or Escape. The Terminal panel controls fonts, line height, cursor, scrollback and clipboard behavior; live views, new terminals and window storage events share the same preferences. Development launches clear inherited NO_COLOR at both startup and PTY creation, and renderer loading tolerates a restarting development server.
+* **Validation and source version**: All 519 desktop tests, frontend build, hidden Electron account/settings and terminal checks passed. An isolated CLI check and an actual resumed conversation verified color restoration; the user confirmed the displayed colors. Existing session identifiers were preserved. Real simultaneous multi-account OAuth/model requests and installed-package rollout remain unverified. Product and Android versionName metadata advance to 1.8.0.6; npm remains 1.8.0 and Android versionCode remains 18 because no APK was rebuilt. This source commit includes no installer or deployment.
+
 ## 2026-09-10
 
 * **Remote image submission, source 1.8.0.5**: Replaced the 80ms paste-to-Enter gap with a 500ms minimum plus observed PTY output and 250ms quiet time, bounded at 3 seconds. Concurrent composer writes on the same PTY are rejected before input; post-write uncertainty retains the request ID to prevent replay. Added regression cases for delayed output, missing output, target loss and paste-burst Enter suppression. 494 tests, frontend build and a real Codex CLI 0.153.4 integration smoke passed: PNG upload through the loopback PWA API initiated a local mock model request, with one Enter even after HTTP retry. The earlier timing did not fail deterministically in the isolated CLI; the user's exact recurring environment remains unverified. Existing EXE/Store packages have not been replaced.

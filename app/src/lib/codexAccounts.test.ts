@@ -1,10 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { switchCodexAccount } from "./codexAccounts";
+import { switchCodexAccount, switchProviderAccount } from "./codexAccounts";
 import type { Agent } from "../types";
 
 const agent: Agent = { id: "a", projectId: "p", name: "A", folder: "project", aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 0, lastSessionId: "default-conversation" };
 
 describe("session account switching", () => {
+  it("restores Claude conversations independently of Codex bindings and other sessions", () => {
+    const claude: Agent = { ...agent, aiToolId: "claude", claudeAccountId: "personal", codexAccountSessions: { default: "codex-conversation" } };
+    const work = switchProviderAccount(claude, "work");
+    expect(work).toMatchObject({ claudeAccountId: "work", claudeAccountSessions: { personal: "default-conversation" }, runtimeStatus: "idle", deferredStart: true });
+    expect(work.lastSessionId).toBeUndefined();
+    const restored = switchProviderAccount({ ...work, lastSessionId: "claude-work" }, "personal");
+    expect(restored.lastSessionId).toBe("default-conversation");
+    expect(switchProviderAccount(restored, "work").lastSessionId).toBe("claude-work");
+    expect(claude.claudeAccountSessions).toBeUndefined();
+    expect(restored.codexAccountSessions).toEqual(claude.codexAccountSessions);
+  });
   it("starts fresh once and restores each account's own conversation on return", () => {
     const work = switchCodexAccount(agent, "work");
     expect(work.lastSessionId).toBeUndefined();

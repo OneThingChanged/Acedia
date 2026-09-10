@@ -272,7 +272,7 @@ export class SessionService {
 
   transcriptRoots(aiToolId) {
     if (aiToolId === "codex") return this.codexRoots?.() ?? [path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "sessions")];
-    if (aiToolId === "claude") return [path.join(os.homedir(), ".claude", "projects")];
+    if (aiToolId === "claude") return this.claudeRoots?.() ?? [path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects")];
     return [];
   }
 

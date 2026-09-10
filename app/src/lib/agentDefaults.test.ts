@@ -9,6 +9,17 @@ function storage() {
   return data;
 }
 describe("per-tool new session defaults", () => {
+  it("persists Claude account defaults and excludes them from SSH project launches", () => {
+    storage();
+    const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    saveAgentDefaults("claude", { ...loadAgentDefaults("claude"), claudeAccountId: accountId });
+    expect(loadAgentDefaults("claude").claudeAccountId).toBe(accountId);
+    expect(loadAgentDefaults("codex").claudeAccountId).toBe("default");
+    const payload = { name: "P", folder: "project", aiToolId: "claude", dangerous: false, claudeAccountId: accountId };
+    expect(buildNewProjectWithFirstAgent(payload).agent.claudeAccountId).toBe(accountId);
+    expect(buildNewProjectWithFirstAgent({ ...payload, sshHostId: "server" }).agent.claudeAccountId).toBeUndefined();
+    expect(normalizeAgentDefaults("claude", { claudeAccountId: "../bad" }).claudeAccountId).toBe("default");
+  });
   it("retains existing defaults on missing or corrupt preferences", () => {
     const data = storage();
     expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default", workerSettings: { documents: "codex-luna-max", html: "codex-luna-max" } });

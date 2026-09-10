@@ -8,7 +8,7 @@ import type {
 } from "../platform/ipcContract";
 import { useAppLanguage } from "../lib/appLanguage";
 
-// Orca-style Resource Manager: the status-bar segment shows the app's total
+// Resource monitor: the status-bar segment shows the app's total
 // memory; the popover breaks it down per project → session (PTY process
 // tree). Sampling runs a system process snapshot, so it polls slowly while
 // closed and faster while the popover is open.

@@ -1,6 +1,6 @@
 // Composer autocomplete: detect a "/slash" (line start) or "@file" (after
-// whitespace) trigger at the caret, and splice a chosen value back in. Adapted
-// from Orca's mobile-native-chat-autocomplete. Pure — no framework deps.
+// whitespace) trigger at the caret, and splice a chosen value back in.
+// Pure helpers with no framework dependencies.
 
 export type AutocompleteTrigger = {
   kind: "slash" | "file";

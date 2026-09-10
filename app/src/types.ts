@@ -147,7 +147,9 @@ export type SshHost = {
 
 export type Agent = {
   codexAccountId?: string;
+  claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
+  claudeAccountSessions?: Record<string, string>;
   id: string;
   projectId: string;
   name: string;
@@ -180,7 +182,9 @@ export type Agent = {
 
 export type StoredAgent = {
   codexAccountId?: string;
+  claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
+  claudeAccountSessions?: Record<string, string>;
   resumeEligible?: boolean;
   id: string;
   projectId?: string;
@@ -246,6 +250,7 @@ export type TerminalEntry = {
 export type NewAgentPayload = {
   useAltScreen?: boolean;
   codexAccountId?: string;
+  claudeAccountId?: string;
   name: string;
   aiToolId: string;
   dangerous: boolean;
@@ -256,6 +261,7 @@ export type NewProjectPayload = {
   useAltScreen?: boolean;
   workerSettings?: SessionWorkerSettings;
   codexAccountId?: string;
+  claudeAccountId?: string;
   name: string;
   folder: string;
   aiToolId: string;

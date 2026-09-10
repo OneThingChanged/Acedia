@@ -1,6 +1,6 @@
 import { useAppLanguage } from "../lib/appLanguage";
 import { useState } from "react";
-import { CodexAccountSelect } from "./CodexAccounts";
+import { AccountSelect } from "./ProviderAccounts";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { AI_TOOLS, toolForId } from "../types";
 import type { NewAgentPayload, Project } from "../types";
@@ -34,6 +34,7 @@ export function NewAgentModal({
   const [aiToolId, setAiToolId] = useState<string>(() =>
     defaultAiToolId(disabledTools)
   );
+  const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
   const [dangerous, setDangerous] = useState(() => loadAgentDefaults(aiToolId).dangerous);
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
@@ -51,6 +52,7 @@ export function NewAgentModal({
       name: name.trim(),
       aiToolId,
       codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
+      claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
       dangerous: dangerous && supportsDangerous,
       useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
       workerSettings: aiToolId === "codex" ? workerSettings : undefined,
@@ -96,6 +98,7 @@ export function NewAgentModal({
               const id = e.target.value; const defaults = loadAgentDefaults(id);
               setAiToolId(id); setDangerous(defaults.dangerous);
               if (id === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
+              if (id === "claude") setClaudeAccountId(defaults.claudeAccountId);
             }}
           >
             {visibleTools.map((t) => (
@@ -106,7 +109,8 @@ export function NewAgentModal({
           </select>
         </label>
 
-        {aiToolId === "codex" && !project?.sshHostId && <CodexAccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "codex" && !project?.sshHostId && <AccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "claude" && !project?.sshHostId && <AccountSelect provider="claude" value={claudeAccountId} onChange={setClaudeAccountId} />}
 
         {supportsDangerous && (
           <label className="field-check">

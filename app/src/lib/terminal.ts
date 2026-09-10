@@ -12,11 +12,9 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { DropZone, TerminalEntry } from "../types";
 import { loadAppTheme, type AppThemeId } from "./appTheme";
+import { DEFAULT_TERMINAL_SETTINGS, loadTerminalSettings, terminalSettingsOptions, updateTerminalSettings } from "./terminalSettings";
+export { clampTerminalFontSize } from "./terminalSettings";
 
-const LS_TERMINAL_FONT_SIZE = "multiagent.terminalFontSize.v1";
-const DEFAULT_TERMINAL_FONT_SIZE = 13;
-const MIN_TERMINAL_FONT_SIZE = 9;
-const MAX_TERMINAL_FONT_SIZE = 24;
 const TERMINAL_THEMES: Record<AppThemeId, ITheme> = {
   soft: {
     background: "#0d1117",
@@ -110,31 +108,12 @@ export type TerminalMouseLink =
   | { kind: "image"; text: string }
   | { kind: "folder"; text: string };
 
-export function clampTerminalFontSize(fontSize: number) {
-  if (!Number.isFinite(fontSize)) return DEFAULT_TERMINAL_FONT_SIZE;
-  return Math.min(
-    MAX_TERMINAL_FONT_SIZE,
-    Math.max(MIN_TERMINAL_FONT_SIZE, Math.round(fontSize))
-  );
-}
-
 export function loadTerminalFontSize() {
-  try {
-    const raw = localStorage.getItem(LS_TERMINAL_FONT_SIZE);
-    if (!raw) return DEFAULT_TERMINAL_FONT_SIZE;
-    return clampTerminalFontSize(Number(raw));
-  } catch {
-    return DEFAULT_TERMINAL_FONT_SIZE;
-  }
+  return loadTerminalSettings().fontSize;
 }
 
 export function saveTerminalFontSize(fontSize: number) {
-  try {
-    localStorage.setItem(
-      LS_TERMINAL_FONT_SIZE,
-      String(clampTerminalFontSize(fontSize))
-    );
-  } catch {}
+  try { updateTerminalSettings({ fontSize }); } catch {}
 }
 
 export async function notifyDone({
@@ -315,7 +294,7 @@ export function installImeCompositionPreview(entry: TerminalEntry) {
     preview.style.fontFamily =
       term.options.fontFamily ??
       '"Cascadia Mono", Consolas, "Courier New", monospace';
-    preview.style.fontSize = `${term.options.fontSize ?? DEFAULT_TERMINAL_FONT_SIZE}px`;
+    preview.style.fontSize = `${term.options.fontSize ?? DEFAULT_TERMINAL_SETTINGS.fontSize}px`;
   };
 
   const showPreview = (text: string) => {
@@ -936,12 +915,9 @@ export function createEntry(
 ): TerminalEntry {
   const isWindows = navigator.userAgent.includes("Windows");
   const term = new Terminal({
-    fontFamily: '"Cascadia Mono", Consolas, "Courier New", monospace',
-    fontSize: loadTerminalFontSize(),
-    cursorBlink: true,
+    ...terminalSettingsOptions(loadTerminalSettings()),
     theme: TERMINAL_THEMES[loadAppTheme()] ?? TERMINAL_THEME,
     allowProposedApi: true,
-    scrollback: 5000,
     convertEol: false,
     windowsPty: isWindows
       ? { backend: "conpty" }
@@ -981,6 +957,31 @@ export function createEntry(
 
   const el = document.createElement("div");
   el.className = "term-host";
+
+  term.onSelectionChange(() => {
+    if (!loadTerminalSettings().copyOnSelect) return;
+    const selected = term.getSelection();
+    if (!selected) return;
+    const write = isElectronRuntime()
+      ? invoke("clipboard_write_text", { text: selected })
+      : navigator.clipboard.writeText(selected);
+    void write.catch(() => {});
+  });
+  const isPasteClick = (event: MouseEvent) => event.button === 2 && !event.ctrlKey && loadTerminalSettings().rightClickToPaste;
+  for (const eventName of ["mousedown", "mouseup"] as const) {
+    el.addEventListener(eventName, event => {
+      if (!isPasteClick(event)) return;
+      // Keep TUIs from receiving a right-button command before the paste.
+      event.preventDefault(); event.stopImmediatePropagation();
+    }, { capture: true });
+  }
+  el.addEventListener("contextmenu", event => {
+    if (!isPasteClick(event)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const read = isElectronRuntime() ? invoke<string>("clipboard_read_text") : navigator.clipboard.readText();
+    void read.then(value => { if (value) term.paste(value); }).catch(() => {});
+    term.focus();
+  }, { capture: true });
 
   term.onData((d) => {
     invoke("write_pty", { id, data: d }).catch(() => {});

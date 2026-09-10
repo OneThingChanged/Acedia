@@ -5,6 +5,16 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("allows Claude account management while rejecting malformed profile identifiers", () => {
+    const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    expect(contract.assertInvokeRequest("claude_accounts_create", { label: "Work" })).toMatchObject({ label: "Work" });
+    expect(contract.assertInvokeRequest("claude_accounts_switch", { id: "session", accountId, folder: "project" })).toMatchObject({ accountId });
+    expect(() => contract.assertInvokeRequest("claude_accounts_login", { accountId: "../outside" })).toThrow();
+    expect(() => contract.assertInvokeRequest("claude_accounts_create", { label: " " })).toThrow();
+    expect(() => contract.assertInvokeRequest("spawn_pty", { id: "session", cols: 80, rows: 24, claudeAccountId: "../outside" })).toThrow();
+    expect(() => contract.assertInvokeRequest("resolve_cli_session", { aiToolId: "claude", folder: "project", claudeAccountId: "../outside" })).toThrow();
+  });
+
   it("shares the terminal command allowlist with preload and main", () => {
     expect(contract.INVOKE_COMMANDS).toContain("attach_terminal");
     expect(contract.INVOKE_COMMANDS).toContain("detach_terminal");

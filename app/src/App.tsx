@@ -1,5 +1,5 @@
 import { loadAgentDefaults } from "./lib/agentDefaults";
-import { switchCodexAccount } from "./lib/codexAccounts";
+import { switchProviderAccount } from "./lib/codexAccounts";
 import {
   useCallback,
   useEffect,
@@ -75,6 +75,7 @@ import {
 import { loadBootstrap } from "./lib/persistence";
 import type { Bootstrap } from "./lib/persistence";
 import { applyTerminalTheme, createEntry, notifyDone } from "./lib/terminal";
+import { useTerminalSettingsSync } from "./hooks/useTerminalSettingsSync";
 import { playNotificationSound, loadNotificationSound, shouldSilenceOsNotification } from "./lib/notificationSound";
 import { buildSpawnArgs } from "./lib/spawn";
 import {
@@ -292,7 +293,9 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     tabColor: agent.tabColor || undefined,
     createdAt: agent.createdAt,
     codexAccountId: agent.codexAccountId,
+    claudeAccountId: agent.claudeAccountId,
     codexAccountSessions: agent.codexAccountSessions,
+    claudeAccountSessions: agent.claudeAccountSessions,
     lastSessionId: agent.lastSessionId,
     resumeEligible: agent.resumeEligible ?? isAgentRuntimeActive(agent),
   };
@@ -414,7 +417,9 @@ function agentFromStored(
     aiToolId,
     aiLabel: toolForId(aiToolId).label,
     codexAccountId: stored.codexAccountId,
+    claudeAccountId: stored.claudeAccountId,
     codexAccountSessions: stored.codexAccountSessions,
+    claudeAccountSessions: stored.claudeAccountSessions,
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
@@ -425,7 +430,7 @@ function agentFromStored(
       stored.lastSessionId ??
       stored.lastClaudeSessionId ??
       stored.lastResumeToken ??
-      ((stored.codexAccountId || "default") === (existing?.codexAccountId || "default") ? existing?.lastSessionId : undefined),
+      ((stored.codexAccountId || "default") === (existing?.codexAccountId || "default") && (stored.claudeAccountId || "default") === (existing?.claudeAccountId || "default") ? existing?.lastSessionId : undefined),
     status: existing?.status ?? "idle",
     runtimeStatus: existing?.runtimeStatus ?? "idle",
     deferredStart: existing?.deferredStart ?? (existing ? undefined : true),
@@ -1141,6 +1146,9 @@ function App() {
         name: a.name,
         folder: a.folder,
         aiToolId: a.aiToolId,
+        codexAccountId: a.codexAccountId,
+        claudeAccountId: a.claudeAccountId,
+        sshHostId: a.sshHostId,
         lastSessionId: a.lastSessionId ?? null,
         runtimeStatus: runtimeStatusOf(a),
       })),
@@ -1369,16 +1377,7 @@ function App() {
     }
   }, [appTheme]);
 
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSettingsOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [settingsOpen]);
+  useTerminalSettingsSync(termsRef);
 
   const closeTabRef = useRef<
     ((path: Path, agentId: string) => void) | null
@@ -1405,6 +1404,9 @@ function App() {
         setAttentionOpen(false);
         return;
       }
+      // A settings screen covers the workspace; shortcuts must not activate or
+      // mutate the hidden sessions while editing settings.
+      if (settingsOpen) return;
       const commandId = commandForKeyboardEvent(event, commandShortcuts);
       if (
         commandId &&
@@ -2677,6 +2679,7 @@ function App() {
             aiToolId: tool.id,
             aiLabel: tool.label,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
+            claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
             useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
             workerSettings:
@@ -2880,6 +2883,7 @@ function App() {
       invoke<string | null>("relink_cli_session", {
         aiToolId: agent.aiToolId,
         codexAccountId: agent.codexAccountId,
+        claudeAccountId: agent.claudeAccountId,
         folder,
         agentName: agent.name,
       })
@@ -3426,6 +3430,7 @@ function App() {
             initCommand,
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
+            claudeAccountId: agent.claudeAccountId,
             ssh,
             cols: 120,
             rows: 30,
@@ -4195,9 +4200,9 @@ function App() {
               }
               onAccountChange={async (accountId) => {
                 const current = agentsRef.current.find((a) => a.id === target.id);
-                if (!current || (current.codexAccountId || "default") === accountId) return;
-                const next = switchCodexAccount(current, accountId);
-                const sessionId = await invoke<string | null>("codex_accounts_switch", {
+                if (!current || ((current.aiToolId === "claude" ? current.claudeAccountId : current.codexAccountId) || "default") === accountId) return;
+                const next = switchProviderAccount(current, accountId);
+                const sessionId = await invoke<string | null>(current.aiToolId === "claude" ? "claude_accounts_switch" : "codex_accounts_switch", {
                   id: current.id, accountId, folder: current.folder, sessionId: next.lastSessionId,
                 });
                 const entry = termsRef.current.get(current.id);
@@ -4205,7 +4210,7 @@ function App() {
                 termsRef.current.delete(current.id);
                 clearScrollback(current.id);
                 setAgents((prev) => prev.map((a) => a.id === current.id
-                  ? { ...switchCodexAccount(a, accountId), lastSessionId: sessionId || undefined } : a));
+                  ? { ...switchProviderAccount(a, accountId), lastSessionId: sessionId || undefined } : a));
                 setGroups((prev) => prev.map((g) => {
                   if (!g.sessionPins?.[current.id]) return g;
                   const sessionPins = { ...g.sessionPins }; delete sessionPins[current.id];

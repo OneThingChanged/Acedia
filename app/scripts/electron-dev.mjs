@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { devElectronEnvironment } from "./electron-dev-environment.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
@@ -70,7 +71,7 @@ try {
     cwd: appRoot,
     stdio: "inherit",
     env: {
-      ...process.env,
+      ...devElectronEnvironment(process.env),
       MULTIAGENT_DEV_URL: devUrl,
       // Chromium localStorage/LevelDB cannot be shared safely by two Electron
       // processes. Workspace registries still merge through storage-export.json.

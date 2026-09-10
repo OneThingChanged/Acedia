@@ -23,7 +23,7 @@ import type {
 import { loadDiffToolCommand } from "../lib/diffTool";
 import { useAppLanguage } from "../lib/appLanguage";
 
-// Orca-style lazy file explorer: one list_directory call per expanded folder,
+// Lazy file explorer: one list_directory call per expanded folder,
 // cached in dirCache (key "" = project root). Expanded state persists per
 // project, the shown project can be pinned, and git status paints M/A/U/D
 // badges like an IDE.

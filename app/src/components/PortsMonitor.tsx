@@ -5,7 +5,7 @@ import type { Agent, Project } from "../types";
 import type { PortEntry, PortsResult } from "../platform/ipcContract";
 import { useAppLanguage } from "../lib/appLanguage";
 
-// Orca-style Ports monitor: the status-bar segment shows the workspace port
+// Ports monitor: the status-bar segment shows the workspace port
 // count; the popover groups listening TCP ports by project, with an
 // External Ports section collapsed below. Attribution happens in the main
 // process: (1) the listener pid descends from a session's PTY root, or

@@ -662,9 +662,9 @@ export class UsageService {
     }
   }
 
-  readClaudeCredentials() {
+  readClaudeCredentials(credentialsPath = this.claudeCredentialsPath) {
     try {
-      const oauth = JSON.parse(fs.readFileSync(this.claudeCredentialsPath, "utf8"))?.claudeAiOauth;
+      const oauth = JSON.parse(fs.readFileSync(credentialsPath, "utf8"))?.claudeAiOauth;
       if (!oauth?.accessToken) return null;
       // Expired access tokens return 401; skip and keep the last known snapshot.
       if (Number.isFinite(oauth.expiresAt) && oauth.expiresAt <= Date.now()) return null;
@@ -674,9 +674,9 @@ export class UsageService {
     }
   }
 
-  async fetchClaudeUsage() {
-    if (this.claudeUsageFetcher) return this.claudeUsageFetcher();
-    const creds = this.readClaudeCredentials();
+  async fetchClaudeUsage(account) {
+    if (this.claudeUsageFetcher) return this.claudeUsageFetcher(account);
+    const creds = this.readClaudeCredentials(account?.credentialsPath);
     if (!creds) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CLAUDE_USAGE_TIMEOUT_MS);
@@ -760,14 +760,25 @@ export class UsageService {
       return false;
     }
     this.claudeRateLimitRefresh = (async () => {
-      const result = await this.fetchClaudeUsage();
-      if (!result?.usage) return false;
-      this.claudeRateLimitFetchedAt = Date.now();
-      const snapshots = this.claudeRateLimitSnapshots(
-        result.usage, result.subscriptionType, Math.floor(Date.now() / 1000)
-      );
-      for (const snapshot of snapshots) this.writeRateLimitSnapshot(snapshot);
-      return snapshots.length > 0;
+      const accounts = this.claudeAccounts?.() ?? [{ id: "default" }];
+      let updated = false;
+      for (const account of accounts) {
+        const result = await this.fetchClaudeUsage(account);
+        if (!result?.usage) continue;
+        const snapshots = this.claudeRateLimitSnapshots(
+          result.usage, result.subscriptionType, Math.floor(Date.now() / 1000)
+        );
+        for (const snapshot of snapshots) {
+          if (account.id !== "default") {
+            snapshot.limitId = `claude:${account.id}${snapshot.limitId.slice("claude".length)}`;
+            snapshot.limitName = `${snapshot.limitName} · ${account.label}`;
+          }
+          this.writeRateLimitSnapshot(snapshot);
+        }
+        updated ||= snapshots.length > 0;
+      }
+      if (updated) this.claudeRateLimitFetchedAt = Date.now();
+      return updated;
     })().finally(() => { this.claudeRateLimitRefresh = null; });
     return this.claudeRateLimitRefresh;
   }

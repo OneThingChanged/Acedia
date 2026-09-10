@@ -161,6 +161,21 @@ describe("buildSpawnArgs resume recovery", () => {
     expect(result.initCommand).toContain("-c cli_auth_credentials_store=file");
   });
 
+  it("passes the selected Claude account when resuming", async () => {
+    invokeMock.mockResolvedValueOnce("claude-work-session");
+    const result = await buildSpawnArgs({ ...agent, aiToolId: "claude", claudeAccountId: "work" }, null, vi.fn());
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ aiToolId: "claude", claudeAccountId: "work" }));
+    expect(result.initCommand).toBe("claude --resume claude-work-session");
+  });
+
+  it.each(["codex", "claude"])("refuses unverified managed %s resume targets", async (provider) => {
+    const managed = { ...agent, aiToolId: provider, codexAccountId: "work", claudeAccountId: "work", lastSessionId: "old-session" };
+    invokeMock.mockRejectedValueOnce(new Error("lookup unavailable"));
+    await expect(buildSpawnArgs(managed, null, vi.fn())).rejects.toThrow("lookup unavailable");
+    invokeMock.mockResolvedValueOnce(null);
+    await expect(buildSpawnArgs(managed, { "agent-a": "other-account-session" }, vi.fn())).rejects.toThrow();
+  });
+
   it("applies worker settings when an existing Codex session is resumed", async () => {
     invokeMock.mockResolvedValueOnce("existing-session");
 

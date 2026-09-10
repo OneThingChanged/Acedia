@@ -102,6 +102,8 @@ export async function buildSpawnArgs(
     } else {
       const pinnedSessionId = sessionPins?.[agent.id] ?? null;
       const candidateSessionId = pinnedSessionId ?? agent.lastSessionId ?? null;
+      const accountId = agent.aiToolId === "claude" ? agent.claudeAccountId : agent.codexAccountId;
+      const managedAccount = accountId && accountId !== "default";
       let sessionId: string | null = null;
       if (
         agent.folder &&
@@ -113,15 +115,20 @@ export async function buildSpawnArgs(
             folder: agent.folder,
             agentId: agent.id,
             codexAccountId: agent.codexAccountId,
+            claudeAccountId: agent.claudeAccountId,
             agentName: agent.name,
             preferredSessionId: candidateSessionId,
           });
           // A pinned group must never silently start a different conversation.
+          if (managedAccount && pinnedSessionId && resolved !== pinnedSessionId) {
+            throw new Error("선택한 계정에서 고정된 대화를 찾을 수 없습니다. 세션 고정을 해제하거나 계정을 확인하세요.");
+          }
           sessionId = resolved ?? pinnedSessionId ?? null;
           if (!pinnedSessionId && agent.lastSessionId !== sessionId) {
             setAgentSessionId(agent.id, sessionId);
           }
-        } catch {
+        } catch (error) {
+          if (managedAccount) throw error;
           // Transcript lookup is a safety check, not permission to discard a
           // known-good resume target on a temporary filesystem/IPC failure.
           sessionId = candidateSessionId;

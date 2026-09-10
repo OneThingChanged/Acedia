@@ -37,6 +37,8 @@ import {
 } from "./services/miracontrol-integration.mjs";
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
+import { ClaudeAccounts } from "./services/claude-accounts.mjs";
+import { devElectronEnvironment } from "./services/dev-terminal-environment.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage } from "./services/pty-submit.mjs";
@@ -379,6 +381,26 @@ const codexAccounts = new CodexAccounts(app.getPath("userData"), {
       { name: "xterm-256color", cols: 120, rows: 30, cwd: os.homedir(), env });
   },
 });
+const claudeAccounts = new ClaudeAccounts(app.getPath("userData"), {
+  startLogin: (env) => {
+    const native = process.platform === "win32" ? findExecutableOnPath("claude.exe") : null;
+    const options = { name: "xterm-256color", cols: 120, rows: 30, cwd: os.homedir(), env };
+    if (native) return nodePty.spawn(native, ["auth", "login"], options);
+    const command = process.platform === "win32" ? "claude.cmd auth login" : "claude auth login";
+    return nodePty.spawn(defaultShell(null), process.platform === "win32"
+      ? ["-NoLogo", "-NoProfile", "-Command", command] : ["-lc", command], options);
+  },
+});
+function accountsForTool(tool) {
+  return tool === "codex" ? codexAccounts : tool === "claude" ? claudeAccounts : null;
+}
+function selectedAccountId(args) {
+  return (args.aiToolId === "claude" ? args.claudeAccountId : args.codexAccountId) || "default";
+}
+function accountTranscriptRoot(tool, accountId) {
+  const accounts = accountsForTool(tool);
+  return accounts ? path.join(accounts.home(accountId), accounts.transcriptDirectory) : null;
+}
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
@@ -387,6 +409,7 @@ const browserActivity = new BrowserActivity({
   ownerOf: id => [...documentBrowserWindows.values()].find(record => record.view.webContents.id === id),
 });
 sessionService.codexRoots = () => codexAccounts.roots();
+sessionService.claudeRoots = () => claudeAccounts.roots();
 const hookBaseDir = process.env.MULTIAGENT_LOCAL_DATA?.trim() || (sharedRoot ? path.join(sharedRoot, "local") : userDataOverride ? path.join(userDataOverride, "local-data") : path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
   runtimeVariant.localDataDirectory
@@ -404,7 +427,7 @@ function publishAgentHookEvent(eventName, payload) {
     const binding = accountBindings.get(payload.id);
     const hookTranscript = normalizeTranscriptPath(payload.transcript_path);
     if (binding && hookTranscript && !isInside(
-      path.join(codexAccounts.home(binding.accountId), "sessions"),
+      accountTranscriptRoot(binding.toolId, binding.accountId),
       hookTranscript,
     )) return;
     // Remote/monitor views only need concise state. Keep tool input and the
@@ -680,6 +703,10 @@ function writeMiraControlAgentInput({
 
 const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService);
 usageIndex.codexAccountForPath = (sourcePath) => codexAccounts.accountForPath(sourcePath);
+usageIndex.claudeAccounts = () => [
+  { id: "default", label: "Claude", credentialsPath: path.join(claudeAccounts.home(), ".credentials.json") },
+  ...claudeAccounts.accounts.map(account => ({ ...account, credentialsPath: path.join(claudeAccounts.home(account.id), ".credentials.json") })),
+];
 
 async function browserUsageSummary(refresh = false, historySelection = null) {
   // Local totals should not wait for a live account request. Claude's usage
@@ -1184,7 +1211,18 @@ function withQuery(url, query) {
 
 async function loadRenderer(win, query = {}) {
   if (devUrl) {
-    await win.loadURL(withQuery(devUrl, query));
+    // A graceful Electron relaunch can outlive its original Vite launcher.
+    // Wait for the replacement server instead of leaving a blank dev window.
+    const deadline = Date.now() + 30_000;
+    while (!win.isDestroyed()) {
+      try {
+        await win.loadURL(withQuery(devUrl, query));
+        break;
+      } catch (error) {
+        if (Date.now() >= deadline || win.isDestroyed()) throw error;
+        await new Promise(resolve => setTimeout(resolve, 400));
+      }
+    }
     return;
   }
   await win.loadFile(path.join(appRoot, "dist", "index.html"), { query });
@@ -2908,13 +2946,14 @@ async function spawnPty(args, event) {
   if (!ssh && (aiToolId === "codex" || aiToolId === "claude" || aiToolId === "qwen") && cwd) {
     await hookService.setupProject(cwd, aiToolId);
   }
-  const accountEnv = !ssh && aiToolId === "codex"
-    ? codexAccounts.environment(args.codexAccountId) : process.env;
-  if (!ssh && aiToolId === "codex" && codexAccounts.login && codexAccounts.login.id === args.codexAccountId) {
-    throw new Error("Codex 로그인 완료 후 세션을 열어 주세요.");
+  const accounts = !ssh ? accountsForTool(aiToolId) : null;
+  const accountId = selectedAccountId(args);
+  const accountEnv = accounts ? accounts.environment(accountId) : process.env;
+  if (accounts?.login?.id === accountId) {
+    throw new Error("로그인 완료 후 세션을 열어 주세요.");
   }
   const binding = accountBindings.get(id);
-  if (!ssh && aiToolId === "codex" && binding && binding.accountId !== (args.codexAccountId || "default")) {
+  if (accounts && binding && (binding.toolId !== aiToolId || binding.accountId !== accountId)) {
     throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
   }
   const ptyCols = asPositiveInt(args.cols, 120);
@@ -2936,7 +2975,7 @@ async function spawnPty(args, event) {
       rows: ptyRows,
       cwd,
       env: {
-        ...accountEnv,
+        ...(devUrl ? devElectronEnvironment(accountEnv) : accountEnv),
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
         MULTIAGENT_AGENT_ID: id,
@@ -2955,7 +2994,8 @@ async function spawnPty(args, event) {
     id,
     name: asString(args.name).trim() || id,
     process: processHandle,
-    codexAccountId: !ssh && aiToolId === "codex" ? args.codexAccountId || "default" : null,
+    codexAccountId: !ssh && aiToolId === "codex" ? accountId : null,
+    claudeAccountId: !ssh && aiToolId === "claude" ? accountId : null,
     initTimer: null,
     aiToolId,
     cwd,
@@ -3088,13 +3128,6 @@ function ensureChatWatch(transcriptPath) {
   }
 }
 
-// Root directory holding an agent's own JSONL session transcripts.
-function chatSessionRoot(tool) {
-  if (tool === "codex") return path.join(os.homedir(), ".codex", "sessions");
-  if (tool === "claude") return path.join(os.homedir(), ".claude", "projects");
-  return null;
-}
-
 // Read an agent transcript and decode it into chat blocks for the conversation
 // view. Sandboxed to the tool's session directory. Very large transcripts are
 // read from the tail so a long session doesn't block the UI.
@@ -3109,7 +3142,7 @@ const MAX_CHAT_BLOCKS = 400;
 const chatTranscriptCache = new Map();
 async function readChatTranscript(tool, transcriptPath) {
   const toolId = asString(tool);
-  const roots = toolId === "codex" ? codexAccounts.roots() : [chatSessionRoot(toolId)].filter(Boolean);
+  const roots = sessionService.transcriptRoots(toolId);
   if (!roots.length) throw new Error("지원하지 않는 도구입니다.");
   const requested = normalizeTranscriptPath(asString(transcriptPath));
   if (!requested || !fs.existsSync(requested)) {
@@ -3185,12 +3218,12 @@ function findTranscriptBySessionId(root, tool, sessionId) {
 // several sessions share a working directory). Tries the declared tool first,
 // then the other CLI (in case the tool is mislabeled), and returns the matched
 // transcript path AND the tool it belongs to so we decode correctly.
-function resolveChatTranscriptBySession(preferredTool, sessionId) {
+function resolveChatTranscriptBySession(preferredTool, sessionId, binding = null) {
   if (!sessionId) return null;
   const other = preferredTool === "codex" ? "claude" : "codex";
-  const tools = preferredTool ? [preferredTool, other] : ["claude", "codex"];
+  const tools = binding ? [binding.toolId] : preferredTool ? [preferredTool, other] : ["claude", "codex"];
   for (const tool of tools) {
-    const roots = tool === "codex" ? codexAccounts.roots() : [chatSessionRoot(tool)];
+    const roots = binding ? [accountTranscriptRoot(tool, binding.accountId)] : sessionService.transcriptRoots(tool);
     for (const root of roots) {
       const found = findTranscriptBySessionId(root, tool, sessionId);
       if (found) return { path: found, tool };
@@ -3232,13 +3265,18 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
   const declaredTool = metadata.provider;
   // A just-switched account overrides stale renderer/catalog snapshots until
   // its own hook or scoped startup lookup reports the selected conversation.
-  const binding = accountBindings.get(id);
+  const binding = accountBindings.get(id) || (!catalogAgent?.sshHostId && accountsForTool(declaredTool)
+    ? { toolId: declaredTool, accountId: selectedAccountId({ ...catalogAgent, aiToolId: declaredTool }), sessionId: catalogAgent?.lastSessionId || asString(sessionIdArg).trim() || null }
+    : null);
   const sessionId = binding
     ? agentSessionIds.get(id) || binding.sessionId || null
     : asString(sessionIdArg).trim() || agentSessionIds.get(id) || catalogAgent?.lastSessionId || null;
 
   let transcriptPath = normalizeTranscriptPath(agentTranscripts.get(id));
   let tool = agentTranscriptTool.get(id) || declaredTool;
+  if (transcriptPath && binding && !isInside(accountTranscriptRoot(binding.toolId, binding.accountId), transcriptPath)) {
+    transcriptPath = null;
+  }
   // Drop a cached path that doesn't belong to the current session id (a resumed
   // session gets a new rollout; both CLIs embed the session id in the path).
   if (transcriptPath && sessionId && !transcriptPath.toLowerCase().includes(sessionId.toLowerCase())) {
@@ -3258,7 +3296,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
       }
       return { blocks: [], truncated: false, missing: true, tool: declaredTool ?? undefined, sessionId };
     }
-    const resolved = resolveChatTranscriptBySession(declaredTool, sessionId);
+    const resolved = resolveChatTranscriptBySession(declaredTool, sessionId, binding);
     if (resolved) {
       transcriptPath = resolved.path;
       tool = resolved.tool;
@@ -3710,8 +3748,8 @@ function runCommand(command, commandArgs, timeout = 5000) {
 }
 
 // A project path appears in a command line as a whole token (bounded by
-// whitespace/quotes before and whitespace/quote/separator after) — mirrors
-// Orca's includesPathBoundary to avoid substring false positives.
+// whitespace/quotes before and whitespace/quote/separator after) to avoid
+// substring false positives.
 function commandLineMatchesFolder(commandLineLower, folderLower) {
   let index = 0;
   while (index < commandLineLower.length) {
@@ -5306,21 +5344,23 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "read_audio_file":
       return [...(await fsPromises.readFile(resolveExistingPath("", args.path)))];
+    case "claude_accounts_switch":
     case "codex_accounts_switch": {
+      const toolId = command.startsWith("claude_") ? "claude" : "codex";
       const id = asString(args.id).trim();
       if (!id || ptys.has(id) || accountSwitches.has(id)) throw new Error("세션을 비활성화한 뒤 계정을 변경하세요.");
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (runtime?.workspace_window && !claimAgentForWindow(id, event.sender.id)) {
         throw new Error("이 세션은 다른 작업창에서 사용 중입니다.");
       }
-      const root = path.join(codexAccounts.home(args.accountId), "sessions");
+      const root = accountTranscriptRoot(toolId, args.accountId);
       accountSwitches.add(id);
       terminalSessions.beginSpawn(id);
       try {
-        const sessionId = await sessionService.resolve({ aiToolId: "codex", folder: args.folder,
+        const sessionId = await sessionService.resolve({ aiToolId: toolId, folder: args.folder,
           preferredSessionId: args.sessionId, transcriptRoot: root, allowFolderFallback: false });
         if (ptys.has(id)) throw new Error("세션을 비활성화한 뒤 계정을 변경하세요.");
-        accountBindings.set(id, { accountId: args.accountId, sessionId });
+        accountBindings.set(id, { toolId, accountId: args.accountId, sessionId });
         agentTranscripts.delete(id);
         agentTranscriptTool.delete(id);
         agentSessionIds.delete(id);
@@ -5337,22 +5377,39 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return codexAccounts.beginLogin(args.accountId);
     case "codex_accounts_cancel_login": codexAccounts.cancelLogin(); return null;
+    case "claude_accounts_list": return claudeAccounts.list();
+    case "claude_accounts_create": return claudeAccounts.create(args.label);
+    case "claude_accounts_login":
+      if ([...ptys.values()].some((entry) => entry.claudeAccountId === args.accountId)) {
+        throw new Error("이 계정의 세션을 비활성화한 뒤 로그인하세요.");
+      }
+      return claudeAccounts.beginLogin(args.accountId);
+    case "claude_accounts_cancel_login": claudeAccounts.cancelLogin(); return null;
     case "resolve_cli_session": {
+      const previousBinding = accountBindings.get(args.agentId);
+      if (accountSwitches.has(args.agentId) || (previousBinding &&
+          (previousBinding.toolId !== args.aiToolId || previousBinding.accountId !== selectedAccountId(args)))) {
+        throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
+      }
       const sessionId = await sessionService.resolve({
         aiToolId: args.aiToolId,
         folder: args.folder,
         preferredSessionId: args.preferredSessionId,
-        transcriptRoot: args.aiToolId === "codex" ? path.join(codexAccounts.home(args.codexAccountId), "sessions") : null,
+        transcriptRoot: accountTranscriptRoot(args.aiToolId, selectedAccountId(args)),
         agentId: args.agentId,
         // Automatic startup must not attach a different agent's newest
         // conversation merely because both agents share the same folder.
         allowFolderFallback: false,
       });
-      const binding = accountBindings.get(args.agentId);
-      if (binding && !ptys.has(args.agentId) && binding.accountId === (args.codexAccountId || "default")) {
-        binding.sessionId = sessionId;
+      if (accountBindings.get(args.agentId) !== previousBinding || accountSwitches.has(args.agentId)) {
+        throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
+      }
+      if (args.agentId && accountsForTool(args.aiToolId) && !ptys.has(args.agentId)) {
+        accountBindings.set(args.agentId, { toolId: args.aiToolId, accountId: selectedAccountId(args), sessionId });
         agentSessionIds.delete(args.agentId);
         agentTranscripts.delete(args.agentId);
+        agentTranscriptTool.delete(args.agentId);
+        transcriptMissUntil.delete(args.agentId);
       }
       return sessionId;
     }
@@ -5363,7 +5420,7 @@ async function invokeCommand(event, command, rawArgs) {
         aiToolId: args.aiToolId,
         folder: args.folder,
         preferredSessionId: null,
-        transcriptRoot: args.aiToolId === "codex" ? path.join(codexAccounts.home(args.codexAccountId), "sessions") : null,
+        transcriptRoot: accountTranscriptRoot(args.aiToolId, selectedAccountId(args)),
         agentId: args.agentId,
         allowFolderFallback: true,
       });
@@ -5579,6 +5636,7 @@ ipcMain.on("multiagent:emit", (_event, eventName, payload) => {
 
 app.on("before-quit", (event) => {
   codexAccounts.cancelLogin();
+  claudeAccounts.cancelLogin();
   if (
     singleInstanceLockAcquired &&
     !forceClosing &&

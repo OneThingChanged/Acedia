@@ -12,7 +12,7 @@ const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "multiagent-account-ui
 try {
   await build({ stdin: { resolveDir: appRoot, sourcefile: "account-smoke.tsx", loader: "tsx", contents: `
     import './src/App.css';
-    import React from 'react';
+    import React, { useState } from 'react';
     import { createRoot } from 'react-dom/client';
     import { CodexAccountsPanel } from './src/components/CodexAccounts';
     import { AgentsSettings } from './src/components/AgentsSettings';
@@ -26,16 +26,25 @@ try {
     const project = { id: 'p', name: 'Project', folder: 'project', createdAt: 0 };
     window.showSettings = () => root.render(<AgentsSettings disabledTools={[]} onToggleTool={() => {}} showUsageBar={true} onShowUsageBarChange={() => {}} />);
     window.showAccounts = () => root.render(<CodexAccountsPanel />);
-    window.showAppSettings = () => root.render(<AppLanguageProvider><SettingsModal
+    function SettingsWorkspace() {
+      const [open, setOpen] = useState(true);
+      return <AppLanguageProvider>
+      <header className="app-topbar" style={{position:'fixed',inset:'0 0 auto',height:36,padding:'8px 16px',boxSizing:'border-box'}}>Acedia
+        <button id="reopen-settings" onClick={() => setOpen(true)}>Settings</button>
+      </header>
+      <div className="terminal-area"><input id="preserved-workspace" defaultValue="RUNNING_SESSION" /></div>
+      {open && <SettingsModal
       theme="github" onThemeChange={() => {}} desktopPetEnabled={false} desktopPetAvailable={true}
       onDesktopPetEnabledChange={() => {}} onResetDesktopPetPosition={() => {}}
       commandShortcuts={{}} onCommandShortcutsChange={() => {}} disabledTools={[]} onToggleTool={() => {}}
-      showUsageBar={true} onShowUsageBarChange={() => {}} buildVariant="standard" updateProvider="local-developer" onClose={() => {}}
-    /></AppLanguageProvider>);
-    window.showNew = () => root.render(<NewAgentModal project={project} defaultName="Session" onCancel={() => {}}
-      onCreate={value => window.created = value} disabledTools={['claude']} />);
-    window.showProperties = (running) => root.render(<SessionPropertiesModal
-      agent={{ id:'a', projectId:'p', name:'Session', folder:'project', aiToolId:'codex', aiLabel:'Codex', dangerous:false,
+      showUsageBar={true} onShowUsageBarChange={() => {}} buildVariant="standard" updateProvider="local-developer" onClose={() => setOpen(false)}
+      />}</AppLanguageProvider>;
+    }
+    window.showAppSettings = () => root.render(<React.StrictMode><SettingsWorkspace /></React.StrictMode>);
+    window.showNew = (provider = "codex") => root.render(<NewAgentModal project={project} defaultName="Session" onCancel={() => {}}
+      onCreate={value => window.created = value} disabledTools={provider === 'claude' ? ['codex'] : ['claude']} />);
+    window.showProperties = (running, provider = "codex") => root.render(<SessionPropertiesModal
+      agent={{ id:'a', projectId:'p', name:'Session', folder:'project', aiToolId:provider, aiLabel:provider, dangerous:false,
         status: running ? 'running' : 'idle', createdAt:0 }} project={project} onUpdateAgent={() => {}}
       onClose={() => {}} onAccountChange={async id => { window.switched = id; }} />);
     window.showAccounts();
@@ -58,11 +67,23 @@ try {
       ipcMain.handle('codex_accounts_create', (_event,args) => accounts.create(args.label));
       ipcMain.handle('codex_accounts_login', (_event,args) => accounts.beginLogin(args.accountId));
       ipcMain.handle('codex_accounts_cancel_login', () => accounts.cancelLogin());
+      const {ClaudeAccounts} = await import(${JSON.stringify(new URL("../electron/services/claude-accounts.mjs", import.meta.url).href)});
+      const claudeAccounts = new ClaudeAccounts(${JSON.stringify(temporary)}, { baseEnv: {}, startLogin: env => ({
+        onData() {}, kill() {}, onExit(fn) {
+          fs.writeFileSync(path.join(env.CLAUDE_CONFIG_DIR, '.credentials.json'), '{"fixture":true}');
+          setTimeout(() => fn({exitCode:0}), 50);
+        }
+      }) });
+      ipcMain.handle('claude_accounts_list', () => claudeAccounts.list());
+      ipcMain.handle('claude_accounts_create', (_event,args) => claudeAccounts.create(args.label));
+      ipcMain.handle('claude_accounts_login', (_event,args) => claudeAccounts.beginLogin(args.accountId));
+      ipcMain.handle('claude_accounts_cancel_login', () => claudeAccounts.cancelLogin());
       ipcMain.handle('check_tools', () => ({codex:{available:true},claude:{available:true},qwen:{available:true},cline:{available:true}}));
       ipcMain.handle('qwen_region_get', () => ({available:true, region:'international', regions:[{id:'international',label:'International'}]}));
       ipcMain.handle('session_storage_list', () => ({sessions:[]}));
       ipcMain.handle('conversation_storage_get', () => ({path:'fixture', custom:false, conversations:0, blocks:0, artifacts:0, bytes:0}));
       ipcMain.handle('get_developer_update_settings', () => ({directory:null, source:'none'}));
+      ipcMain.handle('get_ssh_public_key', () => null);
       ipcMain.handle('remote_config_get', () => ({}));
       ipcMain.handle('monitor_config_get', () => ({}));
       for (const command of ['monitor_server_status', 'remote_server_status', 'tunnel_status']) ipcMain.handle(command, () => ({running:false}));
@@ -90,8 +111,8 @@ try {
           const tabs = [...document.querySelectorAll('[role=tab]')];
           check(tabs.length === 5, 'Expected five tool tabs');
           tabs[2].click(); await wait();
-          check(document.body.textContent.includes('여러 계정 등록'), 'Claude support note missing');
-          check(!document.querySelector('.codex-account-management'), 'Codex accounts leaked into Claude tab');
+          check(document.querySelector('[data-account-provider=claude]'), 'Claude account management missing');
+          check(!document.querySelector('[data-account-provider=codex]'), 'Codex accounts leaked into Claude tab');
           tabs[3].click(); await wait();
           check(document.body.textContent.includes('Qwen 리전'), 'Qwen region missing');
           tabs[1].click(); await wait();
@@ -123,8 +144,32 @@ try {
           const idle = document.querySelector('select'); check(!idle.disabled, 'Inactive session cannot switch');
           idle.value = account.id; idle.dispatchEvent(new Event('change', {bubbles:true})); await wait();
           check(window.switched === account.id, 'Inactive account switch not delivered');
+          window.showSettings(); await wait();
+          click('Claude'); await wait();
+          click('＋ 계정 추가'); await wait();
+          const claudeInput = document.querySelector('[data-account-provider=claude] input');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(claudeInput, 'Claude Work');
+          claudeInput.dispatchEvent(new Event('input', {bubbles:true})); await wait();
+          click('계정 추가'); await wait(); click('브라우저 로그인'); await wait(2300);
+          check(document.body.textContent.includes('로그인 저장됨'), 'Claude login completion missing');
+          const claudeAccount = (await window.multiAgentElectron.invoke('claude_accounts_list'))[1];
+          const claudeDefault = document.querySelector('.agent-defaults select');
+          claudeDefault.value = claudeAccount.id; claudeDefault.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+          window.showNew('claude'); await wait();
+          const claudeSelect = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === claudeAccount.id));
+          check(claudeSelect?.value === claudeAccount.id, 'Claude account default not applied');
+          click('만들기'); await wait();
+          check(window.created.claudeAccountId === claudeAccount.id && !window.created.codexAccountId, 'Claude creation mixed account providers');
+          window.showProperties(true, 'claude'); await wait(); click('실행 옵션'); await wait();
+          check(document.querySelector('select').disabled, 'Running Claude allowed account switch');
+          window.showProperties(false, 'claude'); await wait();
+          const claudeIdle = document.querySelector('select');
+          check(!claudeIdle.disabled, 'Inactive Claude cannot switch');
+          claudeIdle.value = claudeAccount.id; claudeIdle.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+          check(window.switched === claudeAccount.id, 'Claude account switch not delivered');
           localStorage.setItem('multiagent.appLanguage.v1', 'ko');
           window.showAppSettings(); await wait();
+          check(document.activeElement.classList.contains('app-settings-back'), 'Opening settings did not take keyboard focus');
           click('언어'); await wait();
           check(document.querySelectorAll('[role=radio]').length === 7, 'Expected system and six languages');
           const locales = [
@@ -137,7 +182,7 @@ try {
             click(label); await wait();
             check(document.documentElement.lang === locale, 'Document language did not change: '+locale);
             check(localStorage.getItem('multiagent.appLanguage.v1') === locale, 'Language not saved: '+locale);
-            check(document.querySelector('.app-settings-title')?.textContent.includes(heading) || document.body.textContent.includes(heading), 'Settings not translated: '+locale);
+            check(document.querySelector('.app-settings-screen')?.getAttribute('aria-label') === heading, 'Settings not translated: '+locale);
             click(agentsLabel); await wait();
             check(document.body.textContent.includes(accountsLabel), 'Accounts not translated: '+locale);
             check(document.body.textContent.includes('Work'), 'Custom account label was changed');
@@ -146,11 +191,57 @@ try {
             check(language, 'Missing language tab: '+locale); language.click(); await wait();
           }
           window.showAccounts(); await wait(); window.showAppSettings(); await wait();
-          check(document.documentElement.lang === 'es' && document.body.textContent.includes('Configuración'), 'Language did not persist across remount');
+          check(document.documentElement.lang === 'es' && document.querySelector('.app-settings-screen')?.getAttribute('aria-label') === 'Configuración', 'Language did not persist across remount');
           click('Idioma'); await wait(); click('한국어'); await wait();
           check(document.documentElement.lang === 'ko', 'Could not return to Korean');
+          const workspace = document.querySelector('#preserved-workspace');
+          check(workspace.closest('.terminal-area').inert, 'Covered workspace still accepts keyboard focus');
+          const layer = document.querySelector('.app-settings-layer');
+          layer.dispatchEvent(new MouseEvent('mousedown', {bubbles:true})); await wait();
+          check(document.querySelector('.app-settings-layer') === layer, 'Empty settings space closed the screen');
+          click('앱으로 돌아가기'); await wait();
+          check(!document.querySelector('.app-settings-layer') && document.querySelector('#preserved-workspace') === workspace && !workspace.closest('.terminal-area').inert && workspace.value === 'RUNNING_SESSION', 'Back did not preserve the workspace');
+          document.querySelector('#reopen-settings').click(); await wait();
+          const back = document.querySelector('.app-settings-back'); back.focus();
+          back.dispatchEvent(new KeyboardEvent('keydown', {key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
+          check(document.activeElement !== back && document.activeElement.closest('.app-settings-screen'), 'Settings keyboard focus escaped');
+          window.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',cancelable:true})); await wait();
+          check(!document.querySelector('.app-settings-layer') && document.querySelector('#preserved-workspace') === workspace, 'Escape did not return to the existing workspace');
+          document.querySelector('#reopen-settings').click(); await wait();
+          const search = document.querySelector('.app-settings-search input');
+          const setSearch = async value => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, value);
+            search.dispatchEvent(new Event('input', {bubbles:true})); await wait();
+          };
+          await setSearch('터미널');
+          check(document.querySelectorAll('.app-settings-nav button').length === 1 && document.querySelector('.terminal-settings-panel'), 'Settings search did not open Terminal');
+          await setSearch('');
+          click('SSH 호스트'); await wait(); click('사용 방법'); await wait();
+          check(document.querySelector('.ssh-guide-backdrop'), 'Nested SSH guide did not open');
+          window.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',cancelable:true})); await wait();
+          check(!document.querySelector('.ssh-guide-backdrop') && document.querySelector('.app-settings-layer'), 'Nested Escape also closed settings');
+          click('일반'); await wait();
           return 'CODEX_ACCOUNT_UI_SMOKE_OK';
         })()\`));
+        for (const [width, height] of [[800,640], [1920,1080], [1202,801]]) {
+          win.setContentSize(width, height);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          console.log(await win.webContents.executeJavaScript(\`(() => {
+            const layer = document.querySelector('.app-settings-screen').getBoundingClientRect();
+            if(layer.x !== 0 || layer.y !== 36 || layer.width !== innerWidth || layer.bottom !== innerHeight) throw new Error('Settings do not cover the workspace: '+JSON.stringify(layer));
+            for(const selector of ['.app-settings-side','.app-settings-main','.app-settings-body']) {
+              const element = document.querySelector(selector);
+              if(element.scrollWidth > element.clientWidth + 1) throw new Error('Settings overflow: '+selector);
+            }
+            return 'SETTINGS_SCREEN_LAYOUT_OK '+innerWidth+'x'+innerHeight;
+          })()\`));
+        }
+        if (${JSON.stringify(process.env.MULTIAGENT_SETTINGS_LAYER_SCREENSHOT || "")}) {
+          await win.webContents.executeJavaScript("document.querySelector('.app-settings-nav button').click()");
+          win.webContents.invalidate();
+          await new Promise(resolve => setTimeout(resolve, 400));
+          fs.writeFileSync(${JSON.stringify(process.env.MULTIAGENT_SETTINGS_LAYER_SCREENSHOT || "")}, (await win.webContents.capturePage()).toPNG());
+        }
         if (${JSON.stringify(process.env.MULTIAGENT_SETTINGS_SCREENSHOT || "")}) {
           await win.webContents.executeJavaScript('window.showSettings()');
           await win.webContents.executeJavaScript("new Promise(resolve => { const timer = setInterval(() => { if (document.querySelector('.agent-settings-tabs')) { clearInterval(timer); resolve(true); } }, 50); })");
@@ -168,13 +259,13 @@ try {
           await new Promise(resolve => setTimeout(resolve, 300));
           fs.writeFileSync(${JSON.stringify(process.env.MULTIAGENT_LANGUAGE_SCREENSHOT || "")}, (await win.webContents.capturePage()).toPNG());
         }
-        accounts.cancelLogin(); app.exit(0);
-      } catch(error) { console.error(error); accounts.cancelLogin(); app.exit(1); }
+        accounts.cancelLogin(); claudeAccounts.cancelLogin(); app.exit(0);
+      } catch(error) { console.error(error); accounts.cancelLogin(); claudeAccounts.cancelLogin(); app.exit(1); }
     });
   `);
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(require("electron"), [path.join(temporary, "main.cjs")], { env, stdio: "inherit", windowsHide: true });
-  const timer = setTimeout(() => child.kill(), 30_000);
+  const timer = setTimeout(() => child.kill(), 60_000);
   const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); }).finally(() => clearTimeout(timer));
   if (code !== 0) throw new Error(`Codex account UI smoke failed: ${code}`);
 } finally {

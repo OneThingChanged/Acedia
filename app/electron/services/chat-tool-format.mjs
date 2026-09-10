@@ -1,6 +1,5 @@
 // Tool-call formatting for the chat view: a short human summary + a colored
-// diff derived from edit-tool inputs or diff-like tool output. Ported/adapted
-// from Orca's native-chat-tool-summary + native-chat-diff. Pure, plain-JSON
+// diff derived from edit-tool inputs or diff-like tool output. Pure, plain JSON
 // (crosses IPC): diff is { type: "add"|"del"|"context"|"meta", text }[].
 
 const MAX_ARG = 120;

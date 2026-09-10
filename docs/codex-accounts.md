@@ -8,6 +8,7 @@ tags:
   - sessions
 status: stable
 sources:
+  - resource: ../app/electron/services/provider-accounts.mjs
   - resource: ../app/electron/services/codex-accounts.mjs
   - resource: ../app/electron/main.mjs
   - resource: ../app/src/components/CodexAccounts.tsx
@@ -35,6 +36,12 @@ session, deactivate it first and select the account under **Session properties
 → Launch options**. A newly selected profile starts a new conversation. Switching
 back restores that profile's last conversation, if its transcript is available.
 Account changes leave the session inactive until explicitly opened.
+
+Different accounts can run simultaneously in separate sessions. The shared
+account service/UI also implements [Claude account profiles](claude-accounts.md).
+Managed Codex startup now rejects an unverifiable group pin or failed scoped
+lookup instead of falling back to an unchecked conversation ID. Account selectors
+refresh after account creation/login without requiring Settings to be reopened.
 
 ## Storage and process boundaries
 

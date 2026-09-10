@@ -119,6 +119,13 @@ operations.
 
 ## Terminal and chat
 
+The Terminal settings panel controls font, size, line height, cursor, scrollback,
+selection copying and right-click pasting for local and SSH terminal views.
+Preferences retain the legacy font-size value, share the Ctrl+wheel setting,
+update existing views across windows and apply to new terminals. Lower scrollback
+limits can trim screen history without deleting stored conversations. See the
+[settings roadmap](settings-expansion-roadmap.md) for defaults, scope and validation.
+
 All agents have a terminal view. Codex and Claude additionally have a
 transcript-backed chat view; other tools remain terminal-only. Sending to an
 inactive chat-capable session first activates it and then waits for startup
@@ -169,6 +176,15 @@ in the same Screen layout without becoming agents.[^document-viewer]
 
 ## Settings and notifications
 
+Settings covers the entire workspace below the window title bar with an opaque
+screen. The left navigation contains search and **Back to app**; the selected
+category occupies the main content area. There is no centered popup, outer
+click-to-dismiss area, or Done button. **Back to app** and Escape restore the
+workspace. Covered sessions remain mounted and keep running; their controls are
+inert and workspace keyboard shortcuts are suspended. Native browser views stay
+occluded until settings (and any nested guide) closes. The SSH guide handles
+Escape independently so it does not also dismiss settings.[^settings][^app-shell]
+
 Application display language has its own **Language** navigation tab next to
 General. System default, Korean, English, Simplified Chinese, Traditional Chinese
 (Taiwan), Japanese, and Spanish apply immediately and persist on this PC.
@@ -177,15 +193,18 @@ General contains theme, notification sound, and Desktop Pet settings.
 Agents settings has General, Codex, Claude, Qwen, and Cline tabs with keyboard
 arrow/Home/End navigation. General owns the usage-bar toggle and installation
 status overview. Each tool owns its enabled toggle; Codex contains account
-management, Qwen contains region selection, and Claude/Cline describe their
-existing CLI login environments. Claude multi-account switching remains unsupported.
+management, Claude contains independent local account management, Qwen contains
+region selection, and Cline describes its existing CLI login environment.
+Codex and Claude can run different accounts in separate sessions simultaneously;
+see [Claude account profiles](claude-accounts.md).
 
 New-session defaults are stored in `multiagent.agentDefaults.v1`. Codex supports
 a default local account, Dangerous mode, Alt-screen, and document/HTML workers;
-Claude and Qwen support Dangerous mode. New Session and New Project creation
+Claude supports a default local account and Dangerous mode; Qwen supports
+Dangerous mode. New Session and New Project creation
 load these defaults and allow overrides. Explicitly disabled workers remain off
 after reload. Existing sessions retain their own accounts and options. Local
-Codex accounts are not applied to SSH sessions. Failed preference writes are
+Codex and Claude accounts are not applied to SSH sessions. Failed preference writes are
 shown as errors rather than reported as saved.
 
 Settings govern available tools, hooks, shortcuts, Remote, SSH, appearance,

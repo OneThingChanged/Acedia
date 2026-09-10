@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionWorkerFields } from "./SessionWorkerFields";
-import { CodexAccountSelect } from "./CodexAccounts";
+import { AccountSelect } from "./ProviderAccounts";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { openDialog } from "../platform/plugins";
 import {
@@ -35,6 +35,7 @@ export function NewProjectModal({
   const [name, setName] = useState(defaultName);
   const [folder, setFolder] = useState("");
   const [aiToolId, setAiToolId] = useState("");
+  const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
@@ -91,6 +92,7 @@ export function NewProjectModal({
         folder: folder.trim(),
         aiToolId,
         codexAccountId: aiToolId === "codex" ? codexAccountId : undefined,
+        claudeAccountId: aiToolId === "claude" ? claudeAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
         workerSettings: aiToolId === "codex" ? workerSettings : undefined,
@@ -128,6 +130,7 @@ export function NewProjectModal({
               const defaults = loadAgentDefaults(nextToolId);
               setDangerous(defaults.dangerous);
               if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
+              if (nextToolId === "claude") setClaudeAccountId(defaults.claudeAccountId);
               if (!toolForId(nextToolId).dangerousFlag) {
                 setDangerous(false);
               }
@@ -147,7 +150,8 @@ export function NewProjectModal({
           </span>
         </label>
 
-        {aiToolId === "codex" && !remote && <CodexAccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "codex" && !remote && <AccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "claude" && !remote && <AccountSelect provider="claude" value={claudeAccountId} onChange={setClaudeAccountId} />}
 
         {aiToolId === "codex" && <>
           <label className="field-check"><input type="checkbox" checked={useAltScreen} onChange={e => setUseAltScreen(e.target.checked)} /><span>{text("Alt-screen 모드", "Alt-screen mode")}</span></label>

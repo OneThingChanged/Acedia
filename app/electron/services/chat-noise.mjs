@@ -1,6 +1,5 @@
 // Detect harness-injected / system-wrapper user turns that shouldn't render as
-// real chat messages. Ported/adapted from Orca's harness-injected-user-turns +
-// native-chat-noise. Deliberately conservative: only KNOWN wrapper tags/prefixes
+// real chat messages. Only known wrapper tags and prefixes
 // are treated as noise, so a legitimate message that merely starts with "<" is
 // kept (the previous heuristic dropped all of them).
 

@@ -6,6 +6,7 @@ export type AgentDefaults = {
   dangerous: boolean;
   useAltScreen: boolean;
   codexAccountId: string;
+  claudeAccountId: string;
   workerSettings?: SessionWorkerSettings;
 };
 export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefaults {
@@ -16,6 +17,8 @@ export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefau
     useAltScreen: codex && value.useAltScreen === true,
     codexAccountId: codex && typeof value.codexAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.codexAccountId)
       ? value.codexAccountId : "default",
+    claudeAccountId: toolId === "claude" && typeof value.claudeAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.claudeAccountId)
+      ? value.claudeAccountId : "default",
     workerSettings: codex ? Object.prototype.hasOwnProperty.call(value, "workerSettings")
       ? normalizeSessionWorkerSettings(value.workerSettings) : defaultSessionWorkerSettings(toolId) : undefined,
   };

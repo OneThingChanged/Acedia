@@ -1,4 +1,4 @@
-import { CodexAccountSelect } from "./CodexAccounts";
+import { AccountSelect } from "./ProviderAccounts";
 import { useEffect, useId, useRef, useState } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -265,8 +265,8 @@ export function SessionPropertiesModal({
             tabIndex={0}
           >
             <div className="session-props-toggles">
-              {supportsWorkers && !sshHostId && onAccountChange && <>
-                <CodexAccountSelect value={agent.codexAccountId}
+              {(agent.aiToolId === "codex" || agent.aiToolId === "claude") && !sshHostId && onAccountChange && <>
+                <AccountSelect provider={agent.aiToolId === "claude" ? "claude" : "codex"} value={agent.aiToolId === "claude" ? agent.claudeAccountId : agent.codexAccountId}
                   disabled={changingAccount || !(agent.deferredStart || agent.status === "idle" || agent.status === "exited")}
                   onChange={(accountId) => {
                     setChangingAccount(true); setAccountError("");

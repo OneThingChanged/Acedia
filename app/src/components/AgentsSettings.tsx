@@ -3,7 +3,7 @@ import { invoke } from "../platform/runtime";
 import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { loadAgentDefaults, saveAgentDefaults, type AgentDefaults } from "../lib/agentDefaults";
-import { CodexAccountsPanel, CodexAccountSelect } from "./CodexAccounts";
+import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 
 type QwenRegionInfo = {
@@ -101,8 +101,7 @@ export function AgentsSettings({
     </> : <>
       <div className="agent-settings-toolhead"><span className="agent-settings-toolicon" style={{ color: tool.iconColor }}>{tool.icon}</span><div><h3>{tool.label}</h3><p>{text("로그인 환경과 새 세션의 실행 설정", "Login environment and defaults for new sessions")}</p></div>{availability(tab)}</div>
       <div className="agent-settings-card"><label className="agent-settings-row"><div><div className="agent-row-title">{tool.label} {text("사용", "enabled")}</div><div className="agent-row-sub">{text("새 세션을 만들 때 도구 목록에 표시합니다.", "Show this tool in the new session picker.")}</div></div><input type="checkbox" role="switch" checked={!disabledTools.includes(tab)} onChange={e => onToggleTool(tab, e.target.checked)} /></label></div>
-      {tab === "codex" && <CodexAccountsPanel defaultAccountId={defaults.codexAccountId} />}
-      {tab === "claude" && <><div className="agent-settings-sectionhead"><h4>{text("로그인 환경", "Login environment")}</h4></div><div className="agent-settings-card"><div className="agent-settings-row"><div><div className="agent-row-title">{text("기존 로그인", "Existing login")}</div><div className="agent-row-sub">{text("현재 PC의 Claude Code 인증 설정 사용", "Use this PC's Claude Code authentication")}</div></div></div></div><p className="agent-settings-info">{text("여러 계정 등록·전환은 아직 지원하지 않습니다.", "Multiple account registration and switching are not supported yet.")}</p></>}
+      {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId} />}
       {tab === "qwen" && <>
       <div className="agent-block">
         <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}</div>
@@ -138,7 +137,8 @@ export function AgentsSettings({
       {tool.dangerousFlag && <>
         <div className="agent-settings-sectionhead"><h4>{text("새 세션 기본값", "New session defaults")}</h4></div>
         <div className="agent-settings-card agent-defaults">
-          {tab === "codex" && <div className="agent-settings-row"><CodexAccountSelect value={defaults.codexAccountId} onChange={codexAccountId => updateDefaults({ codexAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Codex 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Codex sessions.")} /></div>}
+          {tab === "codex" && <div className="agent-settings-row"><AccountSelect value={defaults.codexAccountId} onChange={codexAccountId => updateDefaults({ codexAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Codex 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Codex sessions.")} /></div>}
+          {tab === "claude" && <div className="agent-settings-row"><AccountSelect provider="claude" value={defaults.claudeAccountId} onChange={claudeAccountId => updateDefaults({ claudeAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Claude 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Claude sessions.")} /></div>}
           <details open={tab !== "codex"}><summary>{text("실행 옵션", "Launch options")}</summary>
             <label className="agent-settings-row"><div><div className="agent-row-title">{text("권한 확인 생략", "Skip approval prompts")}</div><div className="agent-row-sub">{text("새 세션의 Dangerous 모드 기본값", "Default Dangerous mode for new sessions")}</div></div><input type="checkbox" role="switch" checked={defaults.dangerous} onChange={e => updateDefaults({ dangerous: e.target.checked })} /></label>
             {tab === "codex" && <><label className="agent-settings-row"><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}</div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label><div className="agent-settings-row"><SessionWorkerFields settings={defaults.workerSettings} disabledTools={disabledTools} onChange={workerSettings => updateDefaults({ workerSettings })} /></div></>}

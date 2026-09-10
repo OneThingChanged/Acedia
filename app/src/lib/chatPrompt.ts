@@ -1,8 +1,7 @@
 import type { AgentStatus } from "../types";
 
 // Heuristic detection of an inline prompt (a question with options, or a
-// permission Allow/Deny) from the agent's waiting status text. Adapted from
-// Orca's mobile-native-chat-question / -permission. We only have the prompt as
+// permission Allow/Deny) from the agent's waiting status text. The prompt is
 // a string (interactiveQuestion / lastAssistantMessage), so this parses option
 // lines and yes/no language rather than a structured protocol payload.
 

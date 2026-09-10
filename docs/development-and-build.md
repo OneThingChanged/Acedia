@@ -74,6 +74,25 @@ The development runner starts Vite on port `4420` and the Electron host. It
 should reuse/clean its own child processes rather than requiring a second Vite
 instance.[^dev-runner]
 
+The runner removes inherited `NO_COLOR` from the Electron child's environment;
+the dev host also clears it at PTY creation, including after Electron's own
+relaunch path. Both use the same environment helper.
+Automation consoles can set it to `1`, which otherwise reaches the interactive
+GUI PTYs and disables Codex colors despite `TERM=xterm-256color`. The launching
+console and Vite retain their own environment. Restart the dev app through this
+runner to apply the fix; an already running Electron/CLI process retains its
+old environment. Previously stored plain output cannot regain missing ANSI
+sequences automatically, but resuming a saved CLI conversation can render its
+history again with colors. The dev host retries renderer loading for up to 30
+seconds while a replacement Vite server starts.[^dev-runner]
+
+`npm run electron:terminal-colors-smoke` optionally compares real local Codex
+startup output with and without `NO_COLOR`. It uses temporary homes and a
+loopback model provider, does not sign in or submit model requests, and requires
+an installed Codex CLI. `npm run electron:terminal-settings-smoke` checks ANSI
+palette/truecolor preservation through settings updates and serialized restore,
+alongside preferences, resizing, clipboard behavior and cross-window persistence.
+
 Renderer-only preview is available with `npm run dev`, but it cannot validate
 PTY, preload, native browser, tray, updater, or packaged-resource behavior.
 
