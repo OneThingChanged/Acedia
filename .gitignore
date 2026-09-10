@@ -25,6 +25,19 @@ google-services.json
 GoogleService-Info.plist
 service-account*.json
 credentials*.json
+credentials*.xml
+*.pfx
+*.p12
+
+# Store release private exports / copied local execution evidence
+/.store-release/
+/app/store/private/
+**/portal-title-*.png
+**/submission-before.json
+**/submission-after.json
+**/submission-request.json
+**/submission-reconcile.json
+**/release-run-*.json
 
 # OS/editor files
 .DS_Store

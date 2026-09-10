@@ -64,7 +64,7 @@ sources:
 | GitHub 릴리스 | `v1.8.0.0`, 공개 완료 |
 | GitHub 릴리스 URL | `https://github.com/OneThingChanged/Multiagent/releases/tag/v1.8.0.0` |
 | Microsoft Store 제품 ID | `9NVBSGNRTPLR` |
-| Store 패키지 Identity | `jintaenate.MultiAgent` 유지 |
+| Store 패키지 Identity | 기존 로컬 Store identity 설정 유지 |
 | 딥 링크 | `multiagent://` 유지 |
 | 지원/Q&A | `https://github.com/OneThingChanged/MultiagentSite/issues` |
 | 새 질문 | `https://github.com/OneThingChanged/MultiagentSite/issues/new/choose` |

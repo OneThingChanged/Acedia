@@ -191,6 +191,7 @@ async function pollJob(state, client) {
   const result = await client.status(state.submissionId);
   state.remoteStatus = result.status; state.remoteDetails = redact(result.statusDetails);
   const kind = classifyStatus(result.status);
+  if (['published', 'processing', 'draft'].includes(kind)) state.error = null;
   state.phase = kind === 'published' ? 'published' : kind === 'failed' ? 'failed' : kind === 'draft' ? 'draft' : kind === 'attention' ? 'attention' : 'certification';
   state.lastPolledAt = new Date().toISOString();
   if (kind === 'published') {
@@ -204,6 +205,16 @@ async function pollJob(state, client) {
 export async function submitJob(state, client) {
   const root = jobDir(state.id);
   const { artifact, metadata } = validateEvidence(state);
+  const checkSubmission = (saved, expected) => {
+    const evidence = state.portalTitleEvidence;
+    if (evidence && (evidence.submissionId !== state.submissionId || evidence.requestHash !== state.requestHash ||
+        evidence.artifactHash !== metadata.sha256 || !evidence.verifiedAt ||
+        Object.values(evidence.aliases || {}).some((entry) => entry.productName !== metadata.displayName ||
+          !entry.apiName || !entry.screenshot || sha256(inside(root, entry.screenshot)) !== entry.screenshotHash))) {
+      throw new Error('Portal title evidence does not match this exact submission, request and package.');
+    }
+    assertSubmission(saved, expected, evidence?.aliases);
+  };
   let remote;
   if (state.submissionId) {
     remote = await client.submission(state.submissionId);
@@ -234,7 +245,7 @@ export async function submitJob(state, client) {
     expected = readJson(expectedFile);
     if (state.requestHash !== sha256(expectedFile)) throw new Error('Submission request file changed.');
     // A successful PUT whose response was lost can be reconciled by its saved content.
-    if (submissionFingerprint(remote) !== state.baseFingerprint) assertSubmission(remote, expected);
+    if (submissionFingerprint(remote) !== state.baseFingerprint) checkSubmission(remote, expected);
   } else {
     if (submissionFingerprint(remote) !== state.baseFingerprint) throw new Error('Remote draft changed before update.');
     expected = prepareSubmission(remote, metadata.artifact, state.releaseNotes);
@@ -249,12 +260,12 @@ export async function submitJob(state, client) {
   }
   if (!state.uploadedAt) {
     const updated = await client.update(state.submissionId, expected);
-    const stored = await client.submission(state.submissionId); assertSubmission(stored, expected);
+    const stored = await client.submission(state.submissionId); checkSubmission(stored, expected);
     state.phase = 'uploading'; saveJob(state);
     await client.upload(updated?.fileUploadUrl || stored.fileUploadUrl || remote.fileUploadUrl, zip);
   } else if (state.uploadHash !== sha256(zip)) throw new Error('Previously uploaded archive changed.');
   // API package validation is asynchronous after commit, not equivalent to Portal's Validated label.
-  const check = await client.submission(state.submissionId); assertSubmission(check, expected);
+  const check = await client.submission(state.submissionId); checkSubmission(check, expected);
   writeJson(join(root, 'submission-after.json'), redact(check));
   state.uploadHash = sha256(zip); state.uploadedAt = new Date().toISOString(); state.phase = 'draft'; saveJob(state);
   if (state.mode === 'draft') return { runId: state.id, phase: 'draft', submissionId: state.submissionId, state: stateFile(state.id) };

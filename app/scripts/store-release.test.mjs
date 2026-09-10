@@ -47,6 +47,31 @@ describe('Store release safety and recovery', () => {
     expect(submissionFingerprint(a)).toBe(submissionFingerprint(b));
     b.visibility = 'Private'; expect(submissionFingerprint(a)).not.toBe(submissionFingerprint(b));
   });
+  it('limits evidenced title aliases to exact locales/names while rejecting other listing changes', () => {
+    const expected = prepareSubmission(base(), 'new.msix', notes), saved = structuredClone(expected);
+    saved.listings['en-us'].baseListing.title = 'MultiAgent';
+    const aliases = { 'en-us': { productName: 'Acedia', apiName: 'MultiAgent' } };
+    expect(() => assertSubmission(saved, expected)).toThrow(/listings/);
+    expect(() => assertSubmission(saved, expected, aliases)).not.toThrow();
+    saved.listings['en-us'].baseListing.title = 'Unexpected';
+    expect(() => assertSubmission(saved, expected, aliases)).toThrow(/title/);
+    saved.listings['en-us'].baseListing.title = 'MultiAgent';
+    saved.listings['en-us'].baseListing.releaseNotes = 'Changed';
+    expect(() => assertSubmission(saved, expected, aliases)).toThrow(/listings/);
+  });
+  it('accepts only the read-only tier flag normalization for free prices, preserving price and market guards', () => {
+    const expected = prepareSubmission(base(), 'new.msix', notes);
+    expected.pricing.isAdvancedPricingModel = true;
+    expected.pricing.marketSpecificPricings = { LB: 'NotAvailable' };
+    const saved = structuredClone(expected); saved.pricing.isAdvancedPricingModel = false;
+    expect(() => assertSubmission(saved, expected)).not.toThrow();
+    const marketChange = structuredClone(saved); marketChange.pricing.marketSpecificPricings.LB = 'Free';
+    expect(() => assertSubmission(marketChange, expected)).toThrow(/pricing/);
+    const trialChange = structuredClone(saved); trialChange.pricing.trialPeriod = 'OneDay';
+    expect(() => assertSubmission(trialChange, expected)).toThrow(/pricing/);
+    expected.pricing.priceId = saved.pricing.priceId = 'Tier2';
+    expect(() => assertSubmission(saved, expected)).toThrow(/pricing/);
+  });
   it('does not confuse a draft or processing state with publication', () => {
     expect(classifyStatus('PendingCommit')).toBe('draft');
     expect(classifyStatus('Certification')).toBe('processing');
@@ -169,7 +194,9 @@ describe.skipIf(process.platform !== 'win32')('submission orchestration with a s
   }
   it('uploads after all checks and commits once; repeated calls poll instead of submitting again', async () => {
     const { submitJob, state, client, calls } = await fixture('deploy');
+    state.error = 'Previous resolved failure';
     expect((await submitJob(state, client)).phase).toBe('certification');
+    expect(state.error).toBeNull();
     expect(calls).toEqual(['create', 'update', 'upload', 'commit']);
     await submitJob(state, client);
     expect(calls).toEqual(['create', 'update', 'upload', 'commit']);

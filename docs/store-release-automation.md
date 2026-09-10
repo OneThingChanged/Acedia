@@ -3,7 +3,7 @@ type: Playbook
 title: Store 자동 배포 실행기
 description: "Acedia Store 요청의 승인 범위, Windows 최초 설정, 소스 스냅샷, API 제출 및 재개 절차."
 status: draft
-last_updated: 2026-09-08
+last_updated: 2026-09-09
 sources:
   - resource: ../AGENTS.md
     title: Store 요청 승인과 채널 범위
@@ -20,6 +20,9 @@ sources:
 ---
 
 # Store 자동 배포
+
+일상 실행은 [Store 배포 워크프로세스](store-release-workflow.md)를 따른다.
+개인 인증값, 원본 API 응답과 스크린샷은 문서에 넣지 않고 로컬 실행 폴더에 보관한다.
 
 “스토어 빌드해줘”는 빌드·업로드·인증 제출·통과 후 즉시 게시 요청이다.
 검증 통과 후 제출 승인을 다시 묻지 않는다. “빌드만”, “초안까지만”은 범위를
@@ -120,7 +123,7 @@ Store packaged smoke → lifecycle smoke → WACK이다. Store builder 자체가
 TypeScript/Vite build를 실행한다. WACK은 정확한 버전·Identity, 전체 PASS,
 신규 보고서 시각, 보고서/패키지 해시를 결합해 기록한다.
 
-제품 `9NVBSGNRTPLR`과 Identity `jintaenate.MultiAgent`를 고정한다. 서버에서 조회한
+제품 ID와 패키지 Identity는 실행기의 제품 고정값과 로컬 Store identity 설정으로 검증한다. 서버에서 조회한
 기존 listing, 이미지 참조, 가격/시장, 선언과 미지 필드를 유지하고 패키지와
 한국어/영어 release notes 및 즉시 게시 모드를 갱신한다. 제출 전 저장된 metadata를
 다시 조회해 비교한다. Store는 API commit 이후 패키지 처리를 진행하므로 업로드
@@ -155,9 +158,25 @@ URL의 토큰도 제거하므로 원문 접근은 인증된 API/Partner Center�
 
 ## 현재 검증 범위와 남은 연결
 
+2026-09-09 갱신: DPAPI API 인증과 제품·제출 조회, Worker/Monitor 등록은 검증됐다.
+Submission 5의 `1.8.1.0`은 게시 완료다. 최신 `1.8.2.0` 실행에서 실제 MSIX와
+WACK 검증, API 초안 생성과 metadata PUT까지 성공했다. 후속 GET의 listing title이
+`Acedia` 대신 `MultiAgent`로 돌아와 처음에는 중단했지만, 포털의 한국어·영어
+Product name이 모두 Acedia임을 확인했다. 해당 실행의 제출·요청·패키지 hash 및
+스크린샷 hash에 연결한 `portalTitleEvidence`에 한해서 이름 별칭 비교를 허용했다.
+다른 필드는 그대로 비교하며 새 실행에는 이 증거를 자동 승계하지 않는다.
+동일 패키지로 API 업로드와 commit 요청을 완료했고 후속 조회에서 `Certification`을 확인했다.
+[최신 실행 기록](store-release-1-8-2-0-2026-09-09.md)을 현재 상태로 사용한다.
+무료 가격·국가는 동일하고 읽기 전용 `isAdvancedPricingModel`만 달라지는 경우를
+처리했으며 후속 이름 비교·재개 오류 상태 회귀 검사까지 자동화 테스트 19개가 통과했다.
+가격·국가·체험판·미확인 앱 이름 변경은 계속 차단한다.
+이 필드의 읽기 전용 정의는 [공식 Pricing resource](https://learn.microsoft.com/en-us/windows/uwp/monetize/manage-app-submissions#pricing-resource)에 따른다.
+
+아래는 최초 구현 시점의 검증 이력이다.
+
 2026-09-08 로컬 진단에서 SDK, Identity, WACK 설치를 확인했다. 후속 실제 빌드
-테스트에서 Worker와 Monitor 작업의 등록 완료를 확인했다. API 인증은 아직 연결
-전이다. 자동화 테스트는 버전 승격, 소스 격리, metadata
+테스트에서 Worker와 Monitor 작업의 등록 완료를 확인했다. 당시 API 인증은 연결
+전이었다. 자동화 테스트는 버전 승격, 소스 격리, metadata
 보존, 토큰 제거, 해시 거부, HTTP 재시도 경계를 검증한다.
 
 검증 결과: 전체 테스트 458개(82개 파일), 앱 TypeScript/Vite build, PowerShell
@@ -170,7 +189,7 @@ Partner Center를 새로고침해 Submission 4가 현재 Store에 게시된 것�
 초기 브라우저 화면의 인증 중 표시는 새로고침 후 게시 완료로 바뀌었다. 기존
 인계 문서의 초안 상태는 현재 상태로 사용하지 않는다.
 
-실제 Entra 인증, Store upload/commit 및 새 MSIX/WACK 실행은 아직 검증되지 않았다.
+최초 구현 시 실제 Entra 인증, Store upload/commit 및 새 MSIX/WACK 실행은 검증되지 않았다.
 실제품은 이 자동화 구현 과정에서 제출하지 않았다. `Published`는 API 게시 상태이며
 Store 설치/업데이트, 사용자 데이터 보존 검증은 별도 Windows 테스트 환경에서
 수행해야 한다. 현재 실행기는 이 항목을 `installVerification: pending`으로 남긴다.

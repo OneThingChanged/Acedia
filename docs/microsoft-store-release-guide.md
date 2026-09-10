@@ -73,7 +73,7 @@ Standard 개발자 NSIS와 Company GitHub 배포는 [전체 릴리스 플레이�
 | --- | --- |
 | 제품 | Acedia (기존 이름: MultiAgent) |
 | Partner Center 제품 ID | `9NVBSGNRTPLR` |
-| 패키지 Identity Name | `jintaenate.MultiAgent` |
+| 패키지 Identity Name | 로컬 `app/store/store-identity.local.json`에서 확인 |
 | 현재 Store 설치 확인 버전 | `1.6.26.0` |
 | 공개 업데이트 제출 버전 | `1.7.0.0` |
 | 제출 번호 / 제출 ID | Submission 3 / `1152921505701807824` |

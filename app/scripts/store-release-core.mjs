@@ -101,7 +101,7 @@ export function prepareSubmission(base, artifactName, releaseNotes) {
   delete result.statusDetails;
   return result;
 }
-export function assertSubmission(saved, expected) {
+export function assertSubmission(saved, expected, verifiedTitleAliases = {}) {
   if (saved.id !== expected.id || saved.status !== 'PendingCommit' || saved.visibility !== 'Public' || saved.targetPublishMode !== 'Immediate') {
     throw new Error('Submission identity/status/publication policy changed.');
   }
@@ -111,6 +111,26 @@ export function assertSubmission(saved, expected) {
     throw new Error('Stored package differs from the exact upload artifact.');
   }
   for (const key of Object.keys(expected).filter((k) => !['applicationPackages', 'status', 'statusDetails', 'fileUploadUrl', 'friendlyName'].includes(k))) {
+    if (key === 'listings' && Object.keys(verifiedTitleAliases).length) {
+      const listings = structuredClone(saved.listings);
+      for (const [locale, alias] of Object.entries(verifiedTitleAliases)) {
+        const listing = listings?.[locale]?.baseListing;
+        if (!listing || expected.listings?.[locale]?.baseListing?.title !== alias.productName ||
+            ![alias.productName, alias.apiName].includes(listing.title)) throw new Error('Unverified listing title change.');
+        listing.title = alias.productName;
+      }
+      if (digest(canonical(listings)) !== digest(canonical(expected.listings))) throw new Error('Stored submission field differs: listings');
+      continue;
+    }
+    if (key === 'pricing' && saved.pricing?.priceId === 'Free' && expected.pricing?.priceId === 'Free' &&
+        [saved.pricing, expected.pricing].every((p) => Object.values(p.marketSpecificPricings || {}).every((v) => ['Free', 'NotAvailable'].includes(v)))) {
+      // The API normalizes this read-only tier-catalog flag on free submissions.
+      // Keep every actual price, market, trial and unknown field in the comparison.
+      const actualPricing = { ...saved.pricing }, expectedPricing = { ...expected.pricing };
+      delete actualPricing.isAdvancedPricingModel; delete expectedPricing.isAdvancedPricingModel;
+      if (digest(canonical(actualPricing)) !== digest(canonical(expectedPricing))) throw new Error('Stored submission field differs: pricing');
+      continue;
+    }
     if (digest(canonical(saved[key])) !== digest(canonical(expected[key]))) throw new Error(`Stored submission field differs: ${key}`);
   }
   if (saved.statusDetails?.errors?.length) throw new Error('Partner Center reports submission errors.');

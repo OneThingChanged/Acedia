@@ -29,8 +29,10 @@ configuration that supports it.
 
 * [Development and build](development-and-build.md) - Local setup, tests, smoke checks, and desktop/mobile build entry points.
 * [Release playbook](release-playbook.md) - Signing, artifact verification, publication, and updater invariants.
+* [Store 배포 워크프로세스](store-release-workflow.md) - 요청별 범위, 최초 인증 설정, 일상 배포·재개 명령, 심사 상태와 개인정보/Git 보관 기준.
 * [Store 자동 배포 실행기](store-release-automation.md) - One-request Store release scope, Windows credential/task setup, isolated builds, API submission and recovery.
-* [Acedia 1.8.1.0 Store 테스트 배포](store-release-1-8-1-0-2026-09-08.md) - Settings/language MSIX validated and submitted through Partner Center UI; Submission 5 in certification, automatic publishing after approval.
+* [Acedia 1.8.1.0 Store 테스트 배포](store-release-1-8-1-0-2026-09-08.md) - Settings/language MSIX submitted through Partner Center UI; Submission 5 published, Store installation verification pending.
+* [Acedia 1.8.2.0 Store API 배포](store-release-1-8-2-0-2026-09-09.md) - Build and WACK passed; API submission reached Certification, automatic publication configured.
 * [Acedia 1.8.x release handoff](acedia-release-handoff-2026-09-08.md) - Current Partner Center draft, completed 1.8.0.0 release, unfinished language/settings work, and the exact next-session starting procedure.
 * [Microsoft Store 배포 운영 가이드](microsoft-store-release-guide.md) - Store MSIX 빌드, WACK, Partner Center 제출, 공개, 인증 대응 및 업데이트 절차.
 * [Microsoft Store MSIX delivery and certification record](microsoft-store-msix-plan.md) - Private pilot and public-update implementation history, validation evidence, certification status, and rollout decisions.

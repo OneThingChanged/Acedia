@@ -1,6 +1,16 @@
 # OKF Update Log
 
+## 2026-09-10
+
+* **Git source revision 1.8.0.2**: Committed Store API recovery fixes, workflow documentation and privacy ignore rules. Source product version advances from 1.8.0.1 to 1.8.0.2; npm remains 1.8.0. No installer/APK rebuild or new Store submission is part of this Git upload; Android versionCode stays unchanged. Store 1.8.2.0 remains a separately built release.
+
 ## 2026-09-09
+
+* **Store workflow and privacy documentation**: Added an operational playbook covering request scope, DPAPI setup, isolated builds, API submission, status interpretation and same-run recovery. Replaced personal account/path details in Store documentation with local configuration references. Added ignore rules for copied credential XML, signing keys, private Store exports, API request/response files, state copies and portal evidence screenshots. Recorded the observed Certification state for 1.8.2.0. Ignore rules do not erase previously committed history.
+
+* **Store 1.8.2.0 API commit accepted**: Verified Acedia in both portal Product name selectors without editing the API draft. Recorded exact-submission/request/artifact-bound screenshot evidence for the MultiAgent readback alias; other metadata remains strictly compared. Reused the verified package, completed Blob upload and issued commit once; API returned CommitStarted, with immediate publication configured and Monitor tracking. Automation tests: 19 passed. Publication and Store installation remain unverified.
+
+* **Store 1.8.2.0 API release attempt**: Built isolated Standard 1.8.0.1 source with 474 tests, Electron/packaged/lifecycle checks and WACK overall PASS. API authentication and prior 1.8.1.0 publication are verified. Created draft 1152921505701838121 and saved metadata; upload/commit stopped because GET returns MultiAgent instead of Acedia in both listing titles despite PUT echoing Acedia. Added a narrowly scoped free-price read-only flag normalization (18 automation tests passed), preserving title/price/market checks. [Release record](store-release-1-8-2-0-2026-09-09.md).
 
 * **Standard 1.8.0.1 release preparation**: Grouped settings/languages, Codex Store path fix, browser uploads/downloads/history/background control, Remote refactor/reliability, and Store release tooling into one source revision. Product and mobile versionName advance to 1.8.0.1, npm stays 1.8.0, and Android versionCode advances to 18. Windows installer/APK build and packaged validation follow this commit; no Store submission or GitHub publication is requested.
 
