@@ -2,7 +2,7 @@
 
 ## 배포 채널 분리
 
-- Standard는 공개 EXE 채널이며 GitHub Release에서 네 자리 버전으로 업데이트한다. EXE와 Store는 설치 ID·데이터·업데이트 경로를 분리한다. 이전 Standard 로컬 개발자 전용/Store 단독 공개 배포 지침보다 이 규칙을 우선한다.
+- Standard는 공개 EXE 채널이며 GitHub Release에서 네 자리 버전으로 업데이트한다. EXE와 Store는 설치 ID·업데이트 경로만 분리하고 사용자 데이터는 공통 프로필에서 공유한다. 공통 프로필당 한 채널만 실행하며 Company와 명시적 개발/검증 프로필은 별도다. 이전 데이터 분리 및 Standard 로컬 개발자 전용/Store 단독 공개 배포 지침보다 이 규칙을 우선한다.
 - EXE 배포 시 `docs/exe-release-workflow.md`를 따른다. 설치 파일과 같은 빌드의 `latest-exe.json`을 함께 게시한다. EXE 요청만으로 Store를 재제출하지 않는다.
 
 - 사용자가 **“라이브 배포”** 또는 이에 준하는 표현을 사용하면 Git 저장소와 GitHub Release 채널만 배포한다.

@@ -26,6 +26,7 @@ import * as nodePty from "node-pty";
 import electronUpdater from "electron-updater";
 import ipcContract from "./ipc-contract.cjs";
 import runtimeVariantModule from "./runtime-variant.cjs";
+import { sharedProfileRoot, discoverLegacyProfiles, initializeSharedProfile, acquireSharedProfileLease } from "./services/shared-profile.mjs";
 import { createTerminalHandlers } from "./handlers/terminal-handlers.mjs";
 import { CloseCoordinator } from "./services/close-coordinator.mjs";
 import { HookService } from "./services/hook-service.mjs";
@@ -275,13 +276,39 @@ const transcriptMissUntil = new Map();
 
 app.setName(runtimeVariant.displayName);
 const userDataOverride = process.env.MULTIAGENT_ELECTRON_USER_DATA?.trim();
-if (userDataOverride) app.setPath("userData", userDataOverride);
+const sharedRoot = sharedProfileRoot({ home: os.homedir(), variant: runtimeVariant.id,
+  userDataOverride, localDataOverride: process.env.MULTIAGENT_LOCAL_DATA?.trim() });
+let sharedProfileLease = null;
+let profileMigration = null;
+if (sharedRoot) {
+  try {
+    sharedProfileLease = await acquireSharedProfileLease(sharedRoot, () => {
+      void app.whenReady().then(() => showWorkspaceWindow());
+    });
+    if (!sharedProfileLease) { app.exit(0); process.exit(0); }
+    profileMigration = initializeSharedProfile(sharedRoot, discoverLegacyProfiles({
+      roaming: app.getPath("appData"),
+      local: process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+    }));
+    app.setPath("userData", path.join(sharedRoot, "profile"));
+    // The OS releases the lease on crash too. Keep it until process exit so no
+    // second channel opens databases while asynchronous shutdown is running.
+    app.once("quit", () => sharedProfileLease?.close());
+  } catch (error) {
+    dialog.showErrorBox("Acedia 공유 데이터", error.message);
+    app.exit(1);
+    process.exit(1);
+  }
+} else if (userDataOverride) app.setPath("userData", userDataOverride);
 else if (runtimeVariant.userDataDirectory) {
   app.setPath(
     "userData",
     path.join(app.getPath("appData"), runtimeVariant.userDataDirectory)
   );
 }
+// Electron may already have resolved the default sessionData path while loading
+// its bootstrap. Pin Chromium storage explicitly before creating any session.
+app.setPath("sessionData", app.getPath("userData"));
 const workspaceRegistryPath = path.join(
   app.getPath("userData"),
   "workspace-window.json"
@@ -360,10 +387,10 @@ const browserActivity = new BrowserActivity({
   ownerOf: id => [...documentBrowserWindows.values()].find(record => record.view.webContents.id === id),
 });
 sessionService.codexRoots = () => codexAccounts.roots();
-const hookBaseDir = process.env.MULTIAGENT_LOCAL_DATA?.trim() || path.join(
+const hookBaseDir = process.env.MULTIAGENT_LOCAL_DATA?.trim() || (sharedRoot ? path.join(sharedRoot, "local") : userDataOverride ? path.join(userDataOverride, "local-data") : path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
   runtimeVariant.localDataDirectory
-);
+));
 const conversationStoreManager = new ConversationStoreManager({
   configDir: app.getPath("userData"),
   defaultRoot: path.join(hookBaseDir, "conversation-store"),
@@ -5602,6 +5629,14 @@ console.log(
 if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
   console.log("[electron] ready");
   const smokeMode = bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;
+  if (profileMigration?.migrated && profileMigration.secondaryCount > 0 && !smokeMode) {
+    void dialog.showMessageBox({
+      type: "info", title: "Acedia 공유 데이터 이전",
+      message: "EXE와 Store의 프로젝트·세션 목록을 합쳤습니다.",
+      detail: "최근 사용한 프로필의 설정을 공통 설정으로 사용합니다. 다른 프로필의 설정과 별도 대화 보관 DB는 공유 폴더의 legacy에 보존했습니다. 기존 원본도 삭제하지 않았습니다. 별도 보관 DB의 내용은 자동 병합하지 않습니다.",
+      buttons: ["확인", "보존한 데이터 폴더 열기"],
+    }).then(result => { if (result.response === 1) void shell.openPath(path.join(sharedRoot, "legacy")); });
+  }
   if (process.platform === "win32" && app.isPackaged && !smokeMode) {
     const removedShortcuts = cleanupLegacyElectronShortcuts({
       appDataDir: app.getPath("appData"),

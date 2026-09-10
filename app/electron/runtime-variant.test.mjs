@@ -34,7 +34,7 @@ describe("Electron runtime variant", () => {
     });
   });
 
-  it("uses isolated data and Microsoft Store managed updates for Store builds", () => {
+  it("retains legacy Store directories for migration and Microsoft Store managed updates", () => {
     expect(resolveRuntimeVariant({ packageVariant: "store" })).toMatchObject({
       id: "store",
       displayName: "Acedia",

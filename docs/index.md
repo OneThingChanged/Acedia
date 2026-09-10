@@ -12,6 +12,7 @@ configuration that supports it.
 
 * [Product overview](product-overview.md) - Product goals, runtime shape, capabilities, and variants.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
+* [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
 
 ## Sessions and integrations

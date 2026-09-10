@@ -2,6 +2,8 @@
 
 ## 2026-09-10
 
+* **Shared EXE/Store data, source 1.8.0.4**: Added a common profile outside MSIX AppData virtualization, explicit Chromium sessionData selection, and a cross-channel process lease. First use copies the most recently modified profile, unions project/session catalogs and accounts, retains secondary profiles/archives, and leaves originals intact. Locked or damaged source data stops migration; copied default databases receive SQLite quick_check. Separate SQLite archives are preserved rather than automatically merged. 487 tests and the frontend build passed; an Electron smoke verified cross-channel project/theme persistence, second-channel exclusion and live-profile migration rejection. Standard and Store runtime bridge smokes passed. Existing public EXE and Store builds have not been replaced by this source change.
+
 * **EXE GitHub channel / 1.8.0.3**: Restored Standard as a public EXE channel with four-part GitHub release selection, exact repository/asset validation, streamed SHA-256 verification and session-saving installation. Store identity/data/updater remain isolated. Added desktop-only packaging with an independently verified existing mobile APK and latest-exe.json output. Source tests: 480 passed; EXE build and packaged/lifecycle smokes passed. Windows installer version 1.8.0.3; Authenticode NotSigned. Existing signed mobile APK 1.8.0.1 is bundled independently.
 
 * **Git source revision 1.8.0.2**: Committed Store API recovery fixes, workflow documentation and privacy ignore rules. Source product version advances from 1.8.0.1 to 1.8.0.2; npm remains 1.8.0. No installer/APK rebuild or new Store submission is part of this Git upload; Android versionCode stays unchanged. Store 1.8.2.0 remains a separately built release.

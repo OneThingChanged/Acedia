@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.0",
-  "multiAgentReleaseVersion": "1.8.0.3",
+  "multiAgentReleaseVersion": "1.8.0.4",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:shared-profile-smoke": "node scripts/electron-shared-profile-smoke.mjs",
     "electron:smoke": "electron electron/pty-smoke.mjs",
     "electron:bridge-smoke": "node scripts/electron-bridge-smoke.mjs",
     "electron:browser-background-smoke": "electron scripts/electron-browser-background-smoke.mjs",
@@ -105,9 +106,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.0.3-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.0.4-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.0.3",
+      "uninstallDisplayName": "Acedia 1.8.0.4",
       "include": "electron/installer.nsh"
     },
     "publish": [

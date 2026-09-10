@@ -1,3 +1,5 @@
+// Directory names remain as legacy migration inputs/fallbacks. Production EXE
+// and Store use shared-profile.mjs; install identities and updaters stay separate.
 const VARIANTS = Object.freeze({
   standard: Object.freeze({
     id: "standard",

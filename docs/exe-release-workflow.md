@@ -6,7 +6,7 @@ status: stable
 last_updated: 2026-09-10
 sources:
   - resource: ../app/electron/runtime-variant.cjs
-    title: 채널별 설치·데이터 분리
+    title: 채널별 설치·업데이트 분리
   - resource: ../app/electron/services/github-exe-update.mjs
     title: 네 자리 버전 GitHub EXE 업데이트
   - resource: ../app/scripts/build-electron-standard.mjs
@@ -26,11 +26,12 @@ sources:
 | 업데이트 | 설정의 Check → Update, GitHub에서 다운로드 | Microsoft Store가 관리 |
 | 버전 | 네 자리 X.Y.Z.R 전체 비교 | Store 규칙에 맞는 X.Y.Z.0 |
 | 설치 방식 | 사용자별 NSIS 설치 | MSIX |
-| 데이터 | 기존 Standard 데이터 폴더 유지 | 별도 Store 데이터 폴더 |
-| 병행 사용 | Store와 설치 ID·데이터 경로가 달라 함께 설치 가능 | EXE를 덮어쓰지 않음 |
+| 데이터 | 공통 사용자 프로필 | 같은 공통 사용자 프로필 |
+| 병행 사용 | 함께 설치하되 한 번에 한 채널 실행 | EXE를 덮어쓰지 않음 |
 
-두 채널은 세션·설정을 자동 공유하지 않는다. EXE 설치는 기존 Standard 설치 위치와
-데이터를 유지한다. 기존 Company variant는 별도 채널로 유지한다.
+소스 1.8.0.4부터 두 채널은 [공통 사용자 데이터](shared-user-data.md)를 사용한다.
+기존 데이터 이전·충돌 보존·동시 실행 제한은 해당 문서를 따른다.
+이미 배포된 구버전에는 적용되지 않는다. 기존 Company variant는 별도 채널로 유지한다.
 
 ## 처음 전환할 때
 
