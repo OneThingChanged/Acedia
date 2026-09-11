@@ -21,7 +21,11 @@ describe('EXE/Store shared profile', () => {
     const home = path.resolve('home');
     const standard = sharedProfileRoot({ home, variant: 'standard' });
     expect(sharedProfileRoot({ home, variant: 'store' })).toBe(standard);
-    expect(standard).not.toContain('AppData');
+    // The isolated Store runner itself lives below LocalAppData. Verify the
+    // function uses the supplied user home instead of making assumptions about
+    // parent directory names in the test checkout.
+    expect(standard).toBe(path.join(home, '.acedia', 'shared-v1'));
+    expect(path.relative(home, standard)).toBe(path.join('.acedia', 'shared-v1'));
     expect(sharedProfileRoot({ home, variant: 'company' })).toBeNull();
     expect(sharedProfileRoot({ home, variant: 'store', userDataOverride: 'test' })).toBeNull();
     expect(sharedProfileRoot({ home, variant: 'standard', localDataOverride: 'test' })).toBeNull();
