@@ -4,12 +4,30 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { GithubExeUpdateService, selectExeRelease, validateExeManifest } from './github-exe-update.mjs';
-const makeRelease = (v='1.8.0.3') => ({ tag_name:`v${v}`, draft:false, prerelease:false, assets:[
-  { name:'latest-exe.json', browser_download_url:`https://github.com/OneThingChanged/Multiagent/releases/download/v${v}/latest-exe.json` },
-  { name:`Acedia-Setup-${v}-x64.exe`, size:3, browser_download_url:`https://github.com/OneThingChanged/Multiagent/releases/download/v${v}/Acedia-Setup-${v}-x64.exe` },
+const makeRelease = (v='1.8.0.3', repo='Acedia') => ({ tag_name:`v${v}`, draft:false, prerelease:false, assets:[
+  { name:'latest-exe.json', browser_download_url:`https://github.com/OneThingChanged/${repo}/releases/download/v${v}/latest-exe.json` },
+  { name:`Acedia-Setup-${v}-x64.exe`, size:3, browser_download_url:`https://github.com/OneThingChanged/${repo}/releases/download/v${v}/Acedia-Setup-${v}-x64.exe` },
 ] });
 const manifest = () => ({schemaVersion:1, channel:'exe', version:'1.8.0.3', fileName:'Acedia-Setup-1.8.0.3-x64.exe', size:3, sha256:createHash('sha256').update('exe').digest('hex')});
 describe('GitHub EXE updates', () => {
+  it.each(['Acedia','Multiagent'])('accepts exact asset URLs under the product repository name %s', async repo => {
+    const urls=[];
+    const service=new GithubExeUpdateService({currentVersion:'1.8.0.2',cacheDir:'.',fetchImpl:async url=>{
+      urls.push(url);return new Response(JSON.stringify(url.includes('api.github.com')?[makeRelease('1.8.0.3',repo)]:manifest()));
+    }});
+    expect((await service.check()).version).toBe('1.8.0.3');
+    expect(urls[0]).toBe('https://api.github.com/repos/OneThingChanged/Acedia/releases?per_page=100');
+    expect(service.available.url).toContain(`/OneThingChanged/${repo}/releases/download/v1.8.0.3/`);
+  });
+  it('rejects modified tags, asset paths and manifest URLs after the repository move', async () => {
+    for(const suffix of ['?download=1','/extra']) {
+      const release=makeRelease();release.assets[1].browser_download_url+=suffix;
+      expect(()=>validateExeManifest(manifest(),release)).toThrow();
+    }
+    const release=makeRelease();release.assets[0].browser_download_url=release.assets[0].browser_download_url.replace('/v1.8.0.3/','/v1.8.0.4/');
+    const service=new GithubExeUpdateService({currentVersion:'1.8.0.2',cacheDir:'.',fetchImpl:async()=>new Response(JSON.stringify([release]))});
+    await expect(service.check()).rejects.toThrow('Unexpected update manifest URL');
+  });
   it('compares fourth version component, ignores drafts, prereleases and other channels', () => {
     expect(selectExeRelease([makeRelease('1.8.0.3'),makeRelease('1.8.0.12')],'1.8.0.2').tag_name).toBe('v1.8.0.12');
     expect(selectExeRelease([{...makeRelease(),draft:true},{...makeRelease(),prerelease:true},{...makeRelease('1.9.0.0'),assets:[]}],'1.8.0.2')).toBeNull();

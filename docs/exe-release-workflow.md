@@ -3,7 +3,7 @@ type: Playbook
 title: EXE와 Store 배포 채널
 description: "독립 EXE의 GitHub 업데이트, Store와의 병행 설치, 릴리스 생성 및 검증 절차."
 status: stable
-last_updated: 2026-09-10
+last_updated: 2026-09-11
 sources:
   - resource: ../app/electron/runtime-variant.cjs
     title: 채널별 설치·업데이트 분리
@@ -62,6 +62,16 @@ npm 호환 버전은 세 자리로 유지한다. EXE 업데이트에는 별도 `
 공식 저장소의 해당 태그 URL이 일치하지 않으면 설치를 차단한다. draft/prerelease와
 EXE manifest가 없는 Store/Company 릴리스는 업데이트 대상으로 선택하지 않는다.
 현재 조회 범위는 GitHub의 최신 릴리스 100개다. 네트워크·API 제한 오류는 설정에 표시된다.
+
+### 공식 저장소 주소 변경
+
+공식 배포 저장소는 `OneThingChanged/Acedia`다. 소스 1.8.0.16부터 현재 저장소로 조회하며,
+이 제품의 이전 이름인 `OneThingChanged/Multiagent`로 기록된 과거 자산 주소도 허용한다.
+두 주소 모두 정확한 태그·파일명만 허용하며 다른 저장소나 변형된 자산 경로는 거부한다.
+
+이름 변경 전 주소만 허용하는 기존 설치본에서는 업데이트 조회 시
+`Unexpected update manifest URL.` 오류가 발생한다. 이 설치본은 새 공개 EXE를 한 번
+직접 설치해야 한다. 새 버전 설치 이후에는 현재 공식 주소로 업데이트를 조회한다.
 
 업데이트 버튼은 다운로드 후 설치를 시작하므로 사용자의 클릭이 필요하다.
 게시 완료는 사용 중인 PC에 업데이트가 설치됐다는 뜻이 아니다.

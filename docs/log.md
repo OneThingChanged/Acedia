@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.16 — EXE update address compatibility**: Reproduced an update-check failure after the official repository was renamed. EXE update discovery now uses the current product repository and accepts exact release asset paths under its current and previous names, while retaining tag, filename, size and hash checks. All 586 tests and a live update check against the existing public release passed. Existing installations with the previous URL restriction require one manual installation of the new EXE. This revision includes the settings work through 1.8.0.15; Store delivery remains separate.
+
 * **Settings documentation consolidation**: Grouped settings guides in the index, corrected the Commands & startup navigation label, updated the current search count to 105 and added project-selection scope. The combined review guide now maps all six implementation commits to feature documents and records the final verification commands, results and remaining manual checks. This documentation-only update retains product version 1.8.0.15.
 
 * **Acedia 1.8.0.15 — idle session suspension**: Added opt-in idle suspension for completed local Codex/Claude sessions, with visibility/ownership/activity/generation guards and exact account-scoped transcript verification. Suspended sessions preserve launch options and resume only the verified conversation. 583 tests, build, native ConPTY suspension/recovery checks, standby-click renderer checks and 105-target settings UI checks passed. [Idle sessions](idle-sessions.md) and the [combined review guide](settings-review-1-8-0-15.md) record scope and manual follow-up.

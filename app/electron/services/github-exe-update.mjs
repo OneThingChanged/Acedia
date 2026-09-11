@@ -3,8 +3,12 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { compareProductVersions } from './local-developer-update.mjs';
 
-const REPO = 'OneThingChanged/Multiagent';
-const ROOT = `https://github.com/${REPO}/releases/download/`;
+const REPO = 'OneThingChanged/Acedia';
+// The same product's previous repository name remains valid for older metadata.
+const ROOTS = [REPO, 'OneThingChanged/Multiagent'].map(repo => `https://github.com/${repo}/releases/download/`);
+function isReleaseAssetUrl(url, tag, fileName) {
+  return ROOTS.some(root => url === `${root}${tag}/${fileName}`);
+}
 export function selectExeRelease(releases, currentVersion) {
   return releases.filter(r => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+\.\d+$/.test(r.tag_name) &&
     r.assets?.some(a => a.name === 'latest-exe.json') && compareProductVersions(r.tag_name.slice(1), currentVersion) > 0)
@@ -17,7 +21,7 @@ export function validateExeManifest(data, release) {
   if (data.schemaVersion !== 1 || data.channel !== 'exe' || data.version !== version || data.fileName !== name ||
       !/^[a-f0-9]{64}$/i.test(data.sha256 || '') || !Number.isSafeInteger(data.size) || data.size <= 0 ||
       data.size > 1024 * 1024 * 1024 || asset?.size !== data.size ||
-      asset.browser_download_url !== `${ROOT}${release.tag_name}/${name}`) throw new Error('Invalid EXE release manifest.');
+      !isReleaseAssetUrl(asset.browser_download_url, release.tag_name, name)) throw new Error('Invalid EXE release manifest.');
   return { ...data, url: asset.browser_download_url, releaseDate: release.published_at, releaseName: release.name };
 }
 export class GithubExeUpdateService {
@@ -33,7 +37,7 @@ export class GithubExeUpdateService {
     const release = selectExeRelease(await response.json(), this.currentVersion);
     if (!release) { this.available = null; return null; }
     const manifestAsset = release.assets.find(a => a.name === 'latest-exe.json');
-    if (manifestAsset.browser_download_url !== `${ROOT}${release.tag_name}/latest-exe.json`) throw new Error('Unexpected update manifest URL.');
+    if (!isReleaseAssetUrl(manifestAsset.browser_download_url, release.tag_name, 'latest-exe.json')) throw new Error('Unexpected update manifest URL.');
     const manifestResponse = await this.fetch(manifestAsset.browser_download_url, { signal: AbortSignal.timeout(30000) });
     if (!manifestResponse.ok) throw new Error(`Update manifest download failed (${manifestResponse.status}).`);
     this.available = validateExeManifest(await manifestResponse.json(), release);
