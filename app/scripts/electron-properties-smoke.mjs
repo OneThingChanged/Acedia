@@ -88,6 +88,29 @@ async function exercise() {
   check(document.activeElement === button('닫기'), 'Reverse Tab escaped the dialog');
   document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); await wait();
   check(document.activeElement === opener && !document.querySelector('.properties-dialog'), 'Close did not restore focus');
+  window.fixtureShow('usage'); await wait();
+  const profiles = ['codex','claude'].flatMap(provider => ['default','personal','work'].map((id,index)=>({key:`${provider}:${id}`,provider,id,label:index===0?provider:index===1?'개인 계정':'업무 계정',registered:true,current:false,hidden:false,visible:true})));
+  const base = {primary:{usedPercent:25,windowMinutes:300,resetsAt:null},secondary:null,credits:{},updatedAt:Date.now()};
+  window.fixtureSetQuotaData({profiles,limits:profiles.filter(profile=>profile.id!=='work').map(profile=>({...base,limitId:profile.id==='default'?profile.provider:profile.key,limitName:(profile.provider==='codex'?'Codex':'Claude')+(profile.id==='default'?'':` · ${profile.label}`),profile}))});
+  await wait(); await wait(); await wait();
+  const segments = [...document.querySelectorAll('.usage-status-provider')];
+  check(segments.length===6, 'Registered accounts without sessions or quotas missing from status bar');
+  check(segments.filter(el=>el.textContent.includes('한도 확인 전')).length===2, 'Missing quotas were fabricated or concealed');
+  check(segments.filter(el=>el.textContent.includes('기본')).length===2, 'Default account is not distinguished');
+  const strip = document.querySelector('.usage-status-summary');
+  if (strip.scrollWidth>strip.clientWidth+1) {
+    const next = field('뒤쪽 계정 보기'); check(next && !next.disabled,'Overflow has no account navigation'); next.click();
+    for(let i=0;i<12&&strip.scrollLeft===0;i++)await wait();
+    check(strip.scrollLeft>0,'Account navigation did not scroll');
+    check(!field('앞쪽 계정 보기').disabled,'Reverse navigation stayed disabled');
+  }
+  check(document.querySelector('.usage-status-bar').getBoundingClientRect().height===28,'Accounts changed footer height');
+  await click('계정 한도'); check(panel().querySelectorAll('.property-card').length===6,'Account overview omitted registered accounts');
+  check([...panel().querySelectorAll('.property-card')].filter(el=>el.textContent.includes('한도 확인 전')).length===2,'Overview did not explain pending quotas');
+  const pendingCard = [...panel().querySelectorAll('.property-card')].find(el=>el.textContent.includes('업무 계정')); pendingCard.querySelector('button').click(); await wait();
+  check(panel().querySelectorAll('.property-card').length===5,'Pending quota account could not be hidden');
+  await click('이전·기타 프로필'); await click('기본 화면에 표시'); await click('현재 계정');
+  check(panel().querySelectorAll('.property-card').length===6,'Pending quota account could not be restored');
   check(!window.fixtureCalls.some(call=>['spawn_pty','kill_pty'].includes(call.command)), "Property editing changed terminal processes");
   return 'PROPERTIES_UI_OK '+innerWidth+'x'+innerHeight;
 }
@@ -104,7 +127,7 @@ if (process.versions.electron) {
       console.log(await win.webContents.executeJavaScript('('+exercise.toString()+')().catch(error=>{throw Error(error.stack+"\\n"+document.querySelector(".properties-panel:not([hidden])")?.innerText)})'));
       if(process.env.ACEDIA_PROPERTIES_SCREENSHOTS) {
         await fs.mkdir(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,{recursive:true});
-        for (const screen of ['session','project']) {
+        for (const screen of ['session','project','usage']) {
           await win.webContents.executeJavaScript(`window.fixtureShow('${screen}')`); await new Promise(resolve=>setTimeout(resolve,250));
           await fs.writeFile(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`${screen}-${width}.png`),(await win.webContents.capturePage()).toPNG());
         }

@@ -149,6 +149,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
     const name = label.trim();
     requestedFlowFocus.current = true;
     const id = await invoke<string>(commands[provider].create, { label: name });
+    window.dispatchEvent(new Event("multiagent:accounts-changed"));
     const account = { id, label: name, state: "empty" };
     remember(account);
     if (live.current) { setActiveId(id); setAdding(false); setLabel(""); }

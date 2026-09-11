@@ -12,6 +12,8 @@ let entries = [initial.lastSessionId, "33333333-3333-4333-8333-333333333333"].ma
 let config = { revision: 0, commands: [], startups: {} };
 let quota = ["default", extraId].map((id, index) => ({ limitId: id === "default" ? "codex" : `codex:${id}`, limitName: index ? "Codex · 보관 프로필" : "Codex", planType: "plus", primary: { usedPercent: 25, windowMinutes: 300, resetsAt: 1789228000 }, secondary: { usedPercent: 45, windowMinutes: 10080, resetsAt: 1789328000 }, credits: {}, updatedAt: Date.now(), profile: { key: `codex:${id}`, provider: "codex", id, label: index ? "보관 프로필" : "Codex", registered: true, current: !index, hidden: false, visible: !index } }));
 window.fixtureCalls = [];
+let quotaProfiles;
+window.fixtureSetQuotaData = data => { quota = data.limits; quotaProfiles = data.profiles; window.dispatchEvent(new Event("multiagent:accounts-changed")); };
 window.multiAgentElectron = {
   invoke: async (command, args = {}) => {
     window.fixtureCalls.push({ command, args });
@@ -21,8 +23,11 @@ window.multiAgentElectron = {
     if (command === "check_tools") return { codex: { available: true, path: "C:/fixture/codex.exe" } };
     if (command === "saved_commands_get") return config;
     if (command === "saved_commands_set") { config = { ...config, ...args.patch, revision: config.revision + 1 }; return config; }
-    if (command === "usage_profile_visibility_set") quota = quota.map(limit => limit.profile.key === args.profileKey ? { ...limit, profile: { ...limit.profile, hidden: args.hidden, visible: !args.hidden } } : limit);
-    if (["usage_rate_limits_get", "usage_profile_visibility_set"].includes(command)) return { updatedAt: Date.now(), limits: quota };
+    if (command === "usage_profile_visibility_set") {
+      quota = quota.map(limit => limit.profile.key === args.profileKey ? { ...limit, profile: { ...limit.profile, hidden: args.hidden, visible: !args.hidden } } : limit);
+      quotaProfiles = quotaProfiles?.map(profile => profile.key === args.profileKey ? { ...profile, hidden: args.hidden, visible: !args.hidden } : profile);
+    }
+    if (["usage_rate_limits_get", "usage_profile_visibility_set"].includes(command)) return { updatedAt: Date.now(), limits: quota, profiles: quotaProfiles };
     return null;
   }, onEvent: () => () => {},
 };
@@ -32,7 +37,7 @@ function Harness() {
   const [agent, setAgent] = useState(initial);
   window.fixtureShow = setScreen; window.fixtureAgent = agent; window.fixturePatch = patch => setAgent(current => ({ ...current, ...patch }));
   const common = { onClose: () => setScreen("closed") };
-  return <div className="app app-theme-soft">
+  return <div className={`app app-theme-soft${screen === "usage" ? " app-desktop app-with-usage-status" : ""}`}>
     <button id="fixture-opener" onClick={() => setScreen("session")}>세션 열기</button>
     {screen === "session" && <SessionPropertiesModal agent={agent} project={project} {...common}
       onUpdateAgent={(_, patch) => { window.fixtureUpdates = (window.fixtureUpdates || 0) + 1; setAgent(current => ({ ...current, ...patch })); }}

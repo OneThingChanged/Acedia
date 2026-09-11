@@ -2058,17 +2058,24 @@ function usageGroups() {
     const meta = usageProviderMeta(limit);
     let group = byKey.get(meta.key);
     if (!group) {
-      group = { ...meta, limits: [] };
+      group = { ...meta, limits: [], profile: limit.profile };
       byKey.set(meta.key, group);
       groups.push(group);
     }
     group.limits.push(limit);
   }
+  for (const profile of Array.isArray(usageSummary?.profiles) ? usageSummary.profiles : []) {
+    const meta = usageProviderMeta({ profile });
+    const group = byKey.get(meta.key);
+    if (group) { group.profile = profile; group.label = meta.label; }
+    else { const next = { ...meta, profile, limits: [] }; groups.push(next); byKey.set(meta.key, next); }
+  }
   for (const group of groups) group.limits.sort((a, b) => {
     const base = limit => limit.profile ? limit.limitId === (limit.profile.id === "default" ? limit.profile.provider : limit.profile.key) : false;
     return Number(base(b)) - Number(base(a));
   });
-  return groups;
+  const order = group => ({ codex: 0, claude: 1, gemini: 2 })[group.key.split(":")[0]] ?? 3;
+  return groups.sort((a, b) => order(a) - order(b) || Number(b.profile?.id === "default") - Number(a.profile?.id === "default"));
 }
 
 let usageVisibilitySaving = false;
@@ -2082,7 +2089,7 @@ async function changeUsageVisibility(profile) {
     const response = await fetch("/api/usage/profile-visibility", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ profileKey: profile.key, hidden: profile.visible }) });
     const result = await response.json();
     if (!response.ok) throw new Error(text(result?.error) || `HTTP ${response.status}`);
-    usageSummary = { ...usageSummary, limits: result.limits, updatedAt: result.updatedAt };
+    usageSummary = { ...usageSummary, limits: result.limits, profiles: result.profiles ?? usageSummary?.profiles, updatedAt: result.updatedAt };
     usageError = "";
   } catch (error) { usageError = error?.message || "표시 설정을 저장하지 못했습니다."; }
   finally { usageVisibilitySaving = false; renderUsage(); }
@@ -2336,7 +2343,7 @@ function renderUsageHistory() {
 
 function renderUsage() {
   const allGroups = usageGroups();
-  const current = group => group.limits[0]?.profile?.visible !== false;
+  const current = group => group.profile?.visible !== false;
   const groups = allGroups.filter(current);
   const otherGroups = allGroups.filter(group => !current(group));
   const tokens = usageSummary?.tokens || {};
@@ -2388,7 +2395,7 @@ function renderUsage() {
   const review = make("details", "usage-profile-review");
   review.dataset.usageSection = "profile-review";
   review.open = expanded.has("profile-review");
-  review.append(make("summary", "", `이전·기타 프로필 ${otherGroups.length}개`), make("p", "usage-profile-note", "현재 세션에서 사용하지 않거나 직접 숨긴 프로필입니다. 표시를 숨겨도 로그인·대화·사용량 기록은 유지됩니다. 이름이나 사용률만으로 같은 계정으로 합치지 않습니다."));
+  review.append(make("summary", "", `이전·기타 프로필 ${otherGroups.length}개`), make("p", "usage-profile-note", "이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 표시를 숨겨도 로그인·대화·사용량 기록은 유지됩니다. 이름이나 사용률만으로 같은 계정으로 합치지 않습니다."));
   for (const provider of allGroups) {
     const card = make("section", "usage-provider-card");
     card.dataset.provider = provider.key;
@@ -2402,10 +2409,11 @@ function renderUsage() {
     if (plan) title.append(make("span", "", text(plan)));
     identity.append(icon, title);
     const providerUpdated = Math.max(
+      0,
       ...provider.limits.map((limit) => Number(limit?.updatedAt) || 0),
     );
     header.append(identity, make("span", "usage-provider-updated", formatUsageUpdated(providerUpdated)));
-    const profile = provider.limits[0]?.profile;
+    const profile = provider.profile;
     if (profile) {
       const toggle = make("button", "usage-profile-toggle", profile.visible ? "기본 표시에서 숨기기" : "기본 화면에 표시");
       toggle.type = "button"; toggle.disabled = usageVisibilitySaving;
@@ -2414,6 +2422,7 @@ function renderUsage() {
     }
 
     const limitList = make("div", "usage-limit-list");
+    if (!provider.limits.length) limitList.append(make("p", "usage-profile-note", "한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다."));
     const extras = make("details", "usage-extra-limits");
     extras.dataset.usageSection = provider.key;
     extras.open = expanded.has(provider.key);
@@ -2483,6 +2492,7 @@ async function loadUsage(refresh = false) {
       updatedAt: Number(result?.updatedAt) || 0,
       refreshPending: result?.refreshPending === true,
       limits: Array.isArray(result?.limits) ? result.limits : [],
+      profiles: Array.isArray(result?.profiles) ? result.profiles : [],
       tokens: result?.tokens && typeof result.tokens === "object" ? result.tokens : {},
       periods: result?.periods && typeof result.periods === "object" ? result.periods : {},
       timeline: Array.isArray(result?.timeline) ? result.timeline : [],

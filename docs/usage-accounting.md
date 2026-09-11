@@ -60,7 +60,10 @@ input.
 
 ## Account limits
 
-Codex limit snapshots come from recent transcript `token_count` events. Claude
+Codex limit snapshots come from recent transcript `token_count` events. The scan
+retains its first 32 prioritized candidates and adds one candidate for every other
+account represented in the remaining sources, so a busy account cannot consume all
+scan slots. Claude
 limits are fetched from the local Claude Code OAuth usage endpoint only when a
 usable local credential exists. These percentages describe provider reset
 windows, not “tokens remaining” in the local history database.[^usage-service][^status-bar]
@@ -74,9 +77,14 @@ every managed Claude `projects/` root. See [Claude account profiles](claude-acco
 Refresh failures preserve the last useful snapshot and expose an error/staleness
 state rather than replacing it with a fabricated zero.
 
-Account-wide and model limits are grouped by provider and account ID. Default logins
-and profiles linked to registered local sessions appear first; other profiles live
-in a separate review area. Users can hide or explicitly show each profile without
+Account-wide and model limits are grouped by provider and account ID. Registered
+Codex and Claude profiles appear separately even without linked sessions or quota
+snapshots. An independent profile inventory carries these accounts; missing quotas
+show a pending message instead of a made-up percentage. Default logins appear when
+they have a snapshot. Legacy folder-label profiles, unregistered accounts and manually
+hidden profiles live in a separate review area. The exact legacy label format is only
+a reversible display hint; an explicit visibility choice takes precedence. Users can
+hide or explicitly show each profile, including accounts without snapshots, without
 changing credentials, history, token totals or snapshots. Preferences persist in
 `usage_profile_visibility` and are shared by desktop and Remote/PWA reads. Each limit
 retains its own update timestamp; equal names or percentages do not establish account

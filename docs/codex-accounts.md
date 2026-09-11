@@ -93,7 +93,10 @@ views and transcript indexing recognize the additional homes.
 Historical token totals include all indexed profiles. Codex quota snapshots are
 stored under separate profile keys and shown with the profile label in the
 usage bar; they are snapshots reported by local Codex transcripts. Profiles
-without a reported quota snapshot have no quota bar yet. Registering the same
+without a reported quota snapshot appear as pending, without a percentage bar.
+Registered profiles are listed even before a session is started; visibility can be
+changed in Account quotas. See [profile display management](properties-and-usage.md).
+Registering the same
 ChatGPT account twice does not create separate provider quotas.
 
 This feature covers local Codex sessions. SSH authentication remains on the

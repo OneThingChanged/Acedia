@@ -387,6 +387,13 @@ body,
   scrollbar-width: none;
 }
 
+.usage-status-accounts { display: flex; flex: 1; min-width: 0; align-items: stretch; }
+.usage-account-scroll { flex: 0 0 24px; border: 0; background: transparent; color: var(--app-text); font-size: 19px; cursor: pointer; }
+.usage-account-scroll:disabled { opacity: .3; cursor: default; }
+.usage-account-scroll:hover:not(:disabled) { background: var(--app-panel-hover); }
+.usage-status-pending, .usage-quota-pending { color: var(--app-muted); }
+.usage-quota-pending { font-size: 12px; line-height: 1.7; }
+
 .usage-status-summary::-webkit-scrollbar {
   display: none;
 }
@@ -400,6 +407,7 @@ body,
 
 /* Per-provider clickable segment (Codex / Claude / …) */
 .usage-status-provider {
+  flex: 0 0 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -420,6 +428,9 @@ body,
   background: var(--app-panel-hover);
 }
 .usage-status-provider strong {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--app-heading);
   font-weight: 650;
 }

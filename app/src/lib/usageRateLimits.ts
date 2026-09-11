@@ -5,8 +5,13 @@ export type UsageRateLimitWindow = {
   resetsAt: number | null;
 };
 
+export type UsageAccountProfile = {
+  key: string; provider: string; id: string; label: string;
+  registered: boolean; current: boolean; hidden: boolean; visible: boolean; archived?: boolean;
+};
+
 export type UsageRateLimit = {
-  profile?: { key: string; provider: string; id: string; label: string; registered: boolean; current: boolean; hidden: boolean; visible: boolean } | null;
+  profile?: UsageAccountProfile | null;
   limitId: string;
   limitName: string | null;
   planType: string | null;
@@ -23,6 +28,7 @@ export type UsageRateLimit = {
 export type UsageRateLimitSummary = {
   updatedAt: number;
   limits: UsageRateLimit[];
+  profiles?: UsageAccountProfile[];
 };
 
 export function clampUsagePercent(value: number) {
@@ -122,6 +128,7 @@ export type UsageProviderMeta = {
 
 export type UsageProviderGroup = UsageProviderMeta & {
   limits: UsageRateLimit[];
+  profile?: UsageAccountProfile;
 };
 
 const PROVIDER_META: Record<string, Omit<UsageProviderMeta, "key">> = {
@@ -157,6 +164,7 @@ export function groupUsageProviders(
         icon: meta?.icon ?? "•",
         iconColor: meta?.iconColor ?? "#8b949e",
         limits: [],
+        profile: limit.profile ?? undefined,
       };
       byKey.set(key, group);
       groups.push(group);
@@ -168,6 +176,24 @@ export function groupUsageProviders(
     return Number(base(b)) - Number(base(a));
   });
   return groups;
+}
+
+export function groupUsageProfiles(summary: UsageRateLimitSummary | null): UsageProviderGroup[] {
+  const groups = groupUsageProviders(summary?.limits ?? []);
+  const byKey = new Map(groups.map(group => [group.key, group]));
+  for (const profile of summary?.profiles ?? []) {
+    const key = profile.id === "default" ? profile.provider : profile.key;
+    const meta = PROVIDER_META[profile.provider];
+    const label = profile.id === "default" ? meta?.label ?? profile.label : `${meta?.label ?? profile.provider} · ${profile.label}`;
+    const existing = byKey.get(key);
+    if (existing) { existing.profile = profile; existing.label = label; }
+    else {
+      const group = { key, label, icon: meta?.icon ?? "•", iconColor: meta?.iconColor ?? "#8b949e", limits: [], profile };
+      groups.push(group); byKey.set(key, group);
+    }
+  }
+  const order = (group: UsageProviderGroup) => ({ codex: 0, claude: 1, gemini: 2 })[group.key.split(":")[0]] ?? 3;
+  return groups.sort((a, b) => order(a) - order(b) || Number(b.profile?.id === "default") - Number(a.profile?.id === "default"));
 }
 
 // Short display name for a limit inside its provider popover/segment:

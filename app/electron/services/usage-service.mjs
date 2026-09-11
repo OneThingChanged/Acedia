@@ -660,7 +660,16 @@ export class UsageService {
       if (leftActive !== rightActive) return leftActive ? -1 : 1;
       return Number(right.mtimeMs || 0) - Number(left.mtimeMs || 0);
     });
-    for (const entry of prioritized.slice(0, RATE_LIMIT_TRANSCRIPT_LIMIT)) {
+    const selected = prioritized.slice(0, RATE_LIMIT_TRANSCRIPT_LIMIT);
+    const accountKey = entry => this.codexAccountForPath?.(entry.path)?.id || "default";
+    const covered = new Set(selected.map(accountKey));
+    for (const entry of prioritized.slice(RATE_LIMIT_TRANSCRIPT_LIMIT)) {
+      const key = accountKey(entry);
+      if (covered.has(key)) continue;
+      covered.add(key); selected.push(entry);
+    }
+    // A busy account must not occupy every scan slot and starve other accounts.
+    for (const entry of selected) {
       this.readLatestRateLimit(entry);
     }
   }
@@ -810,6 +819,9 @@ export class UsageService {
     return {
       key: `${provider}:${id}`, provider, id,
       label: account?.label || (id === "default" ? provider === "codex" ? "Codex" : "Claude" : id),
+      // Recognize the exact legacy path-shaped label as a reversible display
+      // hint only, never as proof of duplicate credentials.
+      archived: /^(?:[a-z]:[\\/]|\\\\).+\s+\(Company 이전\)$/i.test(account?.label || ""),
       registered: id === "default" || !registry || !!account,
       current: id === "default" || this.catalog.agents.some(agent => !agent.sshHostId && agent.aiToolId === provider && (agent[`${provider}AccountId`] || "default") === id),
     };
@@ -817,7 +829,8 @@ export class UsageService {
 
   setProfileVisibility(profileKey, hidden) {
     if (typeof profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
-    const known = this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
+    const [provider, accountId] = profileKey.split(":");
+    const known = this.accountProfiles?.(provider)?.some(account => account.id === accountId) || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
     if (!known) throw new TypeError("Unknown usage profile");
     this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profileKey, Number(hidden));
     return this.rateLimitSummary();
@@ -825,6 +838,10 @@ export class UsageService {
 
   rateLimitSummary() {
     const visibility = new Map(this.db().prepare("SELECT profile_key, hidden FROM usage_profile_visibility").all().map(row => [row.profile_key, !!row.hidden]));
+    const profileFor = limitId => {
+      const profile = this.usageProfile(limitId);
+      return profile ? { ...profile, hidden: visibility.get(profile.key) === true, visible: visibility.has(profile.key) ? !visibility.get(profile.key) : profile.registered && !profile.archived } : null;
+    };
     const freshAfter = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const rows = this.db().prepare(`SELECT * FROM usage_rate_limits
       WHERE updated_at >= ? AND limit_id NOT LIKE 'codex\\_%' ESCAPE '\\'
@@ -852,11 +869,19 @@ export class UsageService {
         balance: row.credit_balance ?? null,
       },
       updatedAt: Number(row.updated_at) * 1000,
-      profile: (() => { const profile = this.usageProfile(row.limit_id); return profile ? { ...profile, hidden: visibility.get(profile.key) === true, visible: visibility.has(profile.key) ? !visibility.get(profile.key) : profile.current } : null; })(),
+      profile: profileFor(row.limit_id),
     }));
+    // Inventory is independent of snapshots: registering an account must not
+    // require starting a paid model request just to appear in the UI.
+    const profiles = new Map(limits.filter(limit => limit.profile).map(limit => [limit.profile.key, limit.profile]));
+    for (const provider of ["codex", "claude"]) for (const account of this.accountProfiles?.(provider) ?? []) {
+      const profile = profileFor(`${provider}:${account.id}`);
+      if (profile) profiles.set(profile.key, profile);
+    }
     return {
       updatedAt: limits.reduce((latest, limit) => Math.max(latest, limit.updatedAt), 0),
       limits,
+      profiles: [...profiles.values()],
     };
   }
 

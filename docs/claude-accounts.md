@@ -90,6 +90,11 @@ profile's own saved credential and stores separate windows under account-specifi
 keys, labeled with the account name. An unavailable credential keeps the previous
 snapshot. No token refresh or automatic account rotation is performed.
 
+Registered profiles appear individually in the status bar and Account quotas,
+including profiles without a started session. Missing snapshots show a pending
+message without an estimated percentage. Desktop and Remote/PWA share each profile's
+visibility choice. See [profile display management](properties-and-usage.md).
+
 SSH sessions use authentication on the remote host and do not receive these
 local profiles. Conversations are not copied between accounts.
 

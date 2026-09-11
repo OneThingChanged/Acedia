@@ -18,15 +18,50 @@ function fixture() {
   return resource;
 }
 describe("account quota profile visibility", () => {
+  it("refreshes another Codex account even when the busiest account fills the scan window", async () => {
+    const { usage } = fixture();
+    const entries = Array.from({length:40},(_,index)=>({path:`default-${index}`,mtimeMs:100-index}));
+    entries.push({path:'other-account',mtimeMs:1});
+    usage.sessionService.scan = async () => entries;
+    usage.codexAccountForPath = source => source === 'other-account' ? {id} : null;
+    const scanned = []; usage.readLatestRateLimit = entry => scanned.push(entry.path);
+    await usage.refreshCodexRateLimits();
+    expect(scanned).toHaveLength(33);
+    expect(scanned).toContain('other-account');
+  });
   it("keeps equal names and percentages distinct, and links model windows by account id", () => {
     const { usage } = fixture();
     usage.syncCatalog([], [{ aiToolId: "codex", codexAccountId: id }, { aiToolId: "claude", claudeAccountId: id, sshHostId: "remote" }]);
     const limits = usage.rateLimitSummary().limits;
     expect(limits.find(limit=>limit.limitId===`codex:${id}`).profile).toMatchObject({current:true,visible:true});
-    expect(limits.find(limit=>limit.limitId===`codex:${otherId}`).profile).toMatchObject({current:false,visible:false});
+    expect(limits.find(limit=>limit.limitId===`codex:${otherId}`).profile).toMatchObject({current:false,visible:true});
     expect(limits.find(limit=>limit.limitId===`claude:${id}:weekly:fable`).profile).toMatchObject({key:`claude:${id}`,current:false});
     expect(limits.find(limit=>limit.limitId==="claude:weekly:fable").profile.key).toBe("claude:default");
     expect(new Set(limits.map(limit=>limit.profile.key)).size).toBe(5);
+  });
+  it("includes registered accounts without inventing missing or expired quota snapshots", () => {
+    const { usage } = fixture();
+    usage.db().prepare("DELETE FROM usage_rate_limits").run();
+    const summary = usage.rateLimitSummary();
+    expect(summary.limits).toEqual([]);
+    expect(summary.updatedAt).toBe(0);
+    expect(summary.profiles).toHaveLength(4);
+    expect(summary.profiles.every(profile => profile.registered && profile.visible && !profile.current)).toBe(true);
+    const hidden = usage.setProfileVisibility(`codex:${id}`, true);
+    expect(hidden.profiles.find(profile => profile.key === `codex:${id}`).visible).toBe(false);
+    expect(hidden.limits).toEqual([]);
+    usage.close();
+    expect(usage.rateLimitSummary().profiles.find(profile => profile.key === `codex:${id}`).hidden).toBe(true);
+  });
+  it("keeps legacy import labels out of the default strip even when sessions reference them", () => {
+    const { usage } = fixture();
+    usage.accountProfiles = () => [{ id, label: "D:\\Archive (Company 이전)" }, { id: otherId, label: "이전 작업용 계정" }];
+    usage.syncCatalog([], [{ aiToolId: "codex", codexAccountId: id }]);
+    const imported = usage.rateLimitSummary().profiles.find(profile=>profile.key===`codex:${id}`);
+    expect(imported).toMatchObject({current:true,archived:true,visible:false,hidden:false});
+    expect(usage.rateLimitSummary().profiles.find(profile=>profile.key===`codex:${otherId}`)).toMatchObject({archived:false,visible:true});
+    expect(usage.setProfileVisibility(`codex:${id}`, false).profiles.find(profile=>profile.key===`codex:${id}`)).toMatchObject({archived:true,visible:true});
+    expect(usage.accountProfiles()[0].label).toBe("D:\\Archive (Company 이전)");
   });
   it("persists reversible display choices without changing snapshots or source files", () => {
     const { usage, root } = fixture();
