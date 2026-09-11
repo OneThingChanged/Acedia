@@ -1,4 +1,5 @@
 const INVOKE_COMMANDS = Object.freeze([
+  "accounts_removed", "codex_accounts_rename", "claude_accounts_rename", "codex_accounts_remove", "claude_accounts_remove",
   "browser_preferences_get",
   "browser_preferences_set",
   "idle_preferences_get", "idle_preferences_set", "idle_view_update", "idle_session_suspend",
@@ -158,6 +159,7 @@ const INVOKE_COMMANDS = Object.freeze([
 ]);
 
 const DELIVERED_EVENTS = Object.freeze([
+  "accounts:changed",
   "pty:data",
   "agent:idle-suspended", "terminal:bell", "pty:exit",
   "desktop-pet:update",
@@ -245,6 +247,14 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "codex_accounts_rename":
+    case "claude_accounts_rename":
+      if (typeof args.label !== "string" || !args.label.trim() || args.label.length > 80) throw new TypeError("Invalid account label");
+      // falls through
+    case "codex_accounts_remove":
+    case "claude_accounts_remove":
+      if (typeof args.accountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.accountId)) throw new TypeError("Select an additional account");
+      break;
     case "codex_accounts_create":
     case "claude_accounts_create":
       if (typeof args.label !== "string" || !args.label.trim() || args.label.length > 80) throw new TypeError("Invalid Codex account label");
@@ -269,6 +279,7 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "spawn_pty":
       assertId(args);
+      if (args.initialPrompt != null && (typeof args.initialPrompt !== "string" || !args.initialPrompt.trim() || args.initialPrompt.length > 4096 || args.initialPrompt.includes("\0"))) throw new TypeError("Invalid initial handoff prompt");
       if (args.codexAccountId != null && (typeof args.codexAccountId !== "string" || (args.codexAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.codexAccountId)))) throw new TypeError("Invalid Codex account id");
       if (args.claudeAccountId != null && (typeof args.claudeAccountId !== "string" || (args.claudeAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.claudeAccountId)))) throw new TypeError("Invalid Claude account id");
       assertPositiveInteger(args.cols, "terminal cols");

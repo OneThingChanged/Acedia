@@ -79,7 +79,9 @@ export function AgentsSettings({
       if (event.key === AGENT_DEFAULTS_KEY || event.key === null) setDefaults(loadAgentDefaults(tab));
     };
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
+    const accountsChanged = () => setDefaults(loadAgentDefaults(tab));
+    window.addEventListener("multiagent:accounts-changed", accountsChanged);
+    return () => { window.removeEventListener("storage", sync); window.removeEventListener("multiagent:accounts-changed", accountsChanged); };
   }, [tab]);
   const tabs = ["common", "codex", "claude", "qwen", "cline"];
   const selectTab = (id: string) => { setTab(id); setDefaults(loadAgentDefaults(id)); setSaveError(""); };

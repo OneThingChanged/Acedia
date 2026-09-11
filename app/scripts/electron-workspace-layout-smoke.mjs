@@ -77,7 +77,23 @@ if (process.versions.electron) {
       const loaded=new Promise(resolve=>win.webContents.once('did-finish-load',resolve));
       win.webContents.reload();await loaded;
     }
-    console.log('WORKSPACE_HIDDEN_STATUS_RELOAD_OK');app.exit(0);
+    console.log('WORKSPACE_HIDDEN_STATUS_RELOAD_OK');
+    console.log(await win.webContents.executeJavaScript(`(async () => {
+      const wait=()=>new Promise(resolve=>setTimeout(resolve,350));
+      const key='multiagent.agents.v1', account='11111111-1111-4111-8111-111111111111';
+      const stored=JSON.parse(localStorage.getItem(key));
+      stored[0]={...stored[0],aiToolId:'codex',codexAccountId:account,lastSessionId:'old-chat',resumeEligible:false};
+      localStorage.setItem(key,JSON.stringify(stored));window.dispatchEvent(new StorageEvent('storage',{key}));await wait();
+      window.fixtureAccountEvent({action:'removed',provider:'codex',accountId:account,agentIds:['one'],removed:{codex:[account],claude:[]}});await wait();
+      let updated=JSON.parse(localStorage.getItem(key));
+      if(updated[0].codexAccountId!=='default'||updated[0].lastSessionId||updated[0].resumeEligible)throw Error('Live App did not reset the removed account');
+      localStorage.setItem(key,JSON.stringify(stored));window.dispatchEvent(new StorageEvent('storage',{key}));await wait();
+      updated=JSON.parse(localStorage.getItem(key));
+      if(updated[0].codexAccountId!=='default'||updated[0].lastSessionId)throw Error('Stale peer restored removed account');
+      if(window.layoutCalls.some(call=>call.command==='spawn_pty'))throw Error('Removed account restarted automatically');
+      return 'ACCOUNT_REMOVAL_APP_EVENT_AND_STALE_WINDOW_OK';
+    })()`));
+    app.exit(0);
   }catch(error){console.error(error);app.exit(1);}});
 } else {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'acedia-workspace-layout-'));

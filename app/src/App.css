@@ -387,10 +387,15 @@ body,
   scrollbar-width: none;
 }
 
-.usage-status-accounts { display: flex; flex: 1; min-width: 0; align-items: stretch; }
-.usage-account-scroll { flex: 0 0 24px; border: 0; background: transparent; color: var(--app-text); font-size: 19px; cursor: pointer; }
-.usage-account-scroll:disabled { opacity: .3; cursor: default; }
-.usage-account-scroll:hover:not(:disabled) { background: var(--app-panel-hover); }
+.usage-status-accounts { display: flex; flex: 1; min-width: 0; align-items: stretch; padding-left: 4px; }
+.usage-status-accounts > .usage-status-provider { flex: 0 1 auto; max-width: 100%; overflow: hidden; }
+.usage-status-chevron { color: var(--app-muted); flex-shrink: 0; }
+.usage-account-card .property-card-heading > strong { overflow-wrap: anywhere; min-width: 0; }
+.usage-account-card-selected { border-color: var(--app-accent, #58a6ff); }
+.usage-account-choice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; font-size: 12px; line-height: 1.6; }
+.usage-account-choice input { accent-color: var(--app-accent, #58a6ff); margin: 0; }
+.usage-account-choice-disabled { cursor: default; color: var(--app-muted); }
+.usage-account-choice small { flex-basis: 100%; }
 .usage-status-pending, .usage-quota-pending { color: var(--app-muted); }
 .usage-quota-pending { font-size: 12px; line-height: 1.7; }
 
@@ -420,9 +425,6 @@ body,
   cursor: pointer;
   white-space: nowrap;
 }
-.usage-status-provider + .usage-status-provider {
-  border-left: 1px solid var(--app-border);
-}
 .usage-status-provider:hover,
 .usage-status-provider-open {
   background: var(--app-panel-hover);
@@ -433,6 +435,11 @@ body,
   text-overflow: ellipsis;
   color: var(--app-heading);
   font-weight: 650;
+}
+.usage-status-provider .usage-status-pending { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 620px) {
+  .usage-status-provider { gap: 5px; padding: 0 5px; }
+  .usage-status-provider .usage-progress { display: none; }
 }
 
 .usage-provider-icon {

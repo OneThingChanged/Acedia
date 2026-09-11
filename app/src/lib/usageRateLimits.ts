@@ -202,6 +202,7 @@ export function usageLimitShortName(
   limit: UsageRateLimit,
   providerLabel: string
 ) {
+  if (limit.profile && limit.limitId === (limit.profile.id === "default" ? limit.profile.provider : limit.profile.key)) return "";
   const label = usageLimitLabel(limit);
   if (label.toLowerCase() === providerLabel.toLowerCase()) return "";
   if (label.toLowerCase().startsWith(`${providerLabel.toLowerCase()} `)) {

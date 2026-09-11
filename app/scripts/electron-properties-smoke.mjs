@@ -11,7 +11,7 @@ async function exercise() {
   const wait = () => new Promise(resolve => setTimeout(resolve, 100));
   const check = (ok, message) => { if (!ok) throw Error(message); };
   const visible = element => element.getClientRects().length > 0;
-  const button = label => [...document.querySelectorAll("button")].find(el => visible(el) && el.textContent.trim() === label);
+  const button = label => { const buttons = [...document.querySelectorAll("button")].filter(visible); return buttons.find(el => el.textContent.trim() === label) || buttons.find(el => el.getAttribute('aria-label') === label); };
   const click = async label => { const el = button(label); check(el, "Missing button: " + label); el.click(); await wait(); };
   const panel = () => document.querySelector('.properties-panel:not([hidden])');
   const field = label => document.querySelector('[aria-label="' + label + '"]');
@@ -52,9 +52,11 @@ async function exercise() {
   check(panel().querySelector('select').disabled, "Running account change enabled");
   window.fixturePatch({ status: "idle", runtimeStatus: "idle" }); await wait();
   const account = panel().querySelector('select'); account.value = '22222222-2222-4222-8222-222222222222'; account.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+  const handoffLabel = [...panel().querySelectorAll('label')].find(element => element.textContent.includes('현재 작업을 새 계정에 인계'));
+  check(handoffLabel?.querySelector('input')?.checked, 'Fresh account handoff was not offered by default');
   window.fixtureAccountFailure = true; await click("변경 저장");
   check(!window.fixtureAgent.codexAccountId && document.body.textContent.includes("계정 변경 실패"), "Account failure discarded draft or claimed success");
-  window.fixtureAccountFailure = false; await click("변경 저장"); check(window.fixtureAgent.codexAccountId, "Account was not saved");
+  window.fixtureAccountFailure = false; await click("변경 저장"); check(window.fixtureAgent.codexAccountId && window.fixtureIncludeHandoff === true, "Account or handoff choice was not saved");
   await click("넓게"); geometry(); await click("기본 크기");
   window.fixtureShow("project"); await wait(); await wait(); geometry();
   check(document.querySelector('.property-metrics').textContent.includes('6.00 KiB'), "Project size summary missing");
@@ -73,7 +75,7 @@ async function exercise() {
   await edit(panel().querySelector('textarea'), "echo fixture"); await click("명령 저장");
   check(window.fixtureCalls.some(call => call.command === 'saved_commands_set'), "Command save missing");
   await click("현재 세션"); await click("정보 보기"); check(document.querySelector('.properties-header').textContent.includes("세션 속성"), "Project session navigation failed");
-  window.fixtureShow("usage"); await wait(); await wait(); await click("계정 한도"); geometry();
+  window.fixtureShow("usage"); await wait(); await wait(); await click("에이전트 사용량"); geometry();
   check(panel().querySelectorAll('.property-card').length === 1, "Unused profile leaked into current quotas");
   await click("이전·기타 프로필"); check(panel().textContent.includes('보관 프로필'), "Old profile unavailable for review");
   await click("기본 화면에 표시"); await click("현재 계정"); check(panel().querySelectorAll('.property-card').length === 2, "Restore did not show unused profile");
@@ -94,23 +96,43 @@ async function exercise() {
   window.fixtureSetQuotaData({profiles,limits:profiles.filter(profile=>profile.id!=='work').map(profile=>({...base,limitId:profile.id==='default'?profile.provider:profile.key,limitName:(profile.provider==='codex'?'Codex':'Claude')+(profile.id==='default'?'':` · ${profile.label}`),profile}))});
   await wait(); await wait(); await wait();
   const segments = [...document.querySelectorAll('.usage-status-provider')];
-  check(segments.length===6, 'Registered accounts without sessions or quotas missing from status bar');
-  check(segments.filter(el=>el.textContent.includes('한도 확인 전')).length===2, 'Missing quotas were fabricated or concealed');
-  check(segments.filter(el=>el.textContent.includes('기본')).length===2, 'Default account is not distinguished');
-  const strip = document.querySelector('.usage-status-summary');
-  if (strip.scrollWidth>strip.clientWidth+1) {
-    const next = field('뒤쪽 계정 보기'); check(next && !next.disabled,'Overflow has no account navigation'); next.click();
-    for(let i=0;i<12&&strip.scrollLeft===0;i++)await wait();
-    check(strip.scrollLeft>0,'Account navigation did not scroll');
-    check(!field('앞쪽 계정 보기').disabled,'Reverse navigation stayed disabled');
-  }
+  check(segments.length===1, 'Status bar must contain only one account');
+  check(!document.querySelector('.usage-account-scroll'), 'Multi-account strip was not removed');
   check(document.querySelector('.usage-status-bar').getBoundingClientRect().height===28,'Accounts changed footer height');
-  await click('계정 한도'); check(panel().querySelectorAll('.property-card').length===6,'Account overview omitted registered accounts');
+  await click('에이전트 사용량'); geometry(); check(panel().querySelectorAll('.property-card').length===6,'Account overview omitted registered accounts');
   check([...panel().querySelectorAll('.property-card')].filter(el=>el.textContent.includes('한도 확인 전')).length===2,'Overview did not explain pending quotas');
+  const choice = key => panel().querySelector('input[type="radio"][value="'+key+'"]');
+  const currentKey = () => document.querySelector('.usage-status-provider').dataset.profileKey;
+  choice('claude:work').click(); await wait();
+  check(currentKey()==='claude:work' && document.querySelector('.usage-status-provider').textContent.includes('한도 확인 전'),'Pending quota cannot be selected or quota fabricated');
+  check(panel().querySelectorAll('input[type="radio"]:checked').length===1,'More than one selected account');
+  const originalSet = Storage.prototype.setItem;
+  try {
+    Storage.prototype.setItem = function(key,value) { if(key==='multiagent.statusBar.v1')throw Error('fixture save failure'); return originalSet.call(this,key,value); };
+    choice('codex:personal').click(); await wait();
+    check(currentKey()==='claude:work' && document.querySelector('[role="status"]').textContent.includes('저장하지 못했습니다'),'Failed status selection was published');
+  } finally { Storage.prototype.setItem = originalSet; }
+  choice('codex:personal').click(); await wait(); check(currentKey()==='codex:personal','Account selection did not update status bar');
+  window.fixtureShow('closed'); await wait(); window.fixtureShow('usage'); await wait(); await wait(); await wait();
+  check(currentKey()==='codex:personal','Selection lost when reopening workspace');
+  const changeFromPeer = patch => { const value=JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')), ...patch}); localStorage.setItem('multiagent.statusBar.v1',value); window.dispatchEvent(new StorageEvent('storage',{key:'multiagent.statusBar.v1',newValue:value,storageArea:localStorage})); };
+  changeFromPeer({selectedAccount:'claude:work'}); await wait(); check(currentKey()==='claude:work','Selection did not sync from another window');
+  const renamed = profiles.map(profile=>profile.key==='claude:work'?{...profile,label:'이름 변경 확인'}:profile);
+  window.fixtureSetQuotaData({profiles:renamed,limits:profiles.filter(profile=>profile.id!=='work').map(profile=>({...base,limitId:profile.id==='default'?profile.provider:profile.key,profile}))});
+  await wait(); await wait(); await wait(); check(currentKey()==='claude:work' && document.querySelector('.usage-status-provider').textContent.includes('이름 변경 확인'),'Rename lost selected identity');
+  window.fixtureSetQuotaData({profiles:renamed.map(profile=>profile.key==='claude:work'?{...profile,registered:false,visible:false}:profile),limits:profiles.filter(profile=>profile.id!=='work').map(profile=>({...base,limitId:profile.id==='default'?profile.provider:profile.key,profile}))});
+  await wait(); await wait(); await wait(); check(currentKey()==='claude','Deleted selection did not fall back to default');
+  window.fixtureSetQuotaData({profiles,limits:profiles.filter(profile=>profile.id!=='work').map(profile=>({...base,limitId:profile.id==='default'?profile.provider:profile.key,profile}))});
+  await wait(); await wait(); await wait();
+  changeFromPeer({codex:false,claude:false}); await wait(); check(!currentKey(),'Disabled providers still selected');
+  await click('에이전트 사용량'); check(panel().querySelectorAll('.property-card').length===6,'No selection made account overview inaccessible');
+  check([...panel().querySelectorAll('input[type="radio"]')].every(input=>input.disabled),'Disabled providers could be selected');
+  changeFromPeer({codex:true,claude:true}); await wait();
   const pendingCard = [...panel().querySelectorAll('.property-card')].find(el=>el.textContent.includes('업무 계정')); pendingCard.querySelector('button').click(); await wait();
   check(panel().querySelectorAll('.property-card').length===5,'Pending quota account could not be hidden');
   await click('이전·기타 프로필'); await click('기본 화면에 표시'); await click('현재 계정');
   check(panel().querySelectorAll('.property-card').length===6,'Pending quota account could not be restored');
+  console.log('SINGLE_ACCOUNT_STATUS_BAR_OK '+innerWidth+'x'+innerHeight);
   check(!window.fixtureCalls.some(call=>['spawn_pty','kill_pty'].includes(call.command)), "Property editing changed terminal processes");
   return 'PROPERTIES_UI_OK '+innerWidth+'x'+innerHeight;
 }
@@ -129,6 +151,10 @@ if (process.versions.electron) {
         await fs.mkdir(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,{recursive:true});
         for (const screen of ['session','project','usage']) {
           await win.webContents.executeJavaScript(`window.fixtureShow('${screen}')`); await new Promise(resolve=>setTimeout(resolve,250));
+          if(screen==='usage') {
+            await fs.writeFile(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`status-bar-${width}.png`),(await win.webContents.capturePage()).toPNG());
+            await win.webContents.executeJavaScript("document.querySelector('.usage-status-provider').click()"); await new Promise(resolve=>setTimeout(resolve,150));
+          }
           await fs.writeFile(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`${screen}-${width}.png`),(await win.webContents.capturePage()).toPNG());
         }
       }

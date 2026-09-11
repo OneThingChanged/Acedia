@@ -3,6 +3,8 @@ import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { switchProviderAccount } from "./lib/codexAccounts";
+import { makeAccountHandoff } from "./lib/accountHandoff";
+import { accountBindingChanged, applyRemovedAccounts, clearAccountPins, removedAccounts, resetRemovedAccount, type RemovedAccounts } from "./lib/removedAccounts";
 import {
   useCallback,
   useEffect,
@@ -30,6 +32,7 @@ import {
   toolSupportsChat,
 } from "./types";
 import type {
+  AccountHandoff,
   Agent,
   ContextMenuState,
   DragState,
@@ -131,6 +134,7 @@ import { isElectronRuntime } from "./platform/electronBridge";
 import type {
   DocumentBrowserCatalog,
   DocumentBrowserSnapshot,
+  ChatBlocksResult,
   SpawnTerminalResult,
   TerminalDataPayload,
   TerminalReplay,
@@ -302,6 +306,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     claudeAccountId: agent.claudeAccountId,
     codexAccountSessions: agent.codexAccountSessions,
     claudeAccountSessions: agent.claudeAccountSessions,
+    pendingAccountHandoff: agent.pendingAccountHandoff,
     lastSessionId: agent.lastSessionId,
     resumeEligible: agent.resumeEligible ?? isAgentRuntimeActive(agent),
   };
@@ -426,6 +431,7 @@ function agentFromStored(
     claudeAccountId: stored.claudeAccountId,
     codexAccountSessions: stored.codexAccountSessions,
     claudeAccountSessions: stored.claudeAccountSessions,
+    pendingAccountHandoff: stored.pendingAccountHandoff,
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
@@ -461,7 +467,8 @@ function mergeAgentsFromStorage(
   const merged: Agent[] = [];
   for (const item of stored) {
     if (!item.id || removedIds.has(item.id)) continue;
-    const agent = agentFromStored(item, projects, currentById.get(item.id));
+    const storedAgent = agentFromStored(item, projects, currentById.get(item.id));
+    const agent = storedAgent ? resetRemovedAccount(storedAgent) : null;
     if (!agent) continue;
     merged.push(agent);
   }
@@ -540,7 +547,7 @@ function relativeIfInside(folder: string, absolutePath: string): string | null {
 }
 
 function App() {
-  const { text } = useAppLanguage();
+  const { language, text } = useAppLanguage();
   const workspace = workspaceWindowContext();
   migrateLegacyWorkspaceStorage(workspace);
   // One-shot bootstrap: read localStorage exactly once at mount.
@@ -803,19 +810,48 @@ function App() {
     }
 
     if (agentsRaw !== storedAgentsJsonRef.current) {
-      const storedAgents = parseStoredArray<StoredAgent>(agentsRaw);
+      // A peer can write an older catalog even when our normalized React state
+      // is unchanged. Repair persisted references before equality can skip a save.
+      try { applyRemovedAccounts(removedAccounts()); } catch (error) { console.error("Account reference repair failed", error); }
+      const repairedAgentsRaw = readLocalStorageValue(LS_AGENTS);
+      const storedAgents = parseStoredArray<StoredAgent>(repairedAgentsRaw);
       const merged = mergeAgentsFromStorage(
         agentsRef.current,
         storedAgents,
         nextProjects,
         removedAgentIdsRef.current
       );
-      storedAgentsJsonRef.current = agentsRaw;
+      storedAgentsJsonRef.current = repairedAgentsRaw;
       if (merged !== agentsRef.current) {
         agentsRef.current = merged;
         setAgents(merged);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    const subscription = listen<{ action: string; agentIds?: string[]; removed?: RemovedAccounts }>("accounts:changed", ({ payload }) => {
+      if (payload.action === "removed" && payload.removed) {
+        const ids = new Set(payload.agentIds || []);
+        const next = agentsRef.current.map(agent => {
+          const reset = resetRemovedAccount(agent, payload.removed);
+          if (!agent.sshHostId && accountBindingChanged(agent, reset)) ids.add(agent.id);
+          return reset;
+        });
+        for (const id of ids) {
+          try { termsRef.current.get(id)?.term.dispose(); } catch { /* disposed */ }
+          termsRef.current.delete(id); clearScrollback(id);
+        }
+        agentsRef.current = next; setAgents(next);
+        setGroups(groups => clearAccountPins(groups, ids));
+        try { applyRemovedAccounts(payload.removed); }
+        catch (error) { console.error("Account removal storage sync failed", error); }
+      }
+      window.dispatchEvent(new Event("multiagent:accounts-changed"));
+    });
+    subscription.then(unlisten => { if (stopped) unlisten(); }).catch(() => {});
+    return () => { stopped = true; void subscription.then(unlisten => unlisten()).catch(() => {}); };
   }, []);
 
   useEffect(() => {
@@ -1274,7 +1310,7 @@ function App() {
   }, [projectFolders]);
 
   useEffect(() => {
-    const configs = agents.map(storedAgentFromAgent);
+    const configs = agents.map(agent => storedAgentFromAgent(resetRemovedAccount(agent)));
     const mergedConfigs = mergeStoredByIdForWrite(
       configs,
       parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)),
@@ -3455,7 +3491,7 @@ function App() {
           const group = groupsRef.current.find((g) =>
             collectAgentIds(g.layout).has(agentId)
           );
-          const { initCommand, ssh, cwd, launchOptions } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId
@@ -3466,6 +3502,7 @@ function App() {
             cwd,
             initCommand,
             launchOptions,
+            initialPrompt,
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
             claudeAccountId: agent.claudeAccountId,
@@ -4259,9 +4296,27 @@ function App() {
                   prev.map((a) => (a.id === id ? { ...a, ...patch } : a))
                 )
               }
-              onAccountChange={async (accountId) => {
+              onAccountChange={async (accountId, includeHandoff) => {
                 const current = agentsRef.current.find((a) => a.id === target.id);
                 if (!current || ((current.aiToolId === "claude" ? current.claudeAccountId : current.codexAccountId) || "default") === accountId) return;
+                const fromAccountId = (current.aiToolId === "claude" ? current.claudeAccountId : current.codexAccountId) || "default";
+                let handoff: AccountHandoff | undefined;
+                if (includeHandoff) {
+                  const history = await invoke<ChatBlocksResult>("chat_blocks", {
+                    id: current.id,
+                    sessionId: current.lastSessionId,
+                    limit: 20,
+                  }).catch(() => ({ blocks: [] } as ChatBlocksResult));
+                  handoff = makeAccountHandoff({
+                    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                    fromAccountId,
+                    toAccountId: accountId,
+                    blocks: history.blocks || [],
+                    activity: current.activity,
+                    folder: current.folder,
+                    language,
+                  });
+                }
                 const next = switchProviderAccount(current, accountId);
                 const sessionId = await invoke<string | null>(current.aiToolId === "claude" ? "claude_accounts_switch" : "codex_accounts_switch", {
                   id: current.id, accountId, folder: current.folder, sessionId: next.lastSessionId,
@@ -4271,7 +4326,7 @@ function App() {
                 termsRef.current.delete(current.id);
                 clearScrollback(current.id);
                 setAgents((prev) => prev.map((a) => a.id === current.id
-                  ? { ...switchProviderAccount(a, accountId), lastSessionId: sessionId || undefined } : a));
+                  ? { ...switchProviderAccount(a, accountId, sessionId ? undefined : handoff), lastSessionId: sessionId || undefined } : a));
                 setGroups((prev) => prev.map((g) => {
                   if (!g.sessionPins?.[current.id]) return g;
                   const sessionPins = { ...g.sessionPins }; delete sessionPins[current.id];

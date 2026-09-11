@@ -55,6 +55,14 @@ export type SessionWorkerSettings = {
   html?: SessionWorkerPreset;
 };
 
+export type AccountHandoff = {
+  id: string;
+  fromAccountId: string;
+  toAccountId: string;
+  createdAt: number;
+  prompt: string;
+};
+
 export type AiTool = {
   id: string;
   label: string;
@@ -154,6 +162,7 @@ export type Agent = {
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
   claudeAccountSessions?: Record<string, string>;
+  pendingAccountHandoff?: AccountHandoff;
   id: string;
   projectId: string;
   name: string;
@@ -192,6 +201,7 @@ export type StoredAgent = {
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
   claudeAccountSessions?: Record<string, string>;
+  pendingAccountHandoff?: AccountHandoff;
   resumeEligible?: boolean;
   id: string;
   projectId?: string;

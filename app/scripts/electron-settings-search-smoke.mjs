@@ -147,12 +147,13 @@ async function exercisePolicies() {
 
 async function exerciseStatusBar() {
   const wait = () => new Promise(resolve => setTimeout(resolve,100));
+  localStorage.setItem('multiagent.statusBar.v1',JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')||'{}'),selectedAccount:'codex:fixture'}));
   window.fixtureStatus(); await wait(); await wait();
   const check = (ok,message) => {if(!ok) throw Error(message);};
-  check(document.querySelectorAll('.usage-status-provider').length === 2, 'Initial providers missing');
+  check(document.querySelectorAll('.usage-status-provider').length === 1 && document.querySelector('.usage-status-provider').dataset.profileKey === 'codex:fixture', 'Initial single account missing');
   check(document.querySelector('.usage-status-limit b').textContent.includes('90%'), 'Used percentage missing');
   document.querySelector('[aria-label="status.codex"]').click(); await wait();
-  check(document.querySelectorAll('.usage-status-provider').length === 1, 'Account provider filter failed');
+  check(document.querySelectorAll('.usage-status-provider').length === 1 && document.querySelector('.usage-status-provider').dataset.profileKey === 'claude', 'Account provider filter fallback failed');
   const display = document.querySelector('[aria-label="한도 비율 표시"]');
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(display,'remaining');
   display.dispatchEvent(new Event('change',{bubbles:true})); await wait();
@@ -163,7 +164,7 @@ async function exerciseStatusBar() {
   document.querySelector('[aria-label="status.ports"]').click(); await wait();
   check(!document.querySelector('.resource-monitor') && !document.querySelector('.ports-monitor'), 'Hidden monitor still mounted');
   document.querySelector('.usage-status-provider').click(); await wait();
-  check(document.querySelector('.usage-provider-popover').textContent.includes('계정 사용 한도'), 'Quota scope missing');
+  check(document.querySelector('.properties-dialog').textContent.includes('계정 사용 한도'), 'Quota scope missing');
   check(document.querySelector('.usage-detail-window-meta').textContent.includes('10%'), 'Detail percentage mismatch');
   return 'STATUS_BAR_PREFERENCES_UI_OK';
 }
@@ -194,7 +195,7 @@ if (process.versions.electron) {
     await new Promise(resolve=>setTimeout(resolve,250));
     await peer.webContents.executeJavaScript(`if(document.querySelectorAll('.usage-status-provider').length!==1 || !document.querySelector('.usage-status-limit b').textContent.includes('10%'))throw Error('Status preferences did not restore'); document.querySelector('[aria-label="status.codex"]').click()`);
     await new Promise(resolve=>setTimeout(resolve,200));
-    await win.webContents.executeJavaScript("if(document.querySelectorAll('.usage-status-provider').length!==2)throw Error('Status preferences did not sync across windows')");
+    await win.webContents.executeJavaScript("if(document.querySelectorAll('.usage-status-provider').length!==1 || document.querySelector('.usage-status-provider').dataset.profileKey!=='codex:fixture')throw Error('Status preferences did not sync across windows')");
     console.log('STATUS_BAR_RESTORE_AND_WINDOW_SYNC_OK');
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); } });

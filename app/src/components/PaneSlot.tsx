@@ -275,7 +275,7 @@ export function PaneSlot({
         const cur = activeAgentRef.current;
         if (!cur || cur.id !== agentId) return;
         target.spawnPromise = (async () => {
-          const { initCommand, ssh, cwd, launchOptions } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
             cur,
             ctx.sessionPins,
             setAgentSessionId
@@ -286,6 +286,7 @@ export function PaneSlot({
             cwd,
             initCommand,
             launchOptions,
+            initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
             claudeAccountId: cur.claudeAccountId,
@@ -376,7 +377,7 @@ export function PaneSlot({
           setAgentStatus(agentId, "starting");
         }
         const spawn = async () => {
-          const { initCommand, ssh, cwd, launchOptions } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
             cur,
             ctx.sessionPins,
             setAgentSessionId
@@ -387,6 +388,7 @@ export function PaneSlot({
             cwd,
             initCommand,
             launchOptions,
+            initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
             claudeAccountId: cur.claudeAccountId,

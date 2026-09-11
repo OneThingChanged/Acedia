@@ -15,6 +15,7 @@ sources:
   - resource: ../app/src/components/ProviderAccounts.tsx
   - resource: ../app/electron/services/account-identity.mjs
   - resource: ../app/src/lib/codexAccounts.ts
+  - resource: ../app/src/lib/accountHandoff.ts
   - resource: ../app/src/lib/persistence.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/session-service.mjs
@@ -37,11 +38,24 @@ profile's ID token contains a usable email field; unavailable metadata stays unk
 This does not validate token signatures, expiry or current server-side identity.
 
 The Codex tab also stores the default account for new local sessions.
+Additional accounts can be renamed or removed from their row. Removal returns
+bound sessions and a matching new-session default to Existing login, stops affected
+local sessions, cancels pending login and clears account-scoped resume references.
+It preserves local credential/transcript files and other accounts. See
+[account editing and removal](account-registration.md#이름-변경과-삭제).
 Select or override the account when creating a local project or session. For an existing
 session, deactivate it first and select the account under **Session properties
 → Launch options**, then **Save changes**. A newly selected profile starts a new conversation. Switching
 back restores that profile's last conversation, if its transcript is available.
 Account changes leave the session inactive until explicitly opened.
+
+When the target account has no saved conversation, **Hand off current work to the
+new account** is enabled by default. The app builds a bounded local handoff from
+recent user and assistant text, excluding reasoning and tool output, and supplies
+it as the fresh conversation's first prompt. The handoff remains pending through
+an app restart until a provider session ID confirms startup. If scoped lookup finds
+an existing target-account conversation, that conversation is resumed and no
+handoff prompt is sent. The checkbox can be cleared before saving the account change.
 
 Different accounts can run simultaneously in separate sessions. The shared
 account service/UI also implements [Claude account profiles](claude-accounts.md).
@@ -100,8 +114,9 @@ Registering the same
 ChatGPT account twice does not create separate provider quotas.
 
 This feature covers local Codex sessions. SSH authentication remains on the
-remote host. It does not migrate a conversation between different accounts or
-automatically switch accounts when a quota is exhausted.
+remote host. A handoff carries bounded work context into a fresh conversation;
+it does not move the provider conversation, credentials, quota, or session ID
+between accounts. Accounts are not switched automatically when a quota is exhausted.
 
 ## Verification
 

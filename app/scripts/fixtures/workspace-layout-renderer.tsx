@@ -16,6 +16,8 @@ if (!localStorage.getItem("layout-fixture-seeded")) {
   store("multiagent.view.v1", { activeProjectId: "project", activeGroupId: "screen", activePath: [0] });
 }
 window.layoutCalls = [];
+const fixtureListeners = new Map<string, Set<(payload: unknown) => void>>();
+window.fixtureAccountEvent = payload => { for (const callback of fixtureListeners.get("accounts:changed") || []) callback(payload); };
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.layoutCalls.push({ command, args });
@@ -40,7 +42,7 @@ window.multiAgentElectron = {
     if (command.endsWith("_status")) return { running: false };
     return null;
   },
-  onEvent: () => () => {},
+  onEvent: (name, callback) => { const callbacks=fixtureListeners.get(name) || new Set(); callbacks.add(callback); fixtureListeners.set(name,callbacks); return () => callbacks.delete(callback); },
   emit: async () => {},
   window: { setAlwaysOnTop: async () => {}, isFocused: async () => false, requestUserAttention: async () => {} },
 };

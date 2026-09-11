@@ -1,6 +1,7 @@
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
+import { removeProviderAccount } from "./services/account-removal.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
@@ -407,6 +408,11 @@ const claudeAccounts = new ClaudeAccounts(app.getPath("userData"), {
 });
 function accountsForTool(tool) {
   return tool === "codex" ? codexAccounts : tool === "claude" ? claudeAccounts : null;
+}
+function removedAccountIds() {
+  // A damaged optional registry still reports its error in account settings;
+  // it must not prevent the rest of the workspace from opening.
+  return { codex: codexAccounts.removedAccounts.map(account => account.id), claude: claudeAccounts.removedAccounts.map(account => account.id) };
 }
 function selectedAccountId(args) {
   return (args.aiToolId === "claude" ? args.claudeAccountId : args.codexAccountId) || "default";
@@ -1470,10 +1476,9 @@ function browserParentWindowForAgent(agentId) {
 
 function activateDocumentBrowser(record, agentId = "") {
   if (!record || record.win.isDestroyed()) return;
-  for (const candidate of documentBrowserWindows.values()) {
-    if (candidate.win !== record.win || candidate === record) continue;
-    if (typeof candidate.view.setVisible === "function") candidate.view.setVisible(false);
-  }
+  // Each mounted browser pane reports its own visibility and bounds. Do not
+  // hide sibling views here: two active panes in the same split must remain
+  // visible at the same time.
   if (typeof record.view.setVisible === "function") {
     record.view.setVisible(record.rendererHidden !== true);
   }
@@ -1928,14 +1933,8 @@ async function createDocumentBrowserWindowNow({
       return { browserId: record.id };
     }
   }
-  // Keep the native views as browser tabs instead of destroying the previous
-  // one. Only the newly activated tab is visible; a renderer can reattach an
-  // older tab by sending its browserId and bounds again.
-  for (const candidate of documentBrowserWindows.values()) {
-    if (candidate.win === parentWindow && typeof candidate.view.setVisible === "function") {
-      candidate.view.setVisible(false);
-    }
-  }
+  // Keep native views as browser tabs. Mounted pane renderers independently
+  // decide which views are visible, including multiple browser panes in a split.
 
   const profile = browserProfile(browserSettings.get(), profileId);
   const preview = folder && relativePath
@@ -3026,8 +3025,10 @@ async function spawnPty(args, event) {
   }
   const ptyCols = asPositiveInt(args.cols, 120);
   const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions);
+  const initialPrompt = asString(args.initialPrompt);
   const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
     shell: executable, toolId: aiToolId, env: launchEnvironment,
+    extraArgs: initialPrompt ? [initialPrompt] : [],
   });
   const ptyRows = asPositiveInt(args.rows, 30);
   const outputFilter =
@@ -5485,6 +5486,7 @@ async function invokeCommand(event, command, rawArgs) {
         const sessionId = await sessionService.resolve({ aiToolId: toolId, folder: args.folder,
           preferredSessionId: args.sessionId, transcriptRoot: root, allowFolderFallback: false });
         if (ptys.has(id)) throw new Error("세션을 비활성화한 뒤 계정을 변경하세요.");
+        accountsForTool(toolId).home(args.accountId);
         accountBindings.set(id, { toolId, accountId: args.accountId, sessionId });
         agentTranscripts.delete(id);
         agentTranscriptTool.delete(id);
@@ -5493,6 +5495,29 @@ async function invokeCommand(event, command, rawArgs) {
         monitorHooks.delete(id);
         return sessionId;
       } finally { accountSwitches.delete(id); }
+    }
+    case "accounts_removed": return removedAccountIds();
+    case "codex_accounts_rename":
+    case "claude_accounts_rename": {
+      const provider = command.startsWith("codex_") ? "codex" : "claude";
+      const result = accountsForTool(provider).rename(args.accountId, args.label);
+      sendEventToAll("accounts:changed", { provider, accountId: args.accountId, action: "renamed" });
+      return result;
+    }
+    case "codex_accounts_remove":
+    case "claude_accounts_remove": {
+      const provider = command.startsWith("codex_") ? "codex" : "claude";
+      const agentIds = removeProviderAccount({ provider, accountId: args.accountId, accounts: accountsForTool(provider),
+        sessions: terminalSessions, bindings: accountBindings, catalog: usageIndex.catalog.agents,
+        clearSession(id) {
+          agentTranscripts.delete(id); agentTranscriptTool.delete(id); agentSessionIds.delete(id);
+          transcriptMissUntil.delete(id); monitorHooks.delete(id);
+          const owner = detachedAgents.get(id); if (owner !== undefined) releaseAgentFromWindow(id, owner);
+        },
+      });
+      const result = { provider, accountId: args.accountId, action: "removed", agentIds, removed: removedAccountIds() };
+      sendEventToAll("accounts:changed", result);
+      return result;
     }
     case "codex_accounts_list": return codexAccounts.list();
     case "codex_accounts_create": return codexAccounts.create(args.label);
@@ -5526,6 +5551,7 @@ async function invokeCommand(event, command, rawArgs) {
         // conversation merely because both agents share the same folder.
         allowFolderFallback: false,
       });
+      accountsForTool(args.aiToolId)?.home(selectedAccountId(args));
       if (accountBindings.get(args.agentId) !== previousBinding || accountSwitches.has(args.agentId)) {
         throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
       }
@@ -5940,6 +5966,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         await verifyNotificationPolicy(initialWindow, powerPolicy);
         const { verifyIdleSessions } = await import("./services/idle-session-smoke.mjs");
         await verifyIdleSessions(initialWindow, {ptys,hooks:monitorHooks,transcripts:agentTranscripts,accounts:codexAccounts});
+        const { verifyAccountManagement } = await import("./services/account-management-smoke.mjs");
+        await verifyAccountManagement(initialWindow, { ptys, stores: { codex: codexAccounts, claude: claudeAccounts }, bindings: accountBindings });
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

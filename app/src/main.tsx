@@ -11,6 +11,8 @@ import {
   syncSharedStorageBeforeRender,
 } from "./platform/storageMigration";
 import { AppLanguageProvider } from "./lib/appLanguage";
+import { invoke } from "./platform/runtime";
+import { applyRemovedAccounts, type RemovedAccounts } from "./lib/removedAccounts";
 
 const desktopPet =
   (window as Window & { __MULTIAGENT_DESKTOP_PET__?: boolean })
@@ -24,6 +26,7 @@ async function render() {
       syncSharedStorageBeforeRender(),
       syncReopenStateBeforeRender(),
     ]);
+    applyRemovedAccounts(await invoke<RemovedAccounts>("accounts_removed"));
   }
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

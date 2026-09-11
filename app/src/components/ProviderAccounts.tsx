@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { SettingScope, settingTarget } from "./SettingsSearch";
-import { invoke } from "../platform/runtime";
+import { invoke, listen } from "../platform/runtime";
+import { applyRemovedAccounts, type RemovedAccounts } from "../lib/removedAccounts";
 import { useAppLanguage } from "../lib/appLanguage";
 import "./ProviderAccounts.css";
 
@@ -10,8 +11,8 @@ type Account = {
 };
 type Provider = "codex" | "claude";
 const commands = {
-  codex: { list: "codex_accounts_list", create: "codex_accounts_create", login: "codex_accounts_login", cancel: "codex_accounts_cancel_login" },
-  claude: { list: "claude_accounts_list", create: "claude_accounts_create", login: "claude_accounts_login", cancel: "claude_accounts_cancel_login" },
+  codex: { list: "codex_accounts_list", create: "codex_accounts_create", login: "codex_accounts_login", cancel: "codex_accounts_cancel_login", rename: "codex_accounts_rename", remove: "codex_accounts_remove" },
+  claude: { list: "claude_accounts_list", create: "claude_accounts_create", login: "claude_accounts_login", cancel: "claude_accounts_cancel_login", rename: "claude_accounts_rename", remove: "claude_accounts_remove" },
 } as const;
 const stateLabels: Record<string, [string, string]> = {
   default: ["현재 CLI 환경 사용", "Use current CLI environment"],
@@ -57,7 +58,11 @@ function useAccounts(provider: Provider) {
       if (!stopped) timer = window.setTimeout(poll, 2000);
     };
     void poll();
-    return () => { stopped = true; live.current = false; ++sequence.current; window.clearTimeout(timer); };
+    const changed = () => { void refresh(); };
+    window.addEventListener("multiagent:accounts-changed", changed);
+    const subscription = listen("accounts:changed", changed);
+    subscription.then(unlisten => { if (stopped) unlisten(); }).catch(() => {});
+    return () => { stopped = true; live.current = false; ++sequence.current; window.clearTimeout(timer); window.removeEventListener("multiagent:accounts-changed", changed); void subscription.then(unlisten => unlisten()).catch(() => {}); };
   }, [refresh]);
   const remember = (account: Account) => {
     // Invalidate any list that started before this successful mutation.
@@ -104,6 +109,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const working = useRef(false);
   const [adding, setAdding] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; mode: "rename" | "remove"; label: string } | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const flowTitle = useRef<HTMLHeadingElement>(null);
   const requestedFlowFocus = useRef(false);
@@ -113,6 +119,10 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const flowOpen = adding || !!active;
   const canAct = !busy && !loading && !loadError;
   const step = adding ? 0 : active?.state === "saved" ? 2 : 1;
+
+  useEffect(() => {
+    if (!loading && !loadError && editing && !accounts.some(account => account.id === editing.id)) setEditing(null);
+  }, [accounts, loading, loadError, editing?.id]);
 
   useEffect(() => {
     if (!adding && !activeId && pending) setActiveId(pending.id);
@@ -170,6 +180,26 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
     if (!latest?.some(a => a.id === account.id && a.state === "saved")) throw new Error("Account is not ready");
     if (!await onMakeDefault?.(account.id)) throw new Error("Default was not saved");
   }, text("기본 계정을 저장하지 못했습니다. 계정 상태를 확인하고 다시 시도하세요.", "Could not save the default account. Check its status and try again."));
+  const renameAccount = () => {
+    if (!editing || !editing.label.trim()) return;
+    const edit = editing;
+    void run(async () => {
+      await invoke(commands[provider].rename, { accountId: edit.id, label: edit.label.trim() });
+      if (live.current) setEditing(null);
+      window.dispatchEvent(new Event("multiagent:accounts-changed"));
+    }, text("이름을 저장하지 못했습니다. 다시 시도하세요.", "Could not save the name. Please retry."));
+  };
+  const removeAccount = () => {
+    if (!editing) return;
+    const edit = editing;
+    void run(async () => {
+      const result = await invoke<{ removed: RemovedAccounts }>(commands[provider].remove, { accountId: edit.id });
+      applyRemovedAccounts(result.removed);
+      window.dispatchEvent(new Event("multiagent:accounts-changed"));
+      if (live.current) { setEditing(null); if (activeId === edit.id) setActiveId(null); }
+      addButton.current?.focus();
+    }, text("계정 삭제를 완료하지 못했습니다. 목록을 새로고침하고 다시 확인하세요.", "Could not complete account removal. Refresh the list and check again."));
+  };
   const description = (account: Account) => {
     if (account.state === "pending") return text("열린 브라우저에서 원하는 계정으로 로그인하세요. 최대 5분 동안 기다립니다.", "Sign in with the intended account in your browser. Waiting for up to five minutes.");
     if (account.state === "cancelled") return text("로그인을 취소했습니다. 같은 계정으로 다시 시도할 수 있습니다.", "Login was cancelled. You can retry with this profile.");
@@ -186,7 +216,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   return <section className="codex-account-management" data-account-provider={provider} {...settingTarget(settingId)} aria-busy={busy || loading}>
     <div className="agent-settings-sectionhead">
       <h4>{text("로그인 계정", "Login accounts")} <SettingScope id={settingId} /><span className="agent-account-count">{accounts.length}</span></h4>
-      <button ref={addButton} type="button" className="agent-refresh" disabled={!canAct || !!pending || adding} onClick={() => {
+      <button ref={addButton} type="button" className="agent-refresh" disabled={!canAct || !!pending || adding || !!editing} onClick={() => {
         setAdding(true); setActiveId(null); setError("");
       }}>＋ {text("계정 추가", "Add account")}</button>
     </div>
@@ -238,9 +268,9 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
         </div>
         {active.state === "saved" && <p className="check-hint">{text("기본 계정은 새 로컬 세션부터 적용됩니다. 기존 세션의 계정은 유지됩니다.", "The default applies to new local sessions. Existing sessions keep their accounts.")}</p>}
       </>}
-      {error && <p className="account-flow-error" role="alert">{error}</p>}
+      {error && !editing && <p className="account-flow-error" role="alert">{error}</p>}
     </section>}
-    {!flowOpen && error && <p className="account-flow-error" role="alert">{error}</p>}
+    {!flowOpen && error && !editing && <p className="account-flow-error" role="alert">{error}</p>}
     <div className="agent-settings-card account-list">
       {accounts.map(a => <div className="agent-settings-row account-list-row" key={a.id} data-account-id={a.id}>
         <div className="agent-account-identity"><span className="agent-account-avatar">{a.id === "default" ? "↗" : a.label.slice(0, 1).toUpperCase()}</span>
@@ -253,7 +283,21 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
             ? <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { requestedFlowFocus.current = true; setActiveId(a.id); setError(""); }}>{a.state === "saved" ? text("계정 정보", "Account info") : text("진행 보기", "View progress")}</button>
             : <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{retryLabel(a)}</button>}
           {a.state === "saved" && <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{text("다시 로그인", "Sign in again")}</button>}
+          <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { setError(""); setEditing({ id: a.id, label: a.label, mode: "rename" }); }}>{text("이름 변경", "Rename")}</button>
+          <button type="button" className="btn-secondary account-remove-button" disabled={!canAct || adding} onClick={() => { setError(""); setEditing({ id: a.id, label: a.label, mode: "remove" }); }}>{text("삭제", "Remove")}</button>
         </div>}
+        {editing?.id === a.id && <form key={editing.mode} className="account-edit" aria-label={editing.mode === "rename" ? text("계정 이름 변경", "Rename account") : text("계정 삭제 확인", "Confirm account removal")}
+          onKeyDown={event => { if (event.key === "Escape" && !busy) { event.preventDefault(); event.stopPropagation(); setEditing(null); } }}
+          onSubmit={event => { event.preventDefault(); if (canAct) editing.mode === "rename" ? renameAccount() : removeAccount(); }}>
+          {editing.mode === "rename" ? <label className="field"><span className="field-label">{text("새 표시 이름", "New display name")}</span>
+            <input autoFocus aria-label={text("새 표시 이름", "New display name")} maxLength={80} value={editing.label} disabled={busy} onChange={event => setEditing({ ...editing, label: event.target.value })} />
+          </label> : <><strong>{text(`‘${a.label}’ 계정을 삭제할까요?`, `Remove account ‘${a.label}’?`)}</strong>
+            <p>{text("이 계정을 사용하는 모든 세션과 새 세션 기본값이 기존 로그인(default)으로 변경됩니다. 실행 중인 해당 세션은 비활성화되며 자동으로 다시 실행하지 않습니다.", "All sessions using this account and any new-session default return to Existing login (default). Affected running sessions stop and do not restart automatically.")}</p>
+            <p>{text("진행 중인 로그인은 취소됩니다. 계정 등록을 삭제하며 로컬 로그인·대화 파일은 보존합니다.", "A pending login is cancelled. This removes the account registration and preserves local login and conversation files.")}</p></>}
+          {error && <p className="account-flow-error" role="alert">{error}</p>}
+          <div className="account-flow-actions"><button type="submit" className={editing.mode === "rename" ? "btn-primary" : "btn-secondary account-remove-button"} disabled={!canAct || (editing.mode === "rename" && !editing.label.trim())}>{editing.mode === "rename" ? text("이름 저장", "Save name") : text("삭제하고 기본 계정으로 전환", "Remove and use default")}</button>
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => setEditing(null)}>{text("취소", "Cancel")}</button></div>
+        </form>}
       </div>)}
     </div>
     <p className="agent-hint">{text("기존 세션의 계정은 세션 속성 → 실행 옵션에서 변경합니다.", "Change an existing session's account in Session properties → Launch options.")}</p>

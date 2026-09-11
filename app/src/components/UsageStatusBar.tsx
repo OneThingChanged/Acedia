@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { loadStatusBar, subscribeStatusBar, showUsageProvider, displayUsagePercent, type StatusBarSettings } from '../lib/statusBarSettings';
+import { loadStatusBar, subscribeStatusBar, updateStatusBar, canSelectStatusAccount, selectStatusAccount, displayUsagePercent, type StatusBarSettings } from '../lib/statusBarSettings';
 const DisplayContext = createContext<StatusBarSettings['display']>('used');
 import {
   useCallback,
@@ -7,9 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
-import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { invoke, listen } from "../platform/runtime";
 import type { Agent, Project } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
@@ -34,7 +32,6 @@ import {
 
 const REFRESH_INTERVAL_MS = 60_000;
 const CLOCK_INTERVAL_MS = 30_000;
-const POPOVER_WIDTH = 300;
 
 function UsageProgress({
   window,
@@ -125,63 +122,10 @@ function ProviderLimitDetails({
   );
 }
 
-function ProviderPopover({
-  provider,
-  now,
-  left,
-  onClose,
-}: {
-  provider: UsageProviderGroup;
-  now: number;
-  left: number;
-  onClose: () => void;
+function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChange, onClose }: {
+  summary: UsageRateLimitSummary | null; settings: StatusBarSettings; selectedKey: string | null;
+  onSelect: (key: string) => void; onChange: (key: string, hidden: boolean) => Promise<void>; onClose: () => void;
 }) {
-  const { language, text } = useAppLanguage();
-  useNativeViewOcclusion();
-
-  const planType = provider.limits.find((limit) => limit.planType)?.planType;
-  return (
-    <div
-      className="usage-provider-popover"
-      style={{ left }}
-      role="dialog"
-      aria-label={text(`${provider.label} 사용량`, `${provider.label} usage`)}
-    >
-      <div className="usage-popover-heading">
-        <div>
-          <strong>
-            <span
-              className="usage-provider-icon"
-              style={{ color: provider.iconColor }}
-            >
-              {provider.icon}
-            </span>
-            {provider.label}
-            {planType && <em className="usage-provider-plan">{planType}</em>}
-          </strong>
-          <span>{formatUpdatedAgo(Math.max(0, ...provider.limits.map(limit => limit.updatedAt)), now, language)}</span>
-        </div>
-        <button type="button" onClick={onClose}>
-          {text("닫기", "Close")}
-        </button>
-      </div>
-      <p className="check-hint">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>
-      <div className="usage-popover-body">
-        {!provider.limits.length && <p className="usage-quota-pending">{text("한도 확인 전입니다. 이 계정의 한도가 수집되면 표시됩니다.", "Quota not available yet. It will appear when data is collected for this account.")}</p>}
-        {provider.limits.map((limit) => (
-          <ProviderLimitDetails
-            key={limit.limitId}
-            limit={limit}
-            providerLabel={provider.label}
-            now={now}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function UsageProfilesDialog({ summary, onChange, onClose }: { summary: UsageRateLimitSummary | null; onChange: (key: string, hidden: boolean) => Promise<void>; onClose: () => void }) {
   const { language, text } = useAppLanguage();
   const [tab, setTab] = useState("current");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -189,20 +133,30 @@ function UsageProfilesDialog({ summary, onChange, onClose }: { summary: UsageRat
   const current = (group: UsageProviderGroup) => group.profile?.visible !== false;
   const render = (items: UsageProviderGroup[]) => <>{items.length === 0 && <p>{text("표시할 계정 한도가 없습니다.", "No account quota to display.")}</p>}{items.map(group => {
     const profile = group.profile;
-    return <article className="property-card" key={group.key}><div className="property-card-heading"><strong>{group.label}</strong>{profile && <button className="btn-secondary" disabled={busy} onClick={async () => {
+    const label = profile?.id === "default" ? `${group.label} · ${text("기본", "Default")}` : group.label;
+    const selectable = canSelectStatusAccount(group, settings);
+    const planType = group.limits.find(limit => limit.planType)?.planType;
+    return <article className={`property-card usage-account-card${group.key === selectedKey ? " usage-account-card-selected" : ""}`} key={group.key} data-profile-key={group.key}><div className="property-card-heading"><strong><span className="usage-provider-icon" style={{color:group.iconColor}}>{group.icon}</span> {label}{planType && <em className="usage-provider-plan">{planType}</em>}</strong>{profile && <button className="btn-secondary" disabled={busy} onClick={async () => {
       setBusy(true); setError("");
       try { await onChange(profile.key, profile.visible); } catch { setError(text("표시 설정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save visibility. Please try again.")); } finally { setBusy(false); }
     }}>{profile.visible ? text("기본 표시에서 숨기기", "Hide from default view") : text("기본 화면에 표시", "Show in default view")}</button>}</div>
+    {current(group) && <label className={`usage-account-choice${selectable ? "" : " usage-account-choice-disabled"}`}>
+      <input type="radio" name="usage-status-account" value={group.key} checked={group.key === selectedKey} disabled={busy || !selectable}
+        aria-label={text(`${label} 하단바에 표시`, `Show ${label} in status bar`)}
+        onChange={() => { try { onSelect(group.key); setError(""); } catch { setError(text("하단바 표시 계정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save the status bar account. Please retry.")); } }}/>
+      {group.key === selectedKey ? text("하단바에 표시 중", "Shown in status bar") : text("하단바에 표시", "Show in status bar")}
+      {!selectable && profile?.registered !== false && <small>{text("상태 표시줄 설정에서 이 도구를 켜면 선택할 수 있습니다.", "Enable this tool in Status bar settings to select it.")}</small>}
+    </label>}
     {profile && !profile.registered && <p className="property-note">{text("등록된 계정이 없는 저장된 한도입니다.", "Stored quota for an account no longer registered.")}</p>}
     {group.limits[0] ? <ProviderLimitDetails limit={group.limits[0]} providerLabel={group.label} now={Date.now()}/> : <p className="usage-quota-pending">{text("한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다.", "Quota not available yet. It will appear when data is collected for this registered account.")}</p>}
     {group.limits.length > 1 && <details><summary>{text("추가 한도", "Additional limits")} · {group.limits.length - 1}</summary>{group.limits.slice(1).map(limit => <div key={limit.limitId}><small>{formatUpdatedAgo(limit.updatedAt, Date.now(), language)}</small><ProviderLimitDetails limit={limit} providerLabel={group.label} now={Date.now()}/></div>)}</details>}
     {profile && <details><summary>{text("프로필 식별자", "Profile identifier")}</summary><code>{profile.key}</code></details>}
     </article>;
   })}</>;
-  return <PropertiesDialog title={text("계정 한도", "Account quotas")} subtitle={text("사용량 · 프로필별 표시 관리", "Usage · Profile visibility")} activeTab={tab} onTabChange={setTab} onClose={onClose} busy={busy} tabs={[
-    { id: "current", label: text("현재 계정", "Current accounts"), content: <><h3>{text("현재 계정", "Current accounts")}</h3><p className="property-note">{text("등록된 Codex·Claude 계정을 각각 표시합니다. 세션을 시작하지 않은 계정도 확인할 수 있으며, 수집 전 한도는 추정하지 않습니다.", "Registered Codex and Claude accounts appear separately, including accounts with no started session. Quotas are not estimated before collection.")}</p>{render(groups.filter(current))}</> },
+  return <PropertiesDialog title={text("에이전트 사용량", "Agent usage")} subtitle={text("계정별 한도 · 하단바 표시 계정", "Account quotas · Status bar account")} activeTab={tab} onTabChange={setTab} onClose={onClose} busy={busy} tabs={[
+    { id: "current", label: text("현재 계정", "Current accounts"), content: <><h3>{text("현재 계정", "Current accounts")}</h3><p className="property-note">{text("모든 계정의 사용량을 여기서 확인하고, 하단바에 표시할 계정 하나를 선택하세요. 이 선택은 세션의 로그인 계정을 바꾸지 않습니다.", "Review all account quotas here and choose one account for the status bar. This does not change session logins.")}</p><p className="property-note">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>{render(groups.filter(current))}</> },
     { id: "other", label: text("이전·기타 프로필", "Other profiles"), content: <><h3>{text("이전·기타 프로필", "Other profiles")}</h3><p className="property-note">{text("이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 같은 이름이나 수치만으로 계정을 합치지 않습니다. 숨겨도 로그인·대화·사용량 기록은 유지됩니다.", "Archived profiles, accounts no longer registered and profiles hidden by you. Names and percentages do not merge accounts. Hiding preserves logins, conversations and usage history.")}</p>{render(groups.filter(group => !current(group)))}</> },
-  ]} footer={<span role="status">{error || text("표시 설정은 이 PC의 앱과 원격 화면에 함께 적용됩니다.", "Visibility is shared by this PC’s app and remote views.")}</span>}/>;
+  ]} footer={<span role="status">{error || text("하단바 선택은 앱 작업창에 공유됩니다. 프로필 숨기기는 원격 화면에도 적용됩니다.", "The status bar selection is shared across app workspaces. Profile visibility also applies to remote views.")}</span>}/>;
 }
 
 export function UsageStatusBar({
@@ -224,15 +178,7 @@ export function UsageStatusBar({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openPopover, setOpenPopover] = useState<{
-    provider: string;
-    left: number;
-  } | null>(null);
   const [now, setNow] = useState(Date.now());
-  const rootRef = useRef<HTMLElement>(null);
-  const accountsRef = useRef<HTMLDivElement>(null);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const [scroll, setScroll] = useState({ overflow: false, left: false, right: false });
 
   const load = useCallback(async (refresh: boolean) => {
     if (visibilitySaving.current) return;
@@ -297,86 +243,36 @@ export function UsageStatusBar({
     };
   }, [load]);
 
-  useEffect(() => {
-    if (!openPopover) return;
-    const closeOnOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpenPopover(null);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenPopover(null);
-    };
-    document.addEventListener("pointerdown", closeOnOutside, true);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutside, true);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [openPopover]);
-
-  const providers = useMemo(() => groupUsageProfiles(summary).filter(provider => provider.profile?.visible !== false && showUsageProvider(provider.key, settings)), [summary, settings]);
-  useEffect(() => {
-    const strip = stripRef.current, wrapper = accountsRef.current;
-    if (!strip || !wrapper) return;
-    const measure = () => setScroll({ overflow: strip.scrollWidth > wrapper.clientWidth + 1, left: strip.scrollLeft > 1, right: strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1 });
-    const observer = new ResizeObserver(measure); observer.observe(wrapper); observer.observe(strip);
-    strip.addEventListener("scroll", measure); measure();
-    return () => { observer.disconnect(); strip.removeEventListener("scroll", measure); };
-  }, [providers, loading]);
-  const scrollAccounts = (direction: number) => { const strip = stripRef.current; if (strip) strip.scrollBy({ left: direction * Math.max(160, strip.clientWidth * .8), behavior: "smooth" }); };
+  const providers = useMemo(() => groupUsageProfiles(summary), [summary]);
+  const provider = selectStatusAccount(providers, settings);
   const statusText = loading
     ? text("사용량 불러오는 중", "Loading usage")
     : error
       ? text("사용량 확인 실패", "Could not load usage")
-      : providers.length === 0
+      : !provider
         ? text("표시할 계정 한도 없음", "No visible account quotas")
         : null;
 
-  const toggleProvider = (
-    event: ReactMouseEvent<HTMLButtonElement>,
-    key: string
-  ) => {
-    if (openPopover?.provider === key) {
-      setOpenPopover(null);
-      return;
-    }
-    const rootRect = rootRef.current?.getBoundingClientRect();
-    const segmentRect = event.currentTarget.getBoundingClientRect();
-    const rawLeft = rootRect ? segmentRect.left - rootRect.left : 8;
-    const maxLeft = Math.max(8, (rootRect?.width ?? POPOVER_WIDTH) - POPOVER_WIDTH - 8);
-    setOpenPopover({ provider: key, left: Math.min(Math.max(8, rawLeft), maxLeft) });
-  };
-
-  const openProvider = openPopover
-    ? providers.find((provider) => provider.key === openPopover.provider) ?? null
-    : null;
-
   return (
-    <DisplayContext.Provider value={settings.display}><footer className="usage-status-bar" ref={rootRef}>
-      <div className="usage-status-accounts" ref={accountsRef}>
-      {scroll.overflow && <button className="usage-account-scroll" disabled={!scroll.left} aria-label={text("앞쪽 계정 보기", "Scroll to previous accounts")} onClick={() => scrollAccounts(-1)}>‹</button>}
-      <div className="usage-status-summary" ref={stripRef}>
-        {statusText ? (
-          <span className="usage-status-empty">{statusText}</span>
-        ) : (
-          providers.map((provider) => (
+    <DisplayContext.Provider value={settings.display}><footer className="usage-status-bar">
+      <div className="usage-status-accounts">
             <button
               type="button"
-              key={provider.key}
-              className={`usage-status-provider ${
-                openPopover?.provider === provider.key
-                  ? "usage-status-provider-open"
-                  : ""
-              }`}
-              onClick={(event) => toggleProvider(event, provider.key)}
-              title={text(`${provider.label} 계정 한도`, `${provider.label} account quota`)}
+              className={`usage-status-provider${profilesOpen ? " usage-status-provider-open" : ""}`}
+              onClick={() => { setProfilesOpen(true); void load(false); }}
+              aria-label={text("에이전트 사용량", "Agent usage")}
+              aria-haspopup="dialog" aria-expanded={profilesOpen}
+              data-profile-key={provider?.key}
+              title={statusText || text(`${provider?.label} · 모든 계정 사용량 보기`, `${provider?.label} · View all account quotas`)}
             >
+              {provider ? <>
               <span
                 className="usage-provider-icon"
                 style={{ color: provider.iconColor }}
               >
                 {provider.icon}
               </span>
-              <strong>{provider.profile?.id === "default" && providers.filter(group => group.key.split(":")[0] === provider.key.split(":")[0]).length > 1 ? `${provider.label} · ${text("기본", "Default")}` : provider.label}</strong>
+              <strong>{provider.profile?.id === "default" ? `${provider.label} · ${text("기본", "Default")}` : provider.label}</strong>
               {!provider.limits.length && <span className="usage-status-pending">{text("한도 확인 전", "Quota pending")}</span>}
               {provider.limits.slice(0, 1).map((limit) => {
                 const window = primaryUsageWindow(limit);
@@ -393,14 +289,11 @@ export function UsageStatusBar({
                     </span>
                   </span>
                 );
-              })}
+              })}</> : <strong>{text("에이전트 사용량", "Agent usage")}</strong>}
+              {statusText && <span className="usage-status-pending">{statusText}</span>}
+              <span className="usage-status-chevron" aria-hidden="true">⌃</span>
             </button>
-          ))
-        )}
       </div>
-      {scroll.overflow && <button className="usage-account-scroll" disabled={!scroll.right} aria-label={text("뒤쪽 계정 보기", "Scroll to next accounts")} onClick={() => scrollAccounts(1)}>›</button>}
-      </div>
-      <button type="button" className="usage-status-refresh" onClick={() => { setOpenPopover(null); setProfilesOpen(true); void load(false); }}>{text("계정 한도", "Account quotas")}</button>
       {settings.resources && <ResourceMonitor
         agents={agents}
         projects={projects}
@@ -420,15 +313,9 @@ export function UsageStatusBar({
       >
         {refreshing ? text("갱신 중", "Refreshing") : text("새로고침", "Refresh")}
       </button>
-      {openProvider && openPopover && (
-        <ProviderPopover
-          provider={openProvider}
-          now={now}
-          left={openPopover.left}
-          onClose={() => setOpenPopover(null)}
-        />
-      )}
-      {profilesOpen && <UsageProfilesDialog summary={summary} onClose={() => setProfilesOpen(false)} onChange={async (profileKey, hidden) => {
+      {profilesOpen && <UsageProfilesDialog summary={summary} settings={settings} selectedKey={provider?.key ?? null}
+        onSelect={key => setSettings(updateStatusBar({selectedAccount:key}))}
+        onClose={() => setProfilesOpen(false)} onChange={async (profileKey, hidden) => {
         visibilitySaving.current = true; ++requestSerial.current;
         try { setSummary(await invoke<UsageRateLimitSummary>("usage_profile_visibility_set", { profileKey, hidden })); }
         finally { visibilitySaving.current = false; }

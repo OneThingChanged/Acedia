@@ -1,7 +1,7 @@
 ---
 type: Feature
 title: 계정 등록 흐름
-description: Codex와 Claude의 표시 이름 입력, 로그인 결과 확인, 새 세션 기본 계정 지정.
+description: Codex와 Claude의 계정 등록·이름 변경·삭제, 로그인 결과 확인과 기본 계정 전환.
 tags: [settings, accounts, ux]
 status: stable
 sources:
@@ -12,6 +12,10 @@ sources:
   - resource: ../app/electron/services/account-identity.mjs
   - resource: ../app/electron/services/account-onboarding.test.mjs
   - resource: ../app/scripts/electron-account-onboarding-smoke.mjs
+  - resource: ../app/electron/services/account-removal.mjs
+  - resource: ../app/electron/services/account-removal.test.mjs
+  - resource: ../app/src/lib/removedAccounts.ts
+  - resource: ../app/electron/services/account-management-smoke.mjs
 ---
 
 # 계정 등록 흐름
@@ -28,6 +32,28 @@ sources:
 
 등록한 계정의 **계정 정보**로 결과 카드를 다시 열 수 있다. 설정을 다시 열었을 때
 진행 중인 로그인도 표시한다. 재로그인은 그 계정으로 실행 중인 세션이 없을 때만 가능하다.
+
+## 이름 변경과 삭제
+
+추가 계정 행의 **이름 변경**에서 1~80자의 새 표시 이름을 저장한다. 빈 이름은 허용하지
+않는다. 계정 ID·로그인 폴더·세션 연결을 유지하므로 실행 중인 세션이나 로그인은 중단하지
+않는다. 저장 실패 시 편집 중인 이름과 기존 등록 정보를 보존한다.
+
+**삭제**를 누르면 같은 행에서 영향을 안내한다. **삭제하고 기본 계정으로 전환**을
+확인하면 해당 도구에서 그 계정을 사용하는 세션과 새 세션 기본값을 **기존 로그인
+(default)**으로 바꾼다. 해당 계정의 실행 중인 로컬 세션은 비활성화하고 자동 재시작하지
+않는다. 진행 중인 로그인은 취소한다. 다른 계정의 실행과 SSH 대화는 유지한다.
+내장 **기존 로그인**은 이름 변경·삭제 대상이 아니다.
+
+삭제는 앱의 계정 등록을 제거하는 동작이다. 로컬 인증·설정·대화 파일은 지우지 않으며
+기록 조회를 위한 원래 계정 식별자를 유지한다. 삭제한 계정의 현재 대화 연결·대기 중
+복원·그룹 대화 고정은 해제하여 기본 계정이 이전 계정의 대화를 이어받지 않게 한다.
+다른 계정의 대화 연결과 실행 옵션은 보존한다.
+
+계정 목록에 삭제 표식을 원자적으로 저장한 뒤 실행 상태를 정리한다. 목록 저장 실패 시
+세션을 중단하지 않는다. 삭제 표식은 모든 앱 창에 전달하며 앱 시작 시 저장된 세션과
+기본값을 먼저 정리한다. 오래된 창이 삭제 전 계정 선택을 다시 써도 정리한다. 계정 폴더를
+기본 로그인 폴더로 옮기거나 복사하지 않는다.
 
 ## 실패와 재시도
 
@@ -70,11 +96,15 @@ OAuth 출력은 화면으로 전달하지 않는다. 이메일을 계정 목록 
 숨김 Electron 검증은 실제 UI와 계정 서비스를 사용하되 인증 프로세스만 대체하여,
 등록·실패·취소·시간 초과·재시도·기본값 저장 실패·도구 전환 후 진행 상태 유지,
 창 사이의 기본값 동기화와 페이지 새로고침 후 복원을 확인한다.
+이름 저장 실패·빈 이름·삭제 취소·삭제 실패·두 도구의 기본값 전환·삭제 후 재시작도 검사한다.
+실제 App 회귀 검사는 삭제 이벤트와 오래된 창의 재저장을 확인한다. 격리된 네이티브
+검사는 제공자별로 두 세션을 중단하고 다른 계정의 세션은 유지하며, 대화 파일 보존을 확인한다.
 실계정 OAuth와 모델 요청, 설치본 배포는 이 검증에 포함하지 않는다.
 
 검증 명령은 `app/`에서 `npm test`, `npm run build`,
 `npm run electron:account-onboarding-smoke`와
-`node scripts/electron-codex-accounts-smoke.mjs`이다.
+`node scripts/electron-codex-accounts-smoke.mjs`이다. 삭제 회귀 검사는
+`npm run electron:workspace-layout-smoke`, `npm run electron:bridge-smoke`에도 포함한다.
 
 계정별 실행·대화 복원 경계는 [Codex 계정](codex-accounts.md),
 [Claude 계정](claude-accounts.md)에 정리한다.

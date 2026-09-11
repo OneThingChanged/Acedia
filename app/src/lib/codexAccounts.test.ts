@@ -29,4 +29,10 @@ describe("session account switching", () => {
   it("does not change state when selecting the current account", () => {
     expect(switchCodexAccount(agent, "default")).toBe(agent);
   });
+  it("queues a handoff only for an account without its own conversation", () => {
+    const handoff = { id: "h", fromAccountId: "default", toAccountId: "work", createdAt: 1, prompt: "continue" };
+    expect(switchProviderAccount(agent, "work", handoff).pendingAccountHandoff).toEqual(handoff);
+    const withSavedTarget = { ...agent, codexAccountSessions: { work: "saved-work" } };
+    expect(switchProviderAccount(withSavedTarget, "work", handoff).pendingAccountHandoff).toBeUndefined();
+  });
 });

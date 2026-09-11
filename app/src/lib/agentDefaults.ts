@@ -1,4 +1,5 @@
 import { toolForId, type SessionWorkerSettings } from "../types";
+import { availableAccountId } from "./removedAccounts";
 import { defaultSessionWorkerSettings, normalizeSessionWorkerSettings } from "./sessionWorkers";
 import { normalizeLaunchOptions, launchOptionsProblem, type LaunchOptions } from "./launchOptions";
 
@@ -19,9 +20,9 @@ export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefau
     dangerous: !!toolForId(toolId).dangerousFlag && value.dangerous === true,
     useAltScreen: codex && value.useAltScreen === true,
     codexAccountId: codex && typeof value.codexAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.codexAccountId)
-      ? value.codexAccountId : "default",
+      ? availableAccountId("codex", value.codexAccountId) : "default",
     claudeAccountId: toolId === "claude" && typeof value.claudeAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.claudeAccountId)
-      ? value.claudeAccountId : "default",
+      ? availableAccountId("claude", value.claudeAccountId) : "default",
     workerSettings: codex ? Object.prototype.hasOwnProperty.call(value, "workerSettings")
       ? normalizeSessionWorkerSettings(value.workerSettings) : defaultSessionWorkerSettings(toolId) : undefined,
   };

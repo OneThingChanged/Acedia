@@ -31,7 +31,7 @@ window.multiAgentElectron = {
     return null;
   }, onEvent: () => () => {},
 };
-localStorage.setItem("multiagent.statusBar.v1", JSON.stringify({ resources: false, ports: false }));
+localStorage.setItem("multiagent.statusBar.v1", JSON.stringify({ ...JSON.parse(localStorage.getItem("multiagent.statusBar.v1") || "{}"), resources: false, ports: false }));
 function Harness() {
   const [screen, setScreen] = useState("session");
   const [agent, setAgent] = useState(initial);
@@ -41,7 +41,7 @@ function Harness() {
     <button id="fixture-opener" onClick={() => setScreen("session")}>세션 열기</button>
     {screen === "session" && <SessionPropertiesModal agent={agent} project={project} {...common}
       onUpdateAgent={(_, patch) => { window.fixtureUpdates = (window.fixtureUpdates || 0) + 1; setAgent(current => ({ ...current, ...patch })); }}
-      onAccountChange={async id => { if (window.fixtureAccountFailure) throw Error("계정 변경 실패"); setAgent(current => ({ ...current, codexAccountId: id })); }}/>}
+      onAccountChange={async (id, includeHandoff) => { window.fixtureIncludeHandoff = includeHandoff; if (window.fixtureAccountFailure) throw Error("계정 변경 실패"); setAgent(current => ({ ...current, codexAccountId: id })); }}/>}
     {screen === "project" && <ProjectPropertiesModal project={project} agents={[agent]} {...common} onOpenSession={() => setScreen("session")}/>}
     {screen === "usage" && <UsageStatusBar agents={[agent]} projects={[project]} onSelectProject={() => {}}/>}
   </div>;

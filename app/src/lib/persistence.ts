@@ -159,6 +159,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         claudeAccountId: c.claudeAccountId,
         codexAccountSessions: c.codexAccountSessions,
         claudeAccountSessions: c.claudeAccountSessions,
+        pendingAccountHandoff: c.pendingAccountHandoff,
         dangerous: !!c.dangerous,
         useAltScreen: c.useAltScreen || undefined,
         workerSettings: normalizeSessionWorkerSettings(c.workerSettings),

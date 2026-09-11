@@ -113,6 +113,10 @@ history tabs. Dragging can reorder tabs, move a tab to another pane, or create a
 split. Moving an agent removes its previous layout placement; the same terminal
 cannot be rendered in two panes simultaneously.[^pane-slot]
 
+Separate browser tabs can be active in separate split panes at the same time.
+Each pane owns the visibility and bounds of its native browser view, so selecting
+or navigating one pane does not blank the browser beside it.[^pane-slot]
+
 Closing a terminal tab changes layout ownership but does not mean “delete this
 session.” Process activation/deactivation and tab placement remain separate
 operations.

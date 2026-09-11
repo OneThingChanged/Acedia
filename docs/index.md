@@ -17,7 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
-* [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 프로필별 표시 관리.
+* [Acedia 1.8.1.0 release](release-1-8-1-0-2026-09-12.md) - Account management, work handoff, quota selection, split browsers and release verification.
+* [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 하단바 단일 계정 선택.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Completed stages, acceptance criteria and remaining verification boundaries.
 * [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Six implementation commits, verification results and the combined review sequence.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
@@ -29,10 +30,10 @@ configuration that supports it.
 
 ## Sessions and integrations
 
-* [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.
+* [계정 등록 흐름](account-registration.md) - Account creation, login results, renaming, removal and default-account recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
-* [Codex account profiles](codex-accounts.md) - Independent local logins, session account selection, and account-scoped recovery and quotas.
-* [Claude account profiles](claude-accounts.md) - Separate configuration homes for simultaneous local accounts, scoped conversation recovery, and account usage windows.
+* [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
+* [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, and usage surfaces.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.

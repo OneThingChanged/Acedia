@@ -105,6 +105,42 @@ async function exercise() {
   return "ACCOUNT_ONBOARDING_UI_OK";
 }
 
+async function manageAccounts() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 150));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const click = async (label, scope = document) => { const button = [...scope.querySelectorAll('button')].find(b=>b.textContent.trim()===label); check(button && !button.disabled,'Missing '+label); button.click(); await wait(); };
+  for (const provider of ['codex','claude']) {
+    await click(provider==='codex'?'Codex':'Claude'); await wait();
+    const account=(await window.fixtureInvoke(provider+'_accounts_list'))[1];
+    const row=()=>document.querySelector(`[data-account-id="${account.id}"]`);
+    const form=()=>row().querySelector('.account-edit');
+    await click('이름 변경',row());
+    const type=async value=>{const input=form().querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));await wait();};
+    await type('  '); check(form().querySelector('[type=submit]').disabled,'Blank rename allowed');
+    await type(provider+' 새 이름');
+    await window.fixtureInvoke('fixture_mode',{provider,mode:'rename-failure'}); await click('이름 저장',form());
+    check(!!form(),'Failed rename discarded draft'); check((await window.fixtureInvoke(provider+'_accounts_list'))[1].label===account.label,'Failed rename changed label');
+    await window.fixtureInvoke('fixture_mode',{provider,mode:'normal'}); await click('이름 저장',form());
+    check(row().textContent.includes(provider+' 새 이름'),'Rename did not update row');
+    check((await window.fixtureInvoke(provider+'_accounts_list'))[1].id===account.id,'Rename changed identity');
+    await click('삭제',row()); check(form().textContent.includes('default') && form().textContent.includes('비활성화'),'Removal effects missing');
+    await click('취소',form()); check(!!row(),'Cancel removed the account');
+    const key='multiagent.agents.v1';
+    localStorage.setItem(key,JSON.stringify([{id:'bound',aiToolId:provider,[provider+'AccountId']:account.id,lastSessionId:'old',dangerous:true},{id:'other',aiToolId:provider,[provider+'AccountId']:'default',lastSessionId:'keep'}]));
+    const defaults=JSON.parse(localStorage.getItem('multiagent.agentDefaults.v1'));defaults[provider][provider+'AccountId']=account.id;localStorage.setItem('multiagent.agentDefaults.v1',JSON.stringify(defaults));
+    await click('삭제',row());
+    await window.fixtureInvoke('fixture_mode',{provider,mode:'remove-failure'}); await click('삭제하고 기본 계정으로 전환',form());
+    check(!!row() && JSON.parse(localStorage.getItem(key))[0][provider+'AccountId']===account.id,'Failed deletion changed bindings');
+    await window.fixtureInvoke('fixture_mode',{provider,mode:'normal'}); await click('삭제하고 기본 계정으로 전환',form());
+    check(!row(),'Deleted account remains in the list');
+    const [bound,other]=JSON.parse(localStorage.getItem(key));
+    check(bound[provider+'AccountId']==='default' && !bound.lastSessionId && bound.deferredStart && bound.dangerous,'Session did not return to default safely');
+    check(other.lastSessionId==='keep','Unrelated session changed');
+    check(window.fixtureDefaults(provider)[provider+'AccountId']==='default' && document.querySelector('.agent-defaults select').value==='default','New session default did not reset');
+  }
+  return 'ACCOUNT_RENAME_REMOVE_UI_OK';
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow, ipcMain } = require("electron");
   const directory = process.env.ACEDIA_SMOKE_DIRECTORY;
@@ -127,6 +163,15 @@ if (process.versions.electron) {
           return service.create(args.label);
         });
         ipcMain.handle(provider + "_accounts_login", (_event, args) => service.beginLogin(args.accountId));
+        ipcMain.handle(provider + "_accounts_rename", (_event, args) => {
+          if (modes[provider] === "rename-failure") throw Error("fixture write failure");
+          return service.rename(args.accountId,args.label);
+        });
+        ipcMain.handle(provider + "_accounts_remove", (_event, args) => {
+          if (modes[provider] === "remove-failure") throw Error("fixture write failure");
+          service.remove(args.accountId);
+          return {removed:{codex:services.codex.removedAccounts.map(a=>a.id),claude:services.claude.removedAccounts.map(a=>a.id)}};
+        });
         ipcMain.handle(provider + "_accounts_cancel_login", (_event, args) => service.cancelLogin({ accountId: args.accountId }));
       }
       ipcMain.handle("fixture_mode", (_event, { provider, mode }) => { modes[provider] = mode; });
@@ -166,6 +211,24 @@ if (process.versions.electron) {
         console.log(await win.webContents.executeJavaScript("(() => { const panel=document.querySelector('.account-flow');if(panel.scrollWidth>panel.clientWidth+1 || document.documentElement.scrollWidth>innerWidth)throw Error('Onboarding overflow');return 'ACCOUNT_ONBOARDING_LAYOUT_OK'; })()"));
       }
       if (process.env.ACEDIA_ACCOUNT_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_ACCOUNT_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+      if (process.env.ACEDIA_ACCOUNT_MANAGEMENT_SCREENSHOTS) {
+        const destination=process.env.ACEDIA_ACCOUNT_MANAGEMENT_SCREENSHOTS;
+        await fs.mkdir(destination,{recursive:true});
+        for(const width of [1202,800,390]) {
+          win.setContentSize(width,1000);
+          for(const [mode,label] of [['rename','이름 변경'],['remove','삭제']]) {
+            await win.webContents.executeJavaScript(`(() => { const done=[...document.querySelectorAll('.account-flow button')].find(b=>b.textContent.trim()==='완료');done?.click();[...document.querySelectorAll('.account-list-actions button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}).click(); })()`);
+            await new Promise(resolve=>setTimeout(resolve,200));
+            await win.webContents.executeJavaScript("(() => { const form=document.querySelector('.account-edit');form.scrollIntoView({block:'center'});if(form.scrollWidth>form.clientWidth+1 || document.documentElement.scrollWidth>innerWidth)throw Error('Account edit overflow: '+innerWidth); })()");
+            await fs.writeFile(path.join(destination,`${mode}-${width}.png`),(await win.webContents.capturePage()).toPNG());
+          }
+        }
+        win.setContentSize(1202,1100);
+        await win.webContents.executeJavaScript("[...document.querySelectorAll('.account-edit button')].find(b=>b.textContent.trim()==='취소').click()");
+      }
+      console.log(await win.webContents.executeJavaScript('('+manageAccounts.toString()+')()'));
+      win.reload(); await new Promise(resolve=>setTimeout(resolve,500));
+      console.log(await win.webContents.executeJavaScript("if(document.querySelectorAll('.account-list-row').length!==1 || document.querySelector('.agent-defaults select').value!=='default')throw Error('Deleted account returned on reload');'ACCOUNT_REMOVAL_RELOAD_OK'"));
       app.exit(0);
     } catch (error) { console.error(error); for (const service of Object.values(services)) service.cancelLogin(); app.exit(1); }
   });

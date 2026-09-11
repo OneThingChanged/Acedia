@@ -136,7 +136,8 @@ export function useSessionLifecycleActions({
       setAgents((current) =>
         current.map((agent) =>
           agent.id === agentId
-            ? { ...agent, lastSessionId: sessionId || undefined }
+            ? { ...agent, lastSessionId: sessionId || undefined,
+                pendingAccountHandoff: sessionId ? undefined : agent.pendingAccountHandoff }
             : agent
         )
       );

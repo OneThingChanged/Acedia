@@ -1,4 +1,5 @@
 export type RuntimeCommand =
+  | "accounts_removed" | "codex_accounts_rename" | "claude_accounts_rename" | "codex_accounts_remove" | "claude_accounts_remove"
   | "idle_preferences_get" | "idle_preferences_set" | "idle_view_update" | "idle_session_suspend"
   | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"
   | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
@@ -69,6 +70,7 @@ export type RuntimeCommand =
   | "reopen_state_get" | "reopen_state_clear" | "relaunch";
 
 export type RuntimeEventName =
+  | "accounts:changed"
   | "pty:data" | "agent:idle-suspended" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
   | "desktop-pet:position-reset" | "desktop-pet:activate"
   | "desktop-pet:close-requested" | "remote:access-request"
@@ -107,6 +109,7 @@ export type SpawnTerminalResult = { reattached: boolean; cancelled?: boolean };
 
 export type SpawnTerminalArgs = {
   launchOptions?: import("../lib/launchOptions").LaunchOptions;
+  initialPrompt?: string;
   codexAccountId?: string;
   claudeAccountId?: string;
   id: string;

@@ -15,6 +15,7 @@ sources:
   - resource: ../app/src/components/ProviderAccounts.tsx
   - resource: ../app/electron/services/account-identity.mjs
   - resource: ../app/src/lib/codexAccounts.ts
+  - resource: ../app/src/lib/accountHandoff.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/session-service.mjs
   - resource: ../app/electron/services/usage-service.mjs
@@ -34,6 +35,10 @@ the selected profile's local account metadata; it is not live identity verificat
 See [account registration](account-registration.md) for retries and result states.
 
 Select the default for new local Claude sessions in the same settings tab.
+Each additional account also has Rename and Remove actions. Confirmed removal
+returns bound sessions and a matching new-session default to Existing login, stops
+affected local sessions and clears old resume references. Local login/conversation
+files are preserved. See [account editing and removal](account-registration.md#이름-변경과-삭제).
 New Session and New Project allow an override. Existing sessions retain their
 own selection: deactivate the session before changing **Session properties →
 Launch options → Claude account**, then choose **Save changes**. Account A and account B can run in separate
@@ -45,6 +50,14 @@ conversation. Switching back restores that account's previous conversation when
 its local transcript remains available. Account bindings and conversation maps
 persist through full app restarts. The switch clears the session's terminal
 buffer and group conversation pins and leaves it inactive.
+
+For a target account without a saved conversation, Session properties offers a
+default-enabled current-work handoff. It collects only bounded recent user and
+assistant text from the local conversation view, excludes tool output and reasoning,
+and passes the result as the first prompt when the fresh Claude conversation starts.
+The pending prompt survives restart until Claude reports a session ID. A conversation
+found by account-scoped lookup is resumed without receiving the handoff, and the user
+can disable the handoff before saving the account change.
 
 ## Isolation and storage
 
@@ -96,7 +109,8 @@ message without an estimated percentage. Desktop and Remote/PWA share each profi
 visibility choice. See [profile display management](properties-and-usage.md).
 
 SSH sessions use authentication on the remote host and do not receive these
-local profiles. Conversations are not copied between accounts.
+local profiles. Provider conversations, credentials, quotas and session IDs are
+not copied between accounts; the optional handoff carries only bounded work context.
 
 ## Verification
 

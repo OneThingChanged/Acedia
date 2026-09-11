@@ -156,6 +156,13 @@ describe("Codex account persistence", () => {
       [{ id: "p", name: "P", folder: "project", createdAt: 0 }]);
     expect(restored[0]).toMatchObject({ codexAccountId: "work", codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" });
   });
+  it("restores a pending first-message handoff until the target session starts", () => {
+    const pendingAccountHandoff = { id: "h", fromAccountId: "default", toAccountId: "work", createdAt: 1, prompt: "continue" };
+    const restored = loadStoredAgents([{ id: "a", projectId: "p", name: "A", folder: "project", aiToolId: "codex", createdAt: 0,
+      codexAccountId: "work", pendingAccountHandoff }],
+      [{ id: "p", name: "P", folder: "project", createdAt: 0 }]);
+    expect(restored[0].pendingAccountHandoff).toEqual(pendingAccountHandoff);
+  });
 });
 
 describe("Claude account persistence", () => {

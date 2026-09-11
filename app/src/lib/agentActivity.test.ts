@@ -131,7 +131,7 @@ describe("agent activity state v2", () => {
     );
     const recovering = applyAgentRuntimeStatus(working, "recovering", 200);
     const ready = applyAgentHookEvent(
-      recovering,
+      { ...recovering, pendingAccountHandoff: { id: "h", fromAccountId: "default", toAccountId: "work", createdAt: 1, prompt: "continue" } },
       {
         id: "agent-1",
         event: "session-start",
@@ -150,6 +150,7 @@ describe("agent activity state v2", () => {
       status: "running",
       runtimeStatus: "running",
       lastSessionId: "session-1",
+      pendingAccountHandoff: undefined,
     });
   });
 

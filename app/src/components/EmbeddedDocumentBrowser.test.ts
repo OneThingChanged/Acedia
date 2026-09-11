@@ -33,4 +33,16 @@ describe("EmbeddedDocumentBrowser visibility lifecycle", () => {
     expect(embeddedSource).not.toContain("document-browser-title");
     expect(pageSource).not.toContain("document-browser-title");
   });
+
+  it("does not hide sibling browser views when one split pane activates", () => {
+    const main = fs.readFileSync(
+      new URL("../../electron/main.mjs", import.meta.url),
+      "utf8"
+    );
+    const start = main.indexOf("function activateDocumentBrowser(");
+    const end = main.indexOf("\nasync function executeBrowserSnapshot", start);
+    const activation = main.slice(start, end);
+    expect(activation).toContain("two active panes in the same split");
+    expect(activation).not.toContain("for (const candidate of documentBrowserWindows.values())");
+  });
 });

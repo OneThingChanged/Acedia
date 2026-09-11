@@ -79,7 +79,10 @@ Every pane tab strip exposes a `+` action that creates a new embedded browser
 tab at the configured home page. See [browser preferences](browser-preferences.md). Browser tabs participate in the same split, move, select, and
 close operations as session and document tabs. Inactive browser views remain
 alive but hidden, so switching tabs preserves navigation state without allowing
-the native view to cover the selected pane. A temporary React unmount during
+the native view to cover the selected pane. Each mounted pane reports its own
+visibility and bounds, so two browser tabs selected in different split panes stay
+visible and interactive simultaneously. Activating one browser does not hide the
+sibling pane's native view. A temporary React unmount during
 pane movement or layout reconciliation does not own the native view lifetime;
 only explicitly closing the browser tab destroys that view. This prevents a
 visible tab shell from outliving its Electron `WebContentsView`.[^browser-ui][^browser-tabs-ui][^electron-main]

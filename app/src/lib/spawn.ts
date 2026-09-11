@@ -4,6 +4,7 @@ import type { Agent, SshHost } from "../types";
 import { findSshHost } from "./sshHosts";
 import { addSessionWorkerArgs } from "./sessionWorkers";
 import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
+import { handoffPromptForAccount } from "./accountHandoff";
 
 export type SpawnArgs = {
   launchOptions?: LaunchOptions;
@@ -20,6 +21,7 @@ export type SpawnArgs = {
     hostId: string;
   } | null;
   cwd: string | null;
+  initialPrompt?: string;
 };
 
 export function addTerminalCompatibilityArgs(
@@ -91,6 +93,7 @@ export async function buildSpawnArgs(
     }
   }
   let initCommand: string | null = agent.aiToolId === "none" ? agent.shellCommand || null : null;
+  let initialPrompt: string | undefined;
 
   if (tool.command) {
     let cmd = sshHost
@@ -153,6 +156,11 @@ export async function buildSpawnArgs(
         } else if (agent.aiToolId === "claude") {
           cmd = `${cmd} --resume ${sessionId}`;
         }
+      } else if (agent.aiToolId === "codex" || agent.aiToolId === "claude") {
+        initialPrompt = handoffPromptForAccount(
+          agent.pendingAccountHandoff,
+          accountId || "default",
+        );
       }
     }
     // Cline keeps its own session store; resume the latest CLI session for this
@@ -203,5 +211,5 @@ export async function buildSpawnArgs(
     : null;
 
   return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null,
-    launchOptions };
+    launchOptions, initialPrompt };
 }

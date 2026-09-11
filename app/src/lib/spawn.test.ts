@@ -240,4 +240,16 @@ describe("buildSpawnArgs resume recovery", () => {
     );
     expect(result.initCommand).toContain("claude -p --model opus");
   });
+
+  it("passes a pending handoff only to a fresh target-account conversation", async () => {
+    invokeMock.mockResolvedValueOnce(null);
+    const handoff = { id: "h", fromAccountId: "default", toAccountId: "work", createdAt: 1, prompt: "[Account switch handoff] Continue here" };
+    const fresh = await buildSpawnArgs({ ...agent, codexAccountId: "work", pendingAccountHandoff: handoff }, null, vi.fn());
+    expect(fresh.initialPrompt).toBe(handoff.prompt);
+
+    invokeMock.mockResolvedValueOnce("existing-work-session");
+    const resumed = await buildSpawnArgs({ ...agent, codexAccountId: "work", pendingAccountHandoff: handoff }, null, vi.fn());
+    expect(resumed.initialPrompt).toBeUndefined();
+    expect(resumed.initCommand).toContain("resume existing-work-session");
+  });
 });

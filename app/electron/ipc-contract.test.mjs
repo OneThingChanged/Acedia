@@ -148,6 +148,15 @@ describe("Electron IPC contract", () => {
     })).toThrow("agent id");
   });
 
+  it("bounds the optional account handoff prompt on PTY spawn", () => {
+    expect(contract.assertInvokeRequest("spawn_pty", {
+      id: "agent", cols: 80, rows: 24, initialPrompt: "continue current work",
+    })).toMatchObject({ initialPrompt: "continue current work" });
+    expect(() => contract.assertInvokeRequest("spawn_pty", {
+      id: "agent", cols: 80, rows: 24, initialPrompt: "x".repeat(4097),
+    })).toThrow("handoff prompt");
+  });
+
   it("validates embedded document browser bounds", () => {
     expect(contract.assertInvokeRequest("document_browser_bounds", {
       browserId: "browser",

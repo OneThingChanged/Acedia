@@ -20,6 +20,7 @@ export class ProviderAccounts {
     this.baseEnv = baseEnv;
     this.startLogin = startLogin;
     this.accounts = [];
+    this.removedAccounts = [];
     this.login = null;
     this.results = new Map();
     this.failures = new Map();
@@ -29,7 +30,8 @@ export class ProviderAccounts {
         if (!Array.isArray(accounts) || accounts.some((a) => !a || !validId(a.id) || typeof a.label !== "string")) {
           throw new Error("Invalid account registry");
         }
-        this.accounts = accounts.map(({ id, label }) => ({ id, label }));
+        this.accounts = accounts.filter(a => a.removed !== true).map(({ id, label }) => ({ id, label }));
+        this.removedAccounts = accounts.filter(a => a.removed === true).map(({ id, label }) => ({ id, label }));
       }
     } catch {
       this.loadError = new Error("계정 목록을 읽을 수 없습니다. accounts.json 파일을 확인하세요.");
@@ -47,13 +49,18 @@ export class ProviderAccounts {
   }
 
   roots() {
-    return [this.home(), ...this.accounts.map((a) => this.home(a.id))].map((home) => path.join(home, this.transcriptDirectory));
+    return [this.home(), ...[...this.accounts, ...this.removedAccounts].map((a) => this.storedHome(a.id))].map((home) => path.join(home, this.transcriptDirectory));
+  }
+
+  storedHome(id) {
+    const logical = path.join(this.root, id, this.homeName);
+    return fs.existsSync(logical) ? fs.realpathSync.native(logical) : logical;
   }
 
   accountForPath(sourcePath) {
     if (!sourcePath) return null;
-    return this.accounts.find((a) => {
-      const relative = path.relative(path.join(this.home(a.id), this.transcriptDirectory), sourcePath);
+    return [...this.accounts, ...this.removedAccounts].find((a) => {
+      const relative = path.relative(path.join(this.storedHome(a.id), this.transcriptDirectory), sourcePath);
       return relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
     }) ?? null;
   }
@@ -98,10 +105,45 @@ export class ProviderAccounts {
     fs.mkdirSync(path.join(this.root, account.id, this.homeName), { recursive: true, mode: 0o700 });
     if (this.provider === "codex") fs.writeFileSync(path.join(this.root, account.id, this.homeName, "config.toml"), 'cli_auth_credentials_store = "file"\n', { mode: 0o600 });
     const next = [...this.accounts, account];
-    fs.writeFileSync(`${this.registry}.tmp`, JSON.stringify(next, null, 2), { mode: 0o600 });
-    fs.renameSync(`${this.registry}.tmp`, this.registry);
+    this.saveRegistry(next);
     this.accounts = next;
     return account.id;
+  }
+
+  saveRegistry(accounts, removed = this.removedAccounts) {
+    if (this.loadError) throw this.loadError;
+    const entries = [...accounts, ...removed.map(account => ({ ...account, removed: true }))];
+    fs.writeFileSync(`${this.registry}.tmp`, JSON.stringify(entries, null, 2), { mode: 0o600 });
+    fs.renameSync(`${this.registry}.tmp`, this.registry);
+  }
+
+  rename(id, label) {
+    if (this.loadError) throw this.loadError;
+    if (!validId(id) || !this.accounts.some(account => account.id === id)) throw new Error("추가 계정을 선택하세요.");
+    if (typeof label !== "string" || !label.trim() || label.length > 80) throw new Error("계정 이름은 1~80자로 입력하세요.");
+    const next = this.accounts.map(account => account.id === id ? { ...account, label: label.trim() } : account);
+    this.saveRegistry(next);
+    this.accounts = next;
+    return { id, label: label.trim() };
+  }
+
+  remove(id) {
+    if (this.loadError) throw this.loadError;
+    if (!validId(id)) throw new Error("추가 계정을 선택하세요.");
+    const account = this.accounts.find(account => account.id === id);
+    if (!account) {
+      if (this.removedAccounts.some(account => account.id === id)) return;
+      throw new Error("계정을 찾을 수 없습니다.");
+    }
+    const next = this.accounts.filter(account => account.id !== id);
+    const removed = [...this.removedAccounts, account];
+    // One atomic registry write records removal and its durable recovery marker.
+    // Provider-owned files remain available for conversation history indexing.
+    this.saveRegistry(next, removed);
+    if (this.login?.id === id) this.cancelLogin({ accountId: id });
+    this.accounts = next;
+    this.removedAccounts = removed;
+    this.results.delete(id); this.failures.delete(id);
   }
 
   beginLogin(id) {

@@ -200,6 +200,7 @@ export function applyAgentHookEvent(
   return {
     ...agent,
     lastSessionId: providerSessionId || agent.lastSessionId,
+    pendingAccountHandoff: providerSessionId ? undefined : agent.pendingAccountHandoff,
     resumeEligible: runtimeStatus === "running" ? true : agent.resumeEligible,
     runtimeStatus,
     activity,

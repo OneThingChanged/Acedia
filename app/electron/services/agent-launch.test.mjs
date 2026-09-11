@@ -41,6 +41,16 @@ describe("advanced agent launch", () => {
     const command = prepareLaunchCommand("codex resume saved --no-alt-screen", { args: ["a'b", "$(echo bad)", "two words"] }, { toolId: "codex", shell: "/bin/bash", platform: "linux" });
     expect(command).toBe("'codex' resume saved --no-alt-screen 'a'\"'\"'b' '$(echo bad)' 'two words'");
   });
+  it("quotes an automatic first prompt as one trailing argv value", () => {
+    const prompt = "[Account switch handoff] inspect $(echo bad) and 'continue'";
+    const command = prepareLaunchCommand("codex --no-alt-screen", undefined, {
+      toolId: "codex",
+      shell: "/bin/bash",
+      platform: "linux",
+      extraArgs: [prompt],
+    });
+    expect(command).toBe("'codex' --no-alt-screen '[Account switch handoff] inspect $(echo bad) and '\"'\"'continue'\"'\"''");
+  });
   const detectedPowerShell = process.platform === "win32" ? spawnSync("where.exe", ["pwsh.exe"], { encoding: "utf8", windowsHide: true }).stdout?.trim().split(/\r?\n/)[0] : null;
   const shells = process.platform === "win32" ? [...new Set([
     detectedPowerShell,
@@ -57,15 +67,16 @@ describe("advanced agent launch", () => {
           const executable = shim ? path.join(folder, "fixture.cmd") : process.execPath;
           if (shim) fs.writeFileSync(executable, '@echo off\r\n"' + process.execPath + '" "' + fixture + '" %*\r\n');
           const expected = ["space value", "한국어", "a'b", 'model="quoted value"', "$([System.Environment]::Exit(9))", "a&b|c", "%ACEDIA_LAUNCH_FIXTURE%", "end\\", "^caret!", "semi;colon"];
+          const automatic = ["[Account switch handoff] 같은 폴더의 작업을 이어서 진행하세요"];
           const generated = ["resume", "fixed-session", "--no-alt-screen", "-c", 'developer_instructions="first\\nsecond"'];
           const options = { executable, args: expected, env: [{ name: "ACEDIA_LAUNCH_FIXTURE", value: "local-only" }] };
-          const command = prepareLaunchCommand("codex " + [...(shim ? [] : [fixture]), ...generated].map(x => "'" + x.replaceAll("'", "''") + "'").join(" "), options, { shell, toolId: "codex" });
+          const command = prepareLaunchCommand("codex " + [...(shim ? [] : [fixture]), ...generated].map(x => "'" + x.replaceAll("'", "''") + "'").join(" "), options, { shell, toolId: "codex", extraArgs: automatic });
           const result = spawnSync(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command + "; exit $LASTEXITCODE"], {
             encoding: "utf8", windowsHide: true, timeout: 15000,
             env: mergeLaunchEnvironment(process.env, options),
           });
           expect(result.status, result.stderr).toBe(0);
-          expect(JSON.parse(result.stdout)).toEqual({ args: [...generated, ...expected], env: "local-only" });
+          expect(JSON.parse(result.stdout)).toEqual({ args: [...generated, ...expected, ...automatic], env: "local-only" });
         } finally {
           if (path.dirname(folder) !== path.resolve(os.tmpdir()) || !path.basename(folder).startsWith("acedia launch ")) throw new Error("Unexpected fixture path");
           fs.rmSync(folder, { recursive: true, force: true });

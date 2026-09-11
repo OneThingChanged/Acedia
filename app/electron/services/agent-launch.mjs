@@ -54,20 +54,21 @@ function cmdEscape(value) {
   return [...value].map(char => meta.includes(char) ? "^" + char : char).join("");
 }
 
-export function prepareLaunchCommand(command, raw, { shell, platform = process.platform, toolId, env = process.env } = {}) {
+export function prepareLaunchCommand(command, raw, { shell, platform = process.platform, toolId, env = process.env, extraArgs = [] } = {}) {
   const options = normalizeLaunchOptions(raw);
-  if (!options) return command;
+  if (!options && extraArgs.length === 0) return command;
   const problem = launchOptionsProblem(options);
   if (problem) throw new Error("Invalid advanced launch settings: " + problem);
   if (!["codex", "claude", "qwen", "cline"].includes(toolId)) {
     throw new Error("Advanced launch settings require an agent CLI.");
   }
-  if (options.executable) {
+  if (options?.executable) {
     if (!path.isAbsolute(options.executable) || !fs.statSync(options.executable, { throwIfNoEntry: false })?.isFile()) {
       throw new Error("CLI 실행 파일을 찾을 수 없습니다. CLI executable was not found.");
     }
   }
-  if (!options.executable && !options.args.length) return command;
+  const runtimeArgs = [...(options?.args ?? []), ...extraArgs];
+  if (!options?.executable && runtimeArgs.length === 0) return command;
   const isPowerShell = /^(?:pwsh|powershell)(?:\.exe)?$/i.test(path.basename(shell || ""));
   if (platform === "win32" && !isPowerShell) {
     throw new Error("고급 실행 설정에는 PowerShell이 필요합니다. Advanced launch settings require PowerShell.");
@@ -77,9 +78,9 @@ export function prepareLaunchCommand(command, raw, { shell, platform = process.p
     : value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
   const match = command.match(/^(\S+)([\s\S]*)$/);
   if (!match || match[1] !== toolId) throw new Error("Unexpected agent launch command.");
-  let executable = options.executable || match[1];
+  let executable = options?.executable || match[1];
   if (platform === "win32") {
-    if (!options.executable) {
+    if (!options?.executable) {
       const result = spawnSync(path.join(process.env.SystemRoot || "C:/Windows", "System32/where.exe"), [toolId], {
         env, encoding: "utf8", windowsHide: true, timeout: 5000,
       });
@@ -87,7 +88,7 @@ export function prepareLaunchCommand(command, raw, { shell, platform = process.p
       if (!executable) throw new Error("CLI 실행 파일을 찾을 수 없습니다. CLI executable was not found.");
     }
     const generated = splitGeneratedCommand(command);
-    const argv = [...generated.slice(1), ...options.args];
+    const argv = [...generated.slice(1), ...runtimeArgs];
     let argumentsString;
     if (/\.(?:cmd|bat)$/i.test(executable)) {
       // A batch launcher parses its forwarded argv a second time.
@@ -113,5 +114,5 @@ export function prepareLaunchCommand(command, raw, { shell, platform = process.p
       "$acLaunchProcess.WaitForExit(); $global:LASTEXITCODE = $acLaunchProcess.ExitCode; $acLaunchProcess.Dispose() }";
   }
   const prefix = isPowerShell ? "& " : "";
-  return prefix + quote(executable) + match[2] + options.args.map(arg => " " + quote(arg)).join("");
+  return prefix + quote(executable) + match[2] + runtimeArgs.map(arg => " " + quote(arg)).join("");
 }

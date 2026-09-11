@@ -23,6 +23,11 @@
 .account-list-row { flex-wrap: wrap; }
 .account-list-row .agent-account-identity { flex: 1 1 170px; }
 .account-list-actions { margin-left: auto; }
+.account-edit { flex: 1 0 100%; min-width: 0; box-sizing: border-box; border-top: 1px solid var(--app-border); margin-top: 12px; padding-top: 14px; font-size: 12px; line-height: 1.6; }
+.account-edit input { width: 100%; box-sizing: border-box; padding: 9px 11px; color: var(--app-text); background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 5px; }
+.account-edit p { color: var(--app-muted); margin: 8px 0; }
+.account-edit strong, .account-list-row .agent-row-title { overflow-wrap: anywhere; }
+.account-remove-button { color: var(--app-danger, #ef8181); }
 @media (max-width: 700px) {
   .account-flow { padding: 14px; }
   .account-flow-steps { gap: 14px; }
