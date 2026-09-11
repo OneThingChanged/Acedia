@@ -111,6 +111,13 @@ Lifecycle, single-instance, bridge, and packaged smokes have dedicated package
 scripts. A release candidate should run the packaged Standard and Company smoke
 paths documented in [Release playbook](release-playbook.md).[^desktop-manifest]
 
+Settings changes have focused checks: `electron:settings-search-smoke` covers
+navigation and editors; `electron:terminal-settings-smoke` covers xterm display
+and standby resume; `electron:browser-profiles-smoke` verifies cookies and tabs
+across two Electron processes. Native saved-command, power and idle-session
+checks run inside `electron:bridge-smoke`. The [combined settings review](settings-review-1-8-0-15.md)
+records the complete command list, results for 1.8.0.15 and manual follow-up.
+
 ## Desktop packaging
 
 ```powershell

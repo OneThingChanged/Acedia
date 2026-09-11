@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Settings documentation consolidation**: Grouped settings guides in the index, corrected the Commands & startup navigation label, updated the current search count to 105 and added project-selection scope. The combined review guide now maps all six implementation commits to feature documents and records the final verification commands, results and remaining manual checks. This documentation-only update retains product version 1.8.0.15.
+
 * **Acedia 1.8.0.15 — idle session suspension**: Added opt-in idle suspension for completed local Codex/Claude sessions, with visibility/ownership/activity/generation guards and exact account-scoped transcript verification. Suspended sessions preserve launch options and resume only the verified conversation. 583 tests, build, native ConPTY suspension/recovery checks, standby-click renderer checks and 105-target settings UI checks passed. [Idle sessions](idle-sessions.md) and the [combined review guide](settings-review-1-8-0-15.md) record scope and manual follow-up.
 
 * **Acedia 1.8.0.14 — status bar configuration**: Added provider/account-group filtering, used/remaining quota display and resource/port visibility. Display changes preserve consumption warning colors. 558 tests, build, 103-target UI search/layout and native renderer filtering, percentage, monitor removal, restoration and two-window sync checks passed. See [status bar settings](status-bar-settings.md).

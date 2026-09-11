@@ -14,18 +14,17 @@ configuration that supports it.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
-* [브라우저 설정과 프로필](browser-preferences.md) - Home, address search, zoom and app web-link defaults.
+
+## Settings and review
+
+* [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Completed stages, acceptance criteria and remaining verification boundaries.
+* [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Six implementation commits, verification results and the combined review sequence.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
-* [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Incremental settings work, acceptance criteria, terminal preferences, and the next implementation step.
-
+* [브라우저 설정과 프로필](browser-preferences.md) - Home, search, zoom, link defaults, profile isolation and tab restoration.
 * [저장 명령과 프로젝트 시작 설정](saved-commands.md) - Scoped commands, execution targets and opt-in startup timing.
-
 * [알림 조건과 절전 방지](notifications-and-power.md) - Completion/bell conditions, focus suppression and shared sleep prevention.
-
 * [상태 표시줄 구성](status-bar-settings.md) - Provider filters, used/remaining quota display and local monitors.
-
 * [유휴 세션 자동 중지와 복원](idle-sessions.md) - Guarded idle suspension and exact account/conversation recovery.
-* [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Review checklist for the six completed settings increments.
 
 ## Sessions and integrations
 
@@ -45,7 +44,7 @@ configuration that supports it.
 
 * [Development and build](development-and-build.md) - Local setup, tests, smoke checks, and desktop/mobile build entry points.
 * [Release playbook](release-playbook.md) - Signing, artifact verification, publication, and updater invariants.
-* [EXE와 Store 배포 채널](exe-release-workflow.md) - GitHub EXE 업데이트, 독립 설치·데이터, 릴리스 절차.
+* [EXE와 Store 배포 채널](exe-release-workflow.md) - EXE 업데이트, 독립 설치·업데이트 경로, 공통 사용자 데이터와 릴리스 절차.
 * [Store 배포 워크프로세스](store-release-workflow.md) - 요청별 범위, 최초 인증 설정, 일상 배포·재개 명령, 심사 상태와 개인정보/Git 보관 기준.
 * [Store 자동 배포 실행기](store-release-automation.md) - One-request Store release scope, Windows credential/task setup, isolated builds, API submission and recovery.
 * [Acedia 1.8.1.0 Store 테스트 배포](store-release-1-8-1-0-2026-09-08.md) - Settings/language MSIX submitted through Partner Center UI; Submission 5 published, Store installation verification pending.

@@ -1,7 +1,7 @@
 ---
 type: Feature
 title: 브라우저 설정과 프로필
-description: 시작 페이지, 주소창 검색, 확대율과 앱 웹 링크의 기본 동작.
+description: 브라우저 기본 동작, 프로필별 로그인 격리와 앱 재시작 시 웹 탭 복원.
 status: stable
 sources:
   - resource: ../app/src/components/BrowserSettingsPanel.tsx
