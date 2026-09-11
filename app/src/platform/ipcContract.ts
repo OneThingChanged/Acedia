@@ -138,6 +138,7 @@ export type DocumentBrowserSnapshot = {
   tabId?: string;
   agentId?: string | null;
   profileId?: string;
+  profileLabel?: string;
   title: string;
   relativePath: string;
   url: string;
@@ -381,6 +382,7 @@ export type RuntimeCommandContract = {
       agentId?: string;
       initialUrl?: string;
       useHome?: boolean;
+      profileId?: string;
     };
     result: { browserId: string };
   };

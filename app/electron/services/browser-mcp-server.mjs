@@ -33,7 +33,7 @@ const tools = [
   {
     name: "browser_open",
     description: "Open a new visible tab in the session's shared Acedia browser. Uses the configured home page when URL is omitted.",
-    inputSchema: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
+    inputSchema: { type: "object", properties: { url: { type: "string" }, profileId: { type: "string", description: "Profile ID from browser_tabs. Omit to use the default profile." } }, additionalProperties: false },
   },
   {
     name: "browser_navigate",

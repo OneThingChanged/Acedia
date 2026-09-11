@@ -1,3 +1,4 @@
+import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { BrowserActivity } from "./services/browser-activity.mjs";
@@ -407,6 +408,8 @@ const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
 const browserSettings = browserPreferences(app.getPath("userData"));
+const browserTabs = new BrowserTabStore(app.getPath("userData"));
+let restoringBrowserTabs = true;
 const browserActivity = new BrowserActivity({
   directory: app.getPath("userData"), downloadsDirectory: app.getPath("downloads"), shell,
   ownerOf: id => [...documentBrowserWindows.values()].find(record => record.view.webContents.id === id),
@@ -1321,7 +1324,8 @@ function documentBrowserSnapshot(record, extra = {}) {
     browserId: record.id,
     tabId: record.id,
     agentId: record.agentId,
-    profileId: "multiagent-browser",
+    profileId: record.profileId || "multiagent-browser",
+    profileLabel: browserSettings.get().profiles.find(p => p.id === record.profileId)?.label || "Default",
     title:
       record.view.webContents.getTitle() ||
       (preview ? record.relativePath.split("/").pop() || record.relativePath : url),
@@ -1378,7 +1382,16 @@ function documentBrowserCatalogSnapshots() {
     .filter(Boolean);
 }
 
+function persistBrowserTabs() {
+  if (restoringBrowserTabs || forceClosing) return;
+  try {
+    if (!browserSettings.get().restoreTabs) { browserTabs.save([]); return; }
+    browserTabs.save([...documentBrowserWindows.values()].filter(r => !r.token && !r.view.webContents.isDestroyed())
+      .map(r => ({ id: r.id, profileId: r.profileId, url: restorableBrowserUrl(r.restoreUrl || r.view.webContents.getURL()) })).filter(r => r.url));
+  } catch (error) { console.warn("[browser] could not save tabs:", error.message); }
+}
 function publishDocumentBrowserCatalog(extra = {}) {
+  persistBrowserTabs();
   const payload = { tabs: documentBrowserCatalogSnapshots(), ...extra };
   for (const win of workspaceWindows.values()) {
     if (!win.isDestroyed()) {
@@ -1593,6 +1606,7 @@ function installDocumentBrowserViewPolicy(record) {
   browserActivity.attach(contents);
   contents.on("did-finish-load", () => contents.setZoomFactor(browserSettings.get().zoom / 100));
   contents.on("did-navigate", (_event, url) => {
+    record.restoreUrl = null;
     if (!documentPreviewService.isPreviewUrl(url, record.token)) browserActivity.visit(contents, url, contents.getTitle());
   });
   contents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
@@ -1829,6 +1843,8 @@ async function createDocumentBrowserWindowNow({
   agentId = null,
   initialUrl = "",
   background = false,
+  profileId,
+  restoreId,
 }) {
   if (!parentWindow || parentWindow.isDestroyed()) {
     throw new Error("브라우저를 연결할 작업창을 찾을 수 없습니다.");
@@ -1884,10 +1900,11 @@ async function createDocumentBrowserWindowNow({
     }
   }
 
+  const profile = browserProfile(browserSettings.get(), profileId);
   const preview = folder && relativePath
     ? await documentPreviewService.issue({ folder, relativePath })
     : { token: "", url: "", relativePath: relativePath || "" };
-  const browserId = randomUUID();
+  const browserId = restoreId || randomUUID();
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
@@ -1899,11 +1916,13 @@ async function createDocumentBrowserWindowNow({
       preload: browserAnnotationPreloadPath,
       // One app-local profile is shared by all tabs but never shares Chrome's
       // cookies. This lets an agent keep a login while switching tabs.
-      partition: "persist:multiagent-browser",
+      partition: profile.partition,
     },
   });
   const record = {
     id: browserId,
+    profileId: profile.id,
+    restoreUrl: restoreId ? initialUrl : null,
     win: parentWindow,
     view,
     token: preview.token,
@@ -1945,10 +1964,14 @@ async function createDocumentBrowserWindowNow({
         throw new Error("HTTP 또는 HTTPS 주소만 열 수 있습니다.");
       }
     }
-    await view.webContents.loadURL(target);
+    if (restoreId) {
+      let timer;
+      try { await Promise.race([view.webContents.loadURL(target), new Promise((_, reject) => { timer = setTimeout(() => { view.webContents.stop(); reject(new Error("Page restore timed out. Reload to retry.")); }, 10000); })]); }
+      finally { clearTimeout(timer); }
+    } else await view.webContents.loadURL(target);
   } catch (error) {
-    cleanupDocumentBrowser(record);
-    throw error;
+    if (!restoreId) { cleanupDocumentBrowser(record); throw error; }
+    publishDocumentBrowser(record, { loading: false, error: String(error.message) });
   }
   if (record.background) {
     if (typeof view.setVisible === "function") view.setVisible(false);
@@ -2047,7 +2070,8 @@ async function browserIntegrationStatus(agentId) {
   return {
     ok: true,
     agentId,
-    profileId: "multiagent-browser",
+    profileId: browserSettings.get().defaultProfile,
+    profiles: browserSettings.get().profiles,
     activeTabId: documentBrowserByAgent.get(agentId) || null,
     tabs,
   };
@@ -2066,6 +2090,7 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
       parentWindow,
       agentId: normalizedAgentId,
       initialUrl: target.href,
+      profileId: body.profileId,
       background: true,
     });
     const record = documentBrowserWindows.get(created.browserId);
@@ -4912,10 +4937,13 @@ async function invokeCommand(event, command, rawArgs) {
     case "browser_preferences_get":
       return browserSettings.get();
     case "browser_preferences_set": {
-      const next = browserSettings.set(asObject(args.patch), args.revision);
+      const patch = asObject(args.patch);
+      if (Array.isArray(patch.profiles) && [...documentBrowserWindows.values()].some(r => !patch.profiles.some(p => p.id === r.profileId))) throw new Error("Close a profile's browser tabs before removing it.");
+      const next = browserSettings.set(patch, args.revision);
       for (const record of documentBrowserWindows.values()) {
         if (!record.view.webContents.isDestroyed()) record.view.webContents.setZoomFactor(next.zoom / 100);
       }
+      publishDocumentBrowserCatalog();
       return next;
     }
     case "document_browser_open": {
@@ -4934,6 +4962,7 @@ async function invokeCommand(event, command, rawArgs) {
         reuseKey,
         agentId: asString(args.agentId).trim() || null,
         initialUrl: asString(args.initialUrl).trim() || (!folder && !relativePath ? browserSettings.get().home : ""),
+        profileId: args.profileId,
         parentWindow: eventSenderWindow(event),
       });
     }
@@ -5768,6 +5797,12 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
   console.log(
     `[electron] workspace window created id=${initialWindow.id} workspace=${lastWorkspaceWindowId}`
   );
+  void (async () => {
+    try {
+      const settings = browserSettings.get();
+      if (!smokeMode) await restoreBrowserTabs(settings, browserTabs, tab => createDocumentBrowserWindow({ parentWindow: ensureBrowserHostWindow(), initialUrl: tab.url, profileId: tab.profileId, restoreId: tab.id, background: true }));
+    } finally { restoringBrowserTabs = false; persistBrowserTabs(); }
+  })().catch(error => console.warn("[browser] restore failed:", error.message));
   if (bridgeSmoke) {
     const runBridgeSmoke = async () => {
       const id = "electron-bridge-smoke";
@@ -5819,7 +5854,7 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         }
         console.log("[electron-smoke] MULTIAGENT_BROWSER_HUB_BRIDGE_OK");
         const { verifyBrowserSettings } = await import("./services/browser-settings-smoke.mjs");
-        await verifyBrowserSettings(initialWindow, documentBrowserWindows);
+        await verifyBrowserSettings(initialWindow, documentBrowserWindows, handleBrowserIntegration);
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

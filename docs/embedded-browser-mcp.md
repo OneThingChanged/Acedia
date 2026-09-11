@@ -64,13 +64,16 @@ sources:
 
 # Embedded browser MCP
 
-MultiAgent owns one application-local browser profile with multiple native
-browser tabs. A hidden host and blank tab are created before restored agent
-sessions start, and the browser view disables background throttling. Closing
-all visible workspaces therefore leaves the browser profile and its hidden tab
-alive with the system-tray process. Each tab has a stable browser ID; agents
-share the tab list and select tabs by ID. Cookies are shared between MultiAgent
-tabs but remain separate from Chrome and Edge profiles.[^electron-main]
+MultiAgent owns application-local browser profiles with multiple native tabs.
+The existing default profile keeps its original cookie storage. Additional profiles
+have separate persistent partitions; tabs within a profile share cookies, while
+Chrome and Edge retain separate data. A hidden host and blank tab start before
+restored agent sessions, and browser views disable background throttling. Closing
+visible workspaces leaves these browser sessions alive with the tray process.
+Agents share the tab catalog and select by stable browser ID. Catalog entries
+include profile ID/name, and opening a tab can select a configured profile.
+Profiles isolate site logins; they do not restrict which tabs an agent can control.
+See [browser settings and restart behavior](browser-preferences.md).[^electron-main]
 
 Every pane tab strip exposes a `+` action that creates a new embedded browser
 tab at the configured home page. See [browser preferences](browser-preferences.md). Browser tabs participate in the same split, move, select, and

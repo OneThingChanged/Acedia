@@ -1,3 +1,4 @@
+import type { BrowserPreferences } from "./BrowserSettingsPanel";
 import { BrowserActivityPanel } from "./BrowserActivityPanel";
 import { useEffect, useMemo, useState } from "react";
 import { docKindForPath } from "../lib/docTabs";
@@ -11,7 +12,7 @@ type BrowserHubProps = {
   selectedBrowserId: string | null;
   agentNames: ReadonlyMap<string, string>;
   onSelectBrowser: (browserId: string) => void;
-  onCreateBrowser: () => Promise<void>;
+  onCreateBrowser: (profileId?: string) => Promise<void>;
   onCloseBrowser: (browserId: string) => Promise<void>;
 };
 
@@ -61,6 +62,9 @@ export function BrowserHub({
   onCloseBrowser,
 }: BrowserHubProps) {
   const { text } = useAppLanguage();
+  const [profiles, setProfiles] = useState<BrowserPreferences | null>(null);
+  const [newProfile, setNewProfile] = useState("");
+  useEffect(() => { void invoke<BrowserPreferences>("browser_preferences_get").then(value => { if (value?.profiles) setProfiles(value); }).catch(() => {}); }, [browsers]);
   const [attachedBrowserId, setAttachedBrowserId] = useState<string | null>(null);
   const [attachRequest, setAttachRequest] = useState(0);
   const [busyBrowserId, setBusyBrowserId] = useState<string | null>(null);
@@ -107,7 +111,7 @@ export function BrowserHub({
     if (creating) return;
     setCreating(true);
     setError(null);
-    void onCreateBrowser()
+    void onCreateBrowser(newProfile || undefined)
       .catch((createError) => setError(String(createError)))
       .finally(() => setCreating(false));
   };
@@ -124,6 +128,9 @@ export function BrowserHub({
   return (
     <main className="terminal-area browser-hub" aria-label={text("브라우저 모아보기", "Browser hub")}>
       <div className="browser-hub-tabs" role="tablist" aria-label={text("열린 브라우저 탭", "Open browser tabs")}>
+        {profiles && <select aria-label={text("새 탭 프로필", "Profile for new tab")} value={newProfile} style={{ maxWidth: 160 }} onChange={e => setNewProfile(e.target.value)}>
+          <option value="">{text("기본 프로필", "Default profile")}</option>{profiles.profiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>}
         {browsers.map((browser) => {
           const active = browser.browserId === selectedBrowserId;
           const agentName = browser.agentId
@@ -150,6 +157,7 @@ export function BrowserHub({
                   {isHtmlDocument ? "HTML" : "WEB"}
                 </span>
                 <span className="browser-hub-tab-title">{title}</span>
+                {browser.profileLabel && <span className="browser-hub-tab-agent">{browser.profileLabel}</span>}
                 {browser.loading && <span className="browser-hub-tab-loading" aria-label={text("불러오는 중", "Loading")} />}
                 {agentName && <span className="browser-hub-tab-agent">{agentName}</span>}
               </button>

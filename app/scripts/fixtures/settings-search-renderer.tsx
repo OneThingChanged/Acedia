@@ -11,7 +11,7 @@ if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("mu
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
-    if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external" };
+    if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
     if (command === "check_tools") return Object.fromEntries(["codex", "claude", "qwen", "cline"].map(id => [id, { available: true, path: "C:/fixture/" + id + ".exe" }]));
     if (command.endsWith("_accounts_list")) return [
       { id: "default", label: "Existing login", state: "default" },

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import assert from 'node:assert/strict';
 
-export async function verifyBrowserSettings(window, records) {
+export async function verifyBrowserSettings(window, records, integration) {
   const call = (command, args = {}) => window.webContents.executeJavaScript('window.multiAgentElectron.invoke(' + JSON.stringify(command) + ',' + JSON.stringify(args) + ')');
   const server = http.createServer((_req, res) => res.end('<title>Browser preferences fixture</title><p>Local browser test</p>'));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -22,11 +22,23 @@ export async function verifyBrowserSettings(window, records) {
     assert.equal(record.view.webContents.getURL(), home + 'next');
     await call('open_external_url', { url: home + 'linked' });
     assert.ok([...records.values()].some(r => r.view.webContents.getURL() === home + 'linked'));
+    const profileId = '10000000-0000-4000-8000-000000000001';
+    settings = await call('browser_preferences_set', { patch: { profiles: [...settings.profiles, { id: profileId, label: 'Work' }] }, revision: settings.revision });
+    const isolated = await call('document_browser_open', { folder: '', relativePath: '', useHome: true, profileId });
+    const isolatedRecord = records.get(isolated.browserId);
+    assert.equal(isolatedRecord.profileId, profileId);
+    assert.notEqual(record.view.webContents.session, isolatedRecord.view.webContents.session);
+    await assert.rejects(call('browser_preferences_set', { patch: { profiles: before.profiles }, revision: settings.revision }));
+    const mcp = await integration({ agentId: 'browser-settings-fixture', action: 'open', body: { url: home, profileId } });
+    assert.equal(mcp.tab.profileId, profileId);
+    assert.equal(mcp.tab.profileLabel, 'Work');
+    await call('document_browser_hub_close', { browserId: mcp.tab.browserId });
+    await call('document_browser_hub_close', { browserId: isolated.browserId });
     console.log('BROWSER_SETTINGS_RUNTIME_OK');
   } finally {
+    for (const id of records.keys()) if (!previous.has(id)) await call('document_browser_hub_close', { browserId: id });
     const latest = await call('browser_preferences_get');
     await call('browser_preferences_set', { patch: before, revision: latest.revision });
-    for (const id of records.keys()) if (!previous.has(id)) await call('document_browser_hub_close', { browserId: id });
     await new Promise(resolve => server.close(resolve));
   }
 }

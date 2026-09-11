@@ -36,6 +36,9 @@ const entry = (id: string, category: SettingsCategory, ko: string, en: string, s
   ({ id, category, label: [ko, en], scope, keywords, ...extra });
 
 export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
+  entry("browser.profiles", "browser", "브라우저 프로필", "Browser profiles", "saved", "로그인 쿠키 계정 cookies login account"),
+  entry("browser.defaultProfile", "browser", "기본 브라우저 프로필", "Default browser profile", "saved", "새 탭 계정 new tab"),
+  entry("browser.restore", "browser", "웹 탭 복원", "Restore web tabs", "saved", "재시작 restart restore"),
   entry("browser.home", "browser", "시작 페이지", "Home page", "saved", "새 탭 new tab homepage"),
   entry("browser.search", "browser", "검색엔진", "Search engine", "saved", "주소창 google bing duckduckgo address"),
   entry("browser.zoom", "browser", "기본 확대율", "Default zoom", "saved", "배율 scale"),

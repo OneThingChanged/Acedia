@@ -3166,11 +3166,11 @@ function App() {
     };
   }, [applyBrowserCatalog]);
 
-  const createBrowserFromHub = useCallback(async () => {
+  const createBrowserFromHub = useCallback(async (profileId?: string) => {
     const result = await invoke<{ browserId: string }>("document_browser_open", {
       folder: "",
       relativePath: "",
-      initialUrl: "", useHome: true,
+      initialUrl: "", useHome: true, profileId,
     });
     setBrowserHubSelectedId(result.browserId);
     const catalog = await invoke<DocumentBrowserCatalog>("document_browser_list", {});
