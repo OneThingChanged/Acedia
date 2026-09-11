@@ -1,4 +1,6 @@
 const INVOKE_COMMANDS = Object.freeze([
+  "browser_preferences_get",
+  "browser_preferences_set",
   "runtime_flags",
   "codex_accounts_switch",
   "claude_accounts_switch",
@@ -324,7 +326,7 @@ function assertInvokeRequest(command, rawArgs) {
             "Electron document browser folder and relative path must be provided together"
           );
         }
-        if (!hasFolder) {
+        if (!hasFolder && args.useHome !== true) {
           assertHttpUrl(args.initialUrl, "document browser initial URL");
         } else if (args.initialUrl !== undefined && args.initialUrl !== "") {
           assertHttpUrl(args.initialUrl, "document browser initial URL");
@@ -401,7 +403,9 @@ function assertInvokeRequest(command, rawArgs) {
       ) {
         throw new TypeError("Electron document browser id must be a non-empty string");
       }
-      assertHttpUrl(args.url);
+      if (args.addressBar === true) {
+        if (typeof args.url !== "string" || !args.url.trim() || args.url.length > 8192) throw new TypeError("Invalid browser address.");
+      } else assertHttpUrl(args.url);
       break;
     case "document_browser_open_external":
       if (

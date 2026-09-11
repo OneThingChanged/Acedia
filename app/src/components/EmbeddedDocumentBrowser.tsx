@@ -21,14 +21,7 @@ const browserCommands = [
   "document_browser_open_external",
 ] as const satisfies readonly Extract<RuntimeCommand, `document_browser_${string}`>[];
 
-function normalizeBrowserAddress(rawAddress: string) {
-  const value = rawAddress.trim();
-  if (!value) return "";
-  // Keep the address bar intentionally web-only. Bare hostnames are treated
-  // like a normal browser address and upgraded to HTTPS; the main process
-  // still validates the final URL before navigation.
-  return /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
-}
+
 
 type ElementPreview = {
   label?: string;
@@ -172,9 +165,9 @@ export function EmbeddedDocumentBrowser({
 
   const navigate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const url = normalizeBrowserAddress(address);
+    const url = address.trim();
     if (!url) return;
-    void invoke("document_browser_navigate", { browserId, url }).catch((error) => {
+    void invoke("document_browser_navigate", { browserId, url, addressBar: true }).catch((error) => {
       setSnapshot((current) => ({ ...current, loading: false, error: String(error) }));
     });
   };
@@ -306,7 +299,7 @@ export function EmbeddedDocumentBrowser({
           )}
         </div>
       )}
-      {activity && <BrowserActivityPanel key={activity} mode={activity} onClose={() => setActivity(null)} onNavigate={url => invoke("document_browser_navigate", { browserId, url }).then(() => {})} />}
+      {activity && <BrowserActivityPanel key={activity} mode={activity} onClose={() => setActivity(null)} onNavigate={url => invoke("document_browser_navigate", { browserId, url, addressBar: true }).then(() => {})} />}
       <div style={activity ? { display: "none" } : undefined} ref={hostRef} className="embedded-document-browser-host" aria-label={text("HTML 문서 브라우저", "HTML document browser")} />
     </div>
   );

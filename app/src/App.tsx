@@ -3170,7 +3170,7 @@ function App() {
     const result = await invoke<{ browserId: string }>("document_browser_open", {
       folder: "",
       relativePath: "",
-      initialUrl: "https://www.google.com/",
+      initialUrl: "", useHome: true,
     });
     setBrowserHubSelectedId(result.browserId);
     const catalog = await invoke<DocumentBrowserCatalog>("document_browser_list", {});
@@ -3188,7 +3188,7 @@ function App() {
         const result = await invoke<{ browserId: string }>("document_browser_open", {
           folder: "",
           relativePath: "",
-          initialUrl: "https://www.google.com/",
+          initialUrl: "", useHome: true,
           ...(ownerAgentId ? { agentId: ownerAgentId } : {}),
         });
         showBrowserTab(result.browserId, ownerAgentId, path);

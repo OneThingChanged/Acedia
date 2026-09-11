@@ -1,4 +1,5 @@
 export type RuntimeCommand =
+  | "browser_preferences_get" | "browser_preferences_set"
   | "codex_accounts_switch"
   | "claude_accounts_switch"
   | "codex_accounts_list"
@@ -379,6 +380,7 @@ export type RuntimeCommandContract = {
       sourceTabId?: string;
       agentId?: string;
       initialUrl?: string;
+      useHome?: boolean;
     };
     result: { browserId: string };
   };
@@ -414,7 +416,7 @@ export type RuntimeCommandContract = {
   document_browser_back: { args: { browserId: string }; result: null };
   document_browser_forward: { args: { browserId: string }; result: null };
   document_browser_reload: { args: { browserId: string }; result: null };
-  document_browser_navigate: { args: { browserId: string; url: string }; result: null };
+  document_browser_navigate: { args: { browserId: string; url: string; addressBar?: boolean }; result: null };
   document_browser_open_external: { args: { browserId: string }; result: null };
   document_browser_inspect: {
     args: { browserId: string; enabled: boolean; sendToSession?: boolean };

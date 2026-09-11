@@ -1,3 +1,4 @@
+import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { BrowserActivity } from "./services/browser-activity.mjs";
 import {
@@ -405,6 +406,7 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const browserSettings = browserPreferences(app.getPath("userData"));
 const browserActivity = new BrowserActivity({
   directory: app.getPath("userData"), downloadsDirectory: app.getPath("downloads"), shell,
   ownerOf: id => [...documentBrowserWindows.values()].find(record => record.view.webContents.id === id),
@@ -1589,6 +1591,7 @@ function browserAnnotationPrompt(annotation) {
 function installDocumentBrowserViewPolicy(record) {
   const contents = record.view.webContents;
   browserActivity.attach(contents);
+  contents.on("did-finish-load", () => contents.setZoomFactor(browserSettings.get().zoom / 100));
   contents.on("did-navigate", (_event, url) => {
     if (!documentPreviewService.isPreviewUrl(url, record.token)) browserActivity.visit(contents, url, contents.getTitle());
   });
@@ -1933,6 +1936,7 @@ async function createDocumentBrowserWindowNow({
   }
   if (typeof view.setVisible === "function") view.setVisible(false);
   installDocumentBrowserViewPolicy(record);
+  view.webContents.setZoomFactor(browserSettings.get().zoom / 100);
   try {
     const target = preview.url || initialUrl || "about:blank";
     if (target !== "about:blank") {
@@ -2054,7 +2058,7 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
   if (!normalizedAgentId) return { ok: false, httpStatus: 400, error: "agent id is required" };
   if (action === "status") return browserIntegrationStatus(normalizedAgentId);
   if (action === "open") {
-    const target = new URL(String(body.url || "https://www.google.com/").trim());
+    const target = new URL(String(body.url || browserSettings.get().home).trim());
     if (!isHttpUrl(target.href)) return { ok: false, httpStatus: 400, error: "HTTP 또는 HTTPS 주소만 열 수 있습니다." };
     const parentWindow = reveal ? browserParentWindowForAgent(normalizedAgentId) || ensureBrowserHostWindow() : ensureBrowserHostWindow();
     if (!parentWindow) return { ok: false, httpStatus: 503, error: "브라우저를 연결할 작업창이 없습니다." };
@@ -4905,6 +4909,15 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "show_open_dialog":
       return showOpenDialog(event, args);
+    case "browser_preferences_get":
+      return browserSettings.get();
+    case "browser_preferences_set": {
+      const next = browserSettings.set(asObject(args.patch), args.revision);
+      for (const record of documentBrowserWindows.values()) {
+        if (!record.view.webContents.isDestroyed()) record.view.webContents.setZoomFactor(next.zoom / 100);
+      }
+      return next;
+    }
     case "document_browser_open": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (!runtime?.workspace_window) {
@@ -4920,7 +4933,7 @@ async function invokeCommand(event, command, rawArgs) {
         sourceTabId: asString(args.sourceTabId).trim(),
         reuseKey,
         agentId: asString(args.agentId).trim() || null,
-        initialUrl: asString(args.initialUrl).trim(),
+        initialUrl: asString(args.initialUrl).trim() || (!folder && !relativePath ? browserSettings.get().home : ""),
         parentWindow: eventSenderWindow(event),
       });
     }
@@ -5043,7 +5056,7 @@ async function invokeCommand(event, command, rawArgs) {
       if (!record || record.id !== asString(args.browserId)) {
         throw new Error("전용 HTML 브라우저를 찾을 수 없습니다.");
       }
-      const target = new URL(asString(args.url).trim());
+      const target = new URL(args.addressBar === true ? browserAddress(args.url, browserSettings.get()) : asString(args.url).trim());
       if (target.protocol !== "http:" && target.protocol !== "https:") {
         throw new Error("HTTP 또는 HTTPS 주소만 열 수 있습니다.");
       }
@@ -5108,15 +5121,16 @@ async function invokeCommand(event, command, rawArgs) {
       );
       return null;
     }
-    case "open_external_url":
-      {
-        const target = new URL(asString(args.url));
-        if (target.protocol !== "http:" && target.protocol !== "https:") {
-          throw new Error("지원하지 않는 외부 URL scheme입니다.");
-        }
-        await shell.openExternal(target.href);
-      }
+    case "open_external_url": {
+      const target = new URL(asString(args.url));
+      if (!["http:", "https:"].includes(target.protocol)) throw new Error("Unsupported web link.");
+      const parentWindow = eventSenderWindow(event);
+      if (browserSettings.get().links === "internal" && runtimeByWebContents.get(event.sender.id)?.workspace_window) {
+        const result = await createDocumentBrowserWindow({ initialUrl: target.href, parentWindow });
+        sendEvent(parentWindow, "document-browser:show-tab", result);
+      } else await shell.openExternal(target.href);
       return null;
+    }
     case "open_local_path":
       await openPath(resolveExistingPath("", args.path));
       return null;
@@ -5804,6 +5818,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
           throw new Error("Browser Hub bridge validation failed");
         }
         console.log("[electron-smoke] MULTIAGENT_BROWSER_HUB_BRIDGE_OK");
+        const { verifyBrowserSettings } = await import("./services/browser-settings-smoke.mjs");
+        await verifyBrowserSettings(initialWindow, documentBrowserWindows);
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

@@ -46,7 +46,7 @@ async function exercise() {
     await open(item.id);
   }
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
-  const allowed = new Set(["check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
+  const allowed = new Set(["browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
     "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));

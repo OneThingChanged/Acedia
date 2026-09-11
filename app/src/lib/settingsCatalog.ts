@@ -2,9 +2,10 @@ import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
 import { availableSessionWorkerOptions } from "./sessionWorkers";
 
-export type SettingsCategory = "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
+export type SettingsCategory = "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
 export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
+  browser: ["브라우저", "Browser"],
   general: ["일반", "General"], language: ["언어", "Language"], agents: ["에이전트", "Agents"],
   terminal: ["터미널", "Terminal"], data: ["데이터 및 세션", "Data & Sessions"],
   shortcuts: ["단축키", "Shortcuts"], hooks: ["에이전트 훅", "Agent Hooks"],
@@ -35,6 +36,10 @@ const entry = (id: string, category: SettingsCategory, ko: string, en: string, s
   ({ id, category, label: [ko, en], scope, keywords, ...extra });
 
 export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
+  entry("browser.home", "browser", "시작 페이지", "Home page", "saved", "새 탭 new tab homepage"),
+  entry("browser.search", "browser", "검색엔진", "Search engine", "saved", "주소창 google bing duckduckgo address"),
+  entry("browser.zoom", "browser", "기본 확대율", "Default zoom", "saved", "배율 scale"),
+  entry("browser.links", "browser", "웹 링크 열기", "Open web links", "saved", "내부 외부 internal external"),
   entry("general.theme", "general", "테마", "Theme", "app", "모양 appearance soft warm light"),
   entry("general.sound", "general", "알림음", "Notification sound", "app", "소리 sound TTS 음성 custom 파일 메시지 message"),
   entry("general.notifications", "general", "Windows 알림 표시", "Show Windows notifications", "app", "notification 알림 배너"),

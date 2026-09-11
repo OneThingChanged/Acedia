@@ -32,7 +32,7 @@ const tools = [
   },
   {
     name: "browser_open",
-    description: "Open a new visible tab in the session's shared Acedia browser. Defaults to Google when URL is omitted.",
+    description: "Open a new visible tab in the session's shared Acedia browser. Uses the configured home page when URL is omitted.",
     inputSchema: { type: "object", properties: { url: { type: "string" } }, additionalProperties: false },
   },
   {

@@ -73,7 +73,7 @@ share the tab list and select tabs by ID. Cookies are shared between MultiAgent
 tabs but remain separate from Chrome and Edge profiles.[^electron-main]
 
 Every pane tab strip exposes a `+` action that creates a new embedded browser
-tab at Google. Browser tabs participate in the same split, move, select, and
+tab at the configured home page. See [browser preferences](browser-preferences.md). Browser tabs participate in the same split, move, select, and
 close operations as session and document tabs. Inactive browser views remain
 alive but hidden, so switching tabs preserves navigation state without allowing
 the native view to cover the selected pane. A temporary React unmount during

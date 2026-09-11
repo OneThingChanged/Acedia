@@ -5,11 +5,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 
 type BrowserSnapshot = DocumentBrowserSnapshot;
 
-function normalizeBrowserAddress(rawAddress: string) {
-  const value = rawAddress.trim();
-  if (!value) return "";
-  return /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
-}
+
 
 function browserQuery() {
   const params = new URLSearchParams(window.location.search);
@@ -79,9 +75,9 @@ export function DocumentBrowserPage() {
 
   const navigate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const url = normalizeBrowserAddress(address);
+    const url = address.trim();
     if (!url) return;
-    void invoke("document_browser_navigate", { browserId, url }).catch((error) => {
+    void invoke("document_browser_navigate", { browserId, url, addressBar: true }).catch((error) => {
       setSnapshot((current) => ({ ...current, loading: false, error: String(error) }));
     });
   };
