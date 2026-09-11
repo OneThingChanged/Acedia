@@ -184,6 +184,9 @@ export class UsageService {
       );
       CREATE INDEX IF NOT EXISTS idx_usage_rate_limits_updated_at
         ON usage_rate_limits(updated_at);
+      CREATE TABLE IF NOT EXISTS usage_profile_visibility (
+        profile_key TEXT PRIMARY KEY, hidden INTEGER NOT NULL DEFAULT 0
+      );
       CREATE TABLE IF NOT EXISTS usage_daily (
         day TEXT PRIMARY KEY,
         events INTEGER NOT NULL DEFAULT 0,
@@ -797,7 +800,31 @@ export class UsageService {
     return this.rateLimitRefresh;
   }
 
+  usageProfile(limitId) {
+    const match = /^(codex|claude)(?::([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}))?(?::|$)/.exec(limitId);
+    if (!match) return null;
+    if (match[1] === "codex" && limitId !== "codex" && !match[2]) return null;
+    const provider = match[1], id = match[2] || "default";
+    const registry = this.accountProfiles?.(provider);
+    const account = registry?.find(account => account.id === id);
+    return {
+      key: `${provider}:${id}`, provider, id,
+      label: account?.label || (id === "default" ? provider === "codex" ? "Codex" : "Claude" : id),
+      registered: id === "default" || !registry || !!account,
+      current: id === "default" || this.catalog.agents.some(agent => !agent.sshHostId && agent.aiToolId === provider && (agent[`${provider}AccountId`] || "default") === id),
+    };
+  }
+
+  setProfileVisibility(profileKey, hidden) {
+    if (typeof profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
+    const known = this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
+    if (!known) throw new TypeError("Unknown usage profile");
+    this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profileKey, Number(hidden));
+    return this.rateLimitSummary();
+  }
+
   rateLimitSummary() {
+    const visibility = new Map(this.db().prepare("SELECT profile_key, hidden FROM usage_profile_visibility").all().map(row => [row.profile_key, !!row.hidden]));
     const freshAfter = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const rows = this.db().prepare(`SELECT * FROM usage_rate_limits
       WHERE updated_at >= ? AND limit_id NOT LIKE 'codex\\_%' ESCAPE '\\'
@@ -825,6 +852,7 @@ export class UsageService {
         balance: row.credit_balance ?? null,
       },
       updatedAt: Number(row.updated_at) * 1000,
+      profile: (() => { const profile = this.usageProfile(row.limit_id); return profile ? { ...profile, hidden: visibility.get(profile.key) === true, visible: visibility.has(profile.key) ? !visibility.get(profile.key) : profile.current } : null; })(),
     }));
     return {
       updatedAt: limits.reduce((latest, limit) => Math.max(latest, limit.updatedAt), 0),

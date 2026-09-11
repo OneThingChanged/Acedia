@@ -66,8 +66,11 @@ async function exerciseUI() {
   window.fixtureShow("session"); await wait(); button("실행 옵션").click(); await wait(); await open();
   check(!window.fixtureAgent.launchOptions, "Legacy session adopted new defaults implicitly");
   button("현재 기본값 불러오기").click(); await wait();
+  check(!window.fixtureAgent.launchOptions, "Session options saved before confirmation");
+  button("변경 저장").click(); await wait();
   check(JSON.stringify(window.fixtureAgent.launchOptions) === JSON.stringify(saved), "Explicit default loading failed");
   button("고급 설정 초기화").click(); await wait();
+  button("변경 저장").click(); await wait();
   check(!window.fixtureAgent.launchOptions && !!window.fixtureDefaults("codex").launchOptions, "Session reset changed global defaults");
   window.fixtureShow("settings"); await wait(); await open();
   check(document.querySelector(".advanced-launch-options").scrollWidth <= document.querySelector(".advanced-launch-options").clientWidth + 1, "Settings overflow");

@@ -39,12 +39,12 @@ describe("SessionPropertiesModal", () => {
 
     expect(html).toContain('role="tablist"');
     expect(html).toContain("기본 정보");
-    expect(html).toContain("세션 데이터");
+    expect(html).toContain("대화 기록");
     expect(html).toContain("실행 옵션");
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain('role="tabpanel"');
-    expect(html).toContain("JSONL 카탈로그");
-    expect(html).toContain("Dangerous 모드");
+    expect(html).toContain("원본 대화 파일 (JSONL)");
+    expect(html).toContain("권한 확인 생략");
   });
 
   it("supports wrapping arrow navigation and Home/End", () => {
@@ -53,5 +53,7 @@ describe("SessionPropertiesModal", () => {
     expect(nextSessionPropertiesTabIndex(0, "ArrowLeft", 3)).toBe(2);
     expect(nextSessionPropertiesTabIndex(1, "Home", 3)).toBe(0);
     expect(nextSessionPropertiesTabIndex(1, "End", 3)).toBe(2);
+    expect(nextSessionPropertiesTabIndex(2, "ArrowDown", 3)).toBe(0);
+    expect(nextSessionPropertiesTabIndex(0, "ArrowUp", 3)).toBe(2);
   });
 });

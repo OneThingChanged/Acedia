@@ -74,6 +74,14 @@ every managed Claude `projects/` root. See [Claude account profiles](claude-acco
 Refresh failures preserve the last useful snapshot and expose an error/staleness
 state rather than replacing it with a fabricated zero.
 
+Account-wide and model limits are grouped by provider and account ID. Default logins
+and profiles linked to registered local sessions appear first; other profiles live
+in a separate review area. Users can hide or explicitly show each profile without
+changing credentials, history, token totals or snapshots. Preferences persist in
+`usage_profile_visibility` and are shared by desktop and Remote/PWA reads. Each limit
+retains its own update timestamp; equal names or percentages do not establish account
+identity. See [profile display management](properties-and-usage.md).[^usage-service][^usage-ui][^status-bar]
+
 [^usage-service]: Electron usage service
 [^usage-tests]: Usage aggregation tests
 [^usage-ui]: Dashboard and Remote usage UI

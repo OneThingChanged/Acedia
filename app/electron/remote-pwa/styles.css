@@ -1671,3 +1671,14 @@ html[data-native-app="true"] .android-download-button { display: none !important
   padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
 }
 .login-foot { margin: 18px 0 0; font-size: 11px; line-height: 1.55; color: var(--muted); }
+/* Account quotas keep archived profiles outside the default summary. */
+.usage-profile-review { grid-column: 1 / -1; padding: 18px; border: 1px solid var(--border, #30363d); border-radius: 12px; min-width: 0; }
+.usage-profile-review > summary, .usage-extra-limits > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.usage-profile-review .usage-provider-card { margin-top: 16px; }
+.usage-profile-note { font-size: 12px; line-height: 1.7; color: var(--muted, #8b949e); overflow-wrap: anywhere; }
+.usage-profile-toggle { border: 1px solid var(--border, #30363d); border-radius: 7px; padding: 7px 10px; background: transparent; color: inherit; cursor: pointer; font-size: 12px; }
+.usage-provider-heading { flex-wrap: wrap; }
+.usage-provider-identity, .usage-provider-identity > div { min-width: 0; overflow-wrap: anywhere; }
+.usage-limit-card > small { display: block; margin: 8px 0; }
+.usage-extra-limits > .usage-limit-card { margin-top: 12px; }
+.usage-profile-toggle:disabled { opacity: .5; cursor: wait; }

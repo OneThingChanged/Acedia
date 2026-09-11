@@ -116,6 +116,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "export_diagnostics",
   "usage_ingest_now",
   "usage_rate_limits_get",
+  "usage_profile_visibility_set",
   "usage_config_get",
   "usage_config_set",
   "usage_server_status",
@@ -702,6 +703,9 @@ function assertInvokeRequest(command, rawArgs) {
           throw new TypeError("Electron titlebar overlay colors must be hex strings");
         }
       }
+      break;
+    case "usage_profile_visibility_set":
+      if (typeof args.profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(args.profileKey) || typeof args.hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
       break;
     case "set_developer_update_directory":
       assertPathString(args.directory, "developer update directory");

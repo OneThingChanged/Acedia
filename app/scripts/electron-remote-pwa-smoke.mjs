@@ -9,6 +9,9 @@ app.setPath("userData", path.join(root, "profile"));
 const windows = [];
 let service;
 let exitCode = 0;
+const quotaProfileId = "22222222-2222-4222-8222-222222222222";
+const quotaFixture = () => ["default", quotaProfileId].map((id,index) => ({limitId:id==="default"?"codex":`codex:${id}`,limitName:index?"Codex · 보관 프로필":"Codex",primary:{usedPercent:25,windowMinutes:300,resetsAt:1789228000},secondary:{usedPercent:40,windowMinutes:10080,resetsAt:1789328000},credits:{},updatedAt:Date.now(),profile:{key:`codex:${id}`,provider:"codex",id,label:index?"보관 프로필":"Codex",current:!index,registered:true,visible:!index,hidden:false}}));
+let quota = quotaFixture();
 app.on("window-all-closed", () => {});
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const timer = setTimeout(() => { console.error("Remote PWA smoke timed out"); app.exit(1); }, 30000);
@@ -27,6 +30,8 @@ void app.whenReady().then(async () => {
     fs.writeFileSync(path.join(project, "guide.md"), "# Remote document fixture");
     service = new RemoteDashboardService({
       baseDir: path.join(root, "service"),
+      usageProvider: () => ({updatedAt:Date.now(),limits:quota,tokens:{}}),
+      usageProfileVisibility: (key,hidden) => { quota = quota.map(limit => limit.profile.key===key?{...limit,profile:{...limit.profile,hidden,visible:!hidden}}:limit); return {updatedAt:Date.now(),limits:quota}; },
       chatProvider: async () => ({ sessionId: "fixture", blocks: [
         { sequence: 1, role: "user", kind: "text", text: "Read guide.md" },
         { sequence: 2, role: "assistant", kind: "text", text: "**Module rendering works**" },
@@ -37,7 +42,8 @@ void app.whenReady().then(async () => {
     service.syncView({ projects: [{ id: "p1", name: "Fixture project", folder: project }], agents: [{ id: "agent-1", projectId: "p1", aiToolId: "codex" }] });
     const status = await service.start();
     for (const width of [1280, 390]) {
-      const win = new BrowserWindow({ width, height: 850, show: false, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
+      quota = quotaFixture();
+      const win = new BrowserWindow({ width, height: 850, show: false, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false, offscreen: true } });
       windows.push(win);
       const errors = [];
       win.webContents.on("console-message", event => { if (event.level === "error") { errors.push(event.message); console.error(event.message); } });
@@ -82,10 +88,25 @@ void app.whenReady().then(async () => {
       assert(composerCheck.sends === 1 && composerCheck.locked, "Concurrent submission was not blocked");
       assert(composerCheck.draft === "next draft", "Pending response erased the newer draft");
       assert(!composerCheck.queue.includes("first message"), "Duplicate submission entered the queue");
+      await win.webContents.executeJavaScript("document.querySelector('#filePreviewClose').click();document.querySelector('#usageButton').click()");
+      await waitFor(win, "document.querySelector('#filePreviewOverlay').hidden && document.querySelector('#usageProviderGrid').getClientRects().length>0");
+      await waitFor(win, "document.querySelector('#usageProviderGrid > .usage-provider-card') && document.querySelector('.usage-profile-review')");
+      assert(await win.webContents.executeJavaScript("document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===1 && !document.querySelector('.usage-profile-review').open"), "Unused quota profile was not collapsed");
+      await win.webContents.executeJavaScript("document.querySelector('.usage-profile-review').open=true;document.querySelector('.usage-profile-review .usage-profile-toggle').click()");
+      await waitFor(win, "document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===2");
+      await win.webContents.executeJavaScript(`document.querySelector('[data-provider="codex:${quotaProfileId}"] .usage-profile-toggle').click()`);
+      await waitFor(win, "document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===1 && document.querySelector('.usage-profile-review')");
+      assert(quota.find(limit=>limit.profile.id===quotaProfileId).profile.hidden, "PWA hide did not reach shared backend");
+      await win.webContents.executeJavaScript("document.querySelector('#refreshUsageButton').click()");
+      await waitFor(win, "!document.querySelector('#refreshUsageButton').disabled");
+      assert(await win.webContents.executeJavaScript("document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===1 && document.documentElement.scrollWidth<=innerWidth"), "Quota refresh lost visibility or overflowed");
+      await win.webContents.executeJavaScript("document.querySelector('#usageProviderGrid').scrollIntoView({block:'start'})");
+      assert(await win.webContents.executeJavaScript("document.querySelector('#usageProviderGrid').scrollWidth<=document.querySelector('#usageProviderGrid').clientWidth"), "Account cards overflowed");
+      if(process.env.ACEDIA_PROPERTIES_SCREENSHOTS) { await new Promise(resolve=>setTimeout(resolve,250)); fs.mkdirSync(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,{recursive:true}); fs.writeFileSync(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`remote-usage-${width}.png`),(await win.webContents.capturePage()).toPNG()); }
       assert(errors.length === 0, `Renderer errors: ${errors.join("; ")}`);
       win.destroy();
     }
-    console.log("MULTIAGENT_REMOTE_PWA_SMOKE_OK desktop/mobile chat, document preview, modules and service worker");
+    console.log("MULTIAGENT_REMOTE_PWA_SMOKE_OK desktop/mobile chat, document preview, modules, service worker and shared quota visibility");
   } catch (error) {
     console.error(error.stack || error); exitCode = 1;
   } finally {

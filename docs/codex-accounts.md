@@ -39,7 +39,7 @@ This does not validate token signatures, expiry or current server-side identity.
 The Codex tab also stores the default account for new local sessions.
 Select or override the account when creating a local project or session. For an existing
 session, deactivate it first and select the account under **Session properties
-→ Launch options**. A newly selected profile starts a new conversation. Switching
+→ Launch options**, then **Save changes**. A newly selected profile starts a new conversation. Switching
 back restores that profile's last conversation, if its transcript is available.
 Account changes leave the session inactive until explicitly opened.
 

@@ -4249,6 +4249,7 @@ function App() {
           if (!target) return null;
           return (
             <SessionPropertiesModal
+              key={target.id}
               agent={target}
               project={
                 projects.find((p) => p.id === target.projectId) ?? null
@@ -4289,8 +4290,10 @@ function App() {
           if (!target) return null;
           return (
             <ProjectPropertiesModal
+              key={target.id}
               project={target}
               onRunSavedCommand={runSavedCommand}
+              onOpenSession={(id) => { setPropertiesProjectId(null); setPropertiesAgentId(id); }}
               agents={agents}
               onSessionDeleted={clearDeletedSessionReferences}
               onClose={() => setPropertiesProjectId(null)}

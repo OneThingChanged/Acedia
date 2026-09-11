@@ -13,7 +13,7 @@ function storageKey(aiToolId: string, sessionId: string) {
   return `${aiToolId}:${sessionId.toLowerCase()}`;
 }
 
-function formatBytes(bytes: number) {
+export function formatStorageBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   const index = Math.min(
@@ -39,11 +39,13 @@ export function SessionStorageList({
   agents,
   scope = "current",
   onSessionDeleted,
+  onSummaryChange,
 }: {
   folder: string;
   agents: Agent[];
   scope?: "project" | "current";
   onSessionDeleted?: (aiToolId: string, sessionId: string) => void;
+  onSummaryChange?: (summary: { bytes: number; count: number; loading: boolean; error: boolean }) => void;
 }) {
   const { text } = useAppLanguage();
   const queries = useMemo<SessionStorageQuery[]>(() => {
@@ -73,6 +75,8 @@ export function SessionStorageList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"current" | "past">("current");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -116,14 +120,14 @@ export function SessionStorageList({
     [entries]
   );
   const totalBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+  useEffect(() => { onSummaryChange?.({ bytes: totalBytes, count: entries.length, loading, error: !!error }); }, [totalBytes, entries.length, loading, error, onSummaryChange]);
   const displayRows = useMemo(() => {
     const currentAgentByKey = new Map<string, Agent>();
     for (const agent of agents) {
       if (!agent.lastSessionId) continue;
-      currentAgentByKey.set(
-        storageKey(agent.aiToolId, agent.lastSessionId),
-        agent
-      );
+      const key = storageKey(agent.aiToolId, agent.lastSessionId);
+      // Any running reference must keep a shared transcript protected.
+      if (!currentAgentByKey.has(key) || isAgentRuntimeActive(agent)) currentAgentByKey.set(key, agent);
     }
     if (scope === "current") {
       return agents.map((agent) => ({
@@ -153,6 +157,8 @@ export function SessionStorageList({
     }
     return rows;
   }, [agents, entries, entryByKey, scope]);
+  const filteredRows = displayRows.filter(row => (scope !== "project" || (filter === "current" ? !!row.agent : !row.agent)) &&
+    `${row.agent?.name ?? ""} ${row.entry?.sessionId ?? row.agent?.lastSessionId ?? ""} ${row.entry?.primaryPath ?? ""} ${row.entry?.aiToolId ?? row.agent?.aiToolId ?? ""}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
 
   async function reveal(entry: SessionStorageEntry) {
     if (!entry.primaryPath) return;
@@ -164,19 +170,22 @@ export function SessionStorageList({
   }
 
   async function remove(agent: Agent | null, entry: SessionStorageEntry) {
+    if (deletingKey || (agent && isAgentRuntimeActive(agent))) return;
     const key = storageKey(entry.aiToolId, entry.sessionId);
     const displayName = agent?.name ?? text(`세션 ${entry.sessionId.slice(0, 8)}`, `Session ${entry.sessionId.slice(0, 8)}`);
     const confirmed = window.confirm(
       text(
-        `“${displayName}” 기록의 JSONL ${formatBytes(entry.bytes)}를 휴지통으로 이동할까요?\n\n${entry.primaryPath ?? entry.sessionId}`,
-        `Move ${formatBytes(entry.bytes)} of JSONL history for “${displayName}” to the Recycle Bin?\n\n${entry.primaryPath ?? entry.sessionId}`,
+        `“${displayName}” 기록의 JSONL ${formatStorageBytes(entry.bytes)}를 휴지통으로 이동할까요?\n\n${entry.primaryPath ?? entry.sessionId}`,
+        `Move ${formatStorageBytes(entry.bytes)} of JSONL history for “${displayName}” to the Recycle Bin?\n\n${entry.primaryPath ?? entry.sessionId}`,
       ),
     );
     if (!confirmed) return;
     setDeletingKey(key);
     setError(null);
     try {
-      await electronBridge()?.invoke("session_storage_delete", {
+      const bridge = electronBridge();
+      if (!bridge) throw new Error(text("앱 연결을 확인하세요.", "Check the app connection."));
+      await bridge.invoke("session_storage_delete", {
         folder,
         aiToolId: entry.aiToolId,
         sessionId: entry.sessionId,
@@ -199,17 +208,19 @@ export function SessionStorageList({
   return (
     <section className="session-storage-section">
       <div className="session-storage-heading">
-        <span>{text("JSONL 카탈로그", "JSONL catalog")}</span>
-        <span>{loading ? text("계산 중…", "Calculating…") : formatBytes(totalBytes)}</span>
+        <span>{text("원본 대화 파일 (JSONL)", "Original conversation files (JSONL)")}</span>
+        <span>{loading ? text("계산 중…", "Calculating…") : formatStorageBytes(totalBytes)}</span>
       </div>
       <div className="session-storage-hint">
         {scope === "project"
           ? text("Acedia 카탈로그에서 이 프로젝트(cwd)에 속한 모든 세션 기록을 표시합니다.", "Shows all session history associated with this project (cwd) in the Acedia catalog.")
           : text("선택한 세션에 연결된 현재 sessionId 기록 하나만 표시합니다.", "Shows only the current sessionId history associated with the selected session.")}
       </div>
-      {error && <div className="session-storage-error">{error}</div>}
+      <p className="session-storage-hint">{text("앱의 대화 보관함(SQLite)과 별도로 관리되는 원본 파일입니다.", "These original files are managed separately from the app’s conversation archive (SQLite).")}</p>
+      {scope === "project" && <div className="storage-filters"><button className="btn-secondary" aria-pressed={filter === "current"} onClick={() => setFilter("current")}>{text("현재 세션", "Current sessions")} · {displayRows.filter(row => !!row.agent).length}</button><button className="btn-secondary" aria-pressed={filter === "past"} onClick={() => setFilter("past")}>{text("지난 대화", "Past conversations")} · {displayRows.filter(row => !row.agent).length}</button><input aria-label={text("기록 검색", "Search history")} placeholder={text("이름·세션 ID·경로 검색", "Search name, session ID or path")} value={search} onChange={e => setSearch(e.target.value)}/></div>}
+      {error && <div role="alert" className="session-storage-error">{error}</div>}
       <div className="session-storage-list">
-        {displayRows.map((row) => {
+        {filteredRows.map((row) => {
           const { agent, entry } = row;
           const sessionId = agent?.lastSessionId ?? entry?.sessionId;
           const aiToolId = agent?.aiToolId ?? entry?.aiToolId ?? "none";
@@ -228,7 +239,7 @@ export function SessionStorageList({
                   <span className="session-storage-unlinked">{text("미연결 기록", "Unlinked history")}</span>
                 )}
                 <span className="session-storage-size">
-                  {entry ? formatBytes(entry.bytes) : "—"}
+                  {entry ? formatStorageBytes(entry.bytes) : "—"}
                 </span>
               </div>
               {!supported ? (
@@ -242,7 +253,7 @@ export function SessionStorageList({
               ) : !entry ? (
                 <div className="session-storage-empty">{text("현재 sessionId와 일치하는 JSONL을 찾지 못했습니다.", "No JSONL file matches the current sessionId.")}</div>
               ) : (
-                <>
+                <details className="session-storage-details"><summary>{text("파일 상세 및 관리", "File details and actions")} · {formatDate(entry.updatedAt)}</summary>
                   <div className="session-storage-meta session-props-mono" title={entry.sessionId}>
                     {entry.sessionId}
                   </div>
@@ -265,7 +276,7 @@ export function SessionStorageList({
                       <button
                         className="btn-danger session-storage-button"
                         type="button"
-                        disabled={active || deletingKey === key}
+                        disabled={active || deletingKey !== null}
                         title={active ? text("실행 중인 세션은 먼저 비활성화해야 합니다.", "Deactivate the running session first.") : text("휴지통으로 이동", "Move to Recycle Bin")}
                         onClick={() => void remove(agent, entry)}
                       >
@@ -278,14 +289,14 @@ export function SessionStorageList({
                       {text("실행 중인 세션은 비활성화한 뒤 삭제할 수 있습니다.", "Deactivate a running session before deleting its history.")}
                     </div>
                   )}
-                </>
+                </details>
               )}
             </div>
           );
         })}
-        {!loading && displayRows.length === 0 && (
+        {!loading && filteredRows.length === 0 && (
           <div className="session-storage-empty">
-            {scope === "project" ? text("이 프로젝트의 카탈로그 기록이 없습니다.", "There is no catalog history for this project.") : text("등록된 세션이 없습니다.", "There are no registered sessions.")}
+            {scope === "project" ? text("조건에 맞는 기록이 없습니다.", "No history matches these filters.") : text("등록된 세션이 없습니다.", "There are no registered sessions.")}
           </div>
         )}
       </div>

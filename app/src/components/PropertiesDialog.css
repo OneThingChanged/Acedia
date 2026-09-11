@@ -1,0 +1,70 @@
+.properties-backdrop { padding: 24px; box-sizing: border-box; }
+.properties-dialog { width: min(1120px, 100%); height: min(800px, 100%); max-height: 100%; display: flex; flex-direction: column; min-width: 0; color: var(--app-text); background: var(--app-panel, #161b22); border: 1px solid var(--app-border); border-radius: 14px; box-shadow: 0 24px 90px #0008; overflow: hidden; outline: none; }
+.properties-dialog-wide { width: 100%; height: 100%; }
+.properties-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--app-border); flex-shrink: 0; }
+.properties-header > div:first-child { min-width: 0; }
+.properties-header p { margin: 0 0 6px; color: var(--app-muted, #8b949e); font-size: 12px; overflow-wrap: anywhere; }
+.properties-header h2 { margin: 0; font-size: 23px; overflow-wrap: anywhere; }
+.properties-header-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.properties-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.properties-nav { flex: 0 0 174px; padding: 18px 12px; border-right: 1px solid var(--app-border); background: var(--app-bg); display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.properties-nav button { border: 1px solid transparent; border-radius: 8px; text-align: left; padding: 12px; color: var(--app-muted, #8b949e); background: transparent; font: inherit; cursor: pointer; }
+.properties-nav button[aria-selected="true"] { background: var(--app-accent-soft, #203650); border-color: var(--app-accent, #58a6ff); color: var(--app-text); }
+.properties-panel { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 24px; }
+.properties-panel[hidden] { display: none; }
+.properties-panel h3 { font-size: 17px; margin: 0 0 16px; }
+.properties-panel h4 { font-size: 14px; margin: 0 0 12px; }
+.properties-panel p { line-height: 1.6; }
+.properties-footer { flex-shrink: 0; min-height: 68px; padding: 12px 24px; display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--app-border); box-sizing: border-box; }
+.properties-footer > span { flex: 1; font-size: 12px; color: var(--app-muted, #8b949e); }
+.property-card, .property-path { border: 1px solid var(--app-border); border-radius: 10px; padding: 18px; background: var(--app-bg); margin-bottom: 18px; min-width: 0; }
+.property-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.property-card-heading > div { display: flex; gap: 8px; }
+.property-path code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; font-size: 12px; }
+.property-path small { display: block; margin-top: 6px; }
+.property-facts { margin: 0; }
+.property-facts > div { display: grid; grid-template-columns: minmax(100px, 30%) minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--app-border); }
+.property-facts > div:last-child { border: 0; }
+.property-facts dt { color: var(--app-muted, #8b949e); }
+.property-facts dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.property-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.property-columns .property-card { margin-bottom: 0; }
+.property-columns + * { margin-top: 18px; }
+.property-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.property-metrics > div { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: 10px; padding: 18px; }
+.property-metrics span { display: block; font-size: 12px; color: var(--app-muted, #8b949e); }
+.property-metrics strong { display: block; font-size: 23px; margin-top: 10px; overflow-wrap: anywhere; }
+.properties-panel details > summary { cursor: pointer; padding: 8px 0; }
+.properties-panel .session-props-toggle { margin: 16px 0; align-items: flex-start; }
+.properties-panel fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.properties-panel .session-storage-section { margin-top: 0; }
+.properties-panel .session-storage-path, .properties-panel .session-storage-meta { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+.properties-panel .session-storage-card-head { flex-wrap: wrap; }
+.properties-panel .session-storage-card { padding: 14px 16px; }
+.property-session-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 100px auto; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--app-border); font-size: 13px; }
+.property-session-row > * { overflow-wrap: anywhere; }
+.property-session-row small { display: block; margin-top: 4px; color: var(--app-muted, #8b949e); }
+.property-note { font-size: 12px; color: var(--app-muted, #8b949e); }
+.property-error { color: var(--app-danger, #f85149); overflow-wrap: anywhere; }
+.storage-filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+.storage-filters input { flex: 1; min-width: 150px; }
+.storage-filters button[aria-pressed="true"] { border-color: var(--app-accent, #58a6ff); color: var(--app-accent, #58a6ff); }
+@media (max-width: 850px) { .property-columns { grid-template-columns: 1fr; } .properties-nav { flex-basis: 146px; } .properties-panel { padding: 18px; } }
+@media (max-width: 620px) {
+  .properties-backdrop { padding: 8px; }
+  .properties-header { padding: 14px; gap: 8px; }
+  .properties-header h2 { font-size: 19px; }
+  .properties-header-actions { gap: 4px; }
+  .properties-body { flex-direction: column; }
+  .properties-nav { flex: 0 0 auto; flex-direction: row; border-right: 0; border-bottom: 1px solid var(--app-border); padding: 8px; }
+  .properties-nav button { white-space: nowrap; padding: 9px; font-size: 12px; }
+  .properties-panel { padding: 14px; }
+  .properties-footer { padding: 12px 14px; gap: 8px; flex-wrap: wrap; }
+  .properties-footer > span { min-width: 100%; }
+  .property-metrics { gap: 8px; }
+  .property-metrics > div { padding: 12px; }
+  .property-metrics strong { font-size: 18px; }
+  .property-session-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .property-card-heading { flex-wrap: wrap; }
+  .property-facts > div { grid-template-columns: 94px minmax(0, 1fr); gap: 8px; }
+}

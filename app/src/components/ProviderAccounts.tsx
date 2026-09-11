@@ -67,6 +67,13 @@ function useAccounts(provider: Provider) {
   return { accounts, loading, loadError, refresh, remember, live };
 }
 
+export function AccountLabel({ provider, value }: { provider: Provider; value?: string }) {
+  const { text } = useAppLanguage();
+  const { accounts, loading, loadError } = useAccounts(provider);
+  if (!value || value === "default") return <span>{text("기존 로그인", "Existing login")}</span>;
+  return <span>{accounts.find(account => account.id === value)?.label ?? (loading ? text("확인 중…", "Loading…") : loadError ? text("계정 조회 실패", "Account lookup failed") : text("선택된 계정 (확인 필요)", "Selected account (check required)"))}</span>;
+}
+
 export function AccountSelect({ value, onChange, disabled = false, label, hint, provider = "codex" }: {
   provider?: Provider; value?: string; onChange: (id: string) => void; disabled?: boolean; label?: string; hint?: string;
 }) {

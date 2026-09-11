@@ -36,7 +36,7 @@ See [account registration](account-registration.md) for retries and result state
 Select the default for new local Claude sessions in the same settings tab.
 New Session and New Project allow an override. Existing sessions retain their
 own selection: deactivate the session before changing **Session properties →
-Launch options → Claude account**. Account A and account B can run in separate
+Launch options → Claude account**, then choose **Save changes**. Account A and account B can run in separate
 sessions simultaneously. Changing the new-session default does not change either
 running process.
 

@@ -17,6 +17,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 프로필별 표시 관리.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Completed stages, acceptance criteria and remaining verification boundaries.
 * [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Six implementation commits, verification results and the combined review sequence.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.

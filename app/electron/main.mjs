@@ -744,6 +744,7 @@ function writeMiraControlAgentInput({
 
 const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService);
 usageIndex.codexAccountForPath = (sourcePath) => codexAccounts.accountForPath(sourcePath);
+usageIndex.accountProfiles = provider => (provider === "codex" ? codexAccounts : claudeAccounts).accounts;
 usageIndex.claudeAccounts = () => [
   { id: "default", label: "Claude", credentialsPath: path.join(claudeAccounts.home(), ".credentials.json") },
   ...claudeAccounts.accounts.map(account => ({ ...account, credentialsPath: path.join(claudeAccounts.home(account.id), ".credentials.json") })),
@@ -803,6 +804,7 @@ const remoteSessionActivationBroker = new RemoteSessionActivationBroker({
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
   usageProvider: browserUsageSummary,
+  usageProfileVisibility: (key, hidden) => usageIndex.setProfileVisibility(key, hidden),
   browserProvider: (request) => handleRemoteBrowser(request),
   writePty(id, data) {
     const agentId = asString(id).trim();
@@ -5605,6 +5607,8 @@ async function invokeCommand(event, command, rawArgs) {
       return usageIndex.ingestAll();
     case "usage_rate_limits_get":
       return usageIndex.getRateLimits(args.refresh === true);
+    case "usage_profile_visibility_set":
+      return usageIndex.setProfileVisibility(args.profileKey, args.hidden);
     case "remote_config_get":
       return remoteService.config;
     case "remote_config_set":

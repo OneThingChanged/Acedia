@@ -9,9 +9,11 @@ import "./AdvancedLaunchOptions.css";
 const emptyOptions = (): LaunchOptions => ({ executable: "", args: [], env: [] });
 
 export function AdvancedLaunchOptions({
-  toolId, value, onChange, onValidityChange, detectedPath, onLoadDefaults, settingsPrefix,
+  toolId, value, onChange, onValidityChange, detectedPath, onLoadDefaults, settingsPrefix, commitOnEdit = false, expanded = false,
 }: {
   toolId: string;
+  commitOnEdit?: boolean;
+  expanded?: boolean;
   settingsPrefix?: string;
   value?: LaunchOptions;
   onChange: (value: LaunchOptions | undefined) => void;
@@ -58,7 +60,7 @@ export function AdvancedLaunchOptions({
     latestValue.current = JSON.stringify(normalized);
     onChange(normalized);
   };
-  const edit = (next: LaunchOptions) => { setDraft(next); setDialogError(""); };
+  const edit = (next: LaunchOptions) => { if (commitOnEdit) change(next); else { setDraft(next); setDialogError(""); } };
   const finish = { onBlur: () => change(draft), onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
   } };
@@ -85,7 +87,7 @@ export function AdvancedLaunchOptions({
   };
   const normalized = normalizeLaunchOptions(draft);
   return <div className="advanced-launch-options">
-    <details onToggle={event => {
+    <details open={expanded || undefined} onToggle={event => {
       if (event.currentTarget.open && path === undefined && !checking) void check();
     }}>
       <summary>{text("고급 실행 설정", "Advanced launch settings")}
@@ -112,6 +114,7 @@ export function AdvancedLaunchOptions({
           <code id={id + "-path"}>{checking ? text("확인 중…", "Checking…") : path || text(toolId + " · 실행 시 PATH에서 찾습니다", toolId + " · resolved from PATH at launch")}</code>
           <button type="button" className="btn-secondary" disabled={checking} onClick={() => void check()}>{text("새로고침", "Refresh")}</button>
         </div>}
+        {expanded && (custom ? draft.executable : path) && <div className="advanced-launch-path-preview"><code>{custom ? draft.executable : path}</code><button type="button" className="btn-secondary" onClick={() => { void invoke("clipboard_write_text", { text: custom ? draft.executable : path }).catch(() => setDialogError(text("경로를 복사하지 못했습니다.", "Could not copy the path."))); }}>{text("경로 복사", "Copy path")}</button></div>}
         {dialogError && <p role="alert" className="advanced-launch-error">{dialogError}</p>}
       </section>
       <section className="advanced-launch-section" {...settingTarget(settingsPrefix && settingsPrefix + ".args")}>

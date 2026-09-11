@@ -428,6 +428,19 @@ async function serveRemoteBrowserApi(request, response, url, {
   return false;
 }
 
+async function serveUsageProfileVisibility(request, response, url, provider, allowed) {
+  if (request.method !== "POST" || url.pathname !== "/api/usage/profile-visibility") return false;
+  if (!allowed()) { sendJson(response, 403, { error: "cross-origin request blocked" }); return true; }
+  if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) { sendJson(response, 415, { error: "application/json required" }); return true; }
+  try {
+    const body = await readJson(request, 2048);
+    if (typeof body.profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(body.profileKey) || typeof body.hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
+    if (!provider) { sendJson(response, 503, { error: "Usage profile settings unavailable" }); return true; }
+    sendJson(response, 200, await provider(body.profileKey, body.hidden));
+  } catch (error) { sendJson(response, error instanceof TypeError ? 400 : 500, { error: error?.message || "Could not save usage profile visibility" }); }
+  return true;
+}
+
 async function readJson(request, maxBytes = 64 * 1024) {
   const chunks = [];
   let length = 0;
@@ -689,6 +702,7 @@ export class LocalDashboardService {
           return;
         }
         if (p) {
+          if (await serveUsageProfileVisibility(request, response, url, p.usageProfileVisibility, () => this.isLocalOrigin(request))) return;
           // Full Remote PWA on loopback (no login needed locally).
           if (await serveRemoteBrowserApi(request, response, url, {
             browserProvider: p.browserProvider,
@@ -876,7 +890,7 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, browserProvider, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
     this.baseDir = baseDir;
     this.configPath = path.join(baseDir, "remote-config.json");
     this.accessPath = path.join(baseDir, "remote-access.json");
@@ -895,6 +909,7 @@ export class RemoteDashboardService {
     this.createSession = createSession ?? (() => null);
     this.renameSession = renameSession ?? (() => false);
     this.usageProvider = usageProvider ?? (() => ({ updatedAt: 0, limits: [], tokens: {} }));
+    this.usageProfileVisibility = usageProfileVisibility;
     this.browserProvider = browserProvider ?? (() => null);
     this.usageRefreshAt = 0;
     this.mobileApkPath = mobileApkPath;
@@ -1498,6 +1513,7 @@ export class RemoteDashboardService {
           });
           return;
         }
+        if (await serveUsageProfileVisibility(request, response, url, this.usageProfileVisibility, () => this.isSameOrigin(request))) return;
         if (request.method === "GET" && url.pathname === "/api/usage") {
           const historyRequest = remoteUsageHistorySelection(url);
           if (historyRequest.error) {

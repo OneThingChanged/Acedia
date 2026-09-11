@@ -2029,6 +2029,11 @@ function renderUsageChart() {
 
 function usageProviderMeta(limit) {
   const id = text(limit?.limitId).toLowerCase();
+  if (limit?.profile?.key) {
+    const profile = limit.profile;
+    const base = profile.provider === "claude" ? { label: "Claude", icon: "✻", color: "#cc785c" } : { label: "Codex", icon: "⬢", color: "#10a37f" };
+    return { ...base, key: profile.key, label: profile.id === "default" ? base.label : `${base.label} · ${profile.label}` };
+  }
   if (id === "codex" || id.startsWith("codex")) {
     return { key: "codex", label: "Codex", icon: "⬢", color: "#10a37f" };
   }
@@ -2059,7 +2064,28 @@ function usageGroups() {
     }
     group.limits.push(limit);
   }
+  for (const group of groups) group.limits.sort((a, b) => {
+    const base = limit => limit.profile ? limit.limitId === (limit.profile.id === "default" ? limit.profile.provider : limit.profile.key) : false;
+    return Number(base(b)) - Number(base(a));
+  });
   return groups;
+}
+
+let usageVisibilitySaving = false;
+async function changeUsageVisibility(profile) {
+  if (usageVisibilitySaving) return;
+  usageVisibilitySaving = true;
+  ++usageRequestSerial;
+  usageLoading = false; usageRefreshing = false;
+  renderUsage();
+  try {
+    const response = await fetch("/api/usage/profile-visibility", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ profileKey: profile.key, hidden: profile.visible }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(text(result?.error) || `HTTP ${response.status}`);
+    usageSummary = { ...usageSummary, limits: result.limits, updatedAt: result.updatedAt };
+    usageError = "";
+  } catch (error) { usageError = error?.message || "표시 설정을 저장하지 못했습니다."; }
+  finally { usageVisibilitySaving = false; renderUsage(); }
 }
 
 function usageToneClass(remaining) {
@@ -2309,7 +2335,10 @@ function renderUsageHistory() {
 }
 
 function renderUsage() {
-  const groups = usageGroups();
+  const allGroups = usageGroups();
+  const current = group => group.limits[0]?.profile?.visible !== false;
+  const groups = allGroups.filter(current);
+  const otherGroups = allGroups.filter(group => !current(group));
   const tokens = usageSummary?.tokens || {};
   const windows = groups.flatMap((group) => group.limits.flatMap((limit) => (
     [limit?.primary, limit?.secondary].filter((window) => (
@@ -2320,7 +2349,7 @@ function renderUsage() {
     ? Math.min(...windows.map((window) => usageRemaining(window.usedPercent)))
     : null;
   const updatedAt = Math.max(
-    Number(usageSummary?.updatedAt) || 0,
+    0,
     ...groups.flatMap((group) => group.limits.map((limit) => Number(limit?.updatedAt) || 0)),
   );
   ui.usageProviderCount.textContent = String(groups.length);
@@ -2334,7 +2363,7 @@ function renderUsage() {
     ? ""
     : `usage-summary-${usageToneClass(remaining)}`;
   ui.usageUpdatedSummary.textContent = formatUsageUpdated(updatedAt);
-  ui.refreshUsageButton.disabled = usageLoading;
+  ui.refreshUsageButton.disabled = usageLoading || usageVisibilitySaving;
   ui.refreshUsageButton.textContent = usageRefreshing ? "갱신 중…" : "새로고침";
 
   if (usageError) {
@@ -2348,14 +2377,19 @@ function renderUsage() {
   } else if (groups.length === 0) {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "empty";
-    ui.usageMessage.textContent = "사용량 정보가 아직 없습니다. Codex 또는 Claude 세션을 실행한 뒤 새로고침하세요.";
+    ui.usageMessage.textContent = otherGroups.length ? "기본 화면에 표시 중인 계정이 없습니다. 이전·기타 프로필에서 다시 표시할 수 있습니다." : "사용량 정보가 아직 없습니다. Codex 또는 Claude 세션을 실행한 뒤 새로고침하세요.";
   } else {
     ui.usageMessage.hidden = true;
     delete ui.usageMessage.dataset.state;
   }
 
+  const expanded = new Set([...ui.usageProviderGrid.querySelectorAll("details[open][data-usage-section]")].map(element => element.dataset.usageSection));
   const fragment = document.createDocumentFragment();
-  for (const provider of groups) {
+  const review = make("details", "usage-profile-review");
+  review.dataset.usageSection = "profile-review";
+  review.open = expanded.has("profile-review");
+  review.append(make("summary", "", `이전·기타 프로필 ${otherGroups.length}개`), make("p", "usage-profile-note", "현재 세션에서 사용하지 않거나 직접 숨긴 프로필입니다. 표시를 숨겨도 로그인·대화·사용량 기록은 유지됩니다. 이름이나 사용률만으로 같은 계정으로 합치지 않습니다."));
+  for (const provider of allGroups) {
     const card = make("section", "usage-provider-card");
     card.dataset.provider = provider.key;
     const header = make("div", "usage-provider-heading");
@@ -2371,11 +2405,23 @@ function renderUsage() {
       ...provider.limits.map((limit) => Number(limit?.updatedAt) || 0),
     );
     header.append(identity, make("span", "usage-provider-updated", formatUsageUpdated(providerUpdated)));
+    const profile = provider.limits[0]?.profile;
+    if (profile) {
+      const toggle = make("button", "usage-profile-toggle", profile.visible ? "기본 표시에서 숨기기" : "기본 화면에 표시");
+      toggle.type = "button"; toggle.disabled = usageVisibilitySaving;
+      toggle.onclick = () => void changeUsageVisibility(profile);
+      header.append(toggle);
+    }
 
     const limitList = make("div", "usage-limit-list");
-    for (const limit of provider.limits) {
+    const extras = make("details", "usage-extra-limits");
+    extras.dataset.usageSection = provider.key;
+    extras.open = expanded.has(provider.key);
+    extras.append(make("summary", "", `추가 한도 ${Math.max(0, provider.limits.length - 1)}개`));
+    for (const [limitIndex, limit] of provider.limits.entries()) {
       const limitCard = make("article", "usage-limit-card");
       limitCard.appendChild(make("strong", "usage-limit-name", usageLimitName(limit, provider.label)));
+      limitCard.appendChild(make("small", "usage-provider-updated", formatUsageUpdated(Number(limit.updatedAt) || 0)));
       const limitWindows = [limit?.primary, limit?.secondary].filter((window) => (
         window && Number.isFinite(Number(window.usedPercent))
       ));
@@ -2391,15 +2437,19 @@ function renderUsage() {
             : `추가 사용량 ${text(limit.credits.balance) || "확인 가능"}`,
         ));
       }
-      limitList.appendChild(limitCard);
+      (limitIndex === 0 ? limitList : extras).appendChild(limitCard);
     }
+    if (provider.limits.length > 1) limitList.appendChild(extras);
     card.append(header, limitList);
-    fragment.appendChild(card);
+    if (profile && !profile.registered) card.append(make("p", "usage-profile-note", "등록된 계정이 없는 저장된 한도입니다."));
+    (current(provider) ? fragment : review).appendChild(card);
   }
+  if (otherGroups.length) fragment.appendChild(review);
   ui.usageProviderGrid.replaceChildren(fragment);
 }
 
 async function loadUsage(refresh = false) {
+  if (usageVisibilitySaving) return;
   const requestSerial = ++usageRequestSerial;
   // Keep the user's requested period stable while the previous history is
   // still rendered. renderUsage() must never be allowed to turn this request

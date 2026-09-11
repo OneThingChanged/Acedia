@@ -78,6 +78,13 @@ describe("usage rate limit formatting", () => {
 });
 
 describe("usage provider grouping", () => {
+  it("separates Claude profile ids and places account-wide quotas before model windows", () => {
+    const accountLimit = (id: string, model = false) => ({ ...limitOf(`claude:${id}${model ? ':weekly:fable' : ''}`, 'Same label'), profile: {key:`claude:${id}`,provider:'claude',id,label:'Same label',registered:true,current:true,hidden:false,visible:true} });
+    const groups = groupUsageProviders([accountLimit('a', true), accountLimit('b'), accountLimit('a')]);
+    expect(groups.map(group=>group.key)).toEqual(['claude:a','claude:b']);
+    expect(groups[0].limits.map(limit=>limit.limitId)).toEqual(['claude:a','claude:a:weekly:fable']);
+    expect(groups.every(group=>group.icon==='✻')).toBe(true);
+  });
   it("maps limit ids to provider keys", () => {
     expect(usageProviderKey(limitOf("codex", null))).toBe("codex");
     expect(usageProviderKey(limitOf("claude", "Claude"))).toBe("claude");

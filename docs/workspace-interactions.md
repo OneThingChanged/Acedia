@@ -152,9 +152,12 @@ transcript's `cwd` and session ID instead of the provider's date-based folder
 layout. Multiple files with one session ID, including Claude child-agent
 records, are grouped into one session total.[^session-storage-service]
 
-Project properties list every catalogued transcript session for that project;
-session properties separate basic identity, the currently linked session ID,
-and launch-only options into focused tabs. The session-data tab exposes the
+Project properties separate overview, current sessions, commands/startup and history
+management. History distinguishes currently linked records from past conversations
+and supports name/ID/path/tool filtering. Session properties separate basic identity,
+launch options and conversation history. Options remain a local draft until explicitly
+saved. Both property dialogs use a responsive 1120px layout with fixed actions and
+wrapping paths. See [property dialogs](properties-and-usage.md). The history tab exposes the
 current record's aggregate size, file count, last modification time, and primary
 path. Each panel scrolls independently while dialog actions remain available.
 Remote session storage is not scanned.[^session-storage-ui]

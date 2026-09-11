@@ -52,6 +52,7 @@ export type RuntimeCommand =
   | "complete_remote_session_create" | "complete_remote_session_activation"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
+  | "usage_profile_visibility_set"
   | "usage_config_get" | "usage_config_set" | "usage_server_status"
   | "start_usage_server" | "stop_usage_server" | "remote_config_get"
   | "remote_config_set" | "remote_server_status" | "start_remote_server"

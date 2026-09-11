@@ -7,7 +7,7 @@ import { SettingLabel, SettingScope, settingTarget } from './SettingsSearch';
 type Command = { id: string; name: string; command: string; scope: 'global' | 'project'; projectId?: string };
 type Config = { revision: number; commands: Command[]; startups: Record<string, { commandId: string; automatic: boolean }> };
 export type RunSavedCommand = (id: string, projectId: string) => Promise<void>;
-export function SavedCommandsPanel({ projects = [], initialProjectId, onRun }: { projects?: Project[]; initialProjectId?: string; onRun?: RunSavedCommand }) {
+export function SavedCommandsPanel({ projects = [], initialProjectId, onRun, onDraftStateChange, onSummaryChange }: { projects?: Project[]; initialProjectId?: string; onRun?: RunSavedCommand; onDraftStateChange?: (dirty: boolean, busy: boolean) => void; onSummaryChange?: (summary: { count: number; startup: string | null; automatic: boolean }) => void }) {
   const { text } = useAppLanguage();
   const [config, setConfig] = useState<Config | null>(null);
   const [projectId, setProjectId] = useState(initialProjectId || projects[0]?.id || '');
@@ -25,6 +25,10 @@ export function SavedCommandsPanel({ projects = [], initialProjectId, onRun }: {
   const project = projects.find(p => p.id === projectId), host = project?.sshHostId ? findSshHost(project.sshHostId) : null;
   const commands = config?.commands.filter(c => c.scope === 'global' || c.projectId === projectId) || [];
   const start = config?.startups[projectId];
+  const original = config?.commands.find(c => c.id === draft.id);
+  const dirty = original ? draft.name !== original.name || draft.command !== original.command || draft.scope !== original.scope : !!(draft.name || draft.command);
+  useEffect(() => { onDraftStateChange?.(dirty, busy); }, [dirty, busy, onDraftStateChange]);
+  useEffect(() => { if (config) onSummaryChange?.({ count: commands.length, startup: commands.find(c => c.id === start?.commandId)?.name ?? null, automatic: !!start?.automatic }); }, [config, projectId, onSummaryChange]);
   return <section className="app-settings-section saved-commands-panel">
     <p className="check-hint">{text('저장한 명령은 선택한 프로젝트의 새 셸 세션에서 실행합니다. 기존 AI 세션에 입력하지 않습니다.', 'Run saved commands in a new shell session for the selected project. Existing AI sessions keep their input.')}</p>
     <label className="field"><span className="field-label">{text('실행 프로젝트', 'Run in project')}</span><select aria-label={text('실행 프로젝트', 'Run in project')} value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">{text('프로젝트 선택', 'Select project')}</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>

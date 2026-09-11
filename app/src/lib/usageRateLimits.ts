@@ -6,6 +6,7 @@ export type UsageRateLimitWindow = {
 };
 
 export type UsageRateLimit = {
+  profile?: { key: string; provider: string; id: string; label: string; registered: boolean; current: boolean; hidden: boolean; visible: boolean } | null;
   limitId: string;
   limitName: string | null;
   planType: string | null;
@@ -130,6 +131,7 @@ const PROVIDER_META: Record<string, Omit<UsageProviderMeta, "key">> = {
 };
 
 export function usageProviderKey(limit: UsageRateLimit) {
+  if (limit.profile) return limit.profile.id === "default" ? limit.profile.provider : limit.profile.key;
   const id = limit.limitId.toLowerCase();
   if (id.startsWith("codex:")) return id;
   if (id === "codex" || id.startsWith("codex")) return "codex";
@@ -148,10 +150,10 @@ export function groupUsageProviders(
     const key = usageProviderKey(limit);
     let group = byKey.get(key);
     if (!group) {
-      const meta = PROVIDER_META[key.startsWith("codex:") ? "codex" : key];
+      const meta = PROVIDER_META[limit.profile?.provider ?? (key.startsWith("codex:") ? "codex" : key)];
       group = {
         key,
-        label: key.startsWith("codex:") ? usageLimitLabel(limit) : meta?.label ?? usageLimitLabel(limit),
+        label: limit.profile && limit.profile.id !== "default" ? `${meta?.label ?? limit.profile.provider} · ${limit.profile.label}` : key.startsWith("codex:") ? usageLimitLabel(limit) : meta?.label ?? usageLimitLabel(limit),
         icon: meta?.icon ?? "•",
         iconColor: meta?.iconColor ?? "#8b949e",
         limits: [],
@@ -161,6 +163,10 @@ export function groupUsageProviders(
     }
     group.limits.push(limit);
   }
+  for (const group of groups) group.limits.sort((a, b) => {
+    const base = (limit: UsageRateLimit) => limit.profile ? limit.limitId === (limit.profile.id === "default" ? limit.profile.provider : limit.profile.key) : false;
+    return Number(base(b)) - Number(base(a));
+  });
   return groups;
 }
 
