@@ -1604,6 +1604,23 @@ function App() {
     runtimeFlags,
   ]);
 
+  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "bell") => {
+    if (isElectronRuntime() && !ownedAgentIdsRef.current.has(agent.id)) return;
+    try {
+      if (isElectronRuntime() && !await invoke<boolean>("notification_policy_check", { kind })) return;
+      const projectName = projectsRef.current.find(p => p.id === agent.projectId)?.name || "Unknown project";
+      const body = kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed");
+      const config = loadNotificationSound();
+      void playNotificationSound(config, `${projectName} ${agent.name} ${body}`);
+      pushToast(agent.id, `${projectName} / ${agent.name}`, body);
+      if (config.osNotification !== false && !await getCurrentWindow().isFocused()) {
+        void getCurrentWindow().requestUserAttention(UserAttentionType.Critical).catch(() => {});
+        await notifyDone({ agentId: agent.id, projectName, sessionName: agent.name, body,
+          silent: shouldSilenceOsNotification(config), onActivate: () => selectAgentRef.current?.(agent.id) });
+      }
+    } catch (error) { console.warn("Session notification unavailable", error); }
+  }, [pushToast, text]);
+
   // ---- PTY + hook event listeners
 
   useEffect(() => {
@@ -1710,6 +1727,12 @@ function App() {
       }).then(track);
     }
 
+
+    listen<{ id: string }>("terminal:bell", e => {
+      if (cancelled) return;
+      const agent = agentsRef.current.find(item => item.id === e.payload.id);
+      if (agent) void notifySession(agent, "bell");
+    }).then(track);
 
     listen<AgentHookEvent>(
       "agent:hook-event",
@@ -1844,41 +1867,7 @@ function App() {
                 : text("작업이 끝났습니다.", "Work completed."),
               createdAt: nextAgent.activity?.receivedAt || Date.now(),
             });
-            // Hook events are process-wide, but completion sounds/toasts belong
-            // only to the workspace that owns the session. Every peer still
-            // receives the unread sidebar marker through AttentionItems.
-            if (
-              !isElectronRuntime() ||
-              ownedAgentIdsRef.current.has(currentAgent.id)
-            ) {
-              playNotificationSound(
-                loadNotificationSound(),
-                text(`${projectName} ${currentAgent.name} 작업이 끝났어요`, `${projectName} ${currentAgent.name} completed its work`)
-              );
-              pushToast(currentAgent.id, title, text("작업이 끝났어요", "Work completed"));
-              // When the owning workspace isn't focused, flash its taskbar icon
-              // and route the native notification back to the owner.
-              const soundConfig = loadNotificationSound();
-              if (soundConfig.osNotification !== false) {
-                getCurrentWindow()
-                  .isFocused()
-                  .then((focused) => {
-                    if (focused) return;
-                    getCurrentWindow()
-                      .requestUserAttention(UserAttentionType.Critical)
-                      .catch(() => {});
-                    notifyDone({
-                      agentId: currentAgent.id,
-                      projectName,
-                      sessionName: currentAgent.name,
-                      silent: shouldSilenceOsNotification(soundConfig),
-                      onActivate: () =>
-                        selectAgentRef.current?.(currentAgent.id),
-                    }).catch(() => {});
-                  })
-                  .catch(() => {});
-              }
-            }
+            void notifySession(currentAgent, "completion");
           }
         }
         setAgents((cur) =>
@@ -1894,6 +1883,7 @@ function App() {
       unsubs.forEach((u) => u());
     };
   }, [
+    notifySession,
     beginAgentWork,
     clearAgentStartupReadyTimer,
     isCoordinatorWindow,

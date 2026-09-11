@@ -50,6 +50,11 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("general.theme", "general", "테마", "Theme", "app", "모양 appearance soft warm light"),
   entry("general.sound", "general", "알림음", "Notification sound", "app", "소리 sound TTS 음성 custom 파일 메시지 message"),
   entry("general.notifications", "general", "Windows 알림 표시", "Show Windows notifications", "app", "notification 알림 배너"),
+  entry("general.completion", "general", "완료 알림", "Completion alerts", "saved", "notification done"),
+  entry("general.bell", "general", "터미널 벨 알림", "Terminal bell alerts", "saved", "bell 알림"),
+  entry("general.suppressFocused", "general", "앱 집중 중 알림 억제", "Suppress alerts while focused", "saved", "focus 집중 방해 금지"),
+  entry("general.power", "general", "절전 방지", "Prevent sleep", "saved", "power awake 작업 중"),
+  entry("general.alertTest", "general", "알림 테스트", "Test notification", "action", "테스트 알림 test"),
   entry("general.pet", "general", "데스크톱 펫", "Desktop Pet", "app", "작업 상태 화면 위 위치 초기화 status position"),
   entry("language.display", "language", "앱 언어", "App language", "app", "한국어 영어 시스템 기본 korean english system"),
   ...[

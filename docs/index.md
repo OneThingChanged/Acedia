@@ -20,6 +20,8 @@ configuration that supports it.
 
 * [저장 명령과 프로젝트 시작 설정](saved-commands.md) - Scoped commands, execution targets and opt-in startup timing.
 
+* [알림 조건과 절전 방지](notifications-and-power.md) - Completion/bell conditions, focus suppression and shared sleep prevention.
+
 ## Sessions and integrations
 
 * [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.

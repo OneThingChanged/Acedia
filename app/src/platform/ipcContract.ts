@@ -1,4 +1,5 @@
 export type RuntimeCommand =
+  | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"
   | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
   | "browser_preferences_get" | "browser_preferences_set"
   | "codex_accounts_switch"
@@ -66,7 +67,7 @@ export type RuntimeCommand =
   | "reopen_state_get" | "reopen_state_clear" | "relaunch";
 
 export type RuntimeEventName =
-  | "pty:data" | "pty:exit" | "desktop-pet:update"
+  | "pty:data" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
   | "desktop-pet:position-reset" | "desktop-pet:activate"
   | "desktop-pet:close-requested" | "remote:access-request"
   | "remote:restart-session" | "remote:create-session" | "remote:rename-session"

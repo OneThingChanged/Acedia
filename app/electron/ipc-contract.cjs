@@ -1,6 +1,7 @@
 const INVOKE_COMMANDS = Object.freeze([
   "browser_preferences_get",
   "browser_preferences_set",
+  "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "codex_accounts_switch",
@@ -156,7 +157,7 @@ const INVOKE_COMMANDS = Object.freeze([
 
 const DELIVERED_EVENTS = Object.freeze([
   "pty:data",
-  "pty:exit",
+  "terminal:bell", "pty:exit",
   "desktop-pet:update",
   "desktop-pet:position-reset",
   "desktop-pet:activate",

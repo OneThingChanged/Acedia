@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.13 — notification conditions and power**: Added saved completion/bell/focus conditions, explicit alert testing and shared system sleep prevention. Real Electron blocker activation/release, multiple-work lifecycle, OSC-safe bell parsing, 556 tests, build and 95-target UI checks passed. See [notification and power settings](notifications-and-power.md).
+
 * **Acedia 1.8.0.12 — saved commands**: Added global/project command editing, explicit new-shell execution, target folder/host labels and opt-in once-per-app project startup. Native IPC/ConPTY verified execution location and duplicate startup protection; search/editor UI and scoped-command tests passed. See [saved commands](saved-commands.md).
 
 * **Acedia 1.8.0.11 — browser profiles**: Preserved the existing cookie partition and added named profiles, default/explicit new-tab selection, profile labels and MCP profile selection. Optional web-tab restoration preserves IDs and profiles while omitting preview/authentication URLs. Two separate Electron processes verified isolated cookies and restored pages after restart; profile, search/layout and runtime integration checks passed. See [browser settings](browser-preferences.md).

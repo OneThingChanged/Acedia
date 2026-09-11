@@ -1,3 +1,4 @@
+import { NotificationPolicyPanel } from './NotificationPolicyPanel';
 import { SavedCommandsPanel, type RunSavedCommand } from "./SavedCommandsPanel";
 import type { Project } from "../types";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
@@ -1281,6 +1282,7 @@ export function SettingsModal({
           </label>
         </div>
 
+        <NotificationPolicyPanel />
         <div className="app-settings-section">
           <div className="field-label" {...settingTarget("general.pet")}>Desktop Pet<SettingScope id="general.pet" /></div>
           <div className="app-about-card app-pet-settings-card">

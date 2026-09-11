@@ -121,12 +121,14 @@ export async function notifyDone({
   projectName,
   sessionName,
   silent,
+  body = "작업이 끝났어요",
   onActivate,
 }: {
   agentId?: string;
   projectName: string;
   sessionName: string;
   silent?: boolean;
+  body?: string;
   onActivate?: () => void;
 }) {
   try {
@@ -151,7 +153,7 @@ export async function notifyDone({
       await invoke("show_native_notification", {
         agentId,
         title: `${projectName} / ${sessionName}`,
-        body: "작업이 끝났어요",
+        body,
         notificationKey,
         silent: silent ?? false,
       });
@@ -163,7 +165,7 @@ export async function notifyDone({
     const notification = new window.Notification(
       `${projectName} / ${sessionName}`,
       {
-        body: "작업이 끝났어요",
+        body,
         tag: notificationKey,
         silent: silent ?? false,
       }

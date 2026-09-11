@@ -1,3 +1,4 @@
+import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
@@ -13,6 +14,7 @@ import {
   Menu,
   nativeImage,
   Notification,
+  powerSaveBlocker,
   safeStorage,
   screen,
   shell,
@@ -232,6 +234,12 @@ const detachedAgents = new Map();
 const ptys = new Map();
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
+  onBell(id) {
+    const now = Date.now();
+    if (now - (bellTimes.get(id) ?? 0) < 3000) return;
+    bellTimes.set(id, now);
+    sendEventToAll('terminal:bell', { id });
+  },
   sendDataToView(viewId, payload) {
     sendEventToWebContentsId(viewId, "pty:data", payload);
   },
@@ -243,6 +251,7 @@ const terminalSessions = new TerminalSessionService({
     }
   },
   onSessionsChanged({ reason, ids }) {
+    powerPolicy.sessions(ids);
     // Preserve the last live set across app shutdown. Normal per-session exits
     // keep the journal current; app-quit closes must not erase the reopen set.
     // Provider `/quit` may also produce a fast natural exit while the renderer
@@ -408,6 +417,9 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const notificationSettings = notificationPreferences(app.getPath('userData'));
+const powerPolicy = new WorkPowerPolicy(powerSaveBlocker);
+const bellTimes = new Map();
 const savedCommands = new SavedCommands(app.getPath("userData"));
 const browserSettings = browserPreferences(app.getPath("userData"));
 const browserTabs = new BrowserTabStore(app.getPath("userData"));
@@ -438,6 +450,7 @@ function publishAgentHookEvent(eventName, payload) {
       accountTranscriptRoot(binding.toolId, binding.accountId),
       hookTranscript,
     )) return;
+    powerPolicy.hook(payload);
     // Remote/monitor views only need concise state. Keep tool input and the
     // full assistant response inside the local renderer/pet contract.
     monitorHooks.set(payload.id, {
@@ -4936,6 +4949,17 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "show_open_dialog":
       return showOpenDialog(event, args);
+    case "notification_preferences_get": return notificationSettings.get();
+    case "notification_preferences_set": {
+      const next = notificationSettings.set(args.patch, args.revision);
+      powerPolicy.setMode(next.powerMode);
+      return next;
+    }
+    case "power_policy_status": return powerPolicy.status();
+    case "notification_policy_check": {
+      const focused = BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
+      return allowNotification(notificationSettings.get(), args.kind, focused);
+    }
     case "saved_commands_get": return savedCommands.store.get();
     case "saved_commands_set": return savedCommands.store.set(asObject(args.patch), args.revision);
     case "saved_command_resolve":
@@ -5711,6 +5735,7 @@ app.on("before-quit", (event) => {
     return;
   }
   forceClosing = true;
+  powerPolicy.dispose();
   if (tray && !tray.isDestroyed()) {
     tray.destroy();
     tray = null;
@@ -5749,6 +5774,7 @@ console.log(
   `[electron] boot ${productVersion} variant=${runtimeVariant.id} devUrl=${devUrl ?? "production"}`
 );
 if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
+  try { powerPolicy.setMode(notificationSettings.get().powerMode); } catch (error) { console.warn('[electron] notification preferences unavailable', error.message); }
   console.log("[electron] ready");
   const smokeMode = bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;
   if (profileMigration?.migrated && profileMigration.secondaryCount > 0 && !smokeMode) {
@@ -5871,6 +5897,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         await verifyBrowserSettings(initialWindow, documentBrowserWindows, handleBrowserIntegration);
         const { verifySavedCommands } = await import("./services/saved-commands-smoke.mjs");
         await verifySavedCommands(initialWindow);
+        const { verifyNotificationPolicy } = await import("./services/notification-policy-smoke.mjs");
+        await verifyNotificationPolicy(initialWindow, powerPolicy);
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

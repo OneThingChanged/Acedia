@@ -1,3 +1,4 @@
+import { TerminalBellParser } from './notification-policy.mjs';
 import { SequencedTerminalBuffer } from "./terminal-stream.mjs";
 
 const TERMINATING_ACTIONS = new Set(["sleep", "close", "restart"]);
@@ -9,11 +10,13 @@ const TERMINATING_ACTIONS = new Set(["sleep", "close", "restart"]);
  */
 export class TerminalSessionService {
   constructor({
+    onBell = () => {},
     sendDataToView,
     broadcastExit,
     onSessionsChanged = () => {},
     sessions,
   } = {}) {
+    this.onBell = onBell;
     this.sessions = sessions ?? new Map();
     this.generations = new Map();
     this.sendDataToView = sendDataToView ?? (() => {});
@@ -50,6 +53,7 @@ export class TerminalSessionService {
     entry.subscribers = new Set();
     entry.dataListeners = new Set();
     entry.released = false;
+    const bellParser = new TerminalBellParser();
 
     if (this.generations.get(id) !== generation || this.sessions.has(id)) {
       this.#release(entry, true);
@@ -61,6 +65,7 @@ export class TerminalSessionService {
     entry.process.onData((data) => {
       if (this.sessions.get(id) !== entry) return;
       entry.onRawData?.(data);
+      if (bellParser.push(data)) this.onBell(id);
       const visibleData = entry.filter.push(data);
       this.#publish(entry, visibleData);
     });

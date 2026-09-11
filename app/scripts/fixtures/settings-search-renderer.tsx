@@ -12,6 +12,8 @@ if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("mu
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
+    if (command === "notification_preferences_get") return {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
+    if (command === "power_policy_status") return {active:false,workingCount:0};
     if (command === "saved_commands_get") return structuredClone(window.fixtureCommandConfig);
     if (command === "saved_commands_set") { window.fixtureCommandConfig = { ...window.fixtureCommandConfig, ...args.patch, revision: window.fixtureCommandConfig.revision + 1 }; return structuredClone(window.fixtureCommandConfig); }
     if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
