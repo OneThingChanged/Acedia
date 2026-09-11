@@ -79,6 +79,7 @@ export async function buildSpawnArgs(
   sessionPins: Record<string, string> | null,
   setAgentSessionId: (id: string, sessionId: string | null) => void
 ): Promise<SpawnArgs> {
+  if (agent.idleResumeSessionId && (agent.sshHostId || !agent.folder || !["codex","claude"].includes(agent.aiToolId) || (sessionPins?.[agent.id] && sessionPins[agent.id] !== agent.idleResumeSessionId))) throw new Error("자동 중지된 세션의 복원 대상이 변경되었습니다. 확인 후 다시 여세요.");
   const tool = toolForId(agent.aiToolId);
   const sshHost = agent.sshHostId ? findSshHost(agent.sshHostId) : null;
   if (agent.sshHostId && !sshHost) throw new Error("SSH host is unavailable. Update the project host before starting this session.");
@@ -127,8 +128,10 @@ export async function buildSpawnArgs(
             codexAccountId: agent.codexAccountId,
             claudeAccountId: agent.claudeAccountId,
             agentName: agent.name,
-            preferredSessionId: candidateSessionId,
+            preferredSessionId: agent.idleResumeSessionId || candidateSessionId,
+            ...(agent.idleResumeSessionId ? {strictExact:true} : {}),
           });
+          if (agent.idleResumeSessionId && resolved !== agent.idleResumeSessionId) throw new Error("자동 중지된 대화를 찾지 못했습니다. 계정과 대화 파일을 확인하세요. The suspended conversation is unavailable.");
           // A pinned group must never silently start a different conversation.
           if (managedAccount && pinnedSessionId && resolved !== pinnedSessionId) {
             throw new Error("선택한 계정에서 고정된 대화를 찾을 수 없습니다. 세션 고정을 해제하거나 계정을 확인하세요.");
@@ -138,7 +141,7 @@ export async function buildSpawnArgs(
             setAgentSessionId(agent.id, sessionId);
           }
         } catch (error) {
-          if (managedAccount) throw error;
+          if (managedAccount || agent.idleResumeSessionId) throw error;
           // Transcript lookup is a safety check, not permission to discard a
           // known-good resume target on a temporary filesystem/IPC failure.
           sessionId = candidateSessionId;

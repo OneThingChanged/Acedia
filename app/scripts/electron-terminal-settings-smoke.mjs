@@ -16,6 +16,7 @@ try {
     import { PaneSlot } from './src/components/PaneSlot';
     import { TerminalSettingsPanel } from './src/components/TerminalSettingsPanel';
     import { useTerminalSettingsSync } from './src/hooks/useTerminalSettingsSync';
+    import { markIdleSuspended } from './src/lib/idleSessions';
     import { applyAgentRuntimeStatus } from './src/lib/agentActivity';
     import { createEntry } from './src/lib/terminal';
     import { loadTerminalSettings } from './src/lib/terminalSettings';
@@ -25,6 +26,8 @@ try {
     window.multiAgentElectron = {
       invoke: async (command, args) => {
         window.calls.push({ command, args });
+        if (command === 'runtime_flags') return {advanced_launch_options:true};
+        if (command === 'resolve_cli_session') return args.agentId === 'idle-missing' ? null : args.preferredSessionId;
         if (command === 'spawn_pty') return { reattached: false };
         if (command === 'attach_terminal') return { data: '', sequenceStart: 0, sequenceEnd: 0 };
         if (command === 'clipboard_read_text') return 'PASTE_FIXTURE';
@@ -41,6 +44,7 @@ try {
       const termsRef = useRef(new Map());
       if (!termsRef.current.has('parked')) termsRef.current.set('parked', createEntry('parked'));
       useTerminalSettingsSync(termsRef);
+      window.seedIdle = id => setAgents(current => [...current.filter(agent => !agent.id.startsWith('idle-')), markIdleSuspended({id,name:id,projectId:'project',folder:'C:/fixture',aiToolId:'codex',aiLabel:'Codex',createdAt:1,status:'running',codexAccountId:'work',launchOptions:{executable:'',args:['--profile','fixture'],env:[]}},'fixture-conversation')]);
       window.entries = termsRef.current;
       window.readSettings = loadTerminalSettings;
       const select = (path, id) => setAgents(current => current.map(agent => agent.id === id ? { ...agent, deferredStart: undefined } : agent));
@@ -155,6 +159,20 @@ try {
           win.webContents.invalidate(); await new Promise(resolve => setTimeout(resolve, 400));
           fs.writeFileSync(${JSON.stringify(process.env.MULTIAGENT_TERMINAL_SETTINGS_SCREENSHOT || "")}, (await win.webContents.capturePage()).toPNG());
         }
+        console.log(await win.webContents.executeJavaScript(\`(async()=>{
+          const wait=()=>new Promise(resolve=>setTimeout(resolve,500));
+          const check=(ok,message)=>{if(!ok)throw Error(message);};
+          window.seedIdle('idle-good');await wait();
+          const count=window.calls.filter(c=>c.command==='spawn_pty').length;
+          check(!window.entries.has('idle-good'),'Suspended session allocated a terminal');
+          document.querySelector('[data-pane-leaf-id="idle-good"] .session-standby button').click();await wait();await wait();
+          const request=window.calls.filter(c=>c.command==='spawn_pty'&&c.args.id==='idle-good').at(-1);
+          check(request&&request.args.initCommand.includes('resume fixture-conversation')&&request.args.codexAccountId==='work'&&request.args.launchOptions.args[1]==='fixture','Suspended resume lost conversation/account/options');
+          window.seedIdle('idle-missing');await wait();
+          document.querySelector('[data-pane-leaf-id="idle-missing"] .session-standby button').click();await wait();await wait();
+          check(!window.calls.some(c=>c.command==='spawn_pty'&&c.args.id==='idle-missing'),'Missing conversation started a replacement process');
+          return 'IDLE_STANDBY_CLICK_RESUME_UI_OK';
+        })()\`));
         app.exit(0);
       } catch (error) { console.error(error); app.exit(1); }
     });

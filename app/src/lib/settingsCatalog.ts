@@ -2,9 +2,10 @@ import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
 import { availableSessionWorkerOptions } from "./sessionWorkers";
 
-export type SettingsCategory = "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
+export type SettingsCategory = "idle" | "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
 export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
+  idle: ["유휴 세션", "Idle sessions"],
   status: ["상태 표시줄", "Status bar"],
   commands: ["명령 및 시작", "Commands & startup"],
   browser: ["브라우저", "Browser"],
@@ -39,6 +40,8 @@ const entry = (id: string, category: SettingsCategory, ko: string, en: string, s
   ({ id, category, label: [ko, en], scope, keywords, ...extra });
 
 export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
+  entry("idle.enabled","idle","유휴 세션 자동 중지","Automatically suspend idle sessions","saved","idle sleep suspend restore 메모리"),
+  entry("idle.minutes","idle","유휴 시간","Idle time","saved","대기 중지 시간 minutes"),
   ...[
     ["enabled", "상태 표시줄 표시", "Show status bar"], ["codex", "Codex 한도 표시", "Show Codex quota"],
     ["claude", "Claude 한도 표시", "Show Claude quota"], ["gemini", "Gemini 한도 표시", "Show Gemini quota"],

@@ -111,6 +111,16 @@ describe("buildSpawnArgs resume recovery", () => {
     status: "idle",
     createdAt: 1,
   } as Agent;
+  it("requires the exact suspended conversation even for the existing login", async () => {
+    const suspended = {...agent,idleResumeSessionId:"saved",lastSessionId:"saved"};
+    invokeMock.mockResolvedValue("saved");
+    expect((await buildSpawnArgs(suspended,null,vi.fn())).initCommand).toContain("resume saved");
+    expect(invokeMock).toHaveBeenLastCalledWith("resolve_cli_session",expect.objectContaining({strictExact:true,preferredSessionId:"saved"}));
+    invokeMock.mockResolvedValue("different");
+    await expect(buildSpawnArgs(suspended,null,vi.fn())).rejects.toThrow("suspended conversation");
+    invokeMock.mockRejectedValue(Error("unavailable"));
+    await expect(buildSpawnArgs(suspended,null,vi.fn())).rejects.toThrow("unavailable");
+  });
   it("transports advanced settings without merging them into generated shell text", async () => {
     const launchOptions = { executable: "", args: ["--profile", "work space"], env: [{ name: "LANG", value: "ko" }] };
     invokeMock.mockImplementation(async command => command === "runtime_flags" ? { advanced_launch_options: true } : "saved-session");

@@ -24,6 +24,9 @@ configuration that supports it.
 
 * [상태 표시줄 구성](status-bar-settings.md) - Provider filters, used/remaining quota display and local monitors.
 
+* [유휴 세션 자동 중지와 복원](idle-sessions.md) - Guarded idle suspension and exact account/conversation recovery.
+* [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Review checklist for the six completed settings increments.
+
 ## Sessions and integrations
 
 * [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.

@@ -9,13 +9,18 @@ import { defaultCommandShortcuts } from "../../src/lib/commandRegistry";
 import "../../src/App.css";
 
 window.fixtureCalls = [];
+window.fixtureIdleConfig = {revision:0,enabled:false,minutes:30};
+window.fixtureNotificationConfig = {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
 window.fixtureCommandConfig = { revision: 0, commands: [], startups: {} };
 if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("multiagent.appLanguage.v1", "ko");
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
     if (command === "usage_rate_limits_get") return {updatedAt:Date.now(),limits:['codex:fixture','claude'].map(limitId => ({limitId,limitName:limitId.startsWith('codex')?'Codex fixture':'Claude',primary:{usedPercent:90,windowMinutes:300,resetsAt:null},secondary:null,credits:{},updatedAt:Date.now()}))};
-    if (command === "notification_preferences_get") return {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
+    if (command === "idle_preferences_get") return structuredClone(window.fixtureIdleConfig);
+    if (command === "idle_preferences_set") { window.fixtureIdleConfig={...args.patch,revision:args.revision+1};return structuredClone(window.fixtureIdleConfig); }
+    if (command === "notification_preferences_get") return structuredClone(window.fixtureNotificationConfig);
+    if (command === "notification_preferences_set") {window.fixtureNotificationConfig={...args.patch,revision:args.revision+1};return structuredClone(window.fixtureNotificationConfig);}
     if (command === "power_policy_status") return {active:false,workingCount:0};
     if (command === "saved_commands_get") return structuredClone(window.fixtureCommandConfig);
     if (command === "saved_commands_set") { window.fixtureCommandConfig = { ...window.fixtureCommandConfig, ...args.patch, revision: window.fixtureCommandConfig.revision + 1 }; return structuredClone(window.fixtureCommandConfig); }

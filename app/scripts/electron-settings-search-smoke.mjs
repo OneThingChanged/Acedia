@@ -46,7 +46,7 @@ async function exercise() {
     await open(item.id);
   }
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
-  const allowed = new Set(["notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
+  const allowed = new Set(["idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
     "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
@@ -122,6 +122,29 @@ async function exerciseSavedCommands() {
   return 'SAVED_COMMAND_EDITOR_UI_OK';
 }
 
+async function exercisePolicies() {
+  const wait=()=>new Promise(resolve=>setTimeout(resolve,100));
+  const open=async(query,id)=>{
+    const input=document.querySelector('.app-settings-search input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,query);input.dispatchEvent(new Event('input',{bubbles:true}));await wait();
+    document.querySelector('[data-setting-result="'+id+'"]').click();await wait();
+  };
+  const select=async(element,value)=>{Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(element,value);element.dispatchEvent(new Event('change',{bubbles:true}));await wait();};
+  await open('유휴 세션 자동 중지','idle.enabled');
+  document.querySelector('[aria-label="유휴 세션 자동 중지"]').click();await wait();
+  await select(document.querySelector('[aria-label="유휴 시간"]'),'15');
+  document.querySelector('.app-settings-body .btn-primary').click();await wait();
+  if(!window.fixtureIdleConfig.enabled||window.fixtureIdleConfig.minutes!==15)throw Error('Idle policy editor failed');
+  await open('완료 알림','general.completion');
+  const panel=document.querySelector('[data-setting-id="general.completion"]').closest('section');
+  panel.querySelector('[aria-label="완료 알림"]').click();await wait();
+  panel.querySelector('[aria-label="터미널 벨 알림"]').click();await wait();
+  await select(panel.querySelector('[aria-label="절전 방지"]'),'working');
+  panel.querySelector('.btn-primary').click();await wait();
+  if(window.fixtureNotificationConfig.completion||!window.fixtureNotificationConfig.bell||window.fixtureNotificationConfig.powerMode!=='working')throw Error('Notification policy editor failed');
+  return 'NOTIFICATION_AND_IDLE_POLICY_EDITORS_UI_OK';
+}
+
 async function exerciseStatusBar() {
   const wait = () => new Promise(resolve => setTimeout(resolve,100));
   window.fixtureStatus(); await wait(); await wait();
@@ -163,6 +186,7 @@ if (process.versions.electron) {
     await new Promise(resolve => setTimeout(resolve, 300));
     if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
     console.log(await win.webContents.executeJavaScript("(" + exerciseSavedCommands.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exercisePolicies.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
     const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});
     await peer.loadFile(path.join(directory,"index.html"));

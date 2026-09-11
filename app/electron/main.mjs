@@ -1,3 +1,4 @@
+import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
@@ -417,6 +418,25 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const idleSettings = idlePreferences(app.getPath('userData'));
+const idleViews = new Map();
+const idlePolicy = new IdleSessionPolicy({
+  settings: idleSettings, sessions: ptys, hooks: monitorHooks,
+  isOwner: (id, owner) => detachedAgents.get(id) === owner,
+  isVisible: (id, owner) => {
+    const view = idleViews.get(owner);
+    return !view || Date.now() - view.updatedAt > 30000 || view.ids.has(id)
+      || ![...workspaceWindows.values()].some(window => !window.isDestroyed() && window.webContents.id === owner);
+  },
+  resolve: async (entry, sessionId) => {
+    const root = accountTranscriptRoot(entry.aiToolId, entry.aiToolId === 'codex' ? entry.codexAccountId : entry.claudeAccountId);
+    const transcript = agentTranscripts.get(entry.id);
+    if (!root || !transcript) return null;
+    try { if (!isInside(root, fs.realpathSync(transcript)) || !fs.statSync(transcript).isFile() || fs.statSync(transcript).size === 0) return null; } catch { return null; }
+    return sessionService.resolveExact({aiToolId:entry.aiToolId, folder:entry.cwd, preferredSessionId:sessionId, transcriptRoot:root, allowFolderFallback:false});
+  },
+  suspend: id => terminalSessions.action(id, 'sleep'),
+});
 const notificationSettings = notificationPreferences(app.getPath('userData'));
 const powerPolicy = new WorkPowerPolicy(powerSaveBlocker);
 const bellTimes = new Map();
@@ -4949,6 +4969,21 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "show_open_dialog":
       return showOpenDialog(event, args);
+    case "idle_preferences_get": return idleSettings.get();
+    case "idle_preferences_set": return idleSettings.set(args.patch, args.revision);
+    case "idle_view_update": {
+      if (!runtimeByWebContents.get(event.sender.id)?.workspace_window || !Array.isArray(args.ids) || args.ids.length > 500 || args.ids.some(id => typeof id !== 'string')) throw Error('Invalid workspace visibility');
+      idleViews.set(event.sender.id, {ids:new Set(args.ids),updatedAt:Date.now()});
+      return null;
+    }
+    case "idle_session_suspend": {
+      const result = await idlePolicy.trySuspend(asString(args.id), event.sender.id);
+      if (result) {
+        sendEventToAll('agent:idle-suspended', result);
+        releaseAgentFromWindow(result.id, event.sender.id);
+      }
+      return result;
+    }
     case "notification_preferences_get": return notificationSettings.get();
     case "notification_preferences_set": {
       const next = notificationSettings.set(args.patch, args.revision);
@@ -5479,7 +5514,7 @@ async function invokeCommand(event, command, rawArgs) {
           (previousBinding.toolId !== args.aiToolId || previousBinding.accountId !== selectedAccountId(args)))) {
         throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
       }
-      const sessionId = await sessionService.resolve({
+      const sessionId = await (args.strictExact ? sessionService.resolveExact.bind(sessionService) : sessionService.resolve.bind(sessionService))({
         aiToolId: args.aiToolId,
         folder: args.folder,
         preferredSessionId: args.preferredSessionId,
@@ -5899,6 +5934,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         await verifySavedCommands(initialWindow);
         const { verifyNotificationPolicy } = await import("./services/notification-policy-smoke.mjs");
         await verifyNotificationPolicy(initialWindow, powerPolicy);
+        const { verifyIdleSessions } = await import("./services/idle-session-smoke.mjs");
+        await verifyIdleSessions(initialWindow, {ptys,hooks:monitorHooks,transcripts:agentTranscripts,accounts:codexAccounts});
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

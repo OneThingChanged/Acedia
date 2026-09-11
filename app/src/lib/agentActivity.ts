@@ -140,6 +140,8 @@ export function applyAgentHookEvent(
   event: AgentHookEvent,
   now = Date.now()
 ): Agent {
+  if (agent.idleResumeSessionId && agent.deferredStart) return agent;
+  if (agent.idleResumeSessionId && event.session_id === agent.idleResumeSessionId) agent = {...agent,idleResumeSessionId:undefined};
   const currentRuntimeStatus = runtimeStatusOf(agent);
   // A hook can only be emitted by a live CLI process. Promote startup/idle
   // races to running, while keeping a confirmed PTY exit authoritative.

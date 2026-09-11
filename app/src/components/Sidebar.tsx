@@ -645,7 +645,7 @@ export function Sidebar({
       >
         <div className="agent-row-top">
           <span className={`status status-${a.deferredStart && a.resumeEligible ? "standby" : a.status}`}
-            title={a.deferredStart && a.resumeEligible ? text("대기 · 클릭하면 시작", "Standby · click to start") : undefined} />
+            title={a.deferredStart && a.resumeEligible ? a.idleResumeSessionId ? text("유휴 자동 중지 · 클릭하면 원래 대화 복원", "Suspended while idle · click to resume the original conversation") : text("대기 · 클릭하면 시작", "Standby · click to start") : undefined} />
           <span
             className="agent-tool-icon"
             style={{ color: toolForId(a.aiToolId).iconColor }}

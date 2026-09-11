@@ -374,6 +374,14 @@ export class SessionService {
     };
   }
 
+  async resolveExact({aiToolId, folder, preferredSessionId, transcriptRoot}) {
+    if (!transcriptRoot || !folder || !preferredSessionId || !STORAGE_TOOLS.has(aiToolId)) return null;
+    const entries = await this.scan(aiToolId, true);
+    const match = entries.find(entry => entry.sessionId === preferredSessionId && sameFolder(entry.cwd, folder) && isInsideRoot(entry.transcriptPath, transcriptRoot));
+    if (!match) return null;
+    try { const stat = await fsPromises.stat(match.transcriptPath); return stat.isFile() && stat.size > 0 ? match.sessionId : null; } catch { return null; }
+  }
+
   async resolve({
     aiToolId,
     folder,

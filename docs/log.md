@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.15 — idle session suspension**: Added opt-in idle suspension for completed local Codex/Claude sessions, with visibility/ownership/activity/generation guards and exact account-scoped transcript verification. Suspended sessions preserve launch options and resume only the verified conversation. 583 tests, build, native ConPTY suspension/recovery checks, standby-click renderer checks and 105-target settings UI checks passed. [Idle sessions](idle-sessions.md) and the [combined review guide](settings-review-1-8-0-15.md) record scope and manual follow-up.
+
 * **Acedia 1.8.0.14 — status bar configuration**: Added provider/account-group filtering, used/remaining quota display and resource/port visibility. Display changes preserve consumption warning colors. 558 tests, build, 103-target UI search/layout and native renderer filtering, percentage, monitor removal, restoration and two-window sync checks passed. See [status bar settings](status-bar-settings.md).
 
 * **Acedia 1.8.0.13 — notification conditions and power**: Added saved completion/bell/focus conditions, explicit alert testing and shared system sleep prevention. Real Electron blocker activation/release, multiple-work lifecycle, OSC-safe bell parsing, 556 tests, build and 95-target UI checks passed. See [notification and power settings](notifications-and-power.md).

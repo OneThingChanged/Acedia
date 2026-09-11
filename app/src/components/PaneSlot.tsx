@@ -1039,7 +1039,9 @@ export function PaneSlot({
         <div className="session-standby">
           <span className={`status status-${activeAgent.resumeEligible ? "standby" : "idle"}`} />
           <strong>{activeAgent.name}</strong>
-          <p>{activeAgent.resumeEligible
+          <p>{activeAgent.idleResumeSessionId
+            ? text("유휴 상태로 자동 중지했습니다. 클릭하면 원래 계정과 대화로 복원합니다.", "Automatically suspended while idle. Click to resume the original account and conversation.")
+            : activeAgent.resumeEligible
             ? text("대기 중 · 클릭하면 이전 세션을 이어서 시작합니다.", "Standby · click to resume this session.")
             : text("비활성 세션 · 클릭하면 시작합니다.", "Inactive session · click to start.")}</p>
           <button className="btn-primary" onClick={(event) => {

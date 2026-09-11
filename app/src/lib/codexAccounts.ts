@@ -9,7 +9,7 @@ export function switchProviderAccount(agent: Agent, accountId: string): Agent {
   if (agent.lastSessionId) sessions[previous] = agent.lastSessionId;
   else delete sessions[previous];
   return { ...agent, [accountKey]: accountId, [sessionsKey]: sessions,
-    lastSessionId: sessions[accountId], deferredStart: true,
+    lastSessionId: sessions[accountId], idleResumeSessionId: undefined, deferredStart: true,
     resumeEligible: false, status: "idle", runtimeStatus: "idle", activity: undefined };
 }
 

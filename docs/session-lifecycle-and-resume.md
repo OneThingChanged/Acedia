@@ -130,3 +130,10 @@ of silently opening an empty replacement database.[^conversation-store]
 [^hook-service]: Hook receiver and configuration
 [^reopen-journal]: Full-exit recovery journal
 [^conversation-store]: Per-session conversation index
+
+## Optional idle suspension
+
+Completed local Codex/Claude sessions can be suspended after a configured idle period.
+Visibility, ownership, I/O and exact account-scoped transcript recovery are checked again
+after asynchronous validation. Suspended sessions retain a strict resume target and remain
+in standby until selected. See [idle sessions](idle-sessions.md) for exclusions and verification.

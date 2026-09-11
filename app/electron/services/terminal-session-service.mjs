@@ -53,6 +53,8 @@ export class TerminalSessionService {
     entry.subscribers = new Set();
     entry.dataListeners = new Set();
     entry.released = false;
+    entry.startedAt = Date.now();
+    entry.lastInputAt = entry.lastOutputAt = entry.lastViewedAt = entry.startedAt;
     const bellParser = new TerminalBellParser();
 
     if (this.generations.get(id) !== generation || this.sessions.has(id)) {
@@ -64,6 +66,7 @@ export class TerminalSessionService {
     this.#notifySessionsChanged("spawn");
     entry.process.onData((data) => {
       if (this.sessions.get(id) !== entry) return;
+      entry.lastOutputAt = Date.now();
       entry.onRawData?.(data);
       if (bellParser.push(data)) this.onBell(id);
       const visibleData = entry.filter.push(data);
@@ -104,17 +107,19 @@ export class TerminalSessionService {
   attach(id, viewId, afterSequence = 0) {
     const entry = this.sessions.get(id);
     if (!entry) throw new Error("활성 PTY를 찾을 수 없습니다.");
+    entry.lastViewedAt = Date.now();
     entry.subscribers.add(viewId);
     return entry.buffer.readSince(afterSequence);
   }
 
   detach(id, viewId) {
-    this.sessions.get(id)?.subscribers.delete(viewId);
+    const entry = this.sessions.get(id);
+    if (entry) { entry.lastViewedAt = Date.now(); entry.subscribers.delete(viewId); }
   }
 
   detachView(viewId) {
     for (const entry of this.sessions.values()) {
-      entry.subscribers.delete(viewId);
+      if (entry.subscribers.delete(viewId)) entry.lastViewedAt = Date.now();
     }
   }
 
@@ -122,6 +127,7 @@ export class TerminalSessionService {
     const entry = this.sessions.get(id);
     if (!entry) throw new Error("활성 PTY를 찾을 수 없습니다.");
     const value = String(data ?? "");
+    entry.lastInputAt = Date.now();
     entry.process.write(value);
   }
 

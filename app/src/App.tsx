@@ -1,3 +1,4 @@
+import { markIdleSuspended } from './lib/idleSessions';
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
@@ -291,6 +292,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     dangerous: agent.dangerous,
     useAltScreen: agent.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(agent.workerSettings),
+    idleResumeSessionId: agent.idleResumeSessionId,
     shellCommand: agent.aiToolId === "none" ? agent.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(agent.launchOptions),
     pinned: agent.pinned || undefined,
@@ -427,6 +429,7 @@ function agentFromStored(
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
+    idleResumeSessionId: stored.idleResumeSessionId,
     shellCommand: aiToolId === "none" ? stored.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(stored.launchOptions),
     pinned: stored.pinned || undefined,
@@ -1728,6 +1731,15 @@ function App() {
       }).then(track);
     }
 
+
+    listen<{id:string;sessionId:string}>("agent:idle-suspended", e => {
+      if (cancelled) return;
+      const {id,sessionId}=e.payload;
+      const entry=termsRef.current.get(id);
+      if(entry) { try { saveScrollback(id,entry.serialize.serialize({scrollback:1000})); entry.term.dispose(); } catch {} termsRef.current.delete(id); }
+      const next=agentsRef.current.map(agent=>agent.id===id ? markIdleSuspended(agent,sessionId) : agent);
+      agentsRef.current=next; setAgents(next);
+    }).then(track);
 
     listen<{ id: string }>("terminal:bell", e => {
       if (cancelled) return;
@@ -3866,6 +3878,27 @@ function App() {
     const leaf = getAt(activeGroupLayout, activePath);
     return leaf && leaf.type === "leaf" ? activeAgentInLeaf(leaf) : null;
   }, [activeGroupLayout, activePath]);
+
+  useEffect(() => {
+    if (!isElectronRuntime() || !runtimeFlags?.workspace_window) return;
+    let cancelled=false, checking=false;
+    const visible=activeGroupLayout ? [...collectAgentIds(activeGroupLayout)] : [];
+    const check=async () => {
+      if(checking || cancelled) return; checking=true;
+      try {
+        await invoke("idle_view_update",{ids:visible});
+        const settings=await invoke<{enabled:boolean}>("idle_preferences_get");
+        if(!settings.enabled || cancelled) return;
+        for(const agent of agentsRef.current) {
+          if(cancelled) break;
+          if(ownedAgentIdsRef.current.has(agent.id) && !visible.includes(agent.id) && !agent.sshHostId && !agent.deferredStart && agent.activity?.workStatus === "done" && ["codex","claude"].includes(agent.aiToolId)) await invoke("idle_session_suspend",{id:agent.id});
+        }
+      } catch(error) { console.warn("Idle session check unavailable",error); }
+      finally { checking=false; }
+    };
+    void check(); const timer=window.setInterval(()=>void check(),10000);
+    return ()=>{cancelled=true;window.clearInterval(timer);};
+  }, [activeGroupLayout,runtimeFlags?.workspace_window]);
 
   const browserAgentNames = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent.name])),

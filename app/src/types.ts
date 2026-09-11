@@ -147,6 +147,7 @@ export type SshHost = {
 };
 
 export type Agent = {
+  idleResumeSessionId?: string;
   shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
@@ -184,6 +185,7 @@ export type Agent = {
 };
 
 export type StoredAgent = {
+  idleResumeSessionId?: string;
   shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
