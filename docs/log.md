@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.14 — status bar configuration**: Added provider/account-group filtering, used/remaining quota display and resource/port visibility. Display changes preserve consumption warning colors. 558 tests, build, 103-target UI search/layout and native renderer filtering, percentage, monitor removal, restoration and two-window sync checks passed. See [status bar settings](status-bar-settings.md).
+
 * **Acedia 1.8.0.13 — notification conditions and power**: Added saved completion/bell/focus conditions, explicit alert testing and shared system sleep prevention. Real Electron blocker activation/release, multiple-work lifecycle, OSC-safe bell parsing, 556 tests, build and 95-target UI checks passed. See [notification and power settings](notifications-and-power.md).
 
 * **Acedia 1.8.0.12 — saved commands**: Added global/project command editing, explicit new-shell execution, target folder/host labels and opt-in once-per-app project startup. Native IPC/ConPTY verified execution location and duplicate startup protection; search/editor UI and scoped-command tests passed. See [saved commands](saved-commands.md).

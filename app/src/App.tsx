@@ -673,12 +673,13 @@ function App() {
     () => localStorage.getItem("multiagent.showUsageBar.v1") !== "0"
   );
   const handleShowUsageBarChange = useCallback((show: boolean) => {
+    localStorage.setItem("multiagent.showUsageBar.v1", show ? "1" : "0");
     setShowUsageBar(show);
-    try {
-      localStorage.setItem("multiagent.showUsageBar.v1", show ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+  }, []);
+  useEffect(() => {
+    const sync = (e: StorageEvent) => { if (e.key === null || e.key === "multiagent.showUsageBar.v1") setShowUsageBar(localStorage.getItem("multiagent.showUsageBar.v1") !== "0"); };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
   }, []);
   const toggleChatMode = useCallback((agentId: string) => {
     setChatModeAgents((prev) => {

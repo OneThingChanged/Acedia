@@ -22,6 +22,8 @@ configuration that supports it.
 
 * [알림 조건과 절전 방지](notifications-and-power.md) - Completion/bell conditions, focus suppression and shared sleep prevention.
 
+* [상태 표시줄 구성](status-bar-settings.md) - Provider filters, used/remaining quota display and local monitors.
+
 ## Sessions and integrations
 
 * [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.

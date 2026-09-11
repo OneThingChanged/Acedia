@@ -2,9 +2,10 @@ import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
 import { availableSessionWorkerOptions } from "./sessionWorkers";
 
-export type SettingsCategory = "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
+export type SettingsCategory = "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
 export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
+  status: ["상태 표시줄", "Status bar"],
   commands: ["명령 및 시작", "Commands & startup"],
   browser: ["브라우저", "Browser"],
   general: ["일반", "General"], language: ["언어", "Language"], agents: ["에이전트", "Agents"],
@@ -38,6 +39,12 @@ const entry = (id: string, category: SettingsCategory, ko: string, en: string, s
   ({ id, category, label: [ko, en], scope, keywords, ...extra });
 
 export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
+  ...[
+    ["enabled", "상태 표시줄 표시", "Show status bar"], ["codex", "Codex 한도 표시", "Show Codex quota"],
+    ["claude", "Claude 한도 표시", "Show Claude quota"], ["gemini", "Gemini 한도 표시", "Show Gemini quota"],
+    ["other", "기타 제공자 한도 표시", "Show other provider quotas"], ["resources", "리소스 표시", "Show resources"],
+    ["ports", "포트 표시", "Show ports"], ["display", "한도 비율 표시", "Quota percentage display"],
+  ].map(([id,ko,en]) => entry("status."+id,"status",ko,en,"app","상태 표시줄 사용 남은 status bar remaining used")),
   entry("commands.library", "commands", "저장 명령", "Saved commands", "action", "전역 프로젝트 실행 shell script global project"),
   entry("commands.startup", "commands", "프로젝트 시작 명령", "Project startup command", "projectStart", "자동 실행 startup script"),
   entry("browser.profiles", "browser", "브라우저 프로필", "Browser profiles", "saved", "로그인 쿠키 계정 cookies login account"),

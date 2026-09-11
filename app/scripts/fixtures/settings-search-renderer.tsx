@@ -1,3 +1,5 @@
+import { UsageStatusBar } from '../../src/components/UsageStatusBar';
+import { StatusBarSettingsPanel } from '../../src/components/StatusBarSettingsPanel';
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsModal } from "../../src/components/SettingsModal";
@@ -12,6 +14,7 @@ if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("mu
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
+    if (command === "usage_rate_limits_get") return {updatedAt:Date.now(),limits:['codex:fixture','claude'].map(limitId => ({limitId,limitName:limitId.startsWith('codex')?'Codex fixture':'Claude',primary:{usedPercent:90,windowMinutes:300,resetsAt:null},secondary:null,credits:{},updatedAt:Date.now()}))};
     if (command === "notification_preferences_get") return {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
     if (command === "power_policy_status") return {active:false,workingCount:0};
     if (command === "saved_commands_get") return structuredClone(window.fixtureCommandConfig);
@@ -34,12 +37,15 @@ window.multiAgentElectron = {
   onEvent: () => () => {},
 };
 function Harness() {
+  const [statusOnly,setStatusOnly] = useState(false);
+  window.fixtureStatus = () => setStatusOnly(true);
   const [open, setOpen] = useState(true);
   const [variant, setVariant] = useState<"standard" | "company" | "store">("standard");
   const [disabled, setDisabled] = useState<string[]>([]);
   window.fixtureContext = (next, tools = []) => { setVariant(next); setDisabled(tools); setOpen(true); };
   window.fixtureCatalog = () => availableSettings({ buildVariant: variant, disabledTools: disabled });
   window.fixtureSearch = query => searchSettings(query, { buildVariant: variant, disabledTools: disabled });
+  if (statusOnly) return <AppLanguageProvider><StatusBarSettingsPanel enabled onEnabledChange={()=>{}}/><UsageStatusBar agents={[]} projects={[]} onSelectProject={()=>{}}/></AppLanguageProvider>;
   return <AppLanguageProvider>
     <div className="app-topbar">Acedia <button onClick={() => setOpen(true)}>Settings</button></div>
     <div className="terminal-area"><input id="preserved-workspace" defaultValue="RUNNING_SESSION" /></div>

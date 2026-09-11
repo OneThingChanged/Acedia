@@ -122,6 +122,29 @@ async function exerciseSavedCommands() {
   return 'SAVED_COMMAND_EDITOR_UI_OK';
 }
 
+async function exerciseStatusBar() {
+  const wait = () => new Promise(resolve => setTimeout(resolve,100));
+  window.fixtureStatus(); await wait(); await wait();
+  const check = (ok,message) => {if(!ok) throw Error(message);};
+  check(document.querySelectorAll('.usage-status-provider').length === 2, 'Initial providers missing');
+  check(document.querySelector('.usage-status-limit b').textContent.includes('90%'), 'Used percentage missing');
+  document.querySelector('[aria-label="status.codex"]').click(); await wait();
+  check(document.querySelectorAll('.usage-status-provider').length === 1, 'Account provider filter failed');
+  const display = document.querySelector('[aria-label="한도 비율 표시"]');
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(display,'remaining');
+  display.dispatchEvent(new Event('change',{bubbles:true})); await wait();
+  check(document.querySelector('.usage-status-limit b').textContent.includes('10%'), 'Remaining percentage missing');
+  check(document.querySelector('.usage-progress-fill').style.width === '10%', 'Remaining bar width mismatch');
+  check(document.querySelector('.usage-progress-fill').className.includes('danger'), 'Warning color was inverted');
+  document.querySelector('[aria-label="status.resources"]').click();
+  document.querySelector('[aria-label="status.ports"]').click(); await wait();
+  check(!document.querySelector('.resource-monitor') && !document.querySelector('.ports-monitor'), 'Hidden monitor still mounted');
+  document.querySelector('.usage-status-provider').click(); await wait();
+  check(document.querySelector('.usage-provider-popover').textContent.includes('계정 사용 한도'), 'Quota scope missing');
+  check(document.querySelector('.usage-detail-window-meta').textContent.includes('10%'), 'Detail percentage mismatch');
+  return 'STATUS_BAR_PREFERENCES_UI_OK';
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require("electron");
   const directory = process.env.ACEDIA_SMOKE_DIRECTORY;
@@ -140,6 +163,15 @@ if (process.versions.electron) {
     await new Promise(resolve => setTimeout(resolve, 300));
     if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
     console.log(await win.webContents.executeJavaScript("(" + exerciseSavedCommands.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
+    const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});
+    await peer.loadFile(path.join(directory,"index.html"));
+    await peer.webContents.executeJavaScript('window.fixtureStatus()');
+    await new Promise(resolve=>setTimeout(resolve,250));
+    await peer.webContents.executeJavaScript(`if(document.querySelectorAll('.usage-status-provider').length!==1 || !document.querySelector('.usage-status-limit b').textContent.includes('10%'))throw Error('Status preferences did not restore'); document.querySelector('[aria-label="status.codex"]').click()`);
+    await new Promise(resolve=>setTimeout(resolve,200));
+    await win.webContents.executeJavaScript("if(document.querySelectorAll('.usage-status-provider').length!==2)throw Error('Status preferences did not sync across windows')");
+    console.log('STATUS_BAR_RESTORE_AND_WINDOW_SYNC_OK');
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); } });
 } else {

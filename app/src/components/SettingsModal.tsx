@@ -1,3 +1,4 @@
+import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
 import { NotificationPolicyPanel } from './NotificationPolicyPanel';
 import { SavedCommandsPanel, type RunSavedCommand } from "./SavedCommandsPanel";
 import type { Project } from "../types";
@@ -223,6 +224,7 @@ const ALL_NAV_ENTRIES: NavEntry[] = [
   { id: "general", group: "Workspace", label: "General", labelKo: "일반", title: "General", titleKo: "일반", sub: "테마 · 알림음 · 데스크톱 펫", subEn: "Theme · notifications · Desktop Pet", keywords: "theme 테마 appearance sound 알림음 notification pet 펫", icon: <IconSliders /> },
   { id: "language", group: "Workspace", label: "Language", labelKo: "언어", title: "Language", titleKo: "언어", sub: "앱 표시 언어", subEn: "Application display language", keywords: "language 언어 한국어 korean english 영어 system 시스템", icon: <IconGlobe /> },
   { id: "agents", group: "Workspace", label: "Agents", labelKo: "에이전트", title: "Agents", titleKo: "에이전트", sub: "도구별 계정 · 실행 기본값", subEn: "Accounts · launch defaults", keywords: "agent 에이전트 연결 connection status usage 사용량 bar qwen region 리전 나라 country", icon: <IconActivity /> },
+  { id: "status", group: "Workspace", label: "Status bar", labelKo: "상태 표시줄", title: "Status bar", titleKo: "상태 표시줄", sub: "계정 한도 · 리소스 · 포트", subEn: "Account quotas · resources · ports", keywords: "status bar 상태 표시줄 remaining 남은 quota 한도", icon: <IconSliders /> },
   { id: "terminal", group: "Workspace", label: "Terminal", labelKo: "터미널", title: "Terminal", titleKo: "터미널", sub: "글꼴 · 커서 · 스크롤 이력 · 클립보드", subEn: "Font · cursor · scrollback · clipboard", keywords: "terminal 터미널 font 글꼴 폰트 size 크기 line height 줄 간격 cursor 커서 scrollback 스크롤 이력 clipboard 클립보드 copy 복사 paste 붙여넣기", icon: <IconTerminal /> },
   { id: "commands", group: "Workspace", label: "Commands & startup", labelKo: "명령 및 시작", title: "Commands & startup", titleKo: "명령 및 시작", sub: "저장 명령 · 프로젝트 시작", subEn: "Saved commands · project startup", keywords: "commands 명령", icon: <IconTerminal /> },
   { id: "browser", group: "Workspace", label: "Browser", labelKo: "브라우저", title: "Browser", titleKo: "브라우저", sub: "시작 페이지 · 검색 · 확대율 · 링크", subEn: "Home · search · zoom · links", keywords: "browser 브라우저", icon: <IconGlobe /> },
@@ -333,6 +335,8 @@ export function SettingsModal({
   const { preference: languagePreference, language, setPreference, text } =
     useAppLanguage();
 
+  const [usageBarError, setUsageBarError] = useState("");
+  const changeUsageBar = (show: boolean) => { try { onShowUsageBarChange(show); setUsageBarError(""); } catch { setUsageBarError(text("설정을 저장하지 못했습니다.", "Could not save settings.")); } };
   const [tab, setTab] = useState<SettingsCategory>("general");
   const [search, setSearch] = useState("");
   const [navigation, setNavigation] = useState<SettingsNavigation | null>(null);
@@ -1161,7 +1165,9 @@ export function SettingsModal({
 
         <div className="app-settings-body" ref={contentRef}>
         {showResults ? <SettingsSearchResults results={results} onSelect={openResult} /> : <>
+        {usageBarError && <p role="alert">{usageBarError}</p>}
         {tab === "terminal" && <TerminalSettingsPanel />}
+        {tab === "status" && <StatusBarSettingsPanel enabled={showUsageBar} onEnabledChange={changeUsageBar} />}
         {tab === "browser" && <BrowserSettingsPanel />}
         {tab === "commands" && <SavedCommandsPanel projects={projects} onRun={onRunSavedCommand} />}
         {tab === "language" && (
@@ -1329,7 +1335,7 @@ export function SettingsModal({
             disabledTools={disabledTools}
             onToggleTool={onToggleTool}
             showUsageBar={showUsageBar}
-            onShowUsageBarChange={onShowUsageBarChange}
+            onShowUsageBarChange={changeUsageBar}
           />
         )}
 

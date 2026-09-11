@@ -1,3 +1,6 @@
+import { createContext, useContext } from 'react';
+import { loadStatusBar, subscribeStatusBar, showUsageProvider, displayUsagePercent, type StatusBarSettings } from '../lib/statusBarSettings';
+const DisplayContext = createContext<StatusBarSettings['display']>('used');
 import {
   useCallback,
   useEffect,
@@ -13,7 +16,6 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { PortsMonitor } from "./PortsMonitor";
 import { ResourceMonitor } from "./ResourceMonitor";
 import {
-  clampUsagePercent,
   formatResetRemaining,
   formatResetShort,
   formatUpdatedAgo,
@@ -40,14 +42,15 @@ function UsageProgress({
   window: UsageRateLimitWindow;
   large?: boolean;
 }) {
-  const percent = clampUsagePercent(window.usedPercent);
+  const mode = useContext(DisplayContext);
+  const percent = displayUsagePercent(window.usedPercent, mode);
   return (
     <span
       className={`usage-progress ${large ? "usage-progress-large" : ""}`}
       aria-hidden="true"
     >
       <span
-        className={`usage-progress-fill usage-tone-${usageTone(percent)}`}
+        className={`usage-progress-fill usage-tone-${usageTone(window.usedPercent)}`}
         style={{ width: `${percent}%` }}
       />
     </span>
@@ -63,6 +66,7 @@ function DetailWindow({
   window: UsageRateLimitWindow;
   now: number;
 }) {
+  const mode = useContext(DisplayContext);
   const { language, text } = useAppLanguage();
   return (
     <div className="usage-detail-window">
@@ -72,7 +76,7 @@ function DetailWindow({
       <UsageProgress window={window} large />
       <div className="usage-detail-window-meta">
         <span className={`usage-tone-${usageTone(window.usedPercent)}`}>
-          {text(`${formatUsagePercent(window.usedPercent)} 사용`, `${formatUsagePercent(window.usedPercent)} used`)}
+          {formatUsagePercent(displayUsagePercent(window.usedPercent, mode))} {mode === "used" ? text("사용", "used") : text("남음", "remaining")}
         </span>
         <span>{formatResetRemaining(window.resetsAt, now, language)}</span>
       </div>
@@ -161,6 +165,7 @@ function ProviderPopover({
           {text("닫기", "Close")}
         </button>
       </div>
+      <p className="check-hint">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>
       <div className="usage-popover-body">
         {provider.limits.map((limit) => (
           <ProviderLimitDetails
@@ -185,6 +190,8 @@ export function UsageStatusBar({
   onSelectProject: (projectId: string) => void;
 }) {
   const { text } = useAppLanguage();
+  const [settings, setSettings] = useState(loadStatusBar);
+  useEffect(() => subscribeStatusBar(setSettings), []);
   const [summary, setSummary] = useState<UsageRateLimitSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -264,7 +271,7 @@ export function UsageStatusBar({
   }, [openPopover]);
 
   const limits = summary?.limits ?? [];
-  const providers = useMemo(() => groupUsageProviders(limits), [limits]);
+  const providers = useMemo(() => groupUsageProviders(limits).filter(provider => showUsageProvider(provider.key, settings)), [limits, settings]);
   const statusText = loading
     ? text("사용량 불러오는 중", "Loading usage")
     : error
@@ -293,7 +300,7 @@ export function UsageStatusBar({
     : null;
 
   return (
-    <footer className="usage-status-bar" ref={rootRef}>
+    <DisplayContext.Provider value={settings.display}><footer className="usage-status-bar" ref={rootRef}>
       <div className="usage-status-summary">
         {statusText ? (
           <span className="usage-status-empty">{statusText}</span>
@@ -308,7 +315,7 @@ export function UsageStatusBar({
                   : ""
               }`}
               onClick={(event) => toggleProvider(event, provider.key)}
-              title={text(`${provider.label} 사용량 상세`, `${provider.label} usage details`)}
+              title={text(`${provider.label} 계정 한도`, `${provider.label} account quota`)}
             >
               <span
                 className="usage-provider-icon"
@@ -325,7 +332,7 @@ export function UsageStatusBar({
                   <span className="usage-status-limit" key={limit.limitId}>
                     <UsageProgress window={window} />
                     <b className={`usage-tone-${usageTone(window.usedPercent)}`}>
-                      {formatUsagePercent(window.usedPercent)}
+                      {formatUsagePercent(displayUsagePercent(window.usedPercent, settings.display))} {settings.display === "used" ? text("사용", "used") : text("남음", "left")}
                     </b>
                     <span className="usage-status-limit-meta">
                       {shortName || formatResetShort(window.resetsAt, now)}
@@ -337,17 +344,17 @@ export function UsageStatusBar({
           ))
         )}
       </div>
-      <ResourceMonitor
+      {settings.resources && <ResourceMonitor
         agents={agents}
         projects={projects}
         onRefreshUsage={() => load(true)}
-      />
-      <PortsMonitor
+      />}
+      {settings.ports && <PortsMonitor
         agents={agents}
         projects={projects}
         onSelectProject={onSelectProject}
         onRefreshUsage={() => load(true)}
-      />
+      />}
       <button
         type="button"
         className="usage-status-refresh"
@@ -365,6 +372,6 @@ export function UsageStatusBar({
           onClose={() => setOpenPopover(null)}
         />
       )}
-    </footer>
+    </footer></DisplayContext.Provider>
   );
 }
