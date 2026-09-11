@@ -190,8 +190,14 @@ export async function buildSpawnArgs(
     if (agent.dangerous && tool.dangerousFlag) {
       cmd = `${cmd} ${tool.dangerousFlag}`;
     }
-    if (agent.aiToolId === "codex" && agent.codexAccountId && agent.codexAccountId !== "default" && !sshHost) {
-      cmd += " -c cli_auth_credentials_store=file";
+    if (agent.aiToolId === "codex" && !sshHost) {
+      // The managed MCP entry is dormant in project config so ordinary Codex
+      // launches do not fail without Acedia's per-session environment. Enable
+      // it only for the local PTY that receives MULTIAGENT_* in main.mjs.
+      cmd += " -c mcp_servers.multiagent_browser.enabled=true";
+      if (agent.codexAccountId && agent.codexAccountId !== "default") {
+        cmd += " -c cli_auth_credentials_store=file";
+      }
     }
     initCommand = cmd;
   }

@@ -93,6 +93,7 @@ describe("Electron hook configuration", () => {
     expect(codex).toContain(
       'env_vars = ["MULTIAGENT_AGENT_ID", "MULTIAGENT_PORT", "MULTIAGENT_TOKEN", "MULTIAGENT_MCP_SCRIPT"]',
     );
+    expect(codex).toContain("enabled = false");
     expect(codex).not.toContain("browser-mcp-server.mjs");
     expect(hookInternals.mergeCodex(codex, "C:\\helper\\notify.ps1", "K:\\AI\\MultiAgent\\app\\electron\\services\\browser-mcp-server.mjs")).toBe(codex);
   });

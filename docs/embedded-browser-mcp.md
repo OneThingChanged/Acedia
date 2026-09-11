@@ -124,9 +124,11 @@ network listener.[^browser-server]
 
 Codex project configuration explicitly whitelists `MULTIAGENT_AGENT_ID`,
 `MULTIAGENT_PORT`, `MULTIAGENT_TOKEN`, and `MULTIAGENT_MCP_SCRIPT` for the MCP
-stdio child. MultiAgent waits for both the hidden browser and authenticated
-loopback broker before it writes the managed configuration and launches a
-Codex, Claude, or Qwen PTY. The stdio MCP child itself is still created by the
+stdio child. The managed Codex entry remains disabled in the persisted project
+configuration because the same file can be loaded by Codex outside Acedia,
+where those runtime variables do not exist. Acedia enables the entry with a
+per-launch Codex override only after both the hidden browser and authenticated
+loopback broker are ready. The stdio MCP child itself is still created by the
 CLI at CLI startup; the browser and broker are the app-lifetime services that
 must already be ready.[^electron-main]
 

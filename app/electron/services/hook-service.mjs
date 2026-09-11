@@ -397,7 +397,10 @@ function mergeCodex(existing, helperPath, mcpScriptPath = "") {
       'command = "node"',
       `args = [${BROWSER_MCP_NODE_ARGS.map((arg) => JSON.stringify(arg)).join(", ")}]`,
       `env_vars = [${BROWSER_MCP_ENV_VARS.map((name) => JSON.stringify(name)).join(", ")}]`,
-      "enabled = true",
+      // The project config can also be loaded by Codex started outside Acedia,
+      // where the MULTIAGENT_* runtime environment does not exist. Keep the
+      // bridge dormant there; Acedia enables it for each local Codex launch.
+      "enabled = false",
       CODEX_MCP_END,
     );
   }

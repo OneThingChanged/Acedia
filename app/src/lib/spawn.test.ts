@@ -125,7 +125,7 @@ describe("buildSpawnArgs resume recovery", () => {
     const launchOptions = { executable: "", args: ["--profile", "work space"], env: [{ name: "LANG", value: "ko" }] };
     invokeMock.mockImplementation(async command => command === "runtime_flags" ? { advanced_launch_options: true } : "saved-session");
     const result = await buildSpawnArgs({ ...agent, launchOptions }, null, vi.fn());
-    expect(result.initCommand).toBe("codex resume saved-session --no-alt-screen");
+    expect(result.initCommand).toBe("codex resume saved-session --no-alt-screen -c mcp_servers.multiagent_browser.enabled=true");
     expect(result.launchOptions).toEqual(launchOptions);
     expect(result.launchOptions).not.toBe(launchOptions);
   });
@@ -155,7 +155,7 @@ describe("buildSpawnArgs resume recovery", () => {
       preferredSessionId: null,
     });
     expect(result.initCommand).toBe(
-      "codex resume session-from-hook-index --no-alt-screen"
+      "codex resume session-from-hook-index --no-alt-screen -c mcp_servers.multiagent_browser.enabled=true"
     );
     expect(setAgentSessionId).toHaveBeenCalledWith(
       "agent-a",
@@ -174,7 +174,7 @@ describe("buildSpawnArgs resume recovery", () => {
     );
 
     expect(result.initCommand).toBe(
-      "codex resume stored-session --no-alt-screen"
+      "codex resume stored-session --no-alt-screen -c mcp_servers.multiagent_browser.enabled=true"
     );
     expect(setAgentSessionId).not.toHaveBeenCalled();
   });
@@ -189,7 +189,7 @@ describe("buildSpawnArgs resume recovery", () => {
     );
 
     expect(result.initCommand).toBe(
-      "codex resume pinned-session --no-alt-screen"
+      "codex resume pinned-session --no-alt-screen -c mcp_servers.multiagent_browser.enabled=true"
     );
   });
 
