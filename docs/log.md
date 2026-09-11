@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.17 — hidden status bar layout**: Reproduced the full workspace collapsing into horizontal flex children when the bottom usage bar was disabled. Desktop grid layout now remains active independently of footer visibility; hiding the bar removes only its 28px row. All 586 tests and a real App renderer regression passed at 800×640, 1202×801 and 1920×1080, covering both settings switches, side panels, hidden-state reload and preserved split panes/session records. [Status bar settings](status-bar-settings.md) records the behavior and verification scope.
+
 * **Acedia 1.8.0.16 — EXE update address compatibility**: Reproduced an update-check failure after the official repository was renamed. EXE update discovery now uses the current product repository and accepts exact release asset paths under its current and previous names, while retaining tag, filename, size and hash checks. All 586 tests and a live update check against the existing public release passed. Existing installations with the previous URL restriction require one manual installation of the new EXE. This revision includes the settings work through 1.8.0.15; Store delivery remains separate.
 
 * **Settings documentation consolidation**: Grouped settings guides in the index, corrected the Commands & startup navigation label, updated the current search count to 105 and added project-selection scope. The combined review guide now maps all six implementation commits to feature documents and records the final verification commands, results and remaining manual checks. This documentation-only update retains product version 1.8.0.15.

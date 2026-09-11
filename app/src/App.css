@@ -174,36 +174,40 @@ body,
   color: var(--app-text);
 }
 
-.app-with-usage-status {
+.app-desktop {
   display: grid;
   grid-template-columns: 220px minmax(180px, 1fr) auto;
+  grid-template-rows: 36px minmax(0, 1fr);
+}
+
+.app-desktop.app-with-usage-status {
   grid-template-rows: 36px minmax(0, 1fr) 28px;
 }
 
-.app-with-usage-status.app-sidebar-collapsed {
+.app-desktop.app-sidebar-collapsed {
   grid-template-columns: 0 minmax(180px, 1fr) auto;
 }
 .app-sidebar-collapsed > .sidebar {
   display: none;
 }
 
-.app-with-usage-status > .app-topbar {
+.app-desktop > .app-topbar {
   grid-column: 1 / -1;
   grid-row: 1;
 }
 
-.app-with-usage-status > .sidebar {
+.app-desktop > .sidebar {
   grid-column: 1;
   grid-row: 2;
   min-height: 0;
 }
 
-.app-with-usage-status > .terminal-area {
+.app-desktop > .terminal-area {
   grid-column: 2;
   grid-row: 2;
 }
 
-.app-with-usage-status > .files-shell {
+.app-desktop > .files-shell {
   grid-column: 3;
   grid-row: 2;
   min-height: 0;

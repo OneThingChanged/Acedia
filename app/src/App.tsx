@@ -3970,7 +3970,7 @@ function App() {
 
   return (
     <div
-      className={`app app-theme-${appTheme} ${
+      className={`app app-theme-${appTheme} ${isElectronRuntime() ? "app-desktop" : ""} ${
         isElectronRuntime() && showUsageBar ? "app-with-usage-status" : ""
       } ${!sidebarOpen ? "app-sidebar-collapsed" : ""}`}
     >

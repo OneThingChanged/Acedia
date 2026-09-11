@@ -8,6 +8,9 @@ sources:
   - resource: ../app/src/components/UsageStatusBar.tsx
   - resource: ../app/src/lib/statusBarSettings.ts
   - resource: ../app/scripts/electron-settings-search-smoke.mjs
+  - resource: ../app/src/App.tsx
+  - resource: ../app/src/App.css
+  - resource: ../app/scripts/electron-workspace-layout-smoke.mjs
 ---
 
 # 상태 표시줄 구성
@@ -26,9 +29,19 @@ sources:
 저장 실패를 표시하고 실패한 값을 적용하지 않는다. 기존 Agents의 전체 사용량 표시
 스위치도 같은 값을 사용한다. Remote/PWA와 모바일 표시 설정은 별도다.
 
+소스 1.8.0.17부터 데스크톱 창의 격자 배치는 하단 표시줄 설정과 독립적으로 유지한다.
+표시줄을 끄면 하단 28px 행만 없어지고 상단바·사이드바·분할 터미널·파일 패널의
+가로 배치는 유지한다. 꺼진 설정으로 앱을 다시 열 때에도 같은 배치를 사용한다.
+
 ## 검증
 
 558개 테스트, 프런트엔드 빌드와 103개 설정 검색 대상·세 창 크기 검증을 통과했다.
 숨김 Electron의 실제 React 화면에서 계정 그룹 숨김, 90% 사용→10% 남음 전환,
 막대 폭·경고 색·상세 화면 일치, 리소스·포트 컴포넌트 제거를 확인했다.
 두 창 사이 설정 동기화와 저장된 구성으로 새 창 복원도 확인했다.
+
+1.8.0.17 회귀 검증은 실제 App 컴포넌트를 사용한다. 기존 코드에서 표시줄을 끈 뒤
+상단바가 창 높이 전체를 차지하는 오류를 재현했고, 수정 후 800×640, 1202×801,
+1920×1080에서 상태 표시줄·Agents 양쪽 스위치, 사이드바와 파일 패널 토글,
+숨김 상태 재시작 및 분할 세션 보존을 확인한다. CLI와 사용자 프로필은 테스트 대역으로
+격리하며 실제 실행 중인 사용자 세션을 조작하지 않는다.
