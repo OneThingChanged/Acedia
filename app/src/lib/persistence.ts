@@ -162,6 +162,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         dangerous: !!c.dangerous,
         useAltScreen: c.useAltScreen || undefined,
         workerSettings: normalizeSessionWorkerSettings(c.workerSettings),
+        shellCommand: c.aiToolId === "none" && typeof c.shellCommand === "string" ? c.shellCommand : undefined,
         launchOptions: normalizeLaunchOptions(c.launchOptions),
         pinned: c.pinned || undefined,
         tabColor: c.tabColor || undefined,

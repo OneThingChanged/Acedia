@@ -1,3 +1,5 @@
+import { SavedCommandsPanel, type RunSavedCommand } from "./SavedCommandsPanel";
+import type { Project } from "../types";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { searchSettings, settingById, SETTING_SCOPES, type SettingsCategory, type SettingDefinition, type SettingsNavigation } from "../lib/settingsCatalog";
 import { SettingsSearchResults, SettingScope, settingTarget, useSettingNavigation } from "./SettingsSearch";
@@ -221,6 +223,7 @@ const ALL_NAV_ENTRIES: NavEntry[] = [
   { id: "language", group: "Workspace", label: "Language", labelKo: "언어", title: "Language", titleKo: "언어", sub: "앱 표시 언어", subEn: "Application display language", keywords: "language 언어 한국어 korean english 영어 system 시스템", icon: <IconGlobe /> },
   { id: "agents", group: "Workspace", label: "Agents", labelKo: "에이전트", title: "Agents", titleKo: "에이전트", sub: "도구별 계정 · 실행 기본값", subEn: "Accounts · launch defaults", keywords: "agent 에이전트 연결 connection status usage 사용량 bar qwen region 리전 나라 country", icon: <IconActivity /> },
   { id: "terminal", group: "Workspace", label: "Terminal", labelKo: "터미널", title: "Terminal", titleKo: "터미널", sub: "글꼴 · 커서 · 스크롤 이력 · 클립보드", subEn: "Font · cursor · scrollback · clipboard", keywords: "terminal 터미널 font 글꼴 폰트 size 크기 line height 줄 간격 cursor 커서 scrollback 스크롤 이력 clipboard 클립보드 copy 복사 paste 붙여넣기", icon: <IconTerminal /> },
+  { id: "commands", group: "Workspace", label: "Commands & startup", labelKo: "명령 및 시작", title: "Commands & startup", titleKo: "명령 및 시작", sub: "저장 명령 · 프로젝트 시작", subEn: "Saved commands · project startup", keywords: "commands 명령", icon: <IconTerminal /> },
   { id: "browser", group: "Workspace", label: "Browser", labelKo: "브라우저", title: "Browser", titleKo: "브라우저", sub: "시작 페이지 · 검색 · 확대율 · 링크", subEn: "Home · search · zoom · links", keywords: "browser 브라우저", icon: <IconGlobe /> },
   { id: "data", group: "Workspace", label: "Data & Sessions", labelKo: "데이터 및 세션", title: "Data & Sessions", titleKo: "데이터 및 세션", sub: "세션별 대화 · 산출물 저장 위치", subEn: "Per-session conversations · artifact storage", keywords: "data 데이터 conversation 대화 session 세션 storage 저장소 path 경로 artifact 산출물", icon: <IconDatabase /> },
   { id: "shortcuts", group: "Workspace", label: "Shortcuts", labelKo: "단축키", title: "Shortcuts", titleKo: "단축키", sub: "명령별 키보드 단축키", subEn: "Keyboard shortcuts by command", keywords: "keyboard 단축키 hotkey shortcut", icon: <IconKeyboard /> },
@@ -268,6 +271,7 @@ function formatBytes(n: number) {
 }
 
 export function SettingsModal({
+  projects = [], onRunSavedCommand,
   theme,
   onThemeChange,
   desktopPetEnabled,
@@ -284,6 +288,8 @@ export function SettingsModal({
   updateProvider,
   onClose,
 }: {
+  projects?: Project[];
+  onRunSavedCommand?: RunSavedCommand;
   theme: AppThemeId;
   onThemeChange: (theme: AppThemeId) => void;
   desktopPetEnabled: boolean;
@@ -1156,6 +1162,7 @@ export function SettingsModal({
         {showResults ? <SettingsSearchResults results={results} onSelect={openResult} /> : <>
         {tab === "terminal" && <TerminalSettingsPanel />}
         {tab === "browser" && <BrowserSettingsPanel />}
+        {tab === "commands" && <SavedCommandsPanel projects={projects} onRun={onRunSavedCommand} />}
         {tab === "language" && (
         <div className="app-settings-section">
           <div className="field-label" {...settingTarget("language.display")}>{text("언어", "Language")}<SettingScope id="language.display" /></div>

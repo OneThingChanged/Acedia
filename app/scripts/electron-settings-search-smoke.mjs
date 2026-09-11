@@ -46,7 +46,7 @@ async function exercise() {
     await open(item.id);
   }
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
-  const allowed = new Set(["browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
+  const allowed = new Set(["saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
     "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
@@ -99,6 +99,29 @@ async function exercise() {
   return "SETTINGS_SEARCH_UI_OK " + catalog.length + " targets";
 }
 
+async function exerciseSavedCommands() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 60));
+  const set = (element, value) => {
+    Object.getOwnPropertyDescriptor(element.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  set(document.querySelector('.app-settings-search input'), '저장 명령'); await wait();
+  document.querySelector('[data-setting-result="commands.library"]').click(); await wait();
+  const panel = document.querySelector('.saved-commands-panel');
+  panel.querySelector('details').open = true;
+  set(panel.querySelector('details input'), 'Fixture command'); await wait();
+  set(panel.querySelector('textarea'), 'echo harmless-fixture'); await wait();
+  [...panel.querySelectorAll('button')].find(b => b.textContent === '명령 저장').click(); await wait();
+  const saved = window.fixtureCommandConfig.commands[0];
+  if (saved?.name !== 'Fixture command' || !panel.textContent.includes('echo harmless-fixture')) throw Error('Command editor did not save/render');
+  [...panel.querySelectorAll('button')].find(b => b.textContent === '새 셸에서 실행').click(); await wait();
+  if (window.fixtureRun?.id !== saved.id || window.fixtureRun?.projectId !== 'fixture-project') throw Error('Command run target mismatch');
+  const startup = panel.querySelector('[aria-label="프로젝트 시작 명령"]'); startup.value = saved.id; startup.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  panel.querySelector('input[type="checkbox"]').click(); await wait();
+  if (!window.fixtureCommandConfig.startups['fixture-project']?.automatic) throw Error('Startup selection not saved');
+  return 'SAVED_COMMAND_EDITOR_UI_OK';
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require("electron");
   const directory = process.env.ACEDIA_SMOKE_DIRECTORY;
@@ -116,6 +139,7 @@ if (process.versions.electron) {
     await win.webContents.executeJavaScript("document.querySelector('[data-setting-result=\"agents.claude.env\"]').click()");
     await new Promise(resolve => setTimeout(resolve, 300));
     if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+    console.log(await win.webContents.executeJavaScript("(" + exerciseSavedCommands.toString() + ")()"));
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); } });
 } else {

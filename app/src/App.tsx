@@ -1,3 +1,4 @@
+import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { switchProviderAccount } from "./lib/codexAccounts";
@@ -290,6 +291,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     dangerous: agent.dangerous,
     useAltScreen: agent.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(agent.workerSettings),
+    shellCommand: agent.aiToolId === "none" ? agent.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(agent.launchOptions),
     pinned: agent.pinned || undefined,
     tabColor: agent.tabColor || undefined,
@@ -425,6 +427,7 @@ function agentFromStored(
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
     workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
+    shellCommand: aiToolId === "none" ? stored.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(stored.launchOptions),
     pinned: stored.pinned || undefined,
     tabColor: stored.tabColor || undefined,
@@ -2248,8 +2251,10 @@ function App() {
   // Selecting a project only marks it active (so the + button targets it and the
   // Docs panel scans its folder). It no longer auto-opens the project's first
   // session — sessions open only when a session row is clicked. The sidebar
-  // toggles expand/collapse separately.
+  // toggles expand/collapse separately. An explicitly configured project startup
+  // command can create its own Shell through the selection event below.
   const selectProject = useCallback((projectId: string) => {
+    window.dispatchEvent(new CustomEvent("acedia:project-selected", { detail: projectId }));
     setWorkspaceMode("sessions");
     setActiveProjectId(projectId);
     setProjects((prev) =>
@@ -2681,6 +2686,7 @@ function App() {
             folder: project.folder,
             aiToolId: tool.id,
             aiLabel: tool.label,
+            shellCommand: tool.id === "none" ? payload.shellCommand : undefined,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
             claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
@@ -2732,6 +2738,27 @@ function App() {
     },
     [applyGroupOp, pushToast, text]
   );
+
+  const runSavedCommand = useCallback(async (commandId: string, projectId: string) => {
+    const project = projectsRef.current.find(p => p.id === projectId);
+    if (!project || (project.sshHostId && !findSshHost(project.sshHostId))) throw new Error("Project or SSH host unavailable.");
+    const command = await invoke<{ name: string; command: string }>("saved_command_resolve", { commandId, project });
+    const result = await createAgent({ name: command.name, aiToolId: "none", dangerous: false, shellCommand: command.command }, { projectId });
+    if (!result.created) throw new Error(result.error);
+    setSettingsOpen(false); setPropertiesProjectId(null);
+  }, [createAgent]);
+  useEffect(() => {
+    const onProject = (event: Event) => {
+      const projectId = (event as CustomEvent<string>).detail;
+      const project = projectsRef.current.find(p => p.id === projectId);
+      if (!project || (project.sshHostId && !findSshHost(project.sshHostId))) return;
+      void invoke<{ id: string } | null>("project_startup_claim", { project }).then(command => {
+        if (command) return runSavedCommand(command.id, projectId);
+      }).catch(error => pushToast("", project.name, String(error)));
+    };
+    window.addEventListener("acedia:project-selected", onProject);
+    return () => window.removeEventListener("acedia:project-selected", onProject);
+  }, [runSavedCommand, pushToast]);
 
   const renameAgent = useCallback((id: string, name: string) => {
     setAgents((prev) =>
@@ -4051,6 +4078,7 @@ function App() {
       )}
       {settingsOpen && (
         <SettingsModal
+          projects={projects} onRunSavedCommand={runSavedCommand}
           theme={appTheme}
           onThemeChange={handleThemeChange}
           desktopPetEnabled={desktopPetEnabled}
@@ -4238,6 +4266,7 @@ function App() {
           return (
             <ProjectPropertiesModal
               project={target}
+              onRunSavedCommand={runSavedCommand}
               agents={agents}
               onSessionDeleted={clearDeletedSessionReferences}
               onClose={() => setPropertiesProjectId(null)}

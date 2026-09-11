@@ -1,3 +1,4 @@
+import { SavedCommands } from "./services/saved-commands.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
@@ -407,6 +408,7 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const savedCommands = new SavedCommands(app.getPath("userData"));
 const browserSettings = browserPreferences(app.getPath("userData"));
 const browserTabs = new BrowserTabStore(app.getPath("userData"));
 let restoringBrowserTabs = true;
@@ -4934,6 +4936,18 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "show_open_dialog":
       return showOpenDialog(event, args);
+    case "saved_commands_get": return savedCommands.store.get();
+    case "saved_commands_set": return savedCommands.store.set(asObject(args.patch), args.revision);
+    case "saved_command_resolve":
+    case "project_startup_claim": {
+      const project = asObject(args.project);
+      if (typeof project.id !== "string" || !project.id) throw new Error("Select a project.");
+      if (command === "project_startup_claim" && !savedCommands.store.get().startups[project.id]?.automatic) return null;
+      if (project.sshHostId) {
+        if (typeof project.remoteFolder !== "string" || !project.remoteFolder.trim()) throw new Error("Remote working folder is required.");
+      } else if (typeof project.folder !== "string" || !path.isAbsolute(project.folder) || !fs.statSync(project.folder, { throwIfNoEntry: false })?.isDirectory()) throw new Error("Project working folder is unavailable.");
+      return command === "project_startup_claim" ? savedCommands.claimStartup(project.id) : savedCommands.resolve(args.commandId, project.id);
+    }
     case "browser_preferences_get":
       return browserSettings.get();
     case "browser_preferences_set": {
@@ -5855,6 +5869,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         console.log("[electron-smoke] MULTIAGENT_BROWSER_HUB_BRIDGE_OK");
         const { verifyBrowserSettings } = await import("./services/browser-settings-smoke.mjs");
         await verifyBrowserSettings(initialWindow, documentBrowserWindows, handleBrowserIntegration);
+        const { verifySavedCommands } = await import("./services/saved-commands-smoke.mjs");
+        await verifySavedCommands(initialWindow);
         const documentBrowserReuseOk = await initialWindow.webContents.executeJavaScript(`
           (async () => {
             const args = {

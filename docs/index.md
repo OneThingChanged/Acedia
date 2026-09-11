@@ -18,6 +18,8 @@ configuration that supports it.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Incremental settings work, acceptance criteria, terminal preferences, and the next implementation step.
 
+* [저장 명령과 프로젝트 시작 설정](saved-commands.md) - Scoped commands, execution targets and opt-in startup timing.
+
 ## Sessions and integrations
 
 * [계정 등록 흐름](account-registration.md) - Guided local account creation, login results, retries, stored identity and default selection.

@@ -147,6 +147,7 @@ export type SshHost = {
 };
 
 export type Agent = {
+  shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
   claudeAccountId?: string;
@@ -183,6 +184,7 @@ export type Agent = {
 };
 
 export type StoredAgent = {
+  shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
   claudeAccountId?: string;
@@ -251,6 +253,7 @@ export type TerminalEntry = {
 };
 
 export type NewAgentPayload = {
+  shellCommand?: string;
   launchOptions?: LaunchOptions;
   useAltScreen?: boolean;
   codexAccountId?: string;

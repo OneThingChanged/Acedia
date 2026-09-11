@@ -81,6 +81,7 @@ export async function buildSpawnArgs(
 ): Promise<SpawnArgs> {
   const tool = toolForId(agent.aiToolId);
   const sshHost = agent.sshHostId ? findSshHost(agent.sshHostId) : null;
+  if (agent.sshHostId && !sshHost) throw new Error("SSH host is unavailable. Update the project host before starting this session.");
   const launchOptions = !agent.sshHostId && tool.command ? normalizeLaunchOptions(agent.launchOptions) : undefined;
   if (launchOptions) {
     const flags = await invoke<{ advanced_launch_options?: boolean }>("runtime_flags");
@@ -88,7 +89,7 @@ export async function buildSpawnArgs(
       throw new Error("고급 실행 설정을 적용하려면 앱을 다시 시작하세요. Restart the app to use advanced launch settings.");
     }
   }
-  let initCommand: string | null = null;
+  let initCommand: string | null = agent.aiToolId === "none" ? agent.shellCommand || null : null;
 
   if (tool.command) {
     let cmd = sshHost

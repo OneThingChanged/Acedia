@@ -7,10 +7,13 @@ import { defaultCommandShortcuts } from "../../src/lib/commandRegistry";
 import "../../src/App.css";
 
 window.fixtureCalls = [];
+window.fixtureCommandConfig = { revision: 0, commands: [], startups: {} };
 if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("multiagent.appLanguage.v1", "ko");
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
+    if (command === "saved_commands_get") return structuredClone(window.fixtureCommandConfig);
+    if (command === "saved_commands_set") { window.fixtureCommandConfig = { ...window.fixtureCommandConfig, ...args.patch, revision: window.fixtureCommandConfig.revision + 1 }; return structuredClone(window.fixtureCommandConfig); }
     if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
     if (command === "check_tools") return Object.fromEntries(["codex", "claude", "qwen", "cline"].map(id => [id, { available: true, path: "C:/fixture/" + id + ".exe" }]));
     if (command.endsWith("_accounts_list")) return [
@@ -38,7 +41,7 @@ function Harness() {
   return <AppLanguageProvider>
     <div className="app-topbar">Acedia <button onClick={() => setOpen(true)}>Settings</button></div>
     <div className="terminal-area"><input id="preserved-workspace" defaultValue="RUNNING_SESSION" /></div>
-    {open && <SettingsModal theme="soft" onThemeChange={() => { window.fixtureMutation = true; }}
+    {open && <SettingsModal projects={[{ id: "fixture-project", name: "Fixture project", folder: "C:/fixture/project", createdAt: 0 }]} onRunSavedCommand={async (id, projectId) => { window.fixtureRun = { id, projectId }; }} theme="soft" onThemeChange={() => { window.fixtureMutation = true; }}
       desktopPetEnabled={false} desktopPetAvailable={true} onDesktopPetEnabledChange={() => {}} onResetDesktopPetPosition={() => {}}
       commandShortcuts={defaultCommandShortcuts()} onCommandShortcutsChange={() => { window.fixtureMutation = true; }}
       disabledTools={disabled} onToggleTool={() => { window.fixtureMutation = true; }}

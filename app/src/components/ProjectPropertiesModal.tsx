@@ -1,3 +1,4 @@
+import { SavedCommandsPanel, type RunSavedCommand } from "./SavedCommandsPanel";
 import { useEffect } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import type { Agent, Project } from "../types";
@@ -16,11 +17,13 @@ function formatDate(ms: number | undefined) {
 
 export function ProjectPropertiesModal({
   project,
+  onRunSavedCommand,
   agents,
   onSessionDeleted,
   onClose,
 }: {
   project: Project;
+  onRunSavedCommand?: RunSavedCommand;
   agents: Agent[];
   onSessionDeleted?: (aiToolId: string, sessionId: string) => void;
   onClose: () => void;
@@ -104,6 +107,7 @@ export function ProjectPropertiesModal({
             </div>
           ))}
         </div>
+        <details style={{ marginTop: 16 }}><summary>{text("저장 명령·프로젝트 시작", "Saved commands and project startup")}</summary><SavedCommandsPanel projects={[project]} initialProjectId={project.id} onRun={onRunSavedCommand}/></details>
         <SessionStorageList
           folder={project.folder}
           agents={projectAgents}

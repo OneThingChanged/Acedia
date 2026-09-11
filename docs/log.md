@@ -2,6 +2,8 @@
 
 ## 2026-09-11
 
+* **Acedia 1.8.0.12 — saved commands**: Added global/project command editing, explicit new-shell execution, target folder/host labels and opt-in once-per-app project startup. Native IPC/ConPTY verified execution location and duplicate startup protection; search/editor UI and scoped-command tests passed. See [saved commands](saved-commands.md).
+
 * **Acedia 1.8.0.11 — browser profiles**: Preserved the existing cookie partition and added named profiles, default/explicit new-tab selection, profile labels and MCP profile selection. Optional web-tab restoration preserves IDs and profiles while omitting preview/authentication URLs. Two separate Electron processes verified isolated cookies and restored pages after restart; profile, search/layout and runtime integration checks passed. See [browser settings](browser-preferences.md).
 
 * **Acedia 1.8.0.10 — browser defaults**: Added shared home page, address-bar search engine, zoom and app web-link settings with explicit saves and stale-window conflict rejection. Unit tests (550), frontend build, 85-target search UI/layout checks and native Electron browser settings integration passed. See [browser settings](browser-preferences.md).

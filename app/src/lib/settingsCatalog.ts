@@ -2,9 +2,10 @@ import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
 import { availableSessionWorkerOptions } from "./sessionWorkers";
 
-export type SettingsCategory = "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
+export type SettingsCategory = "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
 export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
+  commands: ["명령 및 시작", "Commands & startup"],
   browser: ["브라우저", "Browser"],
   general: ["일반", "General"], language: ["언어", "Language"], agents: ["에이전트", "Agents"],
   terminal: ["터미널", "Terminal"], data: ["데이터 및 세션", "Data & Sessions"],
@@ -13,6 +14,7 @@ export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
   vcs: ["버전 관리", "Version Control"], ssh: ["SSH 호스트", "SSH Hosts"], about: ["정보", "About"],
 };
 export const SETTING_SCOPES = {
+  projectStart: { label: ["프로젝트 선택 시", "On project selection"], detail: ["자동 실행을 켜면 프로젝트를 클릭할 때 앱 실행당 한 번 실행합니다. 화면 복원만으로는 실행하지 않습니다.", "When enabled, runs once per app launch on explicit project selection, not on layout restoration."] },
   app: { label: ["즉시 · 이 앱", "Immediate · this app"], detail: ["이 앱의 표시와 동작에 반영됩니다.", "Applies to this app's appearance and behavior."] },
   terminal: { label: ["즉시 · 로컬/SSH", "Immediate · local/SSH"], detail: ["현재 터미널과 새 터미널에 적용합니다. 원격 호스트의 설정 파일은 바꾸지 않습니다.", "Applies to current and new terminals without changing remote host configuration."] },
   newLocal: { label: ["새 로컬 세션", "New local sessions"], detail: ["새 로컬 프로젝트·세션을 만들 때 복사합니다. 기존 세션과 SSH에는 적용하지 않습니다.", "Copied when creating local projects and sessions. Existing sessions and SSH are unchanged."] },
@@ -36,6 +38,8 @@ const entry = (id: string, category: SettingsCategory, ko: string, en: string, s
   ({ id, category, label: [ko, en], scope, keywords, ...extra });
 
 export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
+  entry("commands.library", "commands", "저장 명령", "Saved commands", "action", "전역 프로젝트 실행 shell script global project"),
+  entry("commands.startup", "commands", "프로젝트 시작 명령", "Project startup command", "projectStart", "자동 실행 startup script"),
   entry("browser.profiles", "browser", "브라우저 프로필", "Browser profiles", "saved", "로그인 쿠키 계정 cookies login account"),
   entry("browser.defaultProfile", "browser", "기본 브라우저 프로필", "Default browser profile", "saved", "새 탭 계정 new tab"),
   entry("browser.restore", "browser", "웹 탭 복원", "Restore web tabs", "saved", "재시작 restart restore"),

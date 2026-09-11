@@ -1,4 +1,5 @@
 export type RuntimeCommand =
+  | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
   | "browser_preferences_get" | "browser_preferences_set"
   | "codex_accounts_switch"
   | "claude_accounts_switch"

@@ -15,6 +15,16 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("preserves saved shell commands and refuses a missing SSH target", async () => {
+  const agent = { id: "shell", aiToolId: "none", folder: "C:/workspace", shellCommand: "echo fixture" } as Agent;
+  expect(await buildSpawnArgs(agent, null, vi.fn())).toMatchObject({ initCommand: "echo fixture", cwd: "C:/workspace", ssh: null });
+  vi.stubGlobal("localStorage", { getItem: () => null });
+  await expect(buildSpawnArgs({ ...agent, sshHostId: "remote" }, null, vi.fn())).rejects.toThrow();
+  vi.stubGlobal("localStorage", { getItem: (key: string) => key === LS_SSH_HOSTS ? JSON.stringify([{ id: "remote", host: "example.test", user: "fixture", remoteOs: "posix" }]) : null });
+  expect(await buildSpawnArgs({ ...agent, sshHostId: "remote", remoteFolder: "/srv/project" }, null, vi.fn())).toMatchObject({ initCommand: "echo fixture", cwd: null, ssh: { hostId: "remote", remoteFolder: "/srv/project" } });
+  expect(invokeMock).not.toHaveBeenCalled();
+});
+
 describe("resolveLocalToolCommand", () => {
   it("keeps built-in agent commands portable on local Windows", () => {
     expect(resolveLocalToolCommand("codex", "codex")).toBe("codex");

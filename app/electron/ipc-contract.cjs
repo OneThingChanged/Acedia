@@ -1,6 +1,7 @@
 const INVOKE_COMMANDS = Object.freeze([
   "browser_preferences_get",
   "browser_preferences_set",
+  "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "codex_accounts_switch",
   "claude_accounts_switch",
