@@ -1,3 +1,4 @@
+import { SettingScope, settingTarget } from "./SettingsSearch";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useAppLanguage } from "../lib/appLanguage";
 import { launchOptionsProblem, normalizeLaunchOptions, type LaunchOptions } from "../lib/launchOptions";
@@ -8,9 +9,10 @@ import "./AdvancedLaunchOptions.css";
 const emptyOptions = (): LaunchOptions => ({ executable: "", args: [], env: [] });
 
 export function AdvancedLaunchOptions({
-  toolId, value, onChange, onValidityChange, detectedPath, onLoadDefaults,
+  toolId, value, onChange, onValidityChange, detectedPath, onLoadDefaults, settingsPrefix,
 }: {
   toolId: string;
+  settingsPrefix?: string;
   value?: LaunchOptions;
   onChange: (value: LaunchOptions | undefined) => void;
   onValidityChange?: (valid: boolean) => void;
@@ -93,9 +95,9 @@ export function AdvancedLaunchOptions({
           {" · "}{text("환경변수 " + (normalized?.env.length ?? 0) + "개", (normalized?.env.length ?? 0) + " variables")}
         </span>
       </summary>
-      <section className="advanced-launch-section">
+      <section className="advanced-launch-section" {...settingTarget(settingsPrefix && settingsPrefix + ".executable")}>
         <div className="advanced-launch-heading">
-          <label htmlFor={id + "-path"}>{text("CLI 실행 경로", "CLI executable path")}</label>
+          <label htmlFor={id + "-path"}>{text("CLI 실행 경로", "CLI executable path")}<SettingScope id={settingsPrefix && settingsPrefix + ".executable"} /></label>
           <div className="advanced-launch-mode" role="group" aria-label={text("실행 파일 선택 방식", "Executable selection")}>
             <button type="button" aria-pressed={!custom} onClick={() => { setCustom(false); change({ ...draft, executable: "" }, false); }}>{text("자동 감지", "Auto-detect")}</button>
             <button type="button" aria-pressed={custom} onClick={() => setCustom(true)}>{text("직접 지정", "Custom")}</button>
@@ -112,8 +114,8 @@ export function AdvancedLaunchOptions({
         </div>}
         {dialogError && <p role="alert" className="advanced-launch-error">{dialogError}</p>}
       </section>
-      <section className="advanced-launch-section">
-        <div className="advanced-launch-heading"><span>{text("추가 실행 인수", "Additional arguments")}</span>
+      <section className="advanced-launch-section" {...settingTarget(settingsPrefix && settingsPrefix + ".args")}>
+        <div className="advanced-launch-heading"><span>{text("추가 실행 인수", "Additional arguments")}<SettingScope id={settingsPrefix && settingsPrefix + ".args"} /></span>
           <button type="button" className="advanced-launch-add" disabled={draft.args.length >= 64}
             onClick={() => change({ ...draft, args: [...draft.args, ""] })}>{text("+ 인수 추가", "+ Add argument")}</button>
         </div>
@@ -129,8 +131,8 @@ export function AdvancedLaunchOptions({
         </div>
         <p className="advanced-launch-hint">{text("한 행에 인수 하나. 공백이 있어도 따옴표로 감쌀 필요가 없습니다.", "One argument per row. Do not add wrapping quotes, even for spaces.")}</p>
       </section>
-      <section className="advanced-launch-section">
-        <div className="advanced-launch-heading"><span>{text("환경변수", "Environment variables")}</span>
+      <section className="advanced-launch-section" {...settingTarget(settingsPrefix && settingsPrefix + ".env")}>
+        <div className="advanced-launch-heading"><span>{text("환경변수", "Environment variables")}<SettingScope id={settingsPrefix && settingsPrefix + ".env"} /></span>
           <button type="button" className="advanced-launch-add" disabled={draft.env.length >= 64}
             onClick={() => change({ ...draft, env: [...draft.env, { name: "", value: "" }] })}>{text("+ 변수 추가", "+ Add variable")}</button>
         </div>

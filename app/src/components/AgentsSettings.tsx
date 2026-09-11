@@ -1,3 +1,5 @@
+import { SettingScope, settingTarget } from "./SettingsSearch";
+import type { SettingsNavigation } from "../lib/settingsCatalog";
 import { useEffect, useId, useState } from "react";
 import { invoke } from "../platform/runtime";
 import { toolForId } from "../types";
@@ -19,11 +21,13 @@ type ToolAvailability = Record<string, { available: boolean; path: string | null
 const CHECKABLE_TOOL_IDS = ["claude", "codex", "qwen", "cline"];
 
 export function AgentsSettings({
+  navigation,
   disabledTools,
   onToggleTool,
   showUsageBar,
   onShowUsageBarChange,
 }: {
+  navigation?: SettingsNavigation;
   disabledTools: string[];
   onToggleTool: (toolId: string, enabled: boolean) => void;
   showUsageBar: boolean;
@@ -66,9 +70,9 @@ export function AgentsSettings({
       .finally(() => setQwenBusy(false));
   };
 
-  const [tab, setTab] = useState("codex");
+  const [tab, setTab] = useState(navigation?.agentTab ?? "codex");
   const tabPrefix = useId();
-  const [defaults, setDefaults] = useState(() => loadAgentDefaults("codex"));
+  const [defaults, setDefaults] = useState(() => loadAgentDefaults(navigation?.agentTab ?? "codex"));
   const [saveError, setSaveError] = useState("");
   useEffect(() => {
     const sync = (event: StorageEvent) => {
@@ -79,6 +83,8 @@ export function AgentsSettings({
   }, [tab]);
   const tabs = ["common", "codex", "claude", "qwen", "cline"];
   const selectTab = (id: string) => { setTab(id); setDefaults(loadAgentDefaults(id)); setSaveError(""); };
+  useEffect(() => { if (navigation?.agentTab) selectTab(navigation.agentTab); }, [navigation]);
+  const prefix = "agents." + tab;
   const updateDefaults = (patch: Partial<AgentDefaults>) => {
     try { setDefaults(saveAgentDefaults(tab, { ...loadAgentDefaults(tab), ...patch })); setSaveError(""); return true; }
     catch { setSaveError(text("기본값을 저장하지 못했습니다. 다시 시도하세요.", "Could not save defaults. Please try again.")); return false; }
@@ -102,19 +108,19 @@ export function AgentsSettings({
     <div role="tabpanel" id={`${tabPrefix}-panel`} aria-labelledby={`${tabPrefix}-${tab}`} className="agent-settings-panel" key={tab}>
     {tab === "common" ? <>
       <div className="agent-settings-toolhead"><div><h3>{text("공통 설정", "General settings")}</h3><p>{text("모든 에이전트에 적용되는 표시 설정", "Display settings shared by all agents")}</p></div></div>
-      <div className="agent-settings-card"><label className="agent-settings-row"><div><div className="agent-row-title">{text("작업표시줄 사용량 표시", "Show usage status bar")}</div><div className="agent-row-sub">{text("앱 하단에 지원 도구의 사용량과 한도를 표시합니다.", "Show supported providers' usage limits in the bottom bar.")}</div></div><input type="checkbox" role="switch" checked={showUsageBar} onChange={e => onShowUsageBarChange(e.target.checked)} /></label></div>
-      <div className="agent-settings-sectionhead"><h4>{text("설치 상태", "Installation status")}</h4><button type="button" className="agent-refresh" disabled={checking} onClick={refreshAvail}>{text("새로고침", "Refresh")}</button></div>
+      <div className="agent-settings-card"><label className="agent-settings-row" {...settingTarget("agents.common.usage")}><div><div className="agent-row-title">{text("작업표시줄 사용량 표시", "Show usage status bar")}<SettingScope id="agents.common.usage" /></div><div className="agent-row-sub">{text("앱 하단에 지원 도구의 사용량과 한도를 표시합니다.", "Show supported providers' usage limits in the bottom bar.")}</div></div><input type="checkbox" role="switch" checked={showUsageBar} onChange={e => onShowUsageBarChange(e.target.checked)} /></label></div>
+      <div className="agent-settings-sectionhead" {...settingTarget("agents.common.installation")}><h4>{text("설치 상태", "Installation status")}<SettingScope id="agents.common.installation" /></h4><button type="button" className="agent-refresh" disabled={checking} onClick={refreshAvail}>{text("새로고침", "Refresh")}</button></div>
       <div className="agent-settings-card">{CHECKABLE_TOOL_IDS.map(id => <div key={id} className="agent-settings-row"><span><span className="agent-conn-icon" style={{ color: toolForId(id).iconColor }}>{toolForId(id).icon}</span> {toolForId(id).label}</span>{availability(id)}</div>)}</div>
       <p className="agent-hint">{text("각 도구의 사용 여부와 계정은 해당 탭에서 설정합니다.", "Configure tool availability and accounts in each tool's tab.")}</p>
     </> : <>
       <div className="agent-settings-toolhead"><span className="agent-settings-toolicon" style={{ color: tool.iconColor }}>{tool.icon}</span><div><h3>{tool.label}</h3><p>{text("로그인 환경과 새 세션의 실행 설정", "Login environment and defaults for new sessions")}</p></div>{availability(tab)}</div>
-      <div className="agent-settings-card"><label className="agent-settings-row"><div><div className="agent-row-title">{tool.label} {text("사용", "enabled")}</div><div className="agent-row-sub">{text("새 세션을 만들 때 도구 목록에 표시합니다.", "Show this tool in the new session picker.")}</div></div><input type="checkbox" role="switch" checked={!disabledTools.includes(tab)} onChange={e => onToggleTool(tab, e.target.checked)} /></label></div>
-      {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab}
+      <div className="agent-settings-card"><label className="agent-settings-row" {...settingTarget(prefix + ".enabled")}><div><div className="agent-row-title">{tool.label} {text("사용", "enabled")}<SettingScope id={prefix + ".enabled"} /></div><div className="agent-row-sub">{text("새 세션을 만들 때 도구 목록에 표시합니다.", "Show this tool in the new session picker.")}</div></div><input type="checkbox" role="switch" checked={!disabledTools.includes(tab)} onChange={e => onToggleTool(tab, e.target.checked)} /></label></div>
+      {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} settingId={prefix + ".accounts"}
         defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId}
         onMakeDefault={accountId => updateDefaults(tab === "codex" ? { codexAccountId: accountId } : { claudeAccountId: accountId })} />}
       {tab === "qwen" && <>
-      <div className="agent-block">
-        <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}</div>
+      <div className="agent-block" {...settingTarget("agents.qwen.region")}>
+        <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}<SettingScope id="agents.qwen.region" /></div>
         <div className="agent-row-sub">
           {text(
             "Qwen Code(~/.qwen/settings.json)의 ModelStudio 엔드포인트 리전. 계정 지역과 맞춰야 합니다.",
@@ -147,16 +153,16 @@ export function AgentsSettings({
       {tool.dangerousFlag && <>
         <div className="agent-settings-sectionhead"><h4>{text("새 세션 기본값", "New session defaults")}</h4></div>
         <div className="agent-settings-card agent-defaults">
-          {tab === "codex" && <div className="agent-settings-row"><AccountSelect value={defaults.codexAccountId} onChange={codexAccountId => updateDefaults({ codexAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Codex 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Codex sessions.")} /></div>}
-          {tab === "claude" && <div className="agent-settings-row"><AccountSelect provider="claude" value={defaults.claudeAccountId} onChange={claudeAccountId => updateDefaults({ claudeAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Claude 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Claude sessions.")} /></div>}
+          {tab === "codex" && <div className="agent-settings-row" {...settingTarget(prefix + ".defaultAccount")}><SettingScope id={prefix + ".defaultAccount"} /><AccountSelect value={defaults.codexAccountId} onChange={codexAccountId => updateDefaults({ codexAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Codex 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Codex sessions.")} /></div>}
+          {tab === "claude" && <div className="agent-settings-row" {...settingTarget(prefix + ".defaultAccount")}><SettingScope id={prefix + ".defaultAccount"} /><AccountSelect provider="claude" value={defaults.claudeAccountId} onChange={claudeAccountId => updateDefaults({ claudeAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Claude 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Claude sessions.")} /></div>}
           <details open={tab !== "codex"}><summary>{text("실행 옵션", "Launch options")}</summary>
-            <label className="agent-settings-row"><div><div className="agent-row-title">{text("권한 확인 생략", "Skip approval prompts")}</div><div className="agent-row-sub">{text("새 세션의 Dangerous 모드 기본값", "Default Dangerous mode for new sessions")}</div></div><input type="checkbox" role="switch" checked={defaults.dangerous} onChange={e => updateDefaults({ dangerous: e.target.checked })} /></label>
-            {tab === "codex" && <><label className="agent-settings-row"><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}</div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label><div className="agent-settings-row"><SessionWorkerFields settings={defaults.workerSettings} disabledTools={disabledTools} onChange={workerSettings => updateDefaults({ workerSettings })} /></div></>}
+            <label className="agent-settings-row" {...settingTarget(prefix + ".dangerous")}><div><div className="agent-row-title">{text("권한 확인 생략", "Skip approval prompts")}<SettingScope id={prefix + ".dangerous"} /></div><div className="agent-row-sub">{text("새 세션의 Dangerous 모드 기본값", "Default Dangerous mode for new sessions")}</div></div><input type="checkbox" role="switch" checked={defaults.dangerous} onChange={e => updateDefaults({ dangerous: e.target.checked })} /></label>
+            {tab === "codex" && <><label className="agent-settings-row" {...settingTarget("agents.codex.altScreen")}><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}<SettingScope id="agents.codex.altScreen" /></div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label><div className="agent-settings-row"><SessionWorkerFields settingsPrefix="agents.codex.workers" settings={defaults.workerSettings} disabledTools={disabledTools} onChange={workerSettings => updateDefaults({ workerSettings })} /></div></>}
           </details>
         </div><p className="agent-hint">{text("자동 저장됩니다. 기존 세션의 계정과 실행 옵션은 변경되지 않습니다.", "Saved automatically. Existing session accounts and options remain unchanged.")}</p>
       </>}
       {tool.command && <>
-        <AdvancedLaunchOptions key={tab} toolId={tab} value={defaults.launchOptions}
+        <AdvancedLaunchOptions key={tab} toolId={tab} settingsPrefix={prefix} value={defaults.launchOptions}
           detectedPath={avail?.[tab]?.path} onChange={launchOptions => updateDefaults({ launchOptions })} />
         <p className="agent-hint">{text("고급 설정은 자동 저장되며 새 로컬 세션부터 적용됩니다. 기존 세션은 세션 속성에서 변경하세요.", "Advanced settings are saved automatically for new local sessions. Edit existing sessions in Session properties.")}</p>
       </>}

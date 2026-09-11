@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { SettingLabel, SettingScope, settingTarget } from "./SettingsSearch";
 import { useAppLanguage } from "../lib/appLanguage";
 import {
   DEFAULT_TERMINAL_SETTINGS, TERMINAL_FONTS, loadTerminalSettings,
@@ -14,9 +15,9 @@ export function TerminalSettingsPanel() {
     try { const next = updateTerminalSettings(patch); setSettings(next); setError(""); return next; }
     catch { setError(text("설정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save settings. Please try again.")); }
   };
-  const row = (label: string, control: ReactNode, hint?: string) => (
-    <label className="agent-settings-row terminal-settings-row">
-      <span><span className="agent-row-title">{label}</span>{hint && <span className="agent-row-sub terminal-settings-hint">{hint}</span>}</span>
+  const row = (id: string, control: ReactNode, hint?: string) => (
+    <label className="agent-settings-row terminal-settings-row" {...settingTarget(id)}>
+      <span><span className="agent-row-title"><SettingLabel id={id} /><SettingScope id={id} /></span>{hint && <span className="agent-row-sub terminal-settings-hint">{hint}</span>}</span>
       {control}
     </label>
   );
@@ -32,19 +33,19 @@ export function TerminalSettingsPanel() {
       "이 앱의 모든 로컬·SSH 터미널에 적용됩니다. 표시 변경은 즉시 반영되며 새 세션에도 유지됩니다.",
       "Applies to all local and SSH terminals in this app. Display changes apply immediately and are kept for new sessions.",
     )}</p>
-    <div className="agent-settings-sectionhead"><h4>{text("글꼴과 표시", "Font and appearance")}</h4>
+    <div className="agent-settings-sectionhead" {...settingTarget("terminal.reset")}><h4>{text("글꼴과 표시", "Font and appearance")}<SettingScope id="terminal.reset" /></h4>
       <button className="btn-secondary" onClick={() => update({ ...DEFAULT_TERMINAL_SETTINGS })}>{text("기본값 복원", "Restore defaults")}</button>
     </div>
     <div className="agent-settings-card">
-      {row(text("글꼴", "Font family"), <select aria-label={text("글꼴", "Font family")} value={settings.fontFamily} onChange={e => update({ fontFamily: e.target.value })}>
+      {row("terminal.font", <select aria-label={text("글꼴", "Font family")} value={settings.fontFamily} onChange={e => update({ fontFamily: e.target.value })}>
         {TERMINAL_FONTS.map(font => <option key={font.label} value={font.value}>{font.label}</option>)}
       </select>, text("설치되지 않은 글꼴은 대체 고정폭 글꼴로 표시됩니다.", "Unavailable fonts fall back to another monospace font."))}
-      {row(text("글자 크기", "Font size"), number("fontSize", 9, 24, 1, text("글자 크기", "Font size")), text("9–24px · Ctrl+휠과 같은 설정입니다.", "9–24px · shared with Ctrl+wheel."))}
-      {row(text("줄 간격", "Line height"), number("lineHeight", 1, 2, 0.05, text("줄 간격", "Line height")), text("1.0–2.0배", "1.0–2.0×"))}
-      {row(text("커서 모양", "Cursor shape"), <select aria-label={text("커서 모양", "Cursor shape")} value={settings.cursorStyle} onChange={e => update({ cursorStyle: e.target.value as TerminalSettings["cursorStyle"] })}>
+      {row("terminal.fontSize", number("fontSize", 9, 24, 1, text("글자 크기", "Font size")), text("9–24px · Ctrl+휠과 같은 설정입니다.", "9–24px · shared with Ctrl+wheel."))}
+      {row("terminal.lineHeight", number("lineHeight", 1, 2, 0.05, text("줄 간격", "Line height")), text("1.0–2.0배", "1.0–2.0×"))}
+      {row("terminal.cursorStyle", <select aria-label={text("커서 모양", "Cursor shape")} value={settings.cursorStyle} onChange={e => update({ cursorStyle: e.target.value as TerminalSettings["cursorStyle"] })}>
         <option value="block">{text("블록", "Block")}</option><option value="bar">{text("세로 막대", "Bar")}</option><option value="underline">{text("밑줄", "Underline")}</option>
       </select>)}
-      {row(text("커서 깜빡임", "Blinking cursor"), toggle("cursorBlink", text("커서 깜빡임", "Blinking cursor")))}
+      {row("terminal.cursorBlink", toggle("cursorBlink", text("커서 깜빡임", "Blinking cursor")))}
     </div>
     <div className="terminal-settings-preview" aria-label={text("글꼴 미리보기", "Font preview")}
       style={{ fontFamily: settings.fontFamily, fontSize: settings.fontSize, lineHeight: settings.lineHeight }}>
@@ -53,10 +54,10 @@ export function TerminalSettingsPanel() {
     </div>
     <div className="agent-settings-sectionhead"><h4>{text("이력과 클립보드", "History and clipboard")}</h4></div>
     <div className="agent-settings-card">
-      {row(text("스크롤 이력 행 수", "Scrollback rows"), number("scrollback", 1000, 50000, 1000, text("스크롤 이력 행 수", "Scrollback rows")),
+      {row("terminal.scrollback", number("scrollback", 1000, 50000, 1000, text("스크롤 이력 행 수", "Scrollback rows")),
         text("1,000–50,000행. 줄이면 오래된 화면 이력이 잘릴 수 있습니다. 저장된 대화 파일은 유지됩니다.", "1,000–50,000 rows. Lower values may trim older screen history. Saved conversation files are kept."))}
-      {row(text("선택하면 복사", "Copy on select"), toggle("copyOnSelect", text("선택하면 복사", "Copy on select")), text("선택한 터미널 텍스트를 클립보드에 복사합니다.", "Copy selected terminal text to the clipboard."))}
-      {row(text("우클릭으로 붙여넣기", "Right-click to paste"), toggle("rightClickToPaste", text("우클릭으로 붙여넣기", "Right-click to paste")),
+      {row("terminal.copyOnSelect", toggle("copyOnSelect", text("선택하면 복사", "Copy on select")), text("선택한 터미널 텍스트를 클립보드에 복사합니다.", "Copy selected terminal text to the clipboard."))}
+      {row("terminal.rightClickToPaste", toggle("rightClickToPaste", text("우클릭으로 붙여넣기", "Right-click to paste")),
         text("Ctrl+우클릭은 기존 우클릭 동작을 유지합니다.", "Ctrl+right-click keeps the normal right-click behavior."))}
     </div>
     <p className="check-hint">{text("자동 저장됩니다. CLI가 직접 지정한 커서 모양은 앱 기본값보다 우선할 수 있습니다.", "Saved automatically. A CLI can override the default cursor appearance.")}</p>

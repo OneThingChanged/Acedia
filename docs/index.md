@@ -14,6 +14,7 @@ configuration that supports it.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
+* [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Incremental settings work, acceptance criteria, terminal preferences, and the next implementation step.
 
 ## Sessions and integrations

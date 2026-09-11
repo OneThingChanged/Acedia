@@ -1,3 +1,4 @@
+import { SettingScope, settingTarget } from "./SettingsSearch";
 import type {
   SessionWorkerPreset,
   SessionWorkerSettings,
@@ -10,11 +11,13 @@ import { useAppLanguage } from "../lib/appLanguage";
 
 export function SessionWorkerFields({
   settings,
+  settingsPrefix,
   disabledTools,
   onChange,
   className = "session-worker-fields",
 }: {
   settings: SessionWorkerSettings | undefined;
+  settingsPrefix?: string;
   disabledTools: readonly string[];
   onChange: (settings: SessionWorkerSettings | undefined) => void;
   className?: string;
@@ -33,8 +36,8 @@ export function SessionWorkerFields({
       ? selected
       : "";
     return (
-      <label className="field session-worker-field">
-        <span className="field-label">{label}</span>
+      <label className="field session-worker-field" {...settingTarget(settingsPrefix && settingsPrefix + "." + kind)}>
+        <span className="field-label">{label}<SettingScope id={settingsPrefix && settingsPrefix + "." + kind} /></span>
         <select
           value={visibleValue}
           onChange={(event) =>

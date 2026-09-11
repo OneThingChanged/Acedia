@@ -1,3 +1,5 @@
+import { searchSettings, settingById, SETTING_SCOPES, type SettingsCategory, type SettingDefinition, type SettingsNavigation } from "../lib/settingsCatalog";
+import { SettingsSearchResults, SettingScope, settingTarget, useSettingNavigation } from "./SettingsSearch";
 import { APP_LOCALES, LOCALE_LABELS } from "../lib/locales/translate";
 import { AgentsSettings } from "./AgentsSettings";
 import { TerminalSettingsPanel } from "./TerminalSettingsPanel";
@@ -158,20 +160,6 @@ type DiagnosticExportState =
     }
   | { status: "cancelled" }
   | { status: "error"; message: string };
-
-type SettingsCategory =
-  | "terminal"
-  | "language"
-  | "general"
-  | "agents"
-  | "data"
-  | "shortcuts"
-  | "hooks"
-  | "dashboard"
-  | "remote"
-  | "vcs"
-  | "ssh"
-  | "about";
 
 const svgProps = {
   width: 16,
@@ -338,6 +326,11 @@ export function SettingsModal({
 
   const [tab, setTab] = useState<SettingsCategory>("general");
   const [search, setSearch] = useState("");
+  const [navigation, setNavigation] = useState<SettingsNavigation | null>(null);
+  const navigationSequence = useRef(0);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const missingTarget = useSettingNavigation(contentRef, navigation);
   const [diffTool, setDiffTool] = useState<string>(() => loadDiffToolCommand());
   const [diffToolSaved, setDiffToolSaved] = useState(false);
 
@@ -1031,29 +1024,19 @@ export function SettingsModal({
     developerUpdate.status === "checking" ||
     developerUpdate.status === "installing";
 
-  const query = search.trim().toLowerCase();
-  const matchesSearch = (entry: NavEntry) =>
-    !query ||
-    entry.label.toLowerCase().includes(query) ||
-    entry.labelKo.toLowerCase().includes(query) ||
-    text(entry.labelKo, entry.label).toLowerCase().includes(query) ||
-    entry.keywords.toLowerCase().includes(query);
-  const activeEntry =
-    NAV_ENTRIES.find((entry) => entry.id === tab) ?? NAV_ENTRIES[0];
-
-  const handleSearch = (value: string) => {
-    setSearch(value);
-    const next = value.trim().toLowerCase();
-    if (!next) return;
-    const firstHit = NAV_ENTRIES.find(
-      (entry) =>
-        entry.label.toLowerCase().includes(next) ||
-        entry.labelKo.toLowerCase().includes(next) ||
-        text(entry.labelKo, entry.label).toLowerCase().includes(next) ||
-        entry.keywords.toLowerCase().includes(next)
-    );
-    if (firstHit) setTab(firstHit.id);
+  const query = search.trim();
+  const results = searchSettings(query, { buildVariant, disabledTools }, text);
+  const showResults = !!query && !navigation;
+  const navEntries = NAV_ENTRIES.filter(entry => buildVariant !== "company" || entry.id !== "remote");
+  const matchesSearch = (entry: NavEntry) => !query || results.some(item => item.category === entry.id);
+  const activeEntry = navEntries.find(entry => entry.id === tab) ?? navEntries[0];
+  const handleSearch = (value: string) => { setSearch(value); setNavigation(null); };
+  const openResult = (item: SettingDefinition) => {
+    setTab(item.category);
+    setNavigation({ id: item.id, agentTab: item.agentTab, sequence: ++navigationSequence.current });
   };
+  const selectedSetting = navigation ? settingById(navigation.id) : undefined;
+  const returnToResults = () => { setNavigation(null); searchInput.current?.focus(); };
 
   return (
     <>
@@ -1089,16 +1072,30 @@ export function SettingsModal({
           <label className="app-settings-search">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
             <input
+              ref={searchInput}
               type="search"
               value={search}
               aria-label={text("설정 검색", "Search settings")}
               placeholder={text("설정 검색…", "Search settings…")}
               onChange={(e) => handleSearch(e.target.value)}
+              onKeyDown={event => {
+                if (event.nativeEvent.isComposing) {
+                  if (event.key === "Escape") event.stopPropagation();
+                  return;
+                }
+                if (event.key === "Escape" && search) {
+                  event.preventDefault(); event.stopPropagation(); handleSearch("");
+                } else if (event.key === "Enter" && showResults && results.length) {
+                  event.preventDefault(); openResult(results[0]);
+                } else if (event.key === "ArrowDown" && showResults) {
+                  event.preventDefault(); contentRef.current?.querySelector<HTMLButtonElement>("[data-setting-result]")?.focus();
+                }
+              }}
             />
           </label>
           <nav className="app-settings-nav" aria-label={text("설정 카테고리", "Settings categories")}>
             {NAV_GROUPS.map((group) => {
-              const entries = NAV_ENTRIES.filter(
+              const entries = navEntries.filter(
                 (entry) => entry.group === group && matchesSearch(entry)
               );
               if (entries.length === 0) return null;
@@ -1118,7 +1115,7 @@ export function SettingsModal({
                         tab === entry.id ? "app-settings-nav-item-active" : ""
                       }`}
                       aria-current={tab === entry.id ? "page" : undefined}
-                      onClick={() => setTab(entry.id)}
+                      onClick={() => { setTab(entry.id); setSearch(""); setNavigation(null); }}
                     >
                       <span className="app-settings-nav-icon">{entry.icon}</span>
                       {text(entry.labelKo, entry.label)}
@@ -1133,23 +1130,32 @@ export function SettingsModal({
           </div>
         </aside>
 
-        <div className="app-settings-main">
+        <div className={"app-settings-main" + (navigation ? " settings-has-target" : "")}>
         <div className="app-settings-content-head">
           <div>
             <h2 className="modal-title">
-              {text(activeEntry.titleKo, activeEntry.title)}
+              {showResults ? text("설정 검색", "Search settings") : text(activeEntry.titleKo, activeEntry.title)}
             </h2>
             <div className="app-settings-content-sub">
-              {text(activeEntry.sub, activeEntry.subEn)}
+              {showResults ? text("옵션을 선택하면 해당 위치로 이동합니다.", "Choose an option to go to its setting.") : text(activeEntry.sub, activeEntry.subEn)}
             </div>
+            {navigation && selectedSetting && <>
+              <div className="settings-search-return">
+                <button type="button" className="btn-secondary" onClick={returnToResults}>{text("검색 결과로 돌아가기", "Back to search results")}</button>
+                <span>{text(...selectedSetting.label)}<SettingScope id={selectedSetting.id} /></span>
+              </div>
+              <p className="settings-scope-description">{text(...SETTING_SCOPES[selectedSetting.scope].detail)}</p>
+              {missingTarget && <p role="status" className="settings-search-missing">{text("현재 상태에서 이 항목을 표시할 수 없습니다. 검색 결과에서 다른 항목을 선택하세요.", "This setting is unavailable in the current state. Choose another search result.")}</p>}
+            </>}
           </div>
         </div>
 
-        <div className="app-settings-body">
+        <div className="app-settings-body" ref={contentRef}>
+        {showResults ? <SettingsSearchResults results={results} onSelect={openResult} /> : <>
         {tab === "terminal" && <TerminalSettingsPanel />}
         {tab === "language" && (
         <div className="app-settings-section">
-          <div className="field-label">{text("언어", "Language")}</div>
+          <div className="field-label" {...settingTarget("language.display")}>{text("언어", "Language")}<SettingScope id="language.display" /></div>
           <div className="app-theme-options" role="radiogroup" aria-label={text("앱 언어", "App language")}>
             {LANGUAGE_OPTIONS.map((option) => (
               <button
@@ -1178,7 +1184,7 @@ export function SettingsModal({
         {tab === "general" && (
         <>
         <div className="app-settings-section">
-          <div className="field-label">{text("테마", "Theme")}</div>
+          <div className="field-label" {...settingTarget("general.theme")}>{text("테마", "Theme")}<SettingScope id="general.theme" /></div>
           <div className="app-theme-options">
             {APP_THEMES.map((option) => (
               <button
@@ -1195,7 +1201,7 @@ export function SettingsModal({
         </div>
 
         <div className="app-settings-section">
-          <div className="field-label">{text("알림음", "Notification sound")}</div>
+          <div className="field-label" {...settingTarget("general.sound")}>{text("알림음", "Notification sound")}<SettingScope id="general.sound" /></div>
           <div className="app-theme-options">
             {SOUND_MODES.map((option) => (
               <button
@@ -1249,7 +1255,7 @@ export function SettingsModal({
               {text("테스트", "Test")}
             </button>
           </div>
-          <label className="app-checkbox-row">
+          <label className="app-checkbox-row" {...settingTarget("general.notifications")}>
             <input
               type="checkbox"
               checked={sound.osNotification !== false}
@@ -1261,11 +1267,12 @@ export function SettingsModal({
               "Windows 알림 표시 (소리 중복 방지: 앱 사운드가 켜져 있으면 무음)",
               "Show Windows notifications (silent while app sound is enabled to avoid duplicates)",
             )}
+          <SettingScope id="general.notifications" />
           </label>
         </div>
 
         <div className="app-settings-section">
-          <div className="field-label">Desktop Pet</div>
+          <div className="field-label" {...settingTarget("general.pet")}>Desktop Pet<SettingScope id="general.pet" /></div>
           <div className="app-about-card app-pet-settings-card">
             <label className="app-checkbox-row app-pet-toggle-row">
               <input
@@ -1306,6 +1313,7 @@ export function SettingsModal({
 
         {tab === "agents" && (
           <AgentsSettings
+            navigation={navigation ?? undefined}
             disabledTools={disabledTools}
             onToggleTool={onToggleTool}
             showUsageBar={showUsageBar}
@@ -1323,8 +1331,8 @@ export function SettingsModal({
                 {conversationStorage?.custom ? text("사용자 지정", "Custom") : text("Local AppData (기본값)", "Local AppData (default)")}
               </span>
             </div>
-            <label className="field app-remote-field">
-              <span className="field-label">Storage root</span>
+            <label className="field app-remote-field" {...settingTarget("data.storage")}>
+              <span className="field-label">Storage root<SettingScope id="data.storage" /></span>
               <div className="folder-row">
                 <input
                   value={conversationStorage?.path ?? text("불러오는 중…", "Loading…")}
@@ -1439,7 +1447,7 @@ export function SettingsModal({
 
         {tab === "hooks" && (
         <div className="app-settings-section">
-          <div className="field-label">Agent Hooks</div>
+          <div className="field-label" {...settingTarget("hooks.repair")}>Agent Hooks<SettingScope id="hooks.repair" /></div>
           <div className="app-about-card">
             <div className="app-update-message">
               {hookRepair.status === "idle" &&
@@ -1493,7 +1501,7 @@ export function SettingsModal({
         {tab === "dashboard" && (
         <>
         <div className="app-settings-section">
-          <div className="field-label">Dashboard server</div>
+          <div className="field-label" {...settingTarget("dashboard.server")}>Dashboard server<SettingScope id="dashboard.server" /></div>
           <div className="app-about-card">
             <div className="app-about-row">
               <span className="app-about-label">Status</span>
@@ -1542,8 +1550,8 @@ export function SettingsModal({
             </div>
 
             <div className="app-remote-divider" />
-            <label className="field app-remote-field">
-              <span className="field-label">Local dashboard port</span>
+            <label className="field app-remote-field" {...settingTarget("dashboard.port")}>
+              <span className="field-label">Local dashboard port<SettingScope id="dashboard.port" /></span>
               <input
                 type="number"
                 min={1}
@@ -1560,7 +1568,7 @@ export function SettingsModal({
                 }
               />
             </label>
-            <label className="app-checkbox-row">
+            <label className="app-checkbox-row" {...settingTarget("dashboard.autostart")}>
               <input
                 type="checkbox"
                 checked={monitorConfig.enabled}
@@ -1572,7 +1580,8 @@ export function SettingsModal({
                 }
               />
               <span>Start dashboard when Acedia starts</span>
-            </label>
+            <SettingScope id="dashboard.autostart" />
+          </label>
             <div className="app-update-message">
               {text("기본값은 4421입니다. 포트 변경은 다음 Start부터 적용됩니다.", "The default is 4421. Port changes apply the next time the dashboard starts.")}
             </div>
@@ -1588,7 +1597,7 @@ export function SettingsModal({
         </div>
 
         <div className="app-settings-section">
-          <div className="field-label">Usage data</div>
+          <div className="field-label" {...settingTarget("dashboard.usage")}>Usage data<SettingScope id="dashboard.usage" /></div>
           <div className="app-about-card">
             <div className="app-about-row">
               <span className="app-about-label">Website</span>
@@ -1635,7 +1644,7 @@ export function SettingsModal({
 
         {tab === "remote" && (
         <div className="app-settings-section">
-          <div className="field-label">Remote PWA</div>
+          <div className="field-label" {...settingTarget("remote.server")}>Remote PWA<SettingScope id="remote.server" /></div>
           <div className="app-about-card">
             <div className="app-about-row">
               <span className="app-about-label">Status</span>
@@ -1677,7 +1686,7 @@ export function SettingsModal({
 
             <div className="app-remote-divider" />
             <div className="app-about-row">
-              <span className="app-about-label">External</span>
+              <span className="app-about-label" {...settingTarget("remote.tunnel")}>External<SettingScope id="remote.tunnel" /></span>
               <span className="app-about-value">
                 {tunnel.running ? "public tunnel on" : "off"}
               </span>
@@ -1728,8 +1737,8 @@ export function SettingsModal({
             <div className="app-about-row">
               <span className="app-about-label">GitHub OAuth</span>
             </div>
-            <label className="field app-remote-field">
-              <span className="field-label">Client ID</span>
+            <label className="field app-remote-field" {...settingTarget("remote.clientId")}>
+              <span className="field-label">Client ID<SettingScope id="remote.clientId" /></span>
               <input
                 value={remoteConfig.client_id}
                 placeholder="Ov23li..."
@@ -1738,8 +1747,8 @@ export function SettingsModal({
                 }
               />
             </label>
-            <label className="field app-remote-field">
-              <span className="field-label">{text("Owner GitHub username (항상 허용)", "Owner GitHub username (always allowed)")}</span>
+            <label className="field app-remote-field" {...settingTarget("remote.owner")}>
+              <span className="field-label">{text("Owner GitHub username (항상 허용)", "Owner GitHub username (always allowed)")}<SettingScope id="remote.owner" /></span>
               <input
                 value={remoteConfig.owner}
                 placeholder="my-github-id"
@@ -1748,10 +1757,10 @@ export function SettingsModal({
                 }
               />
             </label>
-            <label className="field app-remote-field">
+            <label className="field app-remote-field" {...settingTarget("remote.clientSecret")}>
               <span className="field-label">
                 {text("Client Secret (선택 — 고정 도메인일 때 리다이렉트 로그인)", "Client Secret (optional — redirect login for a fixed domain)")}
-              </span>
+              <SettingScope id="remote.clientSecret" /></span>
               <input
                 type="password"
                 value={remoteConfig.client_secret}
@@ -1775,8 +1784,8 @@ export function SettingsModal({
             <div className="app-about-row">
               <span className="app-about-label">Fixed domain (named tunnel)</span>
             </div>
-            <label className="field app-remote-field">
-              <span className="field-label">{text("Cloudflare tunnel token (비우면 quick tunnel)", "Cloudflare tunnel token (leave empty for a quick tunnel)")}</span>
+            <label className="field app-remote-field" {...settingTarget("remote.tunnelToken")}>
+              <span className="field-label">{text("Cloudflare tunnel token (비우면 quick tunnel)", "Cloudflare tunnel token (leave empty for a quick tunnel)")}<SettingScope id="remote.tunnelToken" /></span>
               <input
                 value={remoteConfig.tunnel_token}
                 placeholder="eyJhIjoi..."
@@ -1785,8 +1794,8 @@ export function SettingsModal({
                 }
               />
             </label>
-            <label className="field app-remote-field">
-              <span className="field-label">Public hostname</span>
+            <label className="field app-remote-field" {...settingTarget("remote.hostname")}>
+              <span className="field-label">Public hostname<SettingScope id="remote.hostname" /></span>
               <input
                 value={remoteConfig.public_hostname}
                 placeholder="agent.example.com"
@@ -1798,8 +1807,8 @@ export function SettingsModal({
                 }
               />
             </label>
-            <label className="field app-remote-field">
-              <span className="field-label">{text("로컬 서버 포트 (0 = 랜덤, named tunnel은 고정 필요)", "Local server port (0 = random; a named tunnel requires a fixed port)")}</span>
+            <label className="field app-remote-field" {...settingTarget("remote.port")}>
+              <span className="field-label">{text("로컬 서버 포트 (0 = 랜덤, named tunnel은 고정 필요)", "Local server port (0 = random; a named tunnel requires a fixed port)")}<SettingScope id="remote.port" /></span>
               <input
                 type="number"
                 min={0}
@@ -1833,7 +1842,7 @@ export function SettingsModal({
 
             <div className="app-remote-divider" />
             <div className="app-about-row">
-              <span className="app-about-label">Access</span>
+              <span className="app-about-label" {...settingTarget("remote.access")}>Access<SettingScope id="remote.access" /></span>
               <span className="app-about-value">
                 {text(`승인 대기 ${access.pending.length} · 승인됨 ${access.approved.length}`, `Pending ${access.pending.length} · Approved ${access.approved.length}`)}
               </span>
@@ -1879,7 +1888,7 @@ export function SettingsModal({
 
         {tab === "vcs" && (
         <div className="app-settings-section">
-          <div className="field-label">External diff program</div>
+          <div className="field-label" {...settingTarget("vcs.diff")}>External diff program<SettingScope id="vcs.diff" /></div>
           <div className="app-about-card">
             <div className="app-update-message">
               {text(
@@ -1935,7 +1944,7 @@ export function SettingsModal({
             </button>
           </div>
 
-          <div className="app-ssh-list">
+          <div className="app-ssh-list" {...settingTarget("ssh.hosts")}><SettingScope id="ssh.hosts" />
             {sshHosts.map((h) => (
               <div key={h.id} className="app-ssh-row">
                 <div className="app-ssh-row-main">
@@ -1967,16 +1976,16 @@ export function SettingsModal({
             {sshDraft.id ? "Edit host" : "Add host"}
           </div>
           <div className="folder-row">
-            <label className="field" style={{ flex: 3 }}>
-              <span className="field-label">Label</span>
+            <label className="field" style={{ flex: 3 }} {...settingTarget("ssh.label")}>
+              <span className="field-label">Label<SettingScope id="ssh.label" /></span>
               <input
                 value={sshDraft.label}
                 onChange={(e) => handleSshDraftChange({ label: e.target.value })}
                 placeholder="e.g. Lab server"
               />
             </label>
-            <label className="field" style={{ flex: 2 }}>
-              <span className="field-label">Remote OS</span>
+            <label className="field" style={{ flex: 2 }} {...settingTarget("ssh.os")}>
+              <span className="field-label">Remote OS<SettingScope id="ssh.os" /></span>
               <select
                 value={sshDraft.remoteOs ?? "posix"}
                 onChange={(e) =>
@@ -1991,24 +2000,24 @@ export function SettingsModal({
             </label>
           </div>
           <div className="folder-row">
-            <label className="field" style={{ flex: 2 }}>
-              <span className="field-label">User</span>
+            <label className="field" style={{ flex: 2 }} {...settingTarget("ssh.user")}>
+              <span className="field-label">User<SettingScope id="ssh.user" /></span>
               <input
                 value={sshDraft.user}
                 onChange={(e) => handleSshDraftChange({ user: e.target.value })}
                 placeholder="ubuntu"
               />
             </label>
-            <label className="field" style={{ flex: 3 }}>
-              <span className="field-label">Host</span>
+            <label className="field" style={{ flex: 3 }} {...settingTarget("ssh.host")}>
+              <span className="field-label">Host<SettingScope id="ssh.host" /></span>
               <input
                 value={sshDraft.host}
                 onChange={(e) => handleSshDraftChange({ host: e.target.value })}
                 placeholder="192.168.0.10"
               />
             </label>
-            <label className="field" style={{ flex: 1 }}>
-              <span className="field-label">Port</span>
+            <label className="field" style={{ flex: 1 }} {...settingTarget("ssh.port")}>
+              <span className="field-label">Port<SettingScope id="ssh.port" /></span>
               <input
                 value={sshDraft.port ?? ""}
                 onChange={(e) =>
@@ -2022,8 +2031,8 @@ export function SettingsModal({
               />
             </label>
           </div>
-          <label className="field">
-            <span className="field-label">Auth method</span>
+          <label className="field" {...settingTarget("ssh.auth")}>
+            <span className="field-label">Auth method<SettingScope id="ssh.auth" /></span>
             <select
               value={sshDraft.authMethod ?? "key"}
               onChange={(e) =>
@@ -2101,8 +2110,8 @@ export function SettingsModal({
               </span>
             </label>
           )}
-          <label className="field">
-            <span className="field-label">Extra ssh options (optional)</span>
+          <label className="field" {...settingTarget("ssh.options")}>
+            <span className="field-label">Extra ssh options (optional)<SettingScope id="ssh.options" /></span>
             <input
               value={sshDraft.extraOptions ?? ""}
               onChange={(e) =>
@@ -2174,7 +2183,7 @@ export function SettingsModal({
         </div>
 
         <div className="app-settings-section">
-          <div className="field-label">Update</div>
+          <div className="field-label" {...settingTarget("about.update")}>Update<SettingScope id="about.update" /></div>
           <div className="app-about-card">
             <div className="app-about-row">
               <span className="app-about-label">Current</span>
@@ -2354,7 +2363,7 @@ export function SettingsModal({
         </div>
 
         <div className="app-settings-section">
-          <div className="field-label">Support diagnostics</div>
+          <div className="field-label" {...settingTarget("about.diagnostics")}>Support diagnostics<SettingScope id="about.diagnostics" /></div>
           <div className="app-about-card">
             <div
               className={`app-update-message ${
@@ -2391,6 +2400,7 @@ export function SettingsModal({
         </div>
         </>
         )}
+        </>}
         </div>
         </div>
       </div>

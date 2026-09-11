@@ -7,6 +7,7 @@ import {
   type CommandId,
   type CommandShortcuts,
 } from "../lib/commandRegistry";
+import { SettingScope, settingTarget } from "./SettingsSearch";
 import { useAppLanguage } from "../lib/appLanguage";
 
 export function KeyboardShortcuts({
@@ -23,9 +24,9 @@ export function KeyboardShortcuts({
   return (
     <div className="shortcut-editor">
       {COMMAND_DEFINITIONS.map((command) => (
-        <div className="shortcut-row" key={command.id}>
+        <div className="shortcut-row" key={command.id} {...settingTarget("shortcuts." + command.id)}>
           <span className="shortcut-copy">
-            <strong>{text(command.title, command.titleEn)}</strong>
+            <strong>{text(command.title, command.titleEn)}<SettingScope id={"shortcuts." + command.id} /></strong>
             <small>{text(command.description, command.descriptionEn)}</small>
           </span>
           <button

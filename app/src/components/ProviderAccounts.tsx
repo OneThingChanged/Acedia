@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { SettingScope, settingTarget } from "./SettingsSearch";
 import { invoke } from "../platform/runtime";
 import { useAppLanguage } from "../lib/appLanguage";
 import "./ProviderAccounts.css";
@@ -84,8 +85,8 @@ export function AccountSelect({ value, onChange, disabled = false, label, hint, 
   </label>;
 }
 
-export function AccountsPanel({ defaultAccountId = "default", provider = "codex", onMakeDefault }: {
-  defaultAccountId?: string; provider?: Provider;
+export function AccountsPanel({ defaultAccountId = "default", provider = "codex", onMakeDefault, settingId }: {
+  defaultAccountId?: string; provider?: Provider; settingId?: string;
   onMakeDefault?: (accountId: string) => boolean | Promise<boolean>;
 }) {
   const { text } = useAppLanguage();
@@ -98,6 +99,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const [activeId, setActiveId] = useState<string | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const flowTitle = useRef<HTMLHeadingElement>(null);
+  const requestedFlowFocus = useRef(false);
   const flowId = useId();
   const pending = accounts.find(a => a.state === "pending");
   const active = accounts.find(a => a.id === activeId) ?? (!adding ? pending : undefined);
@@ -110,7 +112,10 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   }, [adding, activeId, pending?.id]);
 
   useEffect(() => {
-    if (active) flowTitle.current?.focus();
+    if (active && (requestedFlowFocus.current || flowTitle.current?.closest(".account-flow")?.contains(document.activeElement))) {
+      flowTitle.current?.focus();
+      requestedFlowFocus.current = false;
+    }
   }, [active?.id, active?.state]);
 
   const closeFlow = () => {
@@ -135,6 +140,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const loginError = text("로그인을 시작하지 못했습니다. CLI 설치 상태와 이 계정의 실행 중 세션을 확인한 뒤 다시 시도하세요.", "Could not start login. Check the CLI installation and active sessions using this account, then retry.");
   const createAndLogin = () => void run(async () => {
     const name = label.trim();
+    requestedFlowFocus.current = true;
     const id = await invoke<string>(commands[provider].create, { label: name });
     const account = { id, label: name, state: "empty" };
     remember(account);
@@ -143,6 +149,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
     catch { if (live.current) setError(loginError); }
   }, text("계정을 추가하지 못했습니다. 저장 공간과 계정 목록을 확인한 뒤 다시 시도하세요.", "Could not add the account. Check storage and the account list, then retry."));
   const startLogin = (account: Account) => {
+    requestedFlowFocus.current = true;
     setAdding(false); setActiveId(account.id);
     void run(() => login(account), loginError);
   };
@@ -168,9 +175,9 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const retryLabel = (account: Account) => ["failed", "cancelled", "timed_out"].includes(account.state)
     ? text("다시 로그인", "Retry login") : text("브라우저 로그인", "Browser login");
 
-  return <section className="codex-account-management" data-account-provider={provider} aria-busy={busy || loading}>
+  return <section className="codex-account-management" data-account-provider={provider} {...settingTarget(settingId)} aria-busy={busy || loading}>
     <div className="agent-settings-sectionhead">
-      <h4>{text("로그인 계정", "Login accounts")} <span className="agent-account-count">{accounts.length}</span></h4>
+      <h4>{text("로그인 계정", "Login accounts")} <SettingScope id={settingId} /><span className="agent-account-count">{accounts.length}</span></h4>
       <button ref={addButton} type="button" className="agent-refresh" disabled={!canAct || !!pending || adding} onClick={() => {
         setAdding(true); setActiveId(null); setError("");
       }}>＋ {text("계정 추가", "Add account")}</button>
@@ -235,7 +242,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
         </div>
         {a.id !== "default" && <div className="account-list-actions">
           {a.state === "saved" || a.state === "pending"
-            ? <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { setActiveId(a.id); setError(""); }}>{a.state === "saved" ? text("계정 정보", "Account info") : text("진행 보기", "View progress")}</button>
+            ? <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { requestedFlowFocus.current = true; setActiveId(a.id); setError(""); }}>{a.state === "saved" ? text("계정 정보", "Account info") : text("진행 보기", "View progress")}</button>
             : <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{retryLabel(a)}</button>}
           {a.state === "saved" && <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{text("다시 로그인", "Sign in again")}</button>}
         </div>}

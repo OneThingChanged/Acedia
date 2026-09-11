@@ -213,7 +213,9 @@ try {
             search.dispatchEvent(new Event('input', {bubbles:true})); await wait();
           };
           await setSearch('터미널');
-          check(document.querySelectorAll('.app-settings-nav button').length === 1 && document.querySelector('.terminal-settings-panel'), 'Settings search did not open Terminal');
+          check([...document.querySelectorAll('.app-settings-nav button')].some(button => button.textContent.includes('터미널')) && document.querySelector('[data-setting-result="terminal.font"]'), 'Settings search did not list terminal options');
+          document.querySelector('[data-setting-result="terminal.font"]').click(); await wait();
+          check(document.querySelector('.terminal-settings-panel'), 'Terminal search result did not open');
           await setSearch('');
           click('SSH 호스트'); await wait(); click('사용 방법'); await wait();
           check(document.querySelector('.ssh-guide-backdrop'), 'Nested SSH guide did not open');
