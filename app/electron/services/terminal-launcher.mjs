@@ -207,7 +207,11 @@ export function createTerminalLauncher({
       entry.initTimer = setTimeout(() => {
         entry.initTimer = null;
         if (terminalSessions.get(id)?.process !== processHandle) return;
-        processHandle.write(`${launchCommand}\r`);
+        // Agent sessions own this shell. Leaving an interactive PowerShell
+        // alive after the CLI exits hides the exit from the PTY lifecycle.
+        const ownsPowerShell = platform === "win32" && !ssh && CLI_TOOLS.has(aiToolId)
+          && /^(?:powershell|pwsh)(?:\.exe)?$/i.test(path.basename(executable));
+        processHandle.write(`${launchCommand}${ownsPowerShell ? "; exit $LASTEXITCODE" : ""}\r`);
       }, 600);
     }
     return { reattached: false };

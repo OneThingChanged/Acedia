@@ -2206,7 +2206,7 @@ function App() {
       if (current?.status === "exited") {
         void recoverExitedAgent(agentId).then(() => {
           applyGroupOp((s) => groupOps.selectAgent(s, agentId, agent?.projectId));
-        });
+        }).catch((error) => console.error("Session recovery failed", error));
         return;
       }
       applyGroupOp((s) => groupOps.selectAgent(s, agentId, agent?.projectId));
@@ -2275,7 +2275,7 @@ function App() {
         groupOps.selectGroup(state, groupId, agentId)
       );
       const current = agentsRef.current.find((agent) => agent.id === agentId);
-      if (current?.status === "exited") recoverExitedAgent(agentId);
+      if (current?.status === "exited") void recoverExitedAgent(agentId).catch((error) => console.error("Session recovery failed", error));
     },
     [activateAgentProject, activateDeferredAgent, applyGroupOp, recoverExitedAgent]
   );
@@ -4109,6 +4109,7 @@ function App() {
           onTabContextMenu={onPaneTabContextMenu}
           chatModeAgents={chatModeAgents}
           onToggleChat={toggleChatMode}
+          onRecoverSession={recoverExitedAgent}
           getDocumentOwner={getDocumentOwner}
           onOpenBrowser={openBrowserTab}
           onOpenMarkdownPath={handleOpenMarkdownPath}

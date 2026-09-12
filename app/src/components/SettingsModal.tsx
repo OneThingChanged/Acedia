@@ -1,4 +1,5 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
+import { UsageCollectorPanel } from './UsageCollectorPanel';
 import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
 import { NotificationPolicyPanel } from './NotificationPolicyPanel';
 import { SavedCommandsPanel, type RunSavedCommand } from "./SavedCommandsPanel";
@@ -233,6 +234,7 @@ const ALL_NAV_ENTRIES: NavEntry[] = [
   { id: "data", group: "Workspace", label: "Data & Sessions", labelKo: "데이터 및 세션", title: "Data & Sessions", titleKo: "데이터 및 세션", sub: "세션별 대화 · 산출물 저장 위치", subEn: "Per-session conversations · artifact storage", keywords: "data 데이터 conversation 대화 session 세션 storage 저장소 path 경로 artifact 산출물", icon: <IconDatabase /> },
   { id: "shortcuts", group: "Workspace", label: "Shortcuts", labelKo: "단축키", title: "Shortcuts", titleKo: "단축키", sub: "명령별 키보드 단축키", subEn: "Keyboard shortcuts by command", keywords: "keyboard 단축키 hotkey shortcut", icon: <IconKeyboard /> },
   { id: "hooks", group: "Workspace", label: "Agent Hooks", labelKo: "에이전트 훅", title: "Agent Hooks", titleKo: "에이전트 훅", sub: "Codex/Claude Hook 자동 점검·복구", subEn: "Automatic Codex/Claude hook checks and repair", keywords: "agent hook codex claude repair 복구", icon: <IconActivity /> },
+  { id: "collector", group: "Services", label: "Usage collector", labelKo: "사용량 수집 서버", title: "Usage collector", titleKo: "사용량 수집 서버", sub: "회사 서버 · 직원별 토큰 사용량", subEn: "Company server · employee token usage", keywords: "collector telemetry token 사용량 수집 직원 공용 계정", icon: <IconGrid /> },
   { id: "dashboard", group: "Services", label: "Dashboard", labelKo: "대시보드", title: "Dashboard", titleKo: "대시보드", sub: "로컬 모니터링 서버 · 사용량", subEn: "Local monitoring server · usage", keywords: "dashboard monitor usage 사용량 port", icon: <IconGrid /> },
   { id: "remote", group: "Services", label: "Remote", labelKo: "리모트", title: "Remote", titleKo: "리모트", sub: "모바일 PWA · 터널 · 접근 승인", subEn: "Mobile PWA · tunnel · access approval", keywords: "remote pwa tunnel cloudflare github oauth 모바일 mobile access", icon: <IconGlobe /> },
   { id: "vcs", group: "Services", label: "Version Control", labelKo: "버전 관리", title: "Version Control", titleKo: "버전 관리", sub: "외부 diff 프로그램", subEn: "External diff program", keywords: "version control git diff 비교 프로그램 tool difftool 소스", icon: <IconBranch /> },
@@ -1519,6 +1521,7 @@ export function SettingsModal({
         </div>
         )}
 
+        {tab === "collector" && <UsageCollectorPanel />}
         {tab === "dashboard" && (
         <>
         <div className="app-settings-section">

@@ -107,6 +107,7 @@ export function TerminalArea({
   onTabContextMenu,
   chatModeAgents,
   onToggleChat,
+  onRecoverSession,
   getDocumentOwner,
   onOpenBrowser,
   onOpenMarkdownPath,
@@ -137,6 +138,7 @@ export function TerminalArea({
   onTabContextMenu: (path: Path, agentId: string, x: number, y: number) => void;
   chatModeAgents: Set<string>;
   onToggleChat: (agentId: string) => void;
+  onRecoverSession?: (agentId: string) => Promise<void>;
   getDocumentOwner: (docId: string) => string | null;
   onOpenBrowser: (path: Path, ownerAgentId: string | null) => void;
   onOpenMarkdownPath: (
@@ -196,6 +198,8 @@ export function TerminalArea({
   useEffect(() => {
     if (!dragState) return;
     const fromAgentId = dragState.fromAgentId;
+    document.body.classList.add("app-tab-dragging");
+    window.getSelection()?.removeAllRanges();
 
     const updateDropTarget = (event: PointerEvent) => {
       const target = paneDropTargetAt(
@@ -240,6 +244,7 @@ export function TerminalArea({
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove, true);
+      document.body.classList.remove("app-tab-dragging");
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown, true);
@@ -275,6 +280,7 @@ export function TerminalArea({
     onTabContextMenu,
     chatModeAgents,
     onToggleChat,
+    onRecoverSession,
     getDocumentOwner,
     fallbackDocumentAgentId,
     onOpenBrowser,

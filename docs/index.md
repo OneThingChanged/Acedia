@@ -41,11 +41,13 @@ configuration that supports it.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
 * [Remote service](remote-service.md) - Remote/PWA/Android access, readable shared UI, app-language synchronization and authentication boundaries.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
+* [Central usage collector](central-usage-collector.md) - Employee/account attribution, company receiver, Acedia and standalone collection, plugin scope and ordinary-chat limitations.
 * [Embedded browser MCP](embedded-browser-mcp.md) - Always-on shared browser tabs, managed MCP startup, annotations, and isolation rules.
 * [Embedded browser form automation plan](browser-form-automation-plan.md) - Implemented state-aware targeting and safe form controls, with remaining hardening and rollout tests.
 
 ## Delivery and maintenance
 
+* [사용량 수집 서버 운영 가이드](usage-server-operations.md) - 서버 소스·실행·배포 파일 위치, 설치와 계정 등록, 테마, 데이터 보관 및 검증 범위.
 * [Development and build](development-and-build.md) - Local setup, tests, smoke checks, and desktop/mobile build entry points.
 * [Release playbook](release-playbook.md) - Signing, artifact verification, publication, and updater invariants.
 * [EXE와 Store 배포 채널](exe-release-workflow.md) - EXE 업데이트, 독립 설치·업데이트 경로, 공통 사용자 데이터와 릴리스 절차.
@@ -57,3 +59,5 @@ configuration that supports it.
 * [Microsoft Store 배포 운영 가이드](microsoft-store-release-guide.md) - Store MSIX 빌드, WACK, Partner Center 제출, 공개, 인증 대응 및 업데이트 절차.
 * [Microsoft Store MSIX delivery and certification record](microsoft-store-msix-plan.md) - Private pilot and public-update implementation history, validation evidence, certification status, and rollout decisions.
 * [Known limitations](known-limitations.md) - Confirmed constraints and explicitly unverified follow-up items.
+
+* [Acedia 1.8.1.7](release-1-8-1-7.md) - Codex central collection, session path search and workspace fixes.

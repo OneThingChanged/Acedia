@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const target = path.resolve(process.argv[2] || path.join(root, '.acedia/usage-server'));
+if (fs.existsSync(target)) throw Error('Choose a new output directory');
+fs.mkdirSync(path.join(target, 'runtime'), { recursive: true });
+for (const file of ['start.mjs', 'admin.mjs', 'package.json', 'README.md']) fs.copyFileSync(path.join(root, 'usage-server', file), path.join(target, file));
+for (const file of ['server.mjs', 'protocol.mjs', 'metadata.mjs', 'credentials.mjs', 'dashboard.html', 'dashboard.js', 'periods.mjs']) fs.copyFileSync(path.join(root, 'app/electron/usage-collector', file), path.join(target, 'runtime', file));
+console.log(JSON.stringify({ target, start: 'node start.mjs', dependencies: 'Node.js 22.13+; no npm install required' }));

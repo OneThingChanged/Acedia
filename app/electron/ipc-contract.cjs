@@ -1,4 +1,5 @@
 const INVOKE_COMMANDS = Object.freeze([
+  "collector_status", "collector_enroll", "collector_accounts", "collector_configure", "collector_flush", "collector_sources", "collector_pause",
   "accounts_removed", "codex_accounts_rename", "claude_accounts_rename", "codex_accounts_remove", "claude_accounts_remove",
   "browser_preferences_get",
   "browser_preferences_set",

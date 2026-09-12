@@ -5411,6 +5411,25 @@ body.files-resizing .files-resizer::after {
 }
 .pane-chat-toggle:hover { color: var(--app-text); background: var(--app-button-bg); }
 .pane-chat-toggle.on { color: var(--app-accent); border-color: var(--app-accent); }
+.session-recovery {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 14px; flex-shrink: 0; font-size: 13px;
+  background: var(--app-panel); color: var(--app-text);
+  border-bottom: 1px solid var(--app-border);
+}
+.session-recovery > span:first-child { flex: 1 1 240px; }
+.session-recovery button { min-height: 32px; padding: 4px 10px; }
+.usage-collector input:not([type="checkbox"]), .usage-collector select, .usage-collector button {
+  font: inherit; font-size: 13px; min-height: 34px; padding: 7px 10px;
+  border: 1px solid var(--app-border); border-radius: 7px;
+  color: var(--app-text); background: var(--app-bg);
+}
+.usage-collector button { cursor: pointer; margin: 4px 6px 0 0; }
+.usage-collector button:disabled { opacity: .55; cursor: default; }
+.usage-collector button:hover:not(:disabled) { border-color: var(--app-accent); }
+.usage-collector select { max-width: 100%; margin: 3px 8px 3px 0; }
+.usage-collector .field-label { margin-top: 14px; }
+.usage-collector p { overflow-wrap: anywhere; }
 .chat-view {
   flex: 1;
   min-height: 0;
@@ -6934,4 +6953,18 @@ body.files-resizing .files-resizer::after {
 }
 .btn-secondary:hover {
   background: var(--app-panel-hover);
+}
+
+/* App chrome is draggable navigation, not document text. */
+.sidebar, .pane-tabs, .pane-tab, .files-header {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sidebar input, .sidebar textarea, .sidebar [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+body.app-tab-dragging, body.app-tab-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }

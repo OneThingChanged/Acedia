@@ -1,0 +1,9 @@
+{
+  "name": "acedia-usage-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": { "start": "node start.mjs" },
+  "files": ["start.mjs", "admin.mjs", "runtime", "README.md"]
+}

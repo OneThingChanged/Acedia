@@ -1,0 +1,18 @@
+{
+  "name": "acedia-usage",
+  "version": "0.1.0",
+  "description": "Collect registered CLI usage and read employee-scoped company usage reports.",
+  "author": {
+    "name": "Acedia"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Acedia Usage",
+    "shortDescription": "View your collected AI token usage.",
+    "longDescription": "Send mapped Codex usage, observed account limits, login identity and Windows user/local IP metadata to your enrolled company server. Query employee-scoped reports. Does not measure ordinary chat tokens.",
+    "developerName": "Acedia",
+    "category": "Productivity",
+    "capabilities": ["Read collected usage"],
+    "defaultPrompt": "Show my collected AI token usage."
+  }
+}

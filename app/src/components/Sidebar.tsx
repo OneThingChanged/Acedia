@@ -1,3 +1,4 @@
+import { matchesSessionSearch, normalizeSessionSearch } from "../lib/sessionSearch";
 import {
   Fragment,
   useEffect,
@@ -408,7 +409,7 @@ export function Sidebar({
     return result;
   }, [agents, groups, projects]);
 
-  const searchTerm = searchQuery.trim().toLowerCase();
+  const searchTerm = normalizeSessionSearch(searchQuery);
 
   // Filter sections by search (project-name match shows all its sessions,
   // otherwise only matching session names) and, when "active only" is on, by
@@ -419,16 +420,17 @@ export function Sidebar({
     ancestorMatchesSearch = false
   ): Section[] | null => {
     const sections = sectionsByProject.get(projectId) ?? [];
+    const project = projects.find(p => p.id === projectId);
     const projectMatchesSearch =
       ancestorMatchesSearch ||
-      (searchTerm.length > 0 && projectName.toLowerCase().includes(searchTerm));
+      (searchTerm.length > 0 && matchesSessionSearch(searchTerm, projectName, project?.folder, project?.remoteFolder));
     let result = sections;
     if (searchTerm && !projectMatchesSearch) {
       result = sections
         .map((s) => ({
           ...s,
           members: s.members.filter((m) =>
-            m.name.toLowerCase().includes(searchTerm)
+            matchesSessionSearch(searchTerm, m.name, m.folder, m.remoteFolder)
           ),
         }))
         .filter((s) => s.members.length > 0);
@@ -1176,7 +1178,7 @@ export function Sidebar({
           <input
             className="sidebar-search-input"
             value={searchQuery}
-            placeholder={text("프로젝트 · 세션 검색", "Search projects and sessions")}
+            placeholder={text("프로젝트 · 세션 · 경로 검색", "Search projects, sessions and paths")}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           {searchQuery && (

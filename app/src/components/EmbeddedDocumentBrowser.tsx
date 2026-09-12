@@ -1,3 +1,4 @@
+import { watchElementBounds } from "../lib/watchElementBounds";
 import { BrowserActivityPanel } from "./BrowserActivityPanel";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -148,10 +149,12 @@ export function EmbeddedDocumentBrowser({
     const host = hostRef.current;
     if (!host) return;
     syncBounds();
+    const stopPositionWatch = watchElementBounds(host, syncBounds);
     const observer = new ResizeObserver(syncBounds);
     observer.observe(host);
     window.addEventListener("resize", syncBounds);
     return () => {
+      stopPositionWatch();
       observer.disconnect();
       window.removeEventListener("resize", syncBounds);
     };

@@ -1,4 +1,5 @@
 export type RuntimeCommand =
+  | "collector_status" | "collector_enroll" | "collector_accounts" | "collector_configure" | "collector_flush" | "collector_sources" | "collector_pause"
   | "accounts_removed" | "codex_accounts_rename" | "claude_accounts_rename" | "codex_accounts_remove" | "claude_accounts_remove"
   | "idle_preferences_get" | "idle_preferences_set" | "idle_view_update" | "idle_session_suspend"
   | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"

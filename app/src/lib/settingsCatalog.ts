@@ -2,9 +2,10 @@ import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
 import { availableSessionWorkerOptions } from "./sessionWorkers";
 
-export type SettingsCategory = "idle" | "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
+export type SettingsCategory = "collector" | "idle" | "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
 export const SETTINGS_CATEGORIES: Record<SettingsCategory, Copy> = {
+  collector: ["사용량 수집 서버", "Usage collector"],
   idle: ["유휴 세션", "Idle sessions"],
   status: ["상태 표시줄", "Status bar"],
   commands: ["명령 및 시작", "Commands & startup"],
@@ -101,6 +102,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("data.storage", "data", "대화·산출물 저장 위치", "Conversation and artifact storage", "action", "데이터 경로 SQLite storage root 데이터베이스"),
   ...COMMAND_DEFINITIONS.map(command => entry("shortcuts." + command.id, "shortcuts", command.title, command.titleEn, "app", command.description + " " + command.descriptionEn + " keyboard shortcut 키보드")),
   entry("hooks.repair", "hooks", "Hook 점검 및 복구", "Check and repair hooks", "action", "에이전트 hooks repair codex claude"),
+  entry("collector.server", "collector", "사용량 수집 서버", "Usage collector server", "saved", "회사 중앙 토큰 직원 계정 telemetry token employee account"),
   entry("dashboard.server", "dashboard", "대시보드 서버", "Dashboard server", "action", "로컬 모니터링 시작 중지 local monitor"),
   entry("dashboard.port", "dashboard", "대시보드 포트", "Local dashboard port", "nextService", "서버 server"),
   entry("dashboard.autostart", "dashboard", "대시보드 자동 시작", "Start dashboard when Acedia starts", "nextApp", "autostart startup"),

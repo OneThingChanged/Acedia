@@ -173,6 +173,22 @@ describe("terminal launch lifecycle", () => {
     expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' --no-alt-screen 'continue '\"'\"'here'\"'\"''\r");
   });
 
+  it.each(["codex", "claude", "terminal"])("settles the Windows %s shell lifecycle", async aiToolId => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const exit = vi.fn();
+    f.sessions.broadcastExit = exit;
+    const launch = createTerminalLauncher({ ...f.dependencies,
+      platform: "win32", defaultShell: () => "powershell.exe" });
+    await launch({ ...f.args, aiToolId, initCommand: aiToolId === "terminal" ? "echo test" : aiToolId });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(f.processes[0].write).toHaveBeenCalledWith(aiToolId === "terminal"
+      ? "echo test\r" : `${aiToolId}; exit $LASTEXITCODE\r`);
+    f.processes[0].onExit.mock.calls[0][0]({ exitCode: 0 });
+    expect(f.sessions.has(f.args.id)).toBe(false);
+    expect(exit).toHaveBeenCalledWith({ id: f.args.id, exitCode: 0, reason: "natural" });
+  });
+
   const ssh = { host: "example.test", user: "fixture", hostId: "host-a", authMethod: "password", remoteOs: "posix" };
   it("releases the reserved SSH port if option parsing fails", async () => {
     const f = fixture();

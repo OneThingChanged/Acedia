@@ -1,4 +1,5 @@
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
+import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
@@ -741,6 +742,12 @@ function writeMiraControlAgentInput({
 }
 
 const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService);
+let centralCollector = null;
+function getCentralCollector() {
+  const isolated = !app.isPackaged || userDataOverride || bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;
+  centralCollector ??= new Collector(isolated ? path.join(hookBaseDir, 'central-collector') : undefined);
+  return centralCollector;
+}
 usageIndex.codexAccountForPath = (sourcePath) => codexAccounts.accountForPath(sourcePath);
 usageIndex.codexAccounts = () => [{ id: "default", label: "Codex" }, ...codexAccounts.accounts];
 usageIndex.codexUsageFetcher = async account => {
@@ -4874,6 +4881,16 @@ async function invokeCommand(event, command, rawArgs) {
     }
     case "browser_preferences_get":
       return browserSettings.get();
+    case "collector_status": return getCentralCollector().status();
+    case "collector_pause": return getCentralCollector().pause();
+    case "collector_enroll": return getCentralCollector().enroll(args.server, args.code, args.name);
+    case "collector_accounts": return getCentralCollector().accounts();
+    case "collector_configure": return getCentralCollector().configure(args.config);
+    case "collector_flush": return getCentralCollector().tick();
+    case "collector_sources": return [
+      ...[{ id: 'default', label: 'Existing login' }, ...codexAccounts.accounts].map(a => ({ provider: 'codex', label: a.label, path: path.join(codexAccounts.home(a.id), 'sessions') })),
+      ...[{ id: 'default', label: 'Existing login' }, ...claudeAccounts.accounts].map(a => ({ provider: 'claude', label: a.label, path: path.join(claudeAccounts.home(a.id), 'projects') })),
+    ].filter(source => fs.existsSync(source.path));
     case "browser_preferences_set": {
       const patch = asObject(args.patch);
       if (Array.isArray(patch.profiles) && [...documentBrowserWindows.values()].some(r => !patch.profiles.some(p => p.id === r.profileId))) throw new Error("Close a profile's browser tabs before removing it.");
@@ -5684,6 +5701,7 @@ app.on("before-quit", (event) => {
   void usageDashboard.stop();
   void documentPreviewService.close();
   usageIndex.close();
+  if (centralCollector) { const collector = centralCollector; centralCollector = null; void collector.stop(); }
   conversationStoreManager.close();
   void remoteService.stop();
   void tunnelService.stop();
@@ -5704,6 +5722,9 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
   try { powerPolicy.setMode(notificationSettings.get().powerMode); } catch (error) { console.warn('[electron] notification preferences unavailable', error.message); }
   console.log("[electron] ready");
   const smokeMode = bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;
+  if (!smokeMode) {
+    try { getCentralCollector().start(); } catch (error) { console.warn('[electron] usage collector unavailable:', error.message); }
+  }
   if (profileMigration?.migrated && profileMigration.secondaryCount > 0 && !smokeMode) {
     void dialog.showMessageBox({
       type: "info", title: "Acedia 공유 데이터 이전",

@@ -7,7 +7,7 @@ import type {
 } from "../types";
 import * as groupOps from "../lib/groupOps";
 import { applyAgentRuntimeStatus } from "../lib/agentActivity";
-import { clearScrollback } from "../lib/scrollback";
+import { clearScrollback, saveScrollback } from "../lib/scrollback";
 import { invoke } from "../platform/runtime";
 import { isElectronRuntime } from "../platform/electronBridge";
 
@@ -58,12 +58,15 @@ export function useSessionLifecycleActions({
       await invoke("terminal_session_action", {
         id: agentId,
         action: "restart",
-      }).catch(() => {});
+      });
     } else {
       await invoke("kill_pty", { id: agentId }).catch(() => {});
     }
+    const entry = termsRef.current.get(agentId);
+    if (entry) {
+      try { saveScrollback(agentId, entry.serialize.serialize({ scrollback: 1000 })); } catch {}
+    }
     disposeTerminal(termsRef, agentId);
-    clearScrollback(agentId);
     setAgents((current) =>
       current.map((agent) =>
         agent.id === agentId

@@ -102,6 +102,7 @@ export type RenderCtx = {
   onTabContextMenu: (path: Path, agentId: string, x: number, y: number) => void;
   chatModeAgents: Set<string>;
   onToggleChat: (agentId: string) => void;
+  onRecoverSession?: (agentId: string) => Promise<void>;
   getDocumentOwner: (docId: string) => string | null;
   fallbackDocumentAgentId: string | null;
   onOpenBrowser: (path: Path, ownerAgentId: string | null) => void;
@@ -128,6 +129,9 @@ export function PaneSlot({
   const bodyRef = useRef<HTMLDivElement>(null);
   const pendingTabDragRef = useRef<PendingTabDrag | null>(null);
   const suppressNextTabClickRef = useRef(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState("");
   const [termMenu, setTermMenu] = useState<{
     x: number;
     y: number;
@@ -164,6 +168,7 @@ export function PaneSlot({
   const activeAgent = activeAgentId
     ? ctx.agents.find((a) => a.id === activeAgentId) ?? null
     : null;
+  useEffect(() => { setRecoveryOpen(false); setRecoveryError(""); }, [activeAgentId]);
   // Chat vs terminal view is a per-session preference held in App, so the
   // toggle, tab context menu, and re-opening a session all stay in sync.
   const chatMode = activeAgentId ? ctx.chatModeAgents.has(activeAgentId) : false;
@@ -679,6 +684,7 @@ export function PaneSlot({
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button")) return;
     e.stopPropagation();
+    e.preventDefault();
     const pending: PendingTabDrag = {
       agentId: tabAgentId,
       pointerId: e.pointerId,
@@ -1009,6 +1015,13 @@ export function PaneSlot({
         >
           +
         </button>
+        {activeAgentId && ctx.onRecoverSession && !activeAgent?.deferredStart && (
+          <button className="pane-chat-toggle" onClick={() => {
+            setRecoveryError(""); setRecoveryOpen(!recoveryOpen);
+          }} title={text("응답 없는 세션 복구", "Recover an unresponsive session")}>
+            {text("세션 복구", "Recover session")}
+          </button>
+        )}
         {activeAgentId && toolSupportsChat(activeAgent?.aiToolId) && (
           <button
             className={`pane-chat-toggle ${chatMode ? "on" : ""}`}
@@ -1025,6 +1038,22 @@ export function PaneSlot({
           </button>
         )}
       </div>
+      {activeAgentId && ctx.onRecoverSession && (recoveryOpen || activeAgent?.status === "exited") && (
+        <div className="session-recovery" role="status">
+          <span>{activeAgent?.status === "exited"
+            ? text("세션이 종료되었습니다. 기록을 보존한 채 다시 시작할 수 있습니다.", "Session ended. Restart while keeping its history.")
+            : text("이 세션의 실행 중인 프로세스를 종료하고 다시 시작합니다. 진행 중인 작업은 중단됩니다.", "Stop this session's processes and restart. Work in progress will be interrupted.")}</span>
+          <button disabled={recovering} onClick={async () => {
+            if (recovering) return;
+            setRecovering(true); setRecoveryError("");
+            try { await ctx.onRecoverSession!(activeAgentId); setRecoveryOpen(false); }
+            catch { setRecoveryError(text("복구하지 못했습니다. 다시 시도해 주세요.", "Recovery failed. Please retry.")); }
+            finally { setRecovering(false); }
+          }}>{recovering ? text("복구 중…", "Recovering…") : text("이 세션 다시 시작", "Restart this session")}</button>
+          {recoveryOpen && <button disabled={recovering} onClick={() => setRecoveryOpen(false)}>{text("닫기", "Close")}</button>}
+          {recoveryError && <span role="alert">{recoveryError}</span>}
+        </div>
+      )}
       {/* Keep the xterm host mounted even while a doc tab or chat view is active
           so the terminal attach/detach lifecycle and buffered DOM stay intact. */}
       <div

@@ -1,4 +1,4 @@
-import { Fragment, ReactNode, useRef } from "react";
+import { Fragment, ReactNode, isValidElement, useRef } from "react";
 
 export function Splitter({
   direction,
@@ -49,7 +49,7 @@ export function Splitter({
   return (
     <div ref={ref} className={`splitter splitter-${direction}`}>
       {children.map((child, i) => (
-        <Fragment key={i}>
+        <Fragment key={isValidElement(child) && child.key != null ? child.key : i}>
           <div
             className="splitter-pane"
             style={{ flexBasis: `${sizes[i] * 100}%` }}
