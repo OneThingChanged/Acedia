@@ -91,7 +91,35 @@ function table(headers, rows) {
   if (!rows.length) { const cell = body.insertRow().insertCell(); cell.colSpan = headers.length; cell.append(empty('해당 기간에 수집된 기록이 없습니다.')); }
   wrap.append(t); return wrap;
 }
-function recentHistory(records) {
+function recentHistory(records, requestsOnly = false) {
+  if (!requestsOnly) {
+    const root = el('div'), choices = el('select'), content = el('div');
+    for (const [value, label] of [['turn', '명령별 묶음'], ['session', '세션별 묶음'], ['request', '개별 요청']]) { const o = el('option', '', label); o.value = value; choices.append(o); }
+    choices.setAttribute('aria-label', '기록 묶음');
+    function renderGroups() {
+      if (choices.value === 'request') { content.replaceChildren(recentHistory(records, true)); return; }
+      const groups = new Map();
+      records.forEach((r, i) => {
+        const key = JSON.stringify([r.employeeId, r.accountId, r.provider, r.sessionId || `unknown-${i}`, choices.value === 'turn' ? r.turnId || `unknown-${i}` : null]);
+        if (!groups.has(key)) groups.set(key, []); groups.get(key).push(r);
+      });
+      content.replaceChildren(el('p', 'note', '최신 500개 요청 범위의 묶음입니다. 전체 세션 합계가 아닙니다. 명령 내용은 수집하지 않으며 식별자가 없는 요청은 합치지 않습니다.'));
+      const entries = [...groups.values()]; let page = 0;
+      const prev = el('button', '', '이전'), next = el('button', '', '다음'), status = el('span'), rows = el('div');
+      function drawGroups() {
+        rows.replaceChildren(); status.textContent = ` ${page + 1} / ${Math.max(1, Math.ceil(entries.length / 25))} 페이지 · ${entries.length}개 묶음 `;
+        prev.disabled = page === 0; next.disabled = (page + 1) * 25 >= entries.length;
+        for (const group of entries.slice(page * 25, page * 25 + 25)) {
+          const first = group[0], box = el('details', 'card'), summary = el('summary', '', `${first.agentKind === 'subagent' ? '서브에이전트' : first.agentKind === 'main' ? '메인' : '유형 미확인'} · 세션 ${first.sessionId || '미확인'}${choices.value === 'turn' ? ` · 명령 ${first.turnId || '미확인'}` : ''}`);
+          box.append(summary, el('p', 'note', `${group.length}개 요청 · ${fmt(group.reduce((n, r) => n + r.total, 0))} 토큰 · ${when(first.occurredAt)}`));
+          if (first.parentSessionId) box.append(el('p', 'note', `부모 세션: ${first.parentSessionId}`));
+          box.addEventListener('toggle', () => { if (box.open && !box.dataset.loaded) { box.dataset.loaded = 'true'; box.append(recentHistory(group, true)); } }); rows.append(box);
+        }
+      }
+      prev.onclick = () => { page--; drawGroups(); }; next.onclick = () => { page++; drawGroups(); }; content.append(prev, status, next, rows); drawGroups();
+    }
+    choices.onchange = renderGroups; root.append(choices, content); renderGroups(); return root;
+  }
   const root = el('div', 'recent-history'), toolbar = el('div', 'history-pagination'), sizeLabel = el('label', '', '페이지당 '), size = el('select'), status = el('span', 'history-range'), controls = el('div', 'history-controls'), previous = el('button', '', '이전'), pages = el('select'), next = el('button', '', '다음'), body = el('div');
   size.setAttribute('aria-label', '페이지당 기록 수'); pages.setAttribute('aria-label', '기록 페이지'); status.setAttribute('aria-live', 'polite');
   previous.dataset.action = 'previous'; next.dataset.action = 'next';

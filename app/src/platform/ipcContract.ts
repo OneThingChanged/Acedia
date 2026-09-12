@@ -32,7 +32,7 @@ export type RuntimeCommand =
   | "document_browser_inspect" | "document_browser_attach_annotation" | "document_browser_close"
   | "read_markdown_file" | "resolve_markdown_path" | "list_directory"
   | "list_git_submodules"
-  | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "search_files"
+  | "subagent_list" | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "search_files"
   | "conversation_record_user_message" | "conversation_storage_get" | "conversation_storage_set"
   | "session_storage_list" | "session_storage_delete"
   | "git_status" | "git_changes" | "git_stage"
@@ -449,6 +449,10 @@ export type RuntimeCommandContract = {
   read_chat_transcript: {
     args: { tool: string; path: string };
     result: { blocks: ChatBlock[]; truncated: boolean; missing: boolean };
+  };
+  subagent_list: {
+    args: { id: string; sessionId?: string };
+    result: { sessionId: string; parentSessionId: string; name: string; path: string; updatedAt: number; model?: string; effort?: string; activity?: string }[];
   };
   chat_blocks: {
     args: { id: string; sessionId?: string; beforeSequence?: number; limit?: number };

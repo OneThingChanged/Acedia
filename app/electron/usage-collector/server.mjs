@@ -66,7 +66,7 @@ export function createUsageServer({ databasePath, adminToken, allowLocalAdmin = 
     const timeline = db.prepare(`SELECT CAST((occurredAt+32400000)/86400000 AS INTEGER)*86400000 day,accountId,employeeId,deviceId,COUNT(*) events,SUM(total) total FROM events WHERE occurredAt>=? AND occurredAt<=? ${identity.admin ? '' : 'AND employeeId=?'} GROUP BY day,accountId,employeeId,deviceId ORDER BY day`).all(from, to, ...(identity.admin ? [] : [identity.employeeId]));
     const senders = db.prepare(`SELECT accountId,employeeId,deviceId,json_extract(json,'$.sender.windowsUser') windowsUser,json_extract(json,'$.sender.hostname') hostname,json_extract(json,'$.sender.localIps') ips,COUNT(*) events,SUM(total) total FROM events WHERE occurredAt>=? AND occurredAt<=? ${identity.admin ? '' : 'AND employeeId=?'} GROUP BY accountId,employeeId,deviceId,windowsUser,hostname,ips ORDER BY total DESC`).all(from, to, ...(identity.admin ? [] : [identity.employeeId])).map(({ ips, ...r }) => ({ ...r, localIps: ips ? JSON.parse(ips) : [] }));
     const skills = db.prepare(`SELECT e.employeeId,e.accountId,json_extract(s.value,'$.name') name,COUNT(DISTINCT json_extract(s.value,'$.id')) calls,MAX(json_extract(s.value,'$.occurredAt')) lastUsed FROM events e,json_each(e.json,'$.skills') s WHERE json_extract(s.value,'$.occurredAt')>=? AND json_extract(s.value,'$.occurredAt')<=? ${identity.admin ? '' : 'AND e.employeeId=?'} GROUP BY e.employeeId,e.accountId,name`).all(from,to,...(identity.admin ? [] : [identity.employeeId]));
-    return { from, to, rows, daily, timeline, skills, reports, senders, accountTotals, role: identity.admin ? 'admin' : 'employee', recent: usage.map(e => { const event = JSON.parse(e.json); return { deviceId: e.deviceId, accountId: e.accountId, employeeId: e.employeeId, provider: e.provider, occurredAt: e.occurredAt, total: e.total, model: event.model ?? null, effort: event.effort ?? null, fast: event.fast ?? null, input: event.input ?? null, cacheRead: event.cacheRead ?? null, cacheWrite: event.cacheWrite ?? null, output: event.output ?? null, reasoning: event.reasoning ?? null, sender: event.sender || null, providerIdentity: event.providerIdentity || null }; }), total: rows.reduce((sum, r) => sum + r.total, 0), accounts: permitted,
+    return { from, to, rows, daily, timeline, skills, reports, senders, accountTotals, role: identity.admin ? 'admin' : 'employee', recent: usage.map(e => { const event = JSON.parse(e.json); return { deviceId: e.deviceId, accountId: e.accountId, employeeId: e.employeeId, provider: e.provider, occurredAt: e.occurredAt, total: e.total, sessionId: event.sessionId ?? null, turnId: event.turnId ?? null, parentSessionId: event.parentSessionId ?? null, agentKind: event.agentKind ?? null, model: event.model ?? null, effort: event.effort ?? null, fast: event.fast ?? null, input: event.input ?? null, cacheRead: event.cacheRead ?? null, cacheWrite: event.cacheWrite ?? null, output: event.output ?? null, reasoning: event.reasoning ?? null, sender: event.sender || null, providerIdentity: event.providerIdentity || null }; }), total: rows.reduce((sum, r) => sum + r.total, 0), accounts: permitted,
       employees: db.prepare(identity.admin ? 'SELECT * FROM employees' : 'SELECT * FROM employees WHERE id=?').all(...(identity.admin ? [] : [identity.employeeId])),
       devices: db.prepare(`SELECT d.id,d.name,d.employeeId,d.lastSeen,d.revoked,m.json metadata,m.updatedAt metadataAt FROM devices d LEFT JOIN device_metadata m ON m.deviceId=d.id ${identity.admin ? '' : 'WHERE d.employeeId=?'}`).all(...(identity.admin ? [] : [identity.employeeId])).map(d => ({ ...d, metadata: d.metadata ? JSON.parse(d.metadata) : null })), refreshRequests: db.prepare('SELECT * FROM refresh_requests').all().filter(r => allowed.has(r.accountId)), capabilities: CAPABILITIES };
   }
@@ -97,6 +97,18 @@ export function createUsageServer({ databasePath, adminToken, allowLocalAdmin = 
       const identity = auth(req);
       if (!identity) { send(401, { error: 'Authentication required' }); return; }
       if (identity.id) db.prepare('UPDATE devices SET lastSeen=? WHERE id=?').run(Date.now(), identity.id);
+      if (req.method === 'POST' && url.pathname === '/v1/accounts/resolve' && !identity.admin) {
+        const body = await jsonBody(req), login = validateIdentity(body.identity);
+        if (body.provider !== 'codex' || !login?.id) throw Error('Codex login identity required');
+        let account = db.prepare('SELECT * FROM accounts WHERE provider=? AND (providerIdentityId=? OR loginEmail=?)').all('codex', login.id, normalizeEmail(login.email)).find(a => matchesLogin(a, login));
+        if (account && account.kind !== 'shared' && account.ownerId !== identity.employeeId) throw Error('Account belongs to another employee');
+        if (!account) {
+          const id = randomUUID();
+          db.prepare('INSERT INTO accounts(id,name,provider,kind,ownerId,loginEmail,providerIdentityId) VALUES(?,?,?,?,?,?,?)').run(id, login.email || 'Codex', 'codex', 'personal', identity.employeeId, normalizeEmail(login.email), login.id);
+          account = db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
+        }
+        send(200, { account }); return;
+      }
       if (req.method === 'GET' && url.pathname === '/v1/accounts') { send(200, { accounts: accountList(identity) }); return; }
       if (req.method === 'GET' && url.pathname === '/v1/summary') { send(200, summary(identity, url)); return; }
       if (req.method === 'POST' && url.pathname === '/v1/refresh') {

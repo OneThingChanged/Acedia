@@ -142,7 +142,7 @@ Codex account-only RPCs also read plan and remaining usage windows without an AI
 turn. The dashboard displays observed remaining percentages, reset times, stale
 values, missing reports and account-mapping conflicts. Refresh asks online collectors
 to update their mapped accounts; it does not log into accounts from the server.
-Confirm a mapping again if the local login changes. New event sender metadata is
+Codex login changes automatically resolve to a registered shared account or an employee-owned personal account. Unregistered logins create personal accounts. Only records after detection are assigned to the new login; offline switch times are not inferred. New event sender metadata is
 preserved historically; older records are not assigned today's IP or login.
 
 ## Build and validation

@@ -20,7 +20,7 @@ export function serverUrl(raw) {
   return url.origin;
 }
 export function validateEvent(value) {
-  const keys = ['id', 'provider', 'accountId', 'sessionId', 'model', 'occurredAt', 'input', 'output', 'cacheRead', 'cacheWrite', 'reasoning', 'total', 'sender', 'providerIdentity', 'effort', 'fast', 'skills'];
+  const keys = ['id', 'provider', 'accountId', 'sessionId', 'model', 'occurredAt', 'input', 'output', 'cacheRead', 'cacheWrite', 'reasoning', 'total', 'sender', 'providerIdentity', 'effort', 'fast', 'skills', 'turnId', 'parentSessionId', 'agentKind'];
   if (!value || typeof value !== 'object' || Object.keys(value).some(key => !keys.includes(key))) throw Error('Unexpected event field');
   const result = { id: text(value.id, 'event id'), provider: text(value.provider, 'provider'), accountId: text(value.accountId, 'account'),
     sessionId: text(value.sessionId, 'session', 128), model: value.model == null ? null : text(value.model, 'model'), occurredAt: value.occurredAt };
@@ -31,6 +31,9 @@ export function validateEvent(value) {
     if (n !== null && (!Number.isSafeInteger(n) || n < 0 || n > 1e12)) throw Error(`Invalid token count: ${key}`);
     result[key] = n;
   }
+  for (const key of ['turnId', 'parentSessionId']) result[key] = value[key] == null ? null : text(value[key], key, 128);
+  if (value.agentKind != null && !['main', 'subagent'].includes(value.agentKind)) throw Error('Invalid agent kind');
+  result.agentKind = value.agentKind ?? null;
   result.effort = value.effort == null ? null : text(value.effort, 'effort', 40);
   if (value.fast != null && typeof value.fast !== 'boolean') throw Error('Invalid fast value');
   result.fast = value.fast ?? null;

@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-13
+
+* **1.8.1.8**: Added local worker log viewing and a separate right-aligned session toolbar. Added automatic collector login switching with historical attribution preserved, plus session/turn grouping and metadata backfill. User confirmed the development toolbar layout.
+
 ## 2026-09-12
 
 * **1.8.1.7 preparation**: Documented final collector scope, large-line recovery, central employee details, runtime metadata, session path search and tab-drag behavior. Full suite: 696 tests passed. Release evidence is recorded separately.

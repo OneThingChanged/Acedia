@@ -6,12 +6,20 @@ export function parseUsage(item, state, offset) {
     if (item.type === 'session_meta') {
       if (state.sessionId && state.sessionId !== item.payload?.id) { state.cumulative = null; state.segment = (state.segment || 0) + 1; }
       state.sessionId = item.payload?.id || state.sessionId;
+      const source = item.payload?.source;
+      const spawn = source && typeof source === 'object' ? source.subagent?.thread_spawn : null;
+      state.parentSessionId = spawn?.parent_thread_id || null;
+      state.agentKind = spawn || source?.subagent ? 'subagent' : typeof source === 'string' ? 'main' : null;
+      state.turnId = null;
     }
     if (item.type === 'turn_context') {
+      state.turnId = item.payload?.turn_id || null;
       state.model = item.payload?.model || null;
       state.effort = item.payload?.effort || item.payload?.reasoning_effort || null;
       state.fast = typeof item.payload?.fast === 'boolean' ? item.payload.fast : item.payload?.service_tier === 'priority' ? true : item.payload?.service_tier === 'default' ? false : null;
     }
+    if (item.type === 'event_msg' && item.payload?.type === 'task_started') state.turnId = item.payload.turn_id || null;
+    if (item.type === 'event_msg' && item.payload?.type === 'task_complete') state.turnId = null;
     const call = item.type === 'response_item' && item.payload;
     if (call && ['function_call', 'custom_tool_call'].includes(call.type) && ['exec', 'exec_command', 'functions.exec', 'functions.exec_command', 'read_file'].includes(call.name)) {
       let source = call.input || call.arguments || '';
@@ -57,5 +65,5 @@ function event(item, state, key, counts) {
   const occurredAt = Date.parse(item.timestamp);
   if (!Number.isFinite(occurredAt) || counts.total <= 0) return null;
   return { id: hash(`${state.provider}:${state.sessionId}:${key}`), provider: state.provider, sessionId: state.sessionId,
-    model: state.model || null, effort: state.effort || null, fast: state.fast ?? null, skills: (state.skills || []).splice(0, 100), occurredAt, ...counts };
+    turnId: state.turnId || null, parentSessionId: state.parentSessionId || null, agentKind: state.agentKind || null, model: state.model || null, effort: state.effort || null, fast: state.fast ?? null, skills: (state.skills || []).splice(0, 100), occurredAt, ...counts };
 }

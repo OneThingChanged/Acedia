@@ -43,6 +43,7 @@ import {
 import { DocViewer } from "./DocViewer";
 import { EmbeddedDocumentBrowser } from "./EmbeddedDocumentBrowser";
 import { GitHistoryView } from "./GitHistoryView";
+import { SubagentMonitor } from "./SubagentMonitor";
 import { ChatView } from "./ChatView";
 import { TerminalContextMenu } from "./Menus";
 import {
@@ -129,6 +130,7 @@ export function PaneSlot({
   const bodyRef = useRef<HTMLDivElement>(null);
   const pendingTabDragRef = useRef<PendingTabDrag | null>(null);
   const suppressNextTabClickRef = useRef(false);
+  const [workersOpen, setWorkersOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState("");
@@ -1015,6 +1017,8 @@ export function PaneSlot({
         >
           +
         </button>
+      </div>
+      {activeAgentId && <div className="pane-session-toolbar" role="toolbar" aria-label={text("세션 도구", "Session tools")}>
         {activeAgentId && ctx.onRecoverSession && !activeAgent?.deferredStart && (
           <button className="pane-chat-toggle" onClick={() => {
             setRecoveryError(""); setRecoveryOpen(!recoveryOpen);
@@ -1022,6 +1026,7 @@ export function PaneSlot({
             {text("세션 복구", "Recover session")}
           </button>
         )}
+        {activeAgentId && activeAgent?.aiToolId === "codex" && isElectronRuntime() && <button className="pane-chat-toggle" onClick={()=>setWorkersOpen(v=>!v)} aria-pressed={workersOpen}>{text("작업자", "Workers")}</button>}
         {activeAgentId && toolSupportsChat(activeAgent?.aiToolId) && (
           <button
             className={`pane-chat-toggle ${chatMode ? "on" : ""}`}
@@ -1037,7 +1042,7 @@ export function PaneSlot({
             {chatMode ? text("⌗ 터미널", "⌗ Terminal") : text("💬 대화", "💬 Chat")}
           </button>
         )}
-      </div>
+      </div>}
       {activeAgentId && ctx.onRecoverSession && (recoveryOpen || activeAgent?.status === "exited") && (
         <div className="session-recovery" role="status">
           <span>{activeAgent?.status === "exited"
@@ -1054,6 +1059,7 @@ export function PaneSlot({
           {recoveryError && <span role="alert">{recoveryError}</span>}
         </div>
       )}
+      <div className="pane-workspace-content"><div className="pane-workspace-main">
       {/* Keep the xterm host mounted even while a doc tab or chat view is active
           so the terminal attach/detach lifecycle and buffered DOM stay intact. */}
       <div
@@ -1134,6 +1140,9 @@ export function PaneSlot({
           assistantMessage={activeAgent?.activity?.lastAssistantMessage ?? null}
         />
       )}
+      </div>
+      {workersOpen && activeAgentId && activeAgent?.aiToolId === "codex" && !activeDocId && !activeBrowserTabId && <SubagentMonitor key={activeAgentId} agentId={activeAgentId} sessionId={activeAgent?.activity?.providerSessionId ?? activeAgent?.lastSessionId ?? undefined} onClose={()=>setWorkersOpen(false)}/>}
+      </div>
       {overlayZone && (
         <div className={`drop-overlay drop-overlay-${overlayZone}`} />
       )}

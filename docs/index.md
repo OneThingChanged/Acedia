@@ -61,3 +61,5 @@ configuration that supports it.
 * [Known limitations](known-limitations.md) - Confirmed constraints and explicitly unverified follow-up items.
 
 * [Acedia 1.8.1.7](release-1-8-1-7.md) - Codex central collection, session path search and workspace fixes.
+
+* [Acedia 1.8.1.8](release-1-8-1-8.md) - 작업자 로그, 계정 자동 전환과 기록 묶음.

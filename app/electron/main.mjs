@@ -1,3 +1,4 @@
+import { listSubagents } from './services/subagent-monitor.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
@@ -5146,6 +5147,12 @@ async function invokeCommand(event, command, rawArgs) {
       return readTextFile(args.folder, args.relativePath);
     case "read_chat_transcript":
       return readChatTranscript(args.tool, args.path);
+    case "subagent_list": {
+      const parentId = agentSessionIds.get(asString(args.id)) || asString(args.sessionId);
+      const binding = accountBindings.get(asString(args.id));
+      const roots = binding ? [accountTranscriptRoot('codex', binding.accountId)] : sessionService.transcriptRoots('codex');
+      return listSubagents(await sessionService.scan('codex'), parentId, roots.filter(Boolean));
+    }
     case "chat_blocks":
       return chatBlocksForAgent(args.id, args.sessionId, {
         beforeSequence: args.beforeSequence,

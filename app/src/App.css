@@ -6968,3 +6968,27 @@ body.app-tab-dragging, body.app-tab-dragging * {
   user-select: none !important;
   -webkit-user-select: none !important;
 }
+
+.pane-workspace-content { display:flex; flex:1; min-height:0; min-width:0; overflow:hidden; }
+.pane-workspace-main { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; position:relative; }
+.subagent-monitor { width:45%; min-width:260px; max-width:650px; display:flex; flex-direction:column; gap:8px; padding:12px; border-left:1px solid var(--app-border, #30363d); overflow:hidden; }
+.subagent-monitor header { display:flex; justify-content:space-between; align-items:center; }
+.subagent-monitor p,.subagent-monitor small { margin:0; overflow-wrap:anywhere; }
+.subagent-monitor select { width:100%; min-width:0; }
+.subagent-log { overflow:auto; flex:1; min-height:0; user-select:text; }
+.subagent-log article { border-bottom:1px solid var(--app-border, #30363d); padding:12px 0; }
+.subagent-log pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 monospace; }
+@media(max-width:700px) { .pane-workspace-content:has(.subagent-monitor) { flex-direction:column; } .subagent-monitor { width:auto; max-width:none; min-width:0; height:45%; border-left:0; border-top:1px solid var(--app-border, #30363d); } }
+
+.subagent-monitor { background:var(--app-bg-elevated,#161b22); color:var(--app-text,#c9d1d9); font-size:12px; }
+.subagent-monitor button,.subagent-monitor select { background:var(--app-panel,#21262d); color:inherit; border:1px solid var(--app-border,#30363d); border-radius:5px; padding:6px 8px; }
+.subagent-monitor header strong { font-size:14px; }
+.subagent-monitor small,.subagent-monitor p { color:var(--app-muted,#8b949e); line-height:1.5; }
+
+.pane-session-toolbar {
+  display:flex; justify-content:flex-end; align-items:center; gap:6px;
+  flex-shrink:0; min-height:32px; padding:4px 8px;
+  border-bottom:1px solid var(--app-border); background:var(--app-bg);
+  overflow-x:auto; user-select:none;
+}
+.pane-session-toolbar .pane-chat-toggle { margin:0; flex-shrink:0; height:24px; }

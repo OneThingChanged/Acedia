@@ -190,7 +190,7 @@ describe('central usage collector', () => {
     expect(summary.senders.reduce((sum, r) => sum + r.total, 0)).toBe(summary.total);
     expect((await f.admin('summary?from=1&to=2')).senders).toEqual([]);
   });
-  it('refreshes quota on demand, keeps stale values on failure, and blocks changed account mappings', async () => {
+  it('refreshes quota on demand, keeps stale values on failure, and automatically switches changed account mappings', async () => {
     const f = await fixture(), sessions = path.join(f.root, 'profile/sessions'); fs.mkdirSync(sessions, { recursive: true });
     const authPath = path.join(f.root, 'profile/auth.json');
     const login = user => fs.writeFileSync(authPath, JSON.stringify({ tokens: { account_id: 'account', id_token: 'header.' + Buffer.from(JSON.stringify({ sub: user, email: user + '@example.test' })).toString('base64url') + '.signature' } }));
@@ -205,8 +205,8 @@ describe('central usage collector', () => {
     summary = await f.admin('summary'); expect(calls).toBe(2); expect(summary.reports[0].status).toBe('timeout'); expect(summary.reports[0].quota.primary.usedPercent).toBe(25);
     login('two'); write(path.join(sessions, 'b.jsonl'), codexLog('must-not-attribute'));
     await request(f.origin, '/v1/refresh', { credential: f.collector.credential(), body: {} });
-    await f.collector.tick(); summary = await f.admin('summary'); expect(summary.total).toBe(140); expect(f.collector.status().warnings.join(' ')).toContain('login changed');
-    expect(summary.reports[0].status).toBe('identity_changed'); expect(summary.reports[0].identity.email).toBe('one@example.test');
+    await f.collector.tick(); summary = await f.admin('summary'); expect(summary.total).toBe(140); expect(f.collector.status().warnings).toEqual([]);
+    expect(summary.reports.find(r=>r.identity.email==='one@example.test').quota.primary.usedPercent).toBe(25); expect(summary.reports.find(r=>r.identity.email==='two@example.test').quota).toBeNull();
   });
   it('continues collection after the MCP host exits and stops its watcher when paused', async () => {
     const f = await fixture();
@@ -322,4 +322,29 @@ describe('usage schema', () => {
     const value = { ...parseUsage(codexLog()[2], { provider: 'codex', sessionId: 'one' }, 0), accountId: 'a' };
     expect(() => validateEvent({ ...value, prompt: 'secret' })).toThrow(); expect(() => validateEvent({ ...value, total: -1 })).toThrow();
   });
+});
+
+it('automatically maps changed logins to personal or registered shared accounts without reassigning history', async () => {
+ const f=await fixture(), a={id:hash('a'),email:'a@example.test'}, b={id:hash('b'),email:'b@example.test'};
+ f.collector.identityReader=()=>a;
+ f.collector.quotaFetcher=async()=>({identity:a,status:'unavailable',quota:null});
+ await f.collector.tick();
+ const first=f.collector.config().roots[0];
+ expect(first.providerIdentity.id).toBe(a.id);
+ expect((await f.collector.accounts()).find(x=>x.id===first.accountId).kind).toBe('personal');
+ await new Promise(r=>setTimeout(r,5));
+ write(path.join(f.transcripts,'one.jsonl'),codexLog('before-switch'));
+ await f.collector.tick();
+ const old=f.collector.db.prepare('select json from outbox').get(); expect(JSON.parse(old.json).accountId).toBe(first.accountId);
+ const shared=await f.admin('admin/accounts',{name:'B shared',provider:'codex',kind:'shared',loginEmail:b.email,providerIdentityId:b.id});
+ f.collector.identityReader=()=>b;
+ f.collector.quotaFetcher=async()=>({identity:b,status:'unavailable',quota:null});
+ await f.collector.tick();
+ expect(f.collector.config().roots[0].accountId).toBe(shared.id);
+ expect(JSON.parse(f.collector.db.prepare('select json from outbox').get().json).accountId).toBe(first.accountId);
+ await new Promise(r=>setTimeout(r,5));write(path.join(f.transcripts,'two.jsonl'),codexLog('after-switch'));
+ await f.collector.tick();
+ const rows=f.collector.db.prepare('select json from outbox').all().map(r=>JSON.parse(r.json));
+ expect(rows.find(r=>r.sessionId==='after-switch').accountId).toBe(shared.id);
+ f.collector.identityReader=()=>a;await f.collector.tick();expect(f.collector.config().roots[0].accountId).toBe(first.accountId);
 });

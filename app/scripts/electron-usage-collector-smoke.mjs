@@ -67,6 +67,8 @@ if (!process.versions.electron) {
       fs.writeFileSync(path.join(artifact, 'settings.png'), (await win.webContents.capturePage()).toPNG());
       await request(origin, '/v1/heartbeat', { credential: collector.credential(), body: { accounts: [{ accountId: account.id, identity: { id: hash('fixture-account'), email: 'fixture@example.test' }, status: 'success', checkedAt: Date.now(), quota: { primary: { usedPercent: 0, windowMinutes: 300, resetsAt: 1900000000 }, secondary: { usedPercent: 85, windowMinutes: 10080, resetsAt: 1900000000 }, plan: 'pro', updatedAt: Date.now() } }] } });
       dashboard = new BrowserWindow({ show: false, width: 1350, height: 1000, webPreferences: { backgroundThrottling: false } });
+      const originalExecute = dashboard.webContents.executeJavaScript.bind(dashboard.webContents);
+      dashboard.webContents.executeJavaScript = async code => { try { return await originalExecute(code); } catch(error) { console.error('Dashboard script failed:', code); throw error; } };
       await dashboard.loadURL(origin);
       await dashboard.webContents.executeJavaScript(`document.querySelector('#key').value=${JSON.stringify(adminToken)};document.querySelector('#loginform').dispatchEvent(new Event('submit',{cancelable:true}));`);
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -166,6 +168,7 @@ if (!process.versions.electron) {
       await dashboard.webContents.executeJavaScript(`document.querySelector('[data-tab="accounts"]').click();[...document.querySelectorAll('#table button')].find(b=>b.textContent==='Shared fixture').click();`);
       const skillsText = await dashboard.webContents.executeJavaScript(`document.querySelector('#detail .skill-usage').textContent`);
       if(!skillsText.includes('test-skill'))throw Error('Skill metadata not delivered');
+      await dashboard.webContents.executeJavaScript(`const grouping=document.querySelector('[aria-label="기록 묶음"]'); if(!grouping)throw Error('Grouping missing'); grouping.value='request'; grouping.dispatchEvent(new Event('change'));`);
       if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('.recent-history').textContent`)).includes('Effort: high · Fast: 켜짐'))throw Error('Runtime metadata not delivered');
       const tokenHeaders = await dashboard.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.recent-history th'),e=>e.textContent)`);
       if(!['일반 입력','캐시 입력','출력·추론','요청 전체'].every(h=>tokenHeaders.includes(h)))throw Error('Token breakdown headers missing');
@@ -198,6 +201,7 @@ if (!process.versions.electron) {
       await dashboard.webContents.executeJavaScript(`document.querySelector('#close-detail').click();document.querySelector('[data-tab="employees"]').click();[...document.querySelectorAll('#table button')].find(b=>b.textContent==='Other employee').click();`);
       if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('#detail .period-summary').textContent`)).includes('840'))throw Error('Employee timeline scope failed');
       await dashboard.webContents.executeJavaScript(`document.querySelector('#close-detail').click();[...document.querySelectorAll('#table button')].find(b=>b.textContent==='No usage employee').click();`);
+      await dashboard.webContents.executeJavaScript(`const g=document.querySelector('[aria-label="기록 묶음"]');g.value='request';g.dispatchEvent(new Event('change'));`);
       pageState = await historyState(); if(!pageState.previous||!pageState.next||pageState.range!=='기록 없음')throw Error('Empty history pagination failed');
       console.log('COLLECTOR_UI_OK: enrollment, mapping, protected credential, upload, pause, dashboard');
       dashboard.destroy(); win.destroy(); await collector.stop(); await service.close(); app.exit(0);

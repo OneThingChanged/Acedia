@@ -16,3 +16,20 @@ it('collects explicit skill reads and turn settings without paths or command tex
  parseUsage({type:'turn_context',payload:{model:'model-b'}},state,6);
  expect(parseUsage(token(24),state,7)).toMatchObject({model:'model-b',effort:null,fast:null,skills:[]});
 });
+
+it('retains event identity while enriching session and turn linkage', () => {
+ const state={provider:'codex'}, timestamp=new Date().toISOString();
+ parseUsage({type:'session_meta',payload:{id:'child',source:{subagent:{thread_spawn:{parent_thread_id:'parent'}}}}},state,0);
+ parseUsage({type:'turn_context',payload:{turn_id:'turn-a',model:'test'}},state,1);
+ const record=n=>({type:'event_msg',timestamp,payload:{type:'token_count',info:{last_token_usage:{input_tokens:10,output_tokens:2,total_tokens:12},total_token_usage:{total_tokens:n}}}});
+ const first=parseUsage(record(12),state,2);
+ expect(first).toMatchObject({sessionId:'child',parentSessionId:'parent',agentKind:'subagent',turnId:'turn-a'});
+ expect(validateEvent({...first,accountId:'a'}).turnId).toBe('turn-a');
+ expect(parseUsage(record(24),state,3).turnId).toBe('turn-a');
+ parseUsage({type:'turn_context',payload:{turn_id:'turn-b'}},state,4);
+ expect(parseUsage(record(36),state,5).turnId).toBe('turn-b');
+ const old=parseUsage(record(12),{provider:'codex',sessionId:'child'},2);
+ expect(first.id).toBe(old.id);
+ parseUsage({type:'turn_context',payload:{}},state,6);
+ expect(parseUsage(record(48),state,7).turnId).toBeNull();
+});

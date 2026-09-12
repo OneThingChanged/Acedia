@@ -13,6 +13,7 @@ export const defaultCollectorHome = () => path.join(process.env.LOCALAPPDATA || 
 export class Collector {
   constructor(home = defaultCollectorHome(), options = {}) {
     this.home = home; this.owner = randomUUID(); this.seal = options.seal || seal; this.unseal = options.unseal || unseal;
+    this.identityReader = options.identityReader || loginIdentity;
     this.quotaFetcher = options.quotaFetcher || fetchAccountQuota;
     fs.mkdirSync(home, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path.join(home, 'collector.db'));
@@ -93,8 +94,19 @@ export class Collector {
     try {
       const warnings = [], files = [];
       for (const root of c.roots) {
-        const current = root.provider === 'codex' ? loginIdentity(root.path) : null;
-        if (root.providerIdentity && current?.id !== root.providerIdentity.id) { warnings.push('Account login changed or disappeared; confirm the folder mapping before collecting new records'); continue; }
+        const current = root.provider === 'codex' ? this.identityReader(root.path) : null;
+        if (root.providerIdentity && !current) { warnings.push('Account login unavailable; waiting for login'); continue; }
+        if (current && current.id !== root.providerIdentity?.id) {
+          // The exact offline switch time is unknown. Never assign earlier requests to the new login.
+          const boundary = Date.now();
+          const { account } = await request(c.server, '/v1/accounts/resolve', { credential: this.credential(), body: { provider: root.provider, identity: current } });
+          const latest = this.config();
+          if (!latest.enabled || JSON.stringify(latest.roots) !== JSON.stringify(c.roots)) return this.status();
+          const oldId = root.accountId;
+          Object.assign(root, { accountId: account.id, providerIdentity: current, since: boundary, identitySince: boundary });
+          c.pendingAccountIds = [...new Set([...(c.pendingAccountIds || []), oldId])];
+          this.save({ ...latest, roots: c.roots, pendingAccountIds: c.pendingAccountIds });
+        }
         try { walk(root.path, file => { if (fs.statSync(file).mtimeMs >= root.since - 1000) files.push({ root, file }); }, 0); }
         catch { warnings.push('A configured transcript folder could not be read'); }
       }
@@ -106,7 +118,7 @@ export class Collector {
       this.scanCursor = files.length ? (this.scanCursor + 64) % files.length : 0;
       // Configuration may change while waiting for the network; never send a paused batch.
       if (!this.config().enabled) return this.status();
-      const ids = this.config().roots.map(root => root.accountId);
+      const ids = [...new Set([...this.config().roots.map(root => root.accountId), ...(this.config().pendingAccountIds || [])])];
       const rows = ids.length ? this.db.prepare(`SELECT * FROM outbox WHERE sent=0 AND json_extract(json,'$.accountId') IN (${ids.map(() => '?').join(',')}) ORDER BY rowid LIMIT 200`).all(...ids) : [];
       if (rows.length) {
         const result = await request(c.server, '/v1/events', { credential: this.credential(), body: { events: rows.map(r => JSON.parse(r.json)) } });
@@ -139,14 +151,14 @@ export class Collector {
     return this.status();
   }
   setStatus(status) { this.db.prepare('INSERT INTO status VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify(status)); }
-  scan(file, root) {
+  scan(file, root, { existingOnly = false } = {}) {
     const key = hash(file + ':' + root.since), previous = this.db.prepare('SELECT * FROM sources WHERE path=?').get(key);
     const stat = fs.statSync(file), size = stat.size, identity = `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
     const prior = previous ? JSON.parse(previous.context) : null;
     const rewritten = prior && (prior.fileIdentity !== identity || (size <= previous.offset && stat.mtimeMs !== prior.modified));
-    let offset = previous && prior?.metadataVersion === 1 && !rewritten && previous.offset <= size ? previous.offset : 0;
+    let offset = previous && prior?.metadataVersion === 2 && !rewritten && previous.offset <= size ? previous.offset : 0;
     let state = offset ? prior : { provider: root.provider };
-    state.metadataVersion = 1; state.fileIdentity = identity; state.modified = stat.mtimeMs;
+    state.metadataVersion = 2; state.fileIdentity = identity; state.modified = stat.mtimeMs;
     const fd = fs.openSync(file, 'r');
     let buffer = Buffer.alloc(Math.min(4 * 1024 * 1024, size - offset));
     let length = 0, end = -1;
@@ -171,7 +183,8 @@ export class Collector {
           if (event && event.occurredAt >= root.since) {
             const previousEvent = this.db.prepare('SELECT json FROM outbox WHERE id=?').get(event.id);
             const priorEvent = previousEvent ? JSON.parse(previousEvent.json) : null;
-            const data = validateEvent({ ...event, skills: (event.skills || []).filter(s => s.occurredAt >= Math.max(root.since, root.identitySince || root.since)), accountId: root.accountId,
+            if (existingOnly && !priorEvent) { offset += Buffer.byteLength(line) + 1; continue; }
+            const data = validateEvent({ ...event, skills: (event.skills || []).filter(s => s.occurredAt >= Math.max(root.since, root.identitySince || root.since)), accountId: priorEvent?.accountId || root.accountId,
               sender: priorEvent ? priorEvent.sender : deviceMetadata(),
               providerIdentity: priorEvent ? priorEvent.providerIdentity || null : event.occurredAt >= (root.identitySince || Infinity) ? root.providerIdentity || null : null,
             }), json = JSON.stringify(data), revision = hash(json);
