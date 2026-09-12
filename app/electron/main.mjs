@@ -3023,6 +3023,11 @@ async function spawnPty(args, event) {
   if (accounts && binding && (binding.toolId !== aiToolId || binding.accountId !== accountId)) {
     throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
   }
+  if (!ssh && aiToolId === "codex") {
+    await hookService.setupCodexHome(
+      accountEnv.CODEX_HOME || path.join(os.homedir(), ".codex")
+    );
+  }
   const ptyCols = asPositiveInt(args.cols, 120);
   const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions);
   const initialPrompt = asString(args.initialPrompt);

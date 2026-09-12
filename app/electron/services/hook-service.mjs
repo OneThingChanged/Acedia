@@ -373,6 +373,27 @@ function removeManagedCodexMcpBlock(existing) {
   return `${existing.slice(0, start)}${existing.slice(end + CODEX_MCP_END.length)}`.trimEnd();
 }
 
+function codexMcpBlockLines() {
+  return [
+    CODEX_MCP_BEGIN,
+    "[mcp_servers.multiagent_browser]",
+    'command = "node"',
+    `args = [${BROWSER_MCP_NODE_ARGS.map((arg) => JSON.stringify(arg)).join(", ")}]`,
+    `env_vars = [${BROWSER_MCP_ENV_VARS.map((name) => JSON.stringify(name)).join(", ")}]`,
+    // The config can also be loaded by Codex started outside Acedia, where the
+    // MULTIAGENT_* runtime environment does not exist. Acedia enables this
+    // complete transport definition for each local Codex launch.
+    "enabled = false",
+    CODEX_MCP_END,
+  ];
+}
+
+function mergeCodexMcp(existing, mcpScriptPath = "") {
+  const cleaned = removeManagedCodexMcpBlock(existing);
+  if (!mcpScriptPath) return `${cleaned.trimEnd()}${cleaned.trim() ? "\n" : ""}`;
+  return `${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${codexMcpBlockLines().join("\n")}\n`;
+}
+
 function mergeCodex(existing, helperPath, mcpScriptPath = "") {
   let cleaned = removeLegacyManagedCodexEntries(removeManagedCodexBlock(existing));
   cleaned = removeManagedCodexMcpBlock(cleaned);
@@ -390,19 +411,7 @@ function mergeCodex(existing, helperPath, mcpScriptPath = "") {
   }
   lines.push(CODEX_END);
   if (mcpScriptPath) {
-    lines.push(
-      "",
-      CODEX_MCP_BEGIN,
-      "[mcp_servers.multiagent_browser]",
-      'command = "node"',
-      `args = [${BROWSER_MCP_NODE_ARGS.map((arg) => JSON.stringify(arg)).join(", ")}]`,
-      `env_vars = [${BROWSER_MCP_ENV_VARS.map((name) => JSON.stringify(name)).join(", ")}]`,
-      // The project config can also be loaded by Codex started outside Acedia,
-      // where the MULTIAGENT_* runtime environment does not exist. Keep the
-      // bridge dormant there; Acedia enables it for each local Codex launch.
-      "enabled = false",
-      CODEX_MCP_END,
-    );
+    lines.push("", ...codexMcpBlockLines());
   }
   return `${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${lines.join("\n")}\n`;
 }
@@ -731,6 +740,24 @@ export class HookService {
     return result;
   }
 
+  async setupCodexHome(home) {
+    const requested = String(home || "").trim();
+    if (!requested || !path.isAbsolute(requested)) {
+      throw new Error("Codex account home is unavailable.");
+    }
+    if (!this.mcpScriptPath) return false;
+    const target = path.join(path.resolve(requested), "config.toml");
+    const task = async () => {
+      const before = await fsPromises.readFile(target, "utf8").catch(() => "");
+      const after = mergeCodexMcp(before, this.mcpScriptPath);
+      if (before !== after) await atomicWrite(target, after);
+      return before !== after;
+    };
+    const result = this.mergeQueue.then(task, task);
+    this.mergeQueue = result.catch(() => {});
+    return result;
+  }
+
   async repair(entries) {
     const serverRestarted = await this.refresh();
     const summary = {
@@ -835,6 +862,7 @@ export class HookService {
 export const hookInternals = {
   mergeClaude,
   mergeClaudeMcp,
+  mergeCodexMcp,
   mergeMcpJson,
   mergeCodex,
   mergeQwen,

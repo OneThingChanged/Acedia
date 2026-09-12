@@ -126,8 +126,11 @@ Codex project configuration explicitly whitelists `MULTIAGENT_AGENT_ID`,
 `MULTIAGENT_PORT`, `MULTIAGENT_TOKEN`, and `MULTIAGENT_MCP_SCRIPT` for the MCP
 stdio child. The managed Codex entry remains disabled in the persisted project
 configuration because the same file can be loaded by Codex outside Acedia,
-where those runtime variables do not exist. Acedia enables the entry with a
-per-launch Codex override only after both the hidden browser and authenticated
+where those runtime variables do not exist. Before launch, Acedia installs the
+same complete dormant transport in the selected Codex account home. This is
+required because a separate account uses its own `CODEX_HOME` and may not load
+the working folder's project configuration. Acedia then enables the entry with
+a per-launch Codex override only after both the hidden browser and authenticated
 loopback broker are ready. The stdio MCP child itself is still created by the
 CLI at CLI startup; the browser and broker are the app-lifetime services that
 must already be ready.[^electron-main]

@@ -98,6 +98,25 @@ describe("Electron hook configuration", () => {
     expect(hookInternals.mergeCodex(codex, "C:\\helper\\notify.ps1", "K:\\AI\\MultiAgent\\app\\electron\\services\\browser-mcp-server.mjs")).toBe(codex);
   });
 
+  it("installs a complete dormant browser MCP transport in each Codex account home", async () => {
+    const root = temporaryDirectory();
+    const home = path.join(root, ".codex");
+    fs.mkdirSync(home);
+    fs.writeFileSync(path.join(home, "config.toml"), 'cli_auth_credentials_store = "file"\n');
+    const service = new HookService({
+      baseDir: path.join(root, "runtime"),
+      mcpScriptPath: path.join(root, "browser-mcp-server.mjs"),
+    });
+    expect(await service.setupCodexHome(home)).toBe(true);
+    const configured = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    expect(configured).toContain('cli_auth_credentials_store = "file"');
+    expect(configured).toContain("[mcp_servers.multiagent_browser]");
+    expect(configured).toContain('command = "node"');
+    expect(configured).toContain("enabled = false");
+    expect(configured).not.toContain("[[hooks.");
+    expect(await service.setupCodexHome(home)).toBe(false);
+  });
+
   it("replaces stale managed Codex entries without removing user hooks", () => {
     const existing = `model = "gpt"
 
