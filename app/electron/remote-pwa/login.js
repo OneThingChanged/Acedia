@@ -1,3 +1,7 @@
+import { t, setLanguage, bindShellTranslations } from "./i18n.js";
+
+bindShellTranslations(document);
+
 const startButton = document.querySelector("#startLogin");
 const loginTitle = document.querySelector("#loginTitle");
 const loginDescription = document.querySelector("#loginDescription");
@@ -36,18 +40,18 @@ async function pollLogin(device) {
     });
     if (result.pending) {
       const nextDelay = Math.max(5, Number(result.interval || device.interval || 5)) * 1000;
-      loginProgress.textContent = result.slow_down ? "GitHub 요청 간격을 조정하는 중…" : "GitHub 인증 대기 중…";
+      loginProgress.textContent = result.slow_down ? t("GitHub 요청 간격을 조정하는 중…") : t("GitHub 인증 대기 중…");
       pollTimer = setTimeout(() => pollLogin(device), nextDelay);
       return;
     }
     if (result.login) {
-      loginProgress.textContent = `GitHub @${result.login} 로그인 완료`;
+      loginProgress.textContent = t("GitHub @{0} 로그인 완료", [result.login]);
       location.href = "/";
       return;
     }
-    throw new Error("로그인 결과를 확인하지 못했습니다.");
+    throw new Error(t("로그인 결과를 확인하지 못했습니다."));
   } catch (error) {
-    showError(`로그인 확인 실패: ${error.message}`);
+    showError(t("로그인 확인 실패: {0}", [error.message]));
   }
 }
 
@@ -62,7 +66,7 @@ async function startDeviceLogin() {
     document.querySelector("#loginReady").hidden = true;
     pollTimer = setTimeout(() => pollLogin(device), Math.max(5, Number(device.interval || 5)) * 1000);
   } catch (error) {
-    showError(`GitHub 로그인을 시작하지 못했습니다: ${error.message}`);
+    showError(t("GitHub 로그인을 시작하지 못했습니다: {0}", [error.message]));
   }
 }
 
@@ -86,7 +90,7 @@ startButton.addEventListener("click", () => {
 copyCode.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(deviceCode.textContent || "");
-    copyCode.textContent = "복사됨";
+    copyCode.textContent = t("복사됨");
   } catch {}
 });
 
@@ -94,19 +98,20 @@ addEventListener("beforeunload", () => { if (pollTimer) clearTimeout(pollTimer);
 
 try {
   mode = await requestJson("/auth/mode", { headers: {} });
+  setLanguage(mode.language);
   if (!mode.configured) {
-    loginTitle.textContent = "PC에서 GitHub Client ID를 설정해 주세요";
-    loginDescription.textContent = "Acedia 설정 → Remote PWA → GitHub OAuth에 Client ID가 필요합니다.";
+    loginTitle.textContent = t("PC에서 GitHub Client ID를 설정해 주세요");
+    loginDescription.textContent = t("Acedia 설정 → Remote PWA → GitHub OAuth에 Client ID가 필요합니다.");
     startButton.hidden = true;
   } else if (mode.web) {
-    loginTitle.textContent = "GitHub 웹 로그인";
-    loginDescription.textContent = "고정 도메인에 연결된 GitHub OAuth로 안전하게 로그인합니다.";
+    loginTitle.textContent = t("GitHub 웹 로그인");
+    loginDescription.textContent = t("고정 도메인에 연결된 GitHub OAuth로 안전하게 로그인합니다.");
     startButton.disabled = false;
   } else {
-    loginTitle.textContent = "GitHub 기기 로그인";
-    loginDescription.textContent = "Quick tunnel에서도 사용할 수 있도록 일회용 기기 코드로 로그인합니다.";
+    loginTitle.textContent = t("GitHub 기기 로그인");
+    loginDescription.textContent = t("Quick tunnel에서도 사용할 수 있도록 일회용 기기 코드로 로그인합니다.");
     startButton.disabled = false;
   }
 } catch (error) {
-  showError(`서버 설정을 확인하지 못했습니다: ${error.message}`);
+  showError(t("서버 설정을 확인하지 못했습니다: {0}", [error.message]));
 }

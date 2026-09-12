@@ -54,6 +54,13 @@ Initial terminal state is delivered as a snapshot; later output arrives as SSE
 deltas. Hook and workspace changes refresh the projected state. Periodic client
 refresh remains a recovery mechanism, not the authoritative activity source.[^remote-client]
 
+The coordinator's resolved app language is included in the synchronized state.
+The browser applies it on the next state poll, including usage dates and number
+formatting; the visiting browser's language does not override this preference.
+The Dashboard shares Remote's larger typography, responsive usage cards and
+controls. See [Remote display behavior](remote-service.md#readability-and-display-language)
+for sizing, translation fallback and user-content preservation rules.[^remote-client]
+
 ## Boundary
 
 Loopback Dashboard access is distinct from external Remote access. External

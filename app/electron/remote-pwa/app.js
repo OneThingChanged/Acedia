@@ -1,8 +1,11 @@
+import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
+
+bindShellTranslations(document);
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -186,17 +189,17 @@ const ui = {
 };
 
 const STATUS = {
-  working: { label: "작업 중", rank: 0 },
-  attention: { label: "답변 필요", rank: 1 },
-  recovering: { label: "복구 중", rank: 2 },
-  starting: { label: "시작 중", rank: 2 },
-  done: { label: "완료", rank: 3 },
-  idle: { label: "대기", rank: 4 },
-  offline: { label: "비활성", rank: 5 },
+  working: { get label() { return t("작업 중"); }, rank: 0 },
+  attention: { get label() { return t("답변 필요"); }, rank: 1 },
+  recovering: { get label() { return t("복구 중"); }, rank: 2 },
+  starting: { get label() { return t("시작 중"); }, rank: 2 },
+  done: { get label() { return t("완료"); }, rank: 3 },
+  idle: { get label() { return t("대기"); }, rank: 4 },
+  offline: { get label() { return t("비활성"); }, rank: 5 },
 };
 const STATUS_ORDER = Object.keys(STATUS);
 const FILTERS = ["all", "active", ...STATUS_ORDER];
-const FILTER_LABELS = { all: "전체 세션", active: "활성 세션" };
+const FILTER_LABELS = { get all() { return t("전체 세션"); }, get active() { return t("활성 세션"); } };
 
 let remoteState = { agents: [], view: { projects: [], agents: [], groups: [] } };
 const initialUrl = new URL(location.href);
@@ -354,8 +357,8 @@ function promptFor(agent) {
   const isPerm = PERMISSION_HINTS.some((h) => lower.includes(h));
   if (numbered.length >= 2) return { kind: isPerm ? "permission" : "question", answerStyle: "digit", text: promptFirstLine(src), options: numbered };
   if (isPerm) {
-    const options = [{ label: "예 (Yes)", send: "y" }, { label: "아니오 (No)", send: "n" }];
-    if (lower.includes("always") || lower.includes("항상")) options.push({ label: "항상 허용", send: "a" });
+    const options = [{ label: t("예 (Yes)"), send: "y" }, { label: t("아니오 (No)"), send: "n" }];
+    if (lower.includes("always") || lower.includes("항상")) options.push({ label: t("항상 허용"), send: "a" });
     return { kind: "permission", answerStyle: "digit", text: promptFirstLine(src), options };
   }
   return null;
@@ -416,7 +419,7 @@ function outputPreview(agent) {
   const prompt = text(agent?.hook?.prompt);
   if (prompt) return prompt;
   const lines = recentOutput(agent, 8).split("\n").map((line) => line.trim()).filter(Boolean);
-  return lines.slice(-2).join(" · ") || "표시할 최근 내용이 없습니다.";
+  return lines.slice(-2).join(" · ") || t("표시할 최근 내용이 없습니다.");
 }
 
 function projectMap() {
@@ -445,7 +448,7 @@ function agentMap() {
 }
 
 function projectName(agent) {
-  return text(agent?.project || projectMap().get(agent?.projectId)?.name) || "기타";
+  return text(agent?.project || projectMap().get(agent?.projectId)?.name) || t("기타");
 }
 
 function toolName(agent) {
@@ -510,9 +513,9 @@ function sortedAgents() {
   return allAgents().sort((left, right) => {
     const statusDifference = STATUS[statusOf(left)].rank - STATUS[statusOf(right)].rank;
     if (statusDifference !== 0) return statusDifference;
-    const projectDifference = projectName(left).localeCompare(projectName(right), "ko");
+    const projectDifference = projectName(left).localeCompare(projectName(right), getLanguage());
     if (projectDifference !== 0) return projectDifference;
-    return text(left.name || left.id).localeCompare(text(right.name || right.id), "ko");
+    return text(left.name || left.id).localeCompare(text(right.name || right.id), getLanguage());
   });
 }
 
@@ -525,9 +528,9 @@ function matchesQuery(agent, query) {
 function visibleAgents() {
   const query = ui.searchInput.value.trim().toLowerCase();
   return allAgents().sort((left, right) => {
-    const projectDifference = projectName(left).localeCompare(projectName(right), "ko");
+    const projectDifference = projectName(left).localeCompare(projectName(right), getLanguage());
     if (projectDifference !== 0) return projectDifference;
-    return text(left.name || left.id).localeCompare(text(right.name || right.id), "ko");
+    return text(left.name || left.id).localeCompare(text(right.name || right.id), getLanguage());
   }).filter((agent) => {
     const status = statusOf(agent);
     if (activeFilter === "active" && status === "offline") return false;
@@ -556,7 +559,7 @@ function syncDocumentSidebar() {
   }
   ui.documentsView.classList.toggle("document-sidebar-open", open);
   ui.documentSidebarToggle.setAttribute("aria-expanded", String(open));
-  ui.documentSidebarToggle.setAttribute("aria-label", open ? "문서 목록 닫기" : "문서 목록 열기");
+  ui.documentSidebarToggle.setAttribute("aria-label", open ? t("문서 목록 닫기") : t("문서 목록 열기"));
   ui.documentSidebar.toggleAttribute("inert", mobile && !open);
   ui.documentSidebar.setAttribute("aria-hidden", String(mobile && !open));
 }
@@ -645,7 +648,7 @@ function renderNavigation() {
     button.addEventListener("click", () => selectScreen(screen.id));
     screenFragment.appendChild(button);
   }
-  if (screens.length === 0) screenFragment.appendChild(make("p", "empty-state", query ? "검색된 Screen이 없습니다." : "분할 Screen이 없습니다."));
+  if (screens.length === 0) screenFragment.appendChild(make("p", "empty-state", query ? t("검색된 Screen이 없습니다.") : t("분할 Screen이 없습니다.")));
   ui.screenList.replaceChildren(screenFragment);
 
   const agents = visibleAgents();
@@ -706,8 +709,8 @@ function renderMonitor() {
   const filterLabel = FILTER_LABELS[activeFilter] || STATUS[activeFilter].label;
   ui.monitorTitle.textContent = filterLabel;
   ui.monitorMeta.textContent = activeFilter === "all"
-    ? "PC에서 실행 중인 작업을 상태별로 확인합니다."
-    : `${filterLabel}만 표시하고 있습니다.`;
+    ? t("PC에서 실행 중인 작업을 상태별로 확인합니다.")
+    : t("{0}만 표시하고 있습니다.", [filterLabel]);
   ui.monitorBoard.dataset.filtered = ["all", "active"].includes(activeFilter) ? "false" : "true";
   const fragment = document.createDocumentFragment();
   for (const status of statuses) {
@@ -730,7 +733,7 @@ function renderMonitor() {
       card.addEventListener("click", () => selectSession(agent.id));
       cards.appendChild(card);
     }
-    if (agents.length === 0) cards.appendChild(make("p", "lane-empty", "해당 세션 없음"));
+    if (agents.length === 0) cards.appendChild(make("p", "lane-empty", t("해당 세션 없음")));
     lane.append(head, cards);
     fragment.appendChild(lane);
   }
@@ -811,7 +814,7 @@ function renderLayoutNode(node, screen) {
   panel.dataset.leafId = leaf.id;
   panel.classList.toggle("mobile-pane-active", leaf.id === mobilePaneId);
   if (!activeAgent) {
-    panel.appendChild(make("p", "lane-empty", "세션을 찾을 수 없습니다."));
+    panel.appendChild(make("p", "lane-empty", t("세션을 찾을 수 없습니다.")));
     return panel;
   }
   panel.dataset.screenAgent = activeAgent.id;
@@ -836,17 +839,17 @@ function renderLayoutNode(node, screen) {
   }
   const actions = make("div", "screen-terminal-actions");
   const modeSwitch = make("div", "screen-pane-mode");
-  for (const [mode, label] of [["chat", "채팅"], ["term", "터미널"]]) {
+  for (const [mode, label] of [["chat", t("채팅")], ["term", t("터미널")]]) {
     const button = make("button", paneMode === mode ? "active" : "", label);
     button.type = "button";
     button.dataset.screenPaneMode = mode;
-    button.title = mode === "chat" ? "대화로 보기" : "라이브 터미널로 보기";
+    button.title = mode === "chat" ? t("대화로 보기") : t("라이브 터미널로 보기");
     button.addEventListener("click", () => setScreenPaneMode(screen, leaf, mode));
     modeSwitch.appendChild(button);
   }
   const expand = make("button", "expand-session", "↗");
   expand.type = "button";
-  expand.title = "세션 크게 보기";
+  expand.title = t("세션 크게 보기");
   expand.addEventListener("click", () => selectSession(activeAgent.id, screen.id));
   actions.append(modeSwitch, expand);
   head.append(tabs, actions);
@@ -865,7 +868,7 @@ function renderLayoutNode(node, screen) {
   if (paneMode === "chat") {
     const chat = make("div", "screen-chat-view chat-view");
     chat.dataset.screenChat = activeAgent.id;
-    chat.appendChild(make("div", "chat-empty", "대화를 불러오는 중…"));
+    chat.appendChild(make("div", "chat-empty", t("대화를 불러오는 중…")));
     body.append(chat);
   } else if (terminalSupported) {
     // syncTerminal() attaches a live xterm to this mount after render.
@@ -873,7 +876,7 @@ function renderLayoutNode(node, screen) {
     mount.dataset.terminalMount = activeAgent.id;
     body.append(mount);
   } else {
-    const output = make("pre", "terminal-output", recentOutput(activeAgent, 70) || "출력 대기 중…");
+    const output = make("pre", "terminal-output", recentOutput(activeAgent, 70) || t("출력 대기 중…"));
     output.dataset.role = "output";
     body.append(output);
   }
@@ -885,13 +888,13 @@ function renderLayoutNode(node, screen) {
   const inactiveTerminal = ["offline", "recovering", "starting"].includes(activeStatus) && paneMode === "term";
   input.placeholder = inactiveTerminal
     ? activeStatus === "offline"
-      ? "비활성 세션은 채팅 모드에서 활성화할 수 있습니다"
-      : "세션 초기화가 끝나면 입력할 수 있습니다"
-    : "메시지 또는 답변";
+      ? t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
+      : t("세션 초기화가 끝나면 입력할 수 있습니다")
+    : t("메시지 또는 답변");
   input.disabled = inactiveTerminal;
   input.value = screenDrafts.get(activeAgent.id) || "";
   input.addEventListener("input", () => screenDrafts.set(activeAgent.id, input.value));
-  const send = make("button", "", "전송");
+  const send = make("button", "", t("전송"));
   send.type = "submit";
   send.disabled = inactiveTerminal;
   form.addEventListener("submit", async (event) => {
@@ -902,20 +905,20 @@ function renderLayoutNode(node, screen) {
     const latestStatus = statusOf(agentMap().get(activeAgent.id) || activeAgent);
     if (latestStatus === "offline") {
       if (paneMode !== "chat") {
-        showToast("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다.");
+        showToast(t("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다."));
         send.disabled = false;
         return;
       }
       const requested = await requestSessionActivation(activeAgent.id, { queuedMessage: true });
       if (!requested || !(await waitForSessionReady(activeAgent.id))) {
-        if (requested) showToast("세션을 활성화하지 못해 메시지를 전송하지 않았습니다.");
+        if (requested) showToast(t("세션을 활성화하지 못해 메시지를 전송하지 않았습니다."));
         send.disabled = false;
         return;
       }
     }
     if (["recovering", "starting"].includes(statusOf(agentMap().get(activeAgent.id) || activeAgent))) {
       if (!(await waitForSessionReady(activeAgent.id))) {
-        showToast("세션 초기화가 끝나지 않아 메시지를 전송하지 않았습니다.");
+        showToast(t("세션 초기화가 끝나지 않아 메시지를 전송하지 않았습니다."));
         send.disabled = false;
         return;
       }
@@ -938,6 +941,7 @@ function screenChatRenderKey(data, agent) {
   const last = blocks[blocks.length - 1];
   const prompt = promptFor(agent);
   return JSON.stringify([
+    getLanguage(),
     agent?.id,
     blocks.length,
     String(last?.text ?? last?.output ?? "").length,
@@ -959,11 +963,11 @@ function renderScreenChat(container, data, agent) {
   const fragment = document.createDocumentFragment();
 
   if (data?.unsupported) {
-    fragment.appendChild(make("div", "chat-empty", "이 세션은 대화 보기를 지원하지 않습니다."));
+    fragment.appendChild(make("div", "chat-empty", t("이 세션은 대화 보기를 지원하지 않습니다.")));
   } else if (data?.error) {
     const error = make("div", "chat-error");
-    error.append(make("strong", "", "대화를 불러오지 못했습니다"), make("span", "", "터미널 보기로 전환하거나 다시 시도해 주세요."));
-    const retry = make("button", "", "다시 시도");
+    error.append(make("strong", "", t("대화를 불러오지 못했습니다")), make("span", "", t("터미널 보기로 전환하거나 다시 시도해 주세요.")));
+    const retry = make("button", "", t("다시 시도"));
     retry.type = "button";
     retry.addEventListener("click", () => {
       screenChatCache.delete(agent.id);
@@ -974,7 +978,7 @@ function renderScreenChat(container, data, agent) {
     error.appendChild(actions);
     fragment.appendChild(error);
   } else if (!blocks.length) {
-    fragment.appendChild(make("div", "chat-empty", data?.missing ? "아직 대화 기록이 없습니다." : "대화를 불러오는 중…"));
+    fragment.appendChild(make("div", "chat-empty", data?.missing ? t("아직 대화 기록이 없습니다.") : t("대화를 불러오는 중…")));
   } else {
     const ranges = [];
     let index = 0;
@@ -992,7 +996,7 @@ function renderScreenChat(container, data, agent) {
     }
     const visible = ranges.slice(-12);
     if (ranges.length > visible.length) {
-      const more = make("button", "chat-more", `↗ 이전 대화 ${ranges.length - visible.length}개 · 크게 보기`);
+      const more = make("button", "chat-more", t("↗ 이전 대화 {0}개 · 크게 보기", [ranges.length - visible.length]));
       more.type = "button";
       more.addEventListener("click", () => selectSession(agent.id, selectedScreen()?.id || null));
       fragment.appendChild(more);
@@ -1013,8 +1017,8 @@ function renderScreenChat(container, data, agent) {
     const thinking = make("div", "chat-thinking");
     const dots = make("span", "chat-thinking-dots");
     dots.append(make("i", ""), make("i", ""), make("i", ""));
-    thinking.append(dots, document.createTextNode("작업 중…"));
-    const stop = make("button", "chat-stop", "■ 중단");
+    thinking.append(dots, document.createTextNode(t("작업 중…")));
+    const stop = make("button", "chat-stop", t("■ 중단"));
     stop.type = "button";
     stop.addEventListener("click", () => { void cancelSession(agent.id); });
     thinking.appendChild(stop);
@@ -1025,7 +1029,7 @@ function renderScreenChat(container, data, agent) {
     dots.append(make("i", ""), make("i", ""), make("i", ""));
     thinking.append(
       dots,
-      document.createTextNode(chatStatus === "recovering" ? "세션 복구 중…" : "세션 시작 중…"),
+      document.createTextNode(chatStatus === "recovering" ? t("세션 복구 중…") : t("세션 시작 중…")),
     );
     fragment.appendChild(thinking);
   }
@@ -1101,7 +1105,7 @@ function updateScreenLive(screen) {
     question.hidden = !questionOf(agent);
     const output = panel.querySelector('[data-role="output"]');
     if (output) {
-      const nextOutput = recentOutput(agent, 70) || "출력 대기 중…";
+      const nextOutput = recentOutput(agent, 70) || t("출력 대기 중…");
       if (output.textContent !== nextOutput) {
         const nearBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 42;
         output.textContent = nextOutput;
@@ -1125,7 +1129,7 @@ function renderScreen() {
     return;
   }
   ui.screenTitle.textContent = `Screen ${screen.number}`;
-  ui.screenMeta.textContent = `${screen.leaves.length}개 패널 · ${screen.memberIds.length}개 세션 · ${screen.label}`;
+  ui.screenMeta.textContent = t("{0}개 패널 · {1}개 세션 · {2}", [screen.leaves.length, screen.memberIds.length, screen.label]);
   if (!screen.leaves.some((leaf) => leaf.id === mobilePaneId)) mobilePaneId = screen.leaves[0]?.id || null;
   renderScreenPaneTabs(screen);
   const nextKey = JSON.stringify([
@@ -1177,7 +1181,7 @@ function renderSession() {
   // The live xterm owns the terminal area; only feed the fallback <pre> when
   // xterm is unavailable (very old browser).
   if (!terminalSupported) {
-    const output = recentOutput(agent) || "출력 대기 중…";
+    const output = recentOutput(agent) || t("출력 대기 중…");
     const nearBottom = ui.outputText.scrollHeight - ui.outputText.scrollTop - ui.outputText.clientHeight < 48;
     if (ui.outputText.textContent !== output) {
       ui.outputText.textContent = output;
@@ -1586,27 +1590,27 @@ function renderDocumentPreview() {
   ui.documentKind.hidden = true;
 
   if (!relativePath) {
-    ui.documentName.textContent = "문서를 선택하세요";
+    ui.documentName.textContent = t("문서를 선택하세요");
     ui.documentPath.textContent = "";
     ui.documentMessage.hidden = false;
-    ui.documentMessage.textContent = "왼쪽 목록에서 Markdown 또는 HTML 파일을 선택하세요.";
+    ui.documentMessage.textContent = t("왼쪽 목록에서 Markdown 또는 HTML 파일을 선택하세요.");
     return;
   }
   ui.documentName.textContent = relativePath.split("/").pop() || relativePath;
   ui.documentPath.textContent = relativePath;
   if (documentContentKey !== key || documentContentLoading) {
     ui.documentMessage.hidden = false;
-    ui.documentMessage.textContent = "문서를 불러오는 중…";
+    ui.documentMessage.textContent = t("문서를 불러오는 중…");
     return;
   }
   if (documentContentError) {
     ui.documentMessage.hidden = false;
-    ui.documentMessage.textContent = `문서를 열지 못했습니다: ${documentContentError}`;
+    ui.documentMessage.textContent = t("문서를 열지 못했습니다: {0}", [documentContentError]);
     return;
   }
   if (!documentContent) {
     ui.documentMessage.hidden = false;
-    ui.documentMessage.textContent = "문서를 불러오지 못했습니다.";
+    ui.documentMessage.textContent = t("문서를 불러오지 못했습니다.");
     return;
   }
 
@@ -1674,7 +1678,7 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
         url: new URL(result.url, window.location.origin).href,
       }));
     } catch (error) {
-      showToast(`HTML을 열지 못했습니다: ${error.message || error}`);
+      showToast(t("HTML을 열지 못했습니다: {0}", [error.message || error]));
     }
     return;
   }
@@ -1733,7 +1737,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   ui.filePreviewTitle.textContent = path.split(/[\\/]/).pop() || path;
   ui.filePreviewPath.textContent = path;
   ui.filePreviewKind.textContent = kind === "markdown" ? "MARKDOWN" : "IMAGE";
-  ui.filePreviewMessage.textContent = "파일을 불러오는 중…";
+  ui.filePreviewMessage.textContent = t("파일을 불러오는 중…");
   ui.filePreviewClose.focus();
 
   try {
@@ -1776,7 +1780,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   } catch (error) {
     if (requestId !== filePreviewRequest) return;
     ui.filePreviewMessage.hidden = false;
-    ui.filePreviewMessage.textContent = `파일을 열지 못했습니다: ${error.message || error}`;
+    ui.filePreviewMessage.textContent = t("파일을 열지 못했습니다: {0}", [error.message || error]);
   }
 }
 
@@ -1799,7 +1803,7 @@ function renderDocuments() {
 
   const project = projects.find((candidate) => candidate.id === selection.id);
   if (!project) {
-    ui.documentListTitle.textContent = "문서";
+    ui.documentListTitle.textContent = t("문서");
     ui.documentListCount.textContent = "0";
     if (documentListRenderKey !== "no-project") {
       documentListRenderKey = "no-project";
@@ -1807,8 +1811,8 @@ function renderDocuments() {
     }
     ui.documentEmptyState.hidden = false;
     ui.documentEmptyState.textContent = projects.length
-      ? "프로젝트를 선택하세요."
-      : "Remote에서 볼 수 있는 로컬 프로젝트가 없습니다.";
+      ? t("프로젝트를 선택하세요.")
+      : t("Remote에서 볼 수 있는 로컬 프로젝트가 없습니다.");
     selectedDocumentPath = null;
     renderDocumentPreview();
     return;
@@ -1824,7 +1828,7 @@ function renderDocuments() {
     }
     ui.documentListCount.textContent = "…";
     ui.documentEmptyState.hidden = false;
-    ui.documentEmptyState.textContent = "문서 목록을 불러오는 중…";
+    ui.documentEmptyState.textContent = t("문서 목록을 불러오는 중…");
     void loadDocumentList(project.id);
     renderDocumentPreview();
     return;
@@ -1851,8 +1855,8 @@ function renderDocuments() {
   }
   ui.documentEmptyState.hidden = visible.length > 0 && !cached.error;
   ui.documentEmptyState.textContent = cached.error
-    ? `문서 목록을 불러오지 못했습니다: ${cached.error}`
-    : (query ? "검색된 문서가 없습니다." : "Markdown 또는 HTML 문서가 없습니다.");
+    ? t("문서 목록을 불러오지 못했습니다: {0}", [cached.error])
+    : (query ? t("검색된 문서가 없습니다.") : t("Markdown 또는 HTML 문서가 없습니다."));
   renderDocumentPreview();
   if (selectedDocumentPath && documentContentKey !== documentKey(project.id, selectedDocumentPath)) {
     void loadDocument(project.id, selectedDocumentPath);
@@ -1881,30 +1885,30 @@ function formatRemainingPercent(value) {
 
 function formatUsageWindow(minutes) {
   const value = Number(minutes);
-  if (!Number.isFinite(value) || value <= 0) return "사용 한도";
-  if (value === 10_080) return "주간 한도";
-  if (value % 1_440 === 0) return `${value / 1_440}일 한도`;
-  if (value % 60 === 0) return `${value / 60}시간 한도`;
-  return `${value}분 한도`;
+  if (!Number.isFinite(value) || value <= 0) return t("사용 한도");
+  if (value === 10_080) return t("주간 한도");
+  if (value % 1_440 === 0) return t("{0}일 한도", [value / 1_440]);
+  if (value % 60 === 0) return t("{0}시간 한도", [value / 60]);
+  return t("{0}분 한도", [value]);
 }
 
 function formatUsageReset(resetsAt) {
   const seconds = Number(resetsAt);
-  if (!Number.isFinite(seconds) || seconds <= 0) return "초기화 시간 미확인";
+  if (!Number.isFinite(seconds) || seconds <= 0) return t("초기화 시간 미확인");
   const value = new Date(seconds * 1000);
-  const pad = (part) => String(part).padStart(2, "0");
-  return `${value.getMonth() + 1}/${value.getDate()} ${pad(value.getHours())}:${pad(value.getMinutes())} 초기화`;
+  const date = new Intl.DateTimeFormat(getLanguage(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(value);
+  return t("{0} 초기화", [date]);
 }
 
 function formatUsageUpdated(updatedAt) {
   const timestamp = Number(updatedAt);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "아직 갱신되지 않음";
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return t("아직 갱신되지 않음");
   const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (elapsedMinutes < 1) return "방금 갱신";
-  if (elapsedMinutes < 60) return `${elapsedMinutes}분 전`;
+  if (elapsedMinutes < 1) return t("방금 갱신");
+  if (elapsedMinutes < 60) return t("{0}분 전", [elapsedMinutes]);
   const hours = Math.floor(elapsedMinutes / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  return `${Math.floor(hours / 24)}일 전`;
+  if (hours < 24) return t("{0}시간 전", [hours]);
+  return t("{0}일 전", [Math.floor(hours / 24)]);
 }
 
 function tokenCount(value) {
@@ -1913,23 +1917,18 @@ function tokenCount(value) {
 }
 
 function formatTokenCount(value) {
-  return new Intl.NumberFormat("ko-KR").format(tokenCount(value));
+  return new Intl.NumberFormat(getLanguage()).format(tokenCount(value));
 }
 
 function formatCompactTokenCount(value) {
-  return new Intl.NumberFormat("ko-KR", {
+  return new Intl.NumberFormat(getLanguage(), {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(tokenCount(value));
 }
 
 function usagePeriodMeta(period) {
-  return `${formatTokenCount(period?.events)}개 기록`;
-}
-
-function usageDateLabel(value) {
-  const [, month = "", day = ""] = text(value).split("-");
-  return month && day ? `${Number(month)}/${Number(day)}` : text(value);
+  return t("{0}개 기록", [formatTokenCount(period?.events)]);
 }
 
 function usageSvgNode(name, attributes = {}) {
@@ -1948,14 +1947,14 @@ function renderUsageChart() {
   ui.usageChart.replaceChildren();
   if (maximum <= 0 || timeline.length === 0) return;
 
-  const width = Math.max(360, Math.round(ui.usageChart.clientWidth || 920));
-  const height = width < 600 ? 210 : 250;
-  const margin = { top: 16, right: 12, bottom: 34, left: 54 };
+  const width = Math.max(240, Math.round(ui.usageChart.clientWidth || 920));
+  const height = width < 600 ? 240 : 280;
+  const margin = { top: 20, right: 18, bottom: 40, left: 66 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const slotWidth = plotWidth / timeline.length;
   const barWidth = Math.max(4, Math.min(24, slotWidth * 0.56));
-  const labelEvery = timeline.length > 20 ? 7 : 1;
+  const labelEvery = Math.max(1, Math.ceil(timeline.length / Math.max(2, Math.floor(plotWidth / 70))));
   const currentKey = text(history?.range?.endDate);
   const svg = usageSvgNode("svg", {
     viewBox: `0 0 ${width} ${height}`,
@@ -2004,25 +2003,25 @@ function renderUsageChart() {
       rx: Math.min(4, barWidth / 2),
     });
     const title = usageSvgNode("title");
-    title.textContent = `${text(bucket?.label) || usageDateLabel(bucketKey)} · ${formatTokenCount(value)} 토큰 · ${formatTokenCount(bucket?.events)}개 기록`;
+    title.textContent = t("{0} · {1} 토큰 · {2}개 기록", [bucketLabel(bucket, usageSelection.mode), formatTokenCount(value), formatTokenCount(bucket?.events)]);
     bar.appendChild(title);
     svg.appendChild(bar);
 
-    if (index === 0 || index === timeline.length - 1 || (index + 1) % labelEvery === 0) {
+    if (index === 0 || index === timeline.length - 1 || (index % labelEvery === 0 && timeline.length - 1 - index >= labelEvery)) {
       const label = usageSvgNode("text", {
         class: "usage-chart-axis-label usage-chart-date-label",
         x: margin.left + index * slotWidth + slotWidth / 2,
         y: height - 9,
         "text-anchor": "middle",
       });
-      label.textContent = text(bucket?.label) || usageDateLabel(bucketKey);
+      label.textContent = bucketLabel(bucket, usageSelection.mode);
       svg.appendChild(label);
     }
   });
 
   ui.usageChart.setAttribute(
     "aria-label",
-    `선택 기간 토큰 사용량 그래프. 합계 ${formatTokenCount(total)} 토큰, 최고 구간 ${formatTokenCount(maximum)} 토큰`,
+    t("선택 기간 토큰 사용량 그래프. 합계 {0} 토큰, 최고 구간 {1} 토큰", [formatTokenCount(total), formatTokenCount(maximum)]),
   );
   ui.usageChart.appendChild(svg);
 }
@@ -2045,7 +2044,7 @@ function usageProviderMeta(limit) {
   }
   return {
     key: id || "unknown",
-    label: text(limit?.limitName || limit?.limitId) || "기타",
+    label: text(limit?.limitName || limit?.limitId) || t("기타"),
     icon: "•",
     color: "#8b949e",
   };
@@ -2091,7 +2090,7 @@ async function changeUsageVisibility(profile) {
     if (!response.ok) throw new Error(text(result?.error) || `HTTP ${response.status}`);
     usageSummary = { ...usageSummary, limits: result.limits, profiles: result.profiles ?? usageSummary?.profiles, updatedAt: result.updatedAt };
     usageError = "";
-  } catch (error) { usageError = error?.message || "표시 설정을 저장하지 못했습니다."; }
+  } catch (error) { usageError = error?.message || t("표시 설정을 저장하지 못했습니다."); }
   finally { usageVisibilitySaving = false; renderUsage(); }
 }
 
@@ -2103,7 +2102,7 @@ function usageToneClass(remaining) {
 
 function usageLimitName(limit, providerLabel) {
   const label = text(limit?.limitName || limit?.limitId);
-  if (!label || label.toLowerCase() === providerLabel.toLowerCase()) return "기본 한도";
+  if (!label || label.toLowerCase() === providerLabel.toLowerCase()) return t("기본 한도");
   if (label.toLowerCase().startsWith(`${providerLabel.toLowerCase()} `)) {
     return label.slice(providerLabel.length + 1);
   }
@@ -2117,7 +2116,7 @@ function usageWindowCard(window, index) {
   const heading = make("div", "usage-window-heading");
   heading.append(
     make("span", "", formatUsageWindow(window.windowMinutes)),
-    make("strong", "", `${formatRemainingPercent(window.usedPercent)} 남음`),
+    make("strong", "", t("{0} 남음", [formatRemainingPercent(window.usedPercent)])),
   );
   const progress = make("span", "usage-remaining-progress");
   const fill = make("span", "usage-remaining-fill");
@@ -2125,7 +2124,7 @@ function usageWindowCard(window, index) {
   progress.appendChild(fill);
   const meta = make("div", "usage-window-meta");
   meta.append(
-    make("span", "", `${formatUsagePercent(window.usedPercent)} 사용`),
+    make("span", "", t("{0} 사용", [formatUsagePercent(window.usedPercent)])),
     make("span", "", formatUsageReset(window.resetsAt)),
   );
   card.dataset.window = String(index);
@@ -2135,37 +2134,37 @@ function usageWindowCard(window, index) {
 
 function usageHistoryCopy(mode) {
   if (mode === "week") return {
-    heading: "주간 토큰 사용량",
-    description: "연도와 주차를 선택하면 7일 사용량을 조회합니다.",
-    unit: "주",
-    previous: "전주",
-    previousButton: "이전 주",
-    currentButton: "이번 주",
-    nextButton: "다음 주",
-    average: "하루",
-    peak: "일",
+    heading: t("주간 토큰 사용량"),
+    description: t("연도와 주차를 선택하면 7일 사용량을 조회합니다."),
+    unit: t("주"),
+    previous: t("전주"),
+    previousButton: t("이전 주"),
+    currentButton: t("이번 주"),
+    nextButton: t("다음 주"),
+    average: t("하루"),
+    peak: t("일"),
   };
   if (mode === "year") return {
-    heading: "연간 토큰 사용량",
-    description: "연도를 선택하면 12개월 사용량을 비교합니다.",
-    unit: "연도",
-    previous: "전년",
-    previousButton: "이전 연도",
-    currentButton: "올해",
-    nextButton: "다음 연도",
-    average: "월",
-    peak: "월",
+    heading: t("연간 토큰 사용량"),
+    description: t("연도를 선택하면 12개월 사용량을 비교합니다."),
+    unit: t("연도"),
+    previous: t("전년"),
+    previousButton: t("이전 연도"),
+    currentButton: t("올해"),
+    nextButton: t("다음 연도"),
+    average: t("월"),
+    peak: t("월"),
   };
   return {
-    heading: "월간 토큰 사용량",
-    description: "연도와 월을 선택하면 일별 사용량을 조회합니다.",
-    unit: "달",
-    previous: "전월",
-    previousButton: "이전 달",
-    currentButton: "이번 달",
-    nextButton: "다음 달",
-    average: "하루",
-    peak: "일",
+    heading: t("월간 토큰 사용량"),
+    description: t("연도와 월을 선택하면 일별 사용량을 조회합니다."),
+    unit: t("달"),
+    previous: t("전월"),
+    previousButton: t("이전 달"),
+    currentButton: t("이번 달"),
+    nextButton: t("다음 달"),
+    average: t("하루"),
+    peak: t("일"),
   };
 }
 
@@ -2213,7 +2212,7 @@ function canSelectUsagePeriod(selection, history = usageSummary?.history) {
 }
 
 function replaceSelectOptions(select, values, selectedValue, label) {
-  const signature = JSON.stringify(values);
+  const signature = JSON.stringify([getLanguage(), values]);
   if (select.dataset.options !== signature) {
     select.dataset.options = signature;
     select.replaceChildren(...values.map((value) => {
@@ -2262,9 +2261,9 @@ function renderUsageHistory() {
   const years = Array.isArray(history.availableYears) && history.availableYears.length > 0
     ? history.availableYears
     : [history.current?.year || usageSelection.year];
-  replaceSelectOptions(ui.usageYearSelect, years, usageSelection.year, (value) => `${value}년`);
-  replaceSelectOptions(ui.usageMonthSelect, Array.from({ length: 12 }, (_, index) => index + 1), usageSelection.month, (value) => `${value}월`);
-  replaceSelectOptions(ui.usageWeekSelect, Array.from({ length: usageWeeksInYear(usageSelection.year) }, (_, index) => index + 1), usageSelection.week, (value) => `${value}주차`);
+  replaceSelectOptions(ui.usageYearSelect, years, usageSelection.year, (value) => t("{0}년", [value]));
+  replaceSelectOptions(ui.usageMonthSelect, Array.from({ length: 12 }, (_, index) => index + 1), usageSelection.month, (value) => monthLabel(value));
+  replaceSelectOptions(ui.usageWeekSelect, Array.from({ length: usageWeeksInYear(usageSelection.year) }, (_, index) => index + 1), usageSelection.week, (value) => t("{0}주차", [value]));
   ui.usageMonthSelect.hidden = usageSelection.mode !== "month";
   ui.usageWeekSelect.hidden = usageSelection.mode !== "week";
   for (const option of ui.usageMonthSelect.options) {
@@ -2276,6 +2275,7 @@ function renderUsageHistory() {
   }
 
   const quickRenderKey = JSON.stringify([
+    getLanguage(),
     usageSelection.mode,
     usageSelection.year,
     usageSelection.month,
@@ -2300,7 +2300,7 @@ function renderUsageHistory() {
         : usageSelection.mode === "month" && value === usageSelection.month;
       button.classList.toggle("selected", selected);
       button.append(
-        make("span", "", text(bucket?.label)),
+        make("span", "", usageSelection.mode === "week" ? t("{0}주차", [value]) : monthLabel(value)),
         make("small", "", formatCompactTokenCount(bucket?.totalTokens)),
       );
       quickFragment.appendChild(button);
@@ -2309,29 +2309,29 @@ function renderUsageHistory() {
     requestAnimationFrame(() => ui.usageHistoryQuick.querySelector(".selected")?.scrollIntoView({ block: "nearest", inline: "center" }));
   }
 
-  ui.usageSelectedLabel.textContent = `선택 ${copy.unit}`;
+  ui.usageSelectedLabel.textContent = t("선택 {0}", [copy.unit]);
   ui.usageSelectedTotal.textContent = formatTokenCount(total);
   ui.usageSelectedMeta.textContent = usagePeriodMeta(totals);
-  ui.usageComparisonLabel.textContent = `${copy.previous} 대비`;
+  ui.usageComparisonLabel.textContent = t("{0} 대비", [copy.previous]);
   ui.usageComparisonValue.textContent = delta == null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
   ui.usageComparisonValue.className = delta == null ? "" : delta >= 0 ? "usage-summary-healthy" : "usage-summary-critical";
-  ui.usageComparisonMeta.textContent = `${copy.previous} 사용량 ${formatTokenCount(previousTotal)}`;
-  ui.usageAverageLabel.textContent = `${copy.average} 평균`;
+  ui.usageComparisonMeta.textContent = t("{0} 사용량 {1}", [copy.previous, formatTokenCount(previousTotal)]);
+  ui.usageAverageLabel.textContent = t("{0} 평균", [copy.average]);
   ui.usageAverageValue.textContent = formatTokenCount(Math.round(total / averageDivisor));
-  ui.usageAverageMeta.textContent = `${visibleBuckets.length}${usageSelection.mode === "year" ? "개월" : "일"} 집계`;
-  ui.usagePeakLabel.textContent = `최고 사용${copy.peak}`;
+  ui.usageAverageMeta.textContent = t("{0}{1} 집계", [visibleBuckets.length, usageSelection.mode === "year" ? t("개월") : t("일")]);
+  ui.usagePeakLabel.textContent = t("최고 사용{0}", [copy.peak]);
   ui.usagePeakValue.textContent = formatTokenCount(peak?.totalTokens);
-  ui.usagePeakMeta.textContent = text(peak?.label) || "—";
+  ui.usagePeakMeta.textContent = peak ? bucketLabel(peak, usageSelection.mode) : "—";
   ui.usageChartTitle.textContent = usageSelection.mode === "year"
-    ? `${usageSelection.year}년 월별 사용량`
+    ? t("{0}년 월별 사용량", [usageSelection.year])
     : usageSelection.mode === "week"
-      ? `${usageSelection.year}년 ${usageSelection.week}주차 일별 사용량`
-      : `${usageSelection.year}년 ${usageSelection.month}월 일별 사용량`;
+      ? t("{0}년 {1}주차 일별 사용량", [usageSelection.year, usageSelection.week])
+      : t("{0} · {1} 일별 사용량", [usageSelection.year, monthLabel(usageSelection.month, "long")]);
   ui.usageChartDescription.textContent = usageSelection.mode === "year"
-    ? "월별 장기 추세를 비교합니다."
-    : "선택 기간 안의 일별 사용량 분포입니다.";
-  ui.usageChartSummary.textContent = `${visibleBuckets.length}${usageSelection.mode === "year" ? "개월" : "일"} 합계 ${formatTokenCount(total)}`;
-  ui.usageBreakdownTitle.textContent = `선택 ${copy.unit} 토큰 상세`;
+    ? t("월별 장기 추세를 비교합니다.")
+    : t("선택 기간 안의 일별 사용량 분포입니다.");
+  ui.usageChartSummary.textContent = t("{0}{1} 합계 {2}", [visibleBuckets.length, usageSelection.mode === "year" ? t("개월") : t("일"), formatTokenCount(total)]);
+  ui.usageBreakdownTitle.textContent = t("선택 {0} 토큰 상세", [copy.unit]);
   ui.usageTotalTokens.textContent = formatTokenCount(totals.totalTokens);
   ui.usageInputTokens.textContent = formatTokenCount(totals.inputTokens);
   ui.usageOutputTokens.textContent = formatTokenCount(totals.outputTokens);
@@ -2360,7 +2360,7 @@ function renderUsage() {
     ...groups.flatMap((group) => group.limits.map((limit) => Number(limit?.updatedAt) || 0)),
   );
   ui.usageProviderCount.textContent = String(groups.length);
-  ui.usageTokenEvents.textContent = `${formatTokenCount(tokens.events)}개 사용 기록 기준`;
+  ui.usageTokenEvents.textContent = t("{0}개 사용 기록 기준", [formatTokenCount(tokens.events)]);
   renderUsageHistory();
   ui.usageProviderSummary.textContent = String(groups.length);
   ui.usageRemainingSummary.textContent = remaining == null
@@ -2371,20 +2371,20 @@ function renderUsage() {
     : `usage-summary-${usageToneClass(remaining)}`;
   ui.usageUpdatedSummary.textContent = formatUsageUpdated(updatedAt);
   ui.refreshUsageButton.disabled = usageLoading || usageVisibilitySaving;
-  ui.refreshUsageButton.textContent = usageRefreshing ? "갱신 중…" : "새로고침";
+  ui.refreshUsageButton.textContent = usageRefreshing ? t("갱신 중…") : t("새로고침");
 
   if (usageError) {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "error";
-    ui.usageMessage.textContent = `사용량을 불러오지 못했습니다: ${usageError}`;
+    ui.usageMessage.textContent = t("사용량을 불러오지 못했습니다: {0}", [usageError]);
   } else if (usageLoading && !usageSummary) {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "loading";
-    ui.usageMessage.textContent = "Codex·Claude 사용량을 확인하고 있습니다.";
+    ui.usageMessage.textContent = t("Codex·Claude 사용량을 확인하고 있습니다.");
   } else if (groups.length === 0) {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "empty";
-    ui.usageMessage.textContent = otherGroups.length ? "기본 화면에 표시 중인 계정이 없습니다. 이전·기타 프로필에서 다시 표시할 수 있습니다." : "사용량 정보가 아직 없습니다. Codex 또는 Claude 세션을 실행한 뒤 새로고침하세요.";
+    ui.usageMessage.textContent = otherGroups.length ? t("기본 화면에 표시 중인 계정이 없습니다. 이전·기타 프로필에서 다시 표시할 수 있습니다.") : t("사용량 정보가 아직 없습니다. Codex 또는 Claude 세션을 실행한 뒤 새로고침하세요.");
   } else {
     ui.usageMessage.hidden = true;
     delete ui.usageMessage.dataset.state;
@@ -2395,7 +2395,7 @@ function renderUsage() {
   const review = make("details", "usage-profile-review");
   review.dataset.usageSection = "profile-review";
   review.open = expanded.has("profile-review");
-  review.append(make("summary", "", `이전·기타 프로필 ${otherGroups.length}개`), make("p", "usage-profile-note", "이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 표시를 숨겨도 로그인·대화·사용량 기록은 유지됩니다. 이름이나 사용률만으로 같은 계정으로 합치지 않습니다."));
+  review.append(make("summary", "", t("이전·기타 프로필 {0}개", [otherGroups.length])), make("p", "usage-profile-note", t("이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 표시를 숨겨도 로그인·대화·사용량 기록은 유지됩니다. 이름이나 사용률만으로 같은 계정으로 합치지 않습니다.")));
   for (const provider of allGroups) {
     const card = make("section", "usage-provider-card");
     card.dataset.provider = provider.key;
@@ -2415,18 +2415,18 @@ function renderUsage() {
     header.append(identity, make("span", "usage-provider-updated", formatUsageUpdated(providerUpdated)));
     const profile = provider.profile;
     if (profile) {
-      const toggle = make("button", "usage-profile-toggle", profile.visible ? "기본 표시에서 숨기기" : "기본 화면에 표시");
+      const toggle = make("button", "usage-profile-toggle", profile.visible ? t("기본 표시에서 숨기기") : t("기본 화면에 표시"));
       toggle.type = "button"; toggle.disabled = usageVisibilitySaving;
       toggle.onclick = () => void changeUsageVisibility(profile);
       header.append(toggle);
     }
 
     const limitList = make("div", "usage-limit-list");
-    if (!provider.limits.length) limitList.append(make("p", "usage-profile-note", "한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다."));
+    if (!provider.limits.length) limitList.append(make("p", "usage-profile-note", t("한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다.")));
     const extras = make("details", "usage-extra-limits");
     extras.dataset.usageSection = provider.key;
     extras.open = expanded.has(provider.key);
-    extras.append(make("summary", "", `추가 한도 ${Math.max(0, provider.limits.length - 1)}개`));
+    extras.append(make("summary", "", t("추가 한도 {0}개", [Math.max(0, provider.limits.length - 1)])));
     for (const [limitIndex, limit] of provider.limits.entries()) {
       const limitCard = make("article", "usage-limit-card");
       limitCard.appendChild(make("strong", "usage-limit-name", usageLimitName(limit, provider.label)));
@@ -2442,15 +2442,15 @@ function renderUsage() {
           "p",
           "usage-credit",
           limit.credits.unlimited
-            ? "추가 사용량 무제한"
-            : `추가 사용량 ${text(limit.credits.balance) || "확인 가능"}`,
+            ? t("추가 사용량 무제한")
+            : t("추가 사용량 {0}", [text(limit.credits.balance) || t("확인 가능")]),
         ));
       }
       (limitIndex === 0 ? limitList : extras).appendChild(limitCard);
     }
     if (provider.limits.length > 1) limitList.appendChild(extras);
     card.append(header, limitList);
-    if (profile && !profile.registered) card.append(make("p", "usage-profile-note", "등록된 계정이 없는 저장된 한도입니다."));
+    if (profile && !profile.registered) card.append(make("p", "usage-profile-note", t("등록된 계정이 없는 저장된 한도입니다.")));
     (current(provider) ? fragment : review).appendChild(card);
   }
   if (otherGroups.length) fragment.appendChild(review);
@@ -2633,8 +2633,8 @@ function syncSessionEditorDangerous() {
 function setSessionEditorBusy(busy) {
   for (const control of ui.sessionEditorForm.elements) control.disabled = busy;
   ui.sessionEditorSubmit.textContent = busy
-    ? "처리 중…"
-    : sessionEditorMode === "rename" ? "저장" : "생성";
+    ? t("처리 중…")
+    : sessionEditorMode === "rename" ? t("저장") : t("생성");
 }
 
 function closeSessionEditor() {
@@ -2655,20 +2655,20 @@ function openCreateSessionEditor() {
     : [];
   const tools = availableSessionTools();
   if (projects.length === 0) {
-    showToast("세션을 생성할 프로젝트가 없습니다.");
+    showToast(t("세션을 생성할 프로젝트가 없습니다."));
     return;
   }
   if (tools.length === 0) {
-    showToast("설정에서 사용할 AI 도구를 먼저 활성화해 주세요.");
+    showToast(t("설정에서 사용할 AI 도구를 먼저 활성화해 주세요."));
     return;
   }
   sessionEditorPreviousFocus = document.activeElement;
   sessionEditorMode = "create";
   sessionEditorAgentId = null;
-  ui.sessionEditorTitle.textContent = "새 세션";
+  ui.sessionEditorTitle.textContent = t("새 세션");
   ui.sessionEditorProjectField.hidden = false;
   ui.sessionEditorToolField.hidden = false;
-  ui.sessionEditorSubmit.textContent = "생성";
+  ui.sessionEditorSubmit.textContent = t("생성");
   ui.sessionEditorMessage.hidden = true;
 
   const selectedProjectId = selectedAgent()?.projectId
@@ -2702,11 +2702,11 @@ function openRenameSessionEditor() {
   sessionEditorPreviousFocus = document.activeElement;
   sessionEditorMode = "rename";
   sessionEditorAgentId = agent.id;
-  ui.sessionEditorTitle.textContent = "세션 이름 변경";
+  ui.sessionEditorTitle.textContent = t("세션 이름 변경");
   ui.sessionEditorProjectField.hidden = true;
   ui.sessionEditorToolField.hidden = true;
   ui.sessionEditorDangerousField.hidden = true;
-  ui.sessionEditorSubmit.textContent = "저장";
+  ui.sessionEditorSubmit.textContent = t("저장");
   ui.sessionEditorMessage.hidden = true;
   ui.sessionEditorName.value = text(agent.name || agent.id);
   ui.sessionEditorOverlay.hidden = false;
@@ -2730,7 +2730,7 @@ async function submitSessionEditor() {
   if (!sessionEditorMode) return;
   const name = ui.sessionEditorName.value.trim();
   if (!name) {
-    ui.sessionEditorMessage.textContent = "세션 이름을 입력해 주세요.";
+    ui.sessionEditorMessage.textContent = t("세션 이름을 입력해 주세요.");
     ui.sessionEditorMessage.hidden = false;
     ui.sessionEditorName.focus();
     return;
@@ -2769,10 +2769,10 @@ async function submitSessionEditor() {
       renderSelection();
     }
     closeSessionEditor();
-    showToast(creating ? "새 세션을 생성했습니다." : "세션 이름을 변경했습니다.");
+    showToast(creating ? t("새 세션을 생성했습니다.") : t("세션 이름을 변경했습니다."));
     if (creating && result.id) {
       if (!(await waitForCreatedSession(result.id))) {
-        showToast("세션은 생성됐지만 목록 동기화가 지연되고 있습니다. 새로고침해 주세요.");
+        showToast(t("세션은 생성됐지만 목록 동기화가 지연되고 있습니다. 새로고침해 주세요."));
       }
     } else {
       setTimeout(() => { void fetchState({ quiet: true }); }, 250);
@@ -2801,7 +2801,7 @@ function selectDocuments(projectId = null) {
     ? projectId
     : projects[0]?.id;
   if (!id) {
-    showToast("Remote에서 볼 수 있는 로컬 프로젝트가 없습니다.");
+    showToast(t("Remote에서 볼 수 있는 로컬 프로젝트가 없습니다."));
     return;
   }
   const projectChanged = selection.type !== "documents" || selection.id !== id;
@@ -2845,10 +2845,10 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
     if (text === "/clear") clearRemoteChatHistory(agentId);
     setTimeout(() => fetchState({ quiet: true }), 250);
-    if (!quiet) showToast("전송했습니다.");
+    if (!quiet) showToast(t("전송했습니다."));
     return true;
   } catch (error) {
-    if (!quiet) showToast(`전송 실패: ${error.message}`);
+    if (!quiet) showToast(t("전송 실패: {0}", [error.message]));
     return false;
   }
 }
@@ -2886,18 +2886,18 @@ function updateComposerSendState() {
   ui.messageInput.disabled = inactiveTerminal;
   ui.messageInput.placeholder = inactiveTerminal
     ? initializingTerminal
-      ? "세션 초기화가 끝나면 입력할 수 있습니다"
-      : "비활성 세션은 채팅 모드에서 활성화할 수 있습니다"
-    : "메시지 입력";
+      ? t("세션 초기화가 끝나면 입력할 수 있습니다")
+      : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
+    : t("메시지 입력");
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
-    ? "SSH 세션은 이미지 첨부를 지원하지 않습니다"
+    ? t("SSH 세션은 이미지 첨부를 지원하지 않습니다")
     : inactiveTerminal
       ? initializingTerminal
-        ? "세션 초기화가 끝나면 첨부할 수 있습니다"
-        : "비활성 세션은 채팅 모드에서 활성화할 수 있습니다"
-    : "이미지 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원";
+        ? t("세션 초기화가 끝나면 첨부할 수 있습니다")
+        : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
+    : t("이미지 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
 }
 
 function resizeComposerInput() {
@@ -2930,14 +2930,14 @@ function renderComposerAttachments() {
     else image.hidden = true;
     image.alt = "";
     const meta = make("span", "composer-attachment-name", attachment.uploading
-      ? `${attachment.name} · 업로드 중`
+      ? t("{0} · 업로드 중", [attachment.name])
       : attachment.error
-        ? `${attachment.name} · 실패`
+        ? t("{0} · 실패", [attachment.name])
         : attachment.name);
     const remove = make("button", "composer-attachment-remove", "×");
     remove.type = "button";
-    remove.title = "첨부 제거";
-    remove.setAttribute("aria-label", `${attachment.name} 첨부 제거`);
+    remove.title = t("첨부 제거");
+    remove.setAttribute("aria-label", t("{0} 첨부 제거", [attachment.name]));
     remove.addEventListener("click", () => {
       const draft = currentAttachments();
       const index = draft.findIndex((candidate) => candidate.token === attachment.token);
@@ -2957,7 +2957,7 @@ function readFileDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(String(reader.result || "")));
-    reader.addEventListener("error", () => reject(reader.error || new Error("파일을 읽지 못했습니다.")));
+    reader.addEventListener("error", () => reject(reader.error || new Error(t("파일을 읽지 못했습니다."))));
     reader.readAsDataURL(file);
   });
 }
@@ -2977,8 +2977,8 @@ async function uploadAttachment(agentId, attachment, file) {
     attachment.uploading = false;
   } catch (error) {
     attachment.uploading = false;
-    attachment.error = error.message || "업로드하지 못했습니다.";
-    showToast(`이미지 첨부 실패: ${attachment.error}`);
+    attachment.error = error.message || t("업로드하지 못했습니다.");
+    showToast(t("이미지 첨부 실패: {0}", [attachment.error]));
   }
   renderComposerAttachments();
 }
@@ -2995,33 +2995,33 @@ function attachmentFileName(file, source, index) {
 function addAttachments(files, { source = "picker" } = {}) {
   const agent = selectedAgent();
   if (!agent) {
-    showToast("세션을 먼저 선택하세요.");
+    showToast(t("세션을 먼저 선택하세요."));
     return 0;
   }
   if (agent.sshHostId) {
-    showToast("SSH 세션에는 로컬 이미지를 첨부할 수 없습니다.");
+    showToast(t("SSH 세션에는 로컬 이미지를 첨부할 수 없습니다."));
     return 0;
   }
   if (
     sessionViewMode === "term" &&
     ["offline", "recovering", "starting"].includes(statusOf(agent))
   ) {
-    showToast("세션이 활성화된 뒤 이미지를 첨부할 수 있습니다.");
+    showToast(t("세션이 활성화된 뒤 이미지를 첨부할 수 있습니다."));
     return 0;
   }
   const draft = currentAttachments();
   let added = 0;
   for (const [index, file] of files.entries()) {
     if (draft.length >= MAX_ATTACHMENTS) {
-      showToast(`이미지는 최대 ${MAX_ATTACHMENTS}개까지 첨부할 수 있습니다.`);
+      showToast(t("이미지는 최대 {0}개까지 첨부할 수 있습니다.", [MAX_ATTACHMENTS]));
       break;
     }
     if (!ACCEPTED_ATTACHMENT_TYPES.has(file.type)) {
-      showToast(`${file.name}: 지원하지 않는 이미지 형식입니다.`);
+      showToast(t("{0}: 지원하지 않는 이미지 형식입니다.", [file.name]));
       continue;
     }
     if (!file.size || file.size > MAX_ATTACHMENT_BYTES) {
-      showToast(`${file.name}: 이미지는 8MB 이하여야 합니다.`);
+      showToast(t("{0}: 이미지는 8MB 이하여야 합니다.", [file.name]));
       continue;
     }
     const attachment = {
@@ -3057,7 +3057,7 @@ function handleComposerImagePaste(event) {
   if (!files.length) return;
   event.preventDefault();
   const added = addAttachments(files, { source: "clipboard" });
-  if (added > 0) showToast(`클립보드 이미지 ${added}개를 첨부했습니다.`);
+  if (added > 0) showToast(t("클립보드 이미지 {0}개를 첨부했습니다.", [added]));
 }
 
 function hasDraggedFiles(event) {
@@ -3092,7 +3092,7 @@ function handleComposerImageDrop(event) {
   event.stopPropagation();
   clearComposerDragState();
   const added = addAttachments(files, { source: "drop" });
-  if (added > 0) showToast(`드롭한 이미지 ${added}개를 첨부했습니다.`);
+  if (added > 0) showToast(t("드롭한 이미지 {0}개를 첨부했습니다.", [added]));
 }
 
 function attachmentMessage(message, attachments) {
@@ -3116,7 +3116,7 @@ async function sendRaw(agentId, data) {
     setTimeout(() => fetchState({ quiet: true }), 250);
     return true;
   } catch (error) {
-    showToast(`전송 실패: ${error.message}`);
+    showToast(t("전송 실패: {0}", [error.message]));
     return false;
   }
 }
@@ -3153,11 +3153,11 @@ async function cancelSession(agentId) {
         data: { ...cached.data, lifecycle: "idle" },
       });
     }
-    showToast("작업을 취소하고 대기 상태로 전환했습니다.");
+    showToast(t("작업을 취소하고 대기 상태로 전환했습니다."));
     await fetchState({ quiet: true });
     return true;
   } catch (error) {
-    showToast(`취소 실패: ${error.message}`);
+    showToast(t("취소 실패: {0}", [error.message]));
     return false;
   }
 }
@@ -3218,10 +3218,10 @@ function renderComposerQueue() {
   const queue = queueForAgent(agent?.id, { create: false });
   if (!agent || !queue.length) { el.hidden = true; return; }
   el.hidden = false;
-  const head = make("div", "composer-queue-head", `예약 대기열 ${queue.length} · 이 세션이 준비되면 순서대로 전송`);
+  const head = make("div", "composer-queue-head", t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   const error = sessionQueueErrors.get(agent.id);
   if (error) {
-    const retry = make("button", "composer-queue-retry", error === "send-failed" ? "전송 다시 확인" : "세션 다시 활성화");
+    const retry = make("button", "composer-queue-retry", error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
     retry.type = "button";
     retry.addEventListener("click", () => {
       sessionQueueErrors.delete(agent.id);
@@ -3236,7 +3236,7 @@ function renderComposerQueue() {
     row.appendChild(make("span", "composer-queue-text", message.text));
     const cancel = make("button", "composer-queue-cancel", "×");
     cancel.type = "button";
-    cancel.title = "예약 취소";
+    cancel.title = t("예약 취소");
     cancel.addEventListener("click", () => {
       queue.splice(index, 1);
       if (!queue.length) {
@@ -3306,12 +3306,12 @@ async function requestSessionActivation(agentId, { queuedMessage = false } = {})
     sessionQueueErrors.delete(agentId);
     if (selectedAgent()?.id === agentId) renderComposerQueue();
     showToast(queuedMessage
-      ? "세션 활성화 중 — 준비되면 메시지를 자동 전송합니다."
-      : "세션을 활성화하고 있습니다.");
+      ? t("세션 활성화 중 — 준비되면 메시지를 자동 전송합니다.")
+      : t("세션을 활성화하고 있습니다."));
     setTimeout(() => fetchState({ quiet: true }), 500);
     return true;
   } catch (error) {
-    showToast(`세션 활성화 실패: ${error.message}`);
+    showToast(t("세션 활성화 실패: {0}", [error.message]));
     return false;
   }
 }
@@ -3351,7 +3351,7 @@ async function sendSelectedMessage() {
     followAgentTerminal(agent.id);
     const inactive = statusOf(agent) === "offline";
     if (inactive && sessionViewMode !== "chat") {
-      showToast("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다.");
+      showToast(t("비활성 세션에는 채팅 모드에서만 메시지를 보낼 수 있습니다."));
       return;
     }
     if (inactive && !(await requestSessionActivation(agent.id, { queuedMessage: true }))) {
@@ -3381,7 +3381,7 @@ async function sendSelectedMessage() {
       pendingSubmissions.delete(agent.id);
       clearAcceptedComposer(agent.id, snapshot);
       renderComposerQueue();
-      showToast("작업 중 — 대기열에 예약했습니다.");
+      showToast(t("작업 중 — 대기열에 예약했습니다."));
     }
   } finally {
     sendingAgents.delete(agent.id);
@@ -3504,11 +3504,11 @@ function updateMainTerminalChrome() {
     ui.terminalLive.hidden = !visible;
     if (visible) {
       const states = {
-        connecting: ["● 연결 중", "connecting"],
+        connecting: [t("● 연결 중"), "connecting"],
         live: ["● LIVE", "live"],
-        reconnecting: ["● 재연결", "reconnecting"],
-        ended: ["● 종료", "ended"],
-        disconnected: ["● 연결 끊김", "disconnected"],
+        reconnecting: [t("● 재연결"), "reconnecting"],
+        ended: [t("● 종료"), "ended"],
+        disconnected: [t("● 연결 끊김"), "disconnected"],
       };
       const [label, className] = states[instance.connectionState] || states.connecting;
       ui.terminalLive.textContent = label;
@@ -3631,7 +3631,7 @@ function closeStream(instance) {
   updateMainTerminalChrome();
 }
 
-function attachTerminal(container, agentId, fontSize = 13) {
+function attachTerminal(container, agentId, fontSize = 15) {
   if (!terminalSupported || !container || !agentId) return null;
   const instance = terminals.get(container) || buildTerminal(container, fontSize);
   if (instance.agentId === agentId && instance.stream && instance.stream.readyState !== EventSource.CLOSED) {
@@ -3675,7 +3675,7 @@ function attachTerminal(container, agentId, fontSize = 13) {
   stream.addEventListener("exit", () => {
     if (instance.stream !== stream) return;
     instance.connectionState = "ended";
-    writeTerminalOutput(instance, "\r\n\x1b[2m— 세션이 종료되었습니다 —\x1b[0m\r\n");
+    writeTerminalOutput(instance, t("\r\n\u001b[2m— 세션이 종료되었습니다 —\u001b[0m\r\n"));
     updateMainTerminalChrome();
   });
   // EventSource auto-reconnects on transient errors; the server replays a fresh
@@ -3798,7 +3798,7 @@ function syncTerminal() {
         continue;
       }
       const agentId = mount.dataset.terminalMount;
-      if (agentId) { attachTerminal(mount, agentId, 12); keep.add(mount); }
+      if (agentId) { attachTerminal(mount, agentId, 14); keep.add(mount); }
     }
   }
   for (const container of [...terminals.keys()]) {
@@ -3829,7 +3829,7 @@ function renderRemoteBrowserChrome() {
     for (const item of remoteBrowser.tabs) {
       const option = document.createElement("option");
       option.value = item.tabId;
-      option.textContent = item.title || item.url || "새 탭";
+      option.textContent = item.title || item.url || t("새 탭");
       fragment.appendChild(option);
     }
     ui.browserTabSelect.replaceChildren(fragment);
@@ -3846,7 +3846,7 @@ function renderRemoteBrowserChrome() {
   }
   if (!tab) {
     if (ui.browserFrame) ui.browserFrame.hidden = true;
-    setRemoteBrowserMessage("사용할 수 있는 내장 브라우저 탭이 없습니다.");
+    setRemoteBrowserMessage(t("사용할 수 있는 내장 브라우저 탭이 없습니다."));
   }
 }
 
@@ -3908,7 +3908,7 @@ async function fetchRemoteBrowserTabs(agentId, { force = false } = {}) {
     renderRemoteBrowserChrome();
   } catch (error) {
     if (remoteBrowser.agentId === agentId) {
-      setRemoteBrowserMessage(`브라우저 연결 실패: ${error.message || error}`);
+      setRemoteBrowserMessage(t("브라우저 연결 실패: {0}", [error.message || error]));
     }
   } finally {
     remoteBrowser.statusLoading = false;
@@ -3977,7 +3977,7 @@ async function loadRemoteBrowserFrame() {
     if (previousUrl) URL.revokeObjectURL(previousUrl);
   } catch (error) {
     if (error?.name !== "AbortError") {
-      setRemoteBrowserMessage(`화면을 불러오지 못했습니다: ${error.message || error}`);
+      setRemoteBrowserMessage(t("화면을 불러오지 못했습니다: {0}", [error.message || error]));
     }
   } finally {
     if (remoteBrowser.frameAbort === controller) remoteBrowser.frameAbort = null;
@@ -4011,7 +4011,7 @@ async function remoteBrowserAction(action, payload = {}) {
     scheduleRemoteBrowserFrame(0);
     return result;
   } catch (error) {
-    showToast(`브라우저 조작 실패: ${error.message || error}`);
+    showToast(t("브라우저 조작 실패: {0}", [error.message || error]));
     return null;
   }
 }
@@ -4064,7 +4064,7 @@ function startRemoteBrowser(agent) {
   if (remoteBrowser.agentId !== agent.id) {
     stopRemoteBrowser({ reset: true });
     remoteBrowser.agentId = agent.id;
-    setRemoteBrowserMessage("PC 내장 브라우저를 연결하는 중…");
+    setRemoteBrowserMessage(t("PC 내장 브라우저를 연결하는 중…"));
   }
   void fetchRemoteBrowserTabs(agent.id).then(() => scheduleRemoteBrowserFrame(0));
 }
@@ -4141,15 +4141,15 @@ function renderChat(data) {
   const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
   const frag = document.createDocumentFragment();
   if (data?.unsupported) {
-    frag.appendChild(make("div", "chat-empty", "이 세션은 대화 보기를 지원하지 않습니다 (codex/claude)."));
+    frag.appendChild(make("div", "chat-empty", t("이 세션은 대화 보기를 지원하지 않습니다 (codex/claude).")));
   } else if (data?.error) {
     const error = make("div", "chat-error");
     error.append(
-      make("strong", "", "대화를 불러오지 못했습니다"),
-      make("span", "", "터미널은 계속 사용할 수 있습니다. 잠시 후 다시 시도해 주세요."),
+      make("strong", "", t("대화를 불러오지 못했습니다")),
+      make("span", "", t("터미널은 계속 사용할 수 있습니다. 잠시 후 다시 시도해 주세요.")),
     );
     const actions = make("div", "chat-error-actions");
-    const retry = make("button", "", "다시 시도");
+    const retry = make("button", "", t("다시 시도"));
     retry.type = "button";
     retry.addEventListener("click", () => {
       const agent = selectedAgent();
@@ -4157,14 +4157,14 @@ function renderChat(data) {
       lastChatFetch = { id: null, at: 0 };
       void fetchChat(agent.id);
     });
-    const terminal = make("button", "", "터미널 보기");
+    const terminal = make("button", "", t("터미널 보기"));
     terminal.type = "button";
     terminal.addEventListener("click", () => setSessionViewMode("term"));
     actions.append(retry, terminal);
     error.appendChild(actions);
     frag.appendChild(error);
   } else if (!blocks.length) {
-    frag.appendChild(make("div", "chat-empty", data?.missing ? "아직 대화 기록이 없습니다." : "대화를 불러오는 중…"));
+    frag.appendChild(make("div", "chat-empty", data?.missing ? t("아직 대화 기록이 없습니다.") : t("대화를 불러오는 중…")));
   } else {
     // Group blocks into turns as [start, end) ranges. A new turn begins at a
     // user *text* block; everything else — assistant text/reasoning/tools, and
@@ -4191,7 +4191,7 @@ function renderChat(data) {
     const hidden = Math.max(0, ranges.length - chatVisible);
     chatHiddenCount = hidden; // drives scroll-to-top auto-load
     if (hidden > 0) {
-      const more = make("button", "chat-more", `▲ 이전 대화 더 보기 (${hidden})`);
+      const more = make("button", "chat-more", t("▲ 이전 대화 더 보기 ({0})", [hidden]));
       more.type = "button";
       more.addEventListener("click", () => {
         const prevHeight = el.scrollHeight;
@@ -4204,7 +4204,7 @@ function renderChat(data) {
       const more = make(
         "button",
         "chat-more",
-        chatOlderLoading ? "이전 대화 불러오는 중…" : "▲ 저장소에서 이전 대화 불러오기",
+        chatOlderLoading ? t("이전 대화 불러오는 중…") : t("▲ 저장소에서 이전 대화 불러오기"),
       );
       more.type = "button";
       more.disabled = chatOlderLoading;
@@ -4236,10 +4236,10 @@ function renderChat(data) {
       const think = make("div", "chat-thinking");
       const dots = make("span", "chat-thinking-dots");
       dots.append(make("i", ""), make("i", ""), make("i", ""));
-      think.append(dots, document.createTextNode("작업 중…"));
-      const stop = make("button", "chat-stop", "■ 중단");
+      think.append(dots, document.createTextNode(t("작업 중…")));
+      const stop = make("button", "chat-stop", t("■ 중단"));
       stop.type = "button";
-      stop.title = "진행 취소 (Esc)";
+      stop.title = t("진행 취소 (Esc)");
       stop.addEventListener("click", () => { void cancelSession(agent.id); });
       think.appendChild(stop);
       frag.appendChild(think);
@@ -4249,7 +4249,7 @@ function renderChat(data) {
       dots.append(make("i", ""), make("i", ""), make("i", ""));
       think.append(
         dots,
-        document.createTextNode(chatStatus === "recovering" ? "세션 복구 중…" : "세션 시작 중…"),
+        document.createTextNode(chatStatus === "recovering" ? t("세션 복구 중…") : t("세션 시작 중…")),
       );
       frag.appendChild(think);
     }
@@ -4389,7 +4389,7 @@ function syncSessionView() {
     // Re-render promptly when the busy state or the inline prompt changes, even
     // if the transcript itself didn't change this poll.
     const prompt = promptFor(agent);
-    const sig = `${statusOf(agent)}|${prompt ? `${prompt.kind}:${prompt.options.length}:${prompt.text}` : ""}`;
+    const sig = `${getLanguage()}|${statusOf(agent)}|${prompt ? `${prompt.kind}:${prompt.options.length}:${prompt.text}` : ""}`;
     if (sig !== lastChatStatusSig) {
       lastChatStatusSig = sig;
       if (lastChatData) renderChat(lastChatData);
@@ -4413,8 +4413,8 @@ function applyScreenAvailability() {
   const mobile = isMobile();
   if (ui.screensSection) ui.screensSection.hidden = mobile;
   ui.searchInput.placeholder = mobile
-    ? "프로젝트 · 세션 검색"
-    : "Screen · 프로젝트 · 세션 검색";
+    ? t("프로젝트 · 세션 검색")
+    : t("Screen · 프로젝트 · 세션 검색");
 }
 
 async function showNotification(title, body, tag, agentId) {
@@ -4443,7 +4443,7 @@ function processActivityNotifications(agents) {
     if (questionKey && questionKey !== previous.questionKey) {
       void showNotification(title, question.split("\n")[0], `question:${agent.id}`, agent.id);
     } else if (status === "done" && ["working", "attention"].includes(previous.status)) {
-      void showNotification(title, "작업이 완료되었습니다.", `done:${agent.id}`, agent.id);
+      void showNotification(title, t("작업이 완료되었습니다."), `done:${agent.id}`, agent.id);
     }
   }
   previousActivity = next;
@@ -4507,10 +4507,10 @@ function syncMobileAppDownload(info) {
   const sizeLabel = Number.isFinite(size) && size > 0
     ? ` · ${(size / (1024 * 1024)).toFixed(1)} MB`
     : "";
-  ui.androidDownloadButton.title = `Android APK 다운로드${sizeLabel}`;
+  ui.androidDownloadButton.title = t("Android APK 다운로드{0}", [sizeLabel]);
   ui.androidDownloadButton.setAttribute(
     "aria-label",
-    `Android APK 다운로드${sizeLabel}`,
+    t("Android APK 다운로드{0}", [sizeLabel]),
   );
 }
 
@@ -4524,6 +4524,26 @@ async function fetchState({ quiet = false } = {}) {
         return;
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (setLanguage(state.language ?? state.view?.language)) {
+        screenRenderKey = "";
+        documentProjectsRenderKey = "";
+        documentListRenderKey = "";
+        usageQuickRenderKey = "";
+        applyScreenAvailability();
+        updateSidebarToggleState();
+        syncDocumentSidebar();
+        updateMainTerminalChrome();
+        if (!ui.sessionEditorOverlay.hidden) {
+          ui.sessionEditorTitle.textContent = sessionEditorMode === "rename" ? t("세션 이름 변경") : t("새 세션");
+          ui.sessionEditorSubmit.textContent = ui.sessionEditorSubmit.disabled
+            ? t("처리 중…") : sessionEditorMode === "rename" ? t("저장") : t("생성");
+        }
+        if (ui.notifyButton.classList.contains("enabled")) {
+          ui.notifyButton.title = backgroundPushEnabled
+            ? window.__MULTIAGENT_NATIVE_APP__ ? t("휴대폰 백그라운드 모니터링 켜짐") : t("백그라운드 알림 켜짐")
+            : t("알림 켜짐");
+        }
+      }
       remoteState = {
         ...state,
         agents: Array.isArray(state.agents) ? state.agents : [],
@@ -4543,12 +4563,12 @@ async function fetchState({ quiet = false } = {}) {
       renderNavigation();
       renderSelection();
       updateUrl();
-      setConnection("online", "연결됨");
-      ui.updated.textContent = `마지막 동기화 ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+      setConnection("online", t("연결됨"));
+      ui.updated.textContent = t("마지막 동기화 {0}", [new Date().toLocaleTimeString(getLanguage(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })]);
     }, (error) => {
-      setConnection("offline", "연결 끊김");
-      ui.updated.textContent = navigator.onLine ? "PC에 연결할 수 없습니다" : "네트워크가 오프라인입니다";
-      if (!quiet) showToast("Remote 서버에 연결할 수 없습니다.");
+      setConnection("offline", t("연결 끊김"));
+      ui.updated.textContent = navigator.onLine ? t("PC에 연결할 수 없습니다") : t("네트워크가 오프라인입니다");
+      if (!quiet) showToast(t("Remote 서버에 연결할 수 없습니다."));
   });
 }
 
@@ -4644,8 +4664,8 @@ async function enableNotifications() {
     if (backgroundPushEnabled) {
       stopNativeMonitor();
       ui.notifyButton.classList.remove("enabled");
-      ui.notifyButton.title = "휴대폰 모니터링 꺼짐";
-      showToast("백그라운드 모니터링을 중지했습니다.");
+      ui.notifyButton.title = t("휴대폰 모니터링 꺼짐");
+      showToast(t("백그라운드 모니터링을 중지했습니다."));
       return;
     }
     try {
@@ -4662,18 +4682,18 @@ async function enableNotifications() {
         token: text(registration.token),
         cursor: Number(registration.cursor) || 0,
       }));
-      showToast("백그라운드 모니터링을 시작하는 중입니다.");
+      showToast(t("백그라운드 모니터링을 시작하는 중입니다."));
     } catch {
-      showToast("알림 전용 기기 토큰을 발급하지 못했습니다.");
+      showToast(t("알림 전용 기기 토큰을 발급하지 못했습니다."));
     }
     return;
   }
   if (!("Notification" in window)) {
-    showToast("이 브라우저는 알림을 지원하지 않습니다.");
+    showToast(t("이 브라우저는 알림을 지원하지 않습니다."));
     return;
   }
   if (Notification.permission === "denied") {
-    showToast("브라우저 사이트 설정에서 알림 권한을 허용해 주세요.");
+    showToast(t("브라우저 사이트 설정에서 알림 권한을 허용해 주세요."));
     return;
   }
   const permission = await Notification.requestPermission();
@@ -4682,10 +4702,10 @@ async function enableNotifications() {
     ui.notifyButton.classList.add("enabled");
     const registration = await registerServiceWorker();
     const background = await ensureBackgroundPush(registration);
-    ui.notifyButton.title = background ? "백그라운드 알림 켜짐" : "알림 켜짐";
+    ui.notifyButton.title = background ? t("백그라운드 알림 켜짐") : t("알림 켜짐");
     showToast(background
-      ? "앱을 닫아도 작업 완료 알림을 받습니다."
-      : "PWA 실행 중 완료와 질문 알림을 받습니다.");
+      ? t("앱을 닫아도 작업 완료 알림을 받습니다.")
+      : t("PWA 실행 중 완료와 질문 알림을 받습니다."));
   }
 }
 
@@ -4693,18 +4713,18 @@ function applyNativeMonitorState(detail) {
   if (!detail?.ok) {
     backgroundPushEnabled = false;
     ui.notifyButton.classList.remove("enabled");
-    ui.notifyButton.title = "휴대폰 모니터링 꺼짐";
-    if (detail?.userInitiated) showToast(text(detail?.error) || "백그라운드 모니터링을 시작하지 못했습니다.");
+    ui.notifyButton.title = t("휴대폰 모니터링 꺼짐");
+    if (detail?.userInitiated) showToast(text(detail?.error) || t("백그라운드 모니터링을 시작하지 못했습니다."));
     return;
   }
   backgroundPushEnabled = Boolean(detail.active);
   ui.notifyButton.classList.toggle("enabled", backgroundPushEnabled);
   ui.notifyButton.title = backgroundPushEnabled
-    ? "휴대폰 백그라운드 모니터링 켜짐"
-    : "휴대폰 모니터링 꺼짐";
+    ? t("휴대폰 백그라운드 모니터링 켜짐")
+    : t("휴대폰 모니터링 꺼짐");
   if (backgroundPushEnabled) {
     localStorage.setItem("multiagent.remote.notifications", "on");
-    if (detail?.userInitiated) showToast("고정 알림이 표시되는 동안 완료와 응답 필요 알림을 받습니다.");
+    if (detail?.userInitiated) showToast(t("고정 알림이 표시되는 동안 완료와 응답 필요 알림을 받습니다."));
   } else {
     localStorage.removeItem("multiagent.remote.notifications");
   }
@@ -4728,7 +4748,7 @@ async function installPwa() {
     ui.installButton.hidden = true;
     return;
   }
-  showToast("브라우저 메뉴에서 ‘홈 화면에 추가’ 또는 ‘앱 설치’를 선택해 주세요.");
+  showToast(t("브라우저 메뉴에서 ‘홈 화면에 추가’ 또는 ‘앱 설치’를 선택해 주세요."));
 }
 
 async function registerServiceWorker() {
@@ -4749,7 +4769,7 @@ async function initializeNotifications() {
   ) {
     ui.notifyButton.classList.add("enabled");
     const background = await ensureBackgroundPush(registration);
-    ui.notifyButton.title = background ? "백그라운드 알림 켜짐" : "알림 켜짐";
+    ui.notifyButton.title = background ? t("백그라운드 알림 켜짐") : t("알림 켜짐");
   }
 }
 
@@ -4881,7 +4901,7 @@ ui.documentMarkdown.addEventListener("click", (event) => {
   const targetKind = chatFileKind(target);
   if (!targetKind) return;
   if (!target || target.startsWith("/") || /^[a-z]:/i.test(target)) {
-    showToast("프로젝트 안의 상대 문서 링크만 열 수 있습니다.");
+    showToast(t("프로젝트 안의 상대 문서 링크만 열 수 있습니다."));
     return;
   }
   const parts = selectedDocumentPath.split("/");
@@ -4890,7 +4910,7 @@ ui.documentMarkdown.addEventListener("click", (event) => {
     if (!part || part === ".") continue;
     if (part === "..") {
       if (!parts.length) {
-        showToast("프로젝트 밖의 문서는 열 수 없습니다.");
+        showToast(t("프로젝트 밖의 문서는 열 수 없습니다."));
         return;
       }
       parts.pop();
@@ -4910,7 +4930,7 @@ ui.documentMarkdown.addEventListener("click", (event) => {
   const match = (documentLists.get(selection.id)?.documents || [])
     .find((document) => document.path.toLowerCase() === resolved.toLowerCase());
   if (!match) {
-    showToast("링크된 문서를 목록에서 찾을 수 없습니다.");
+    showToast(t("링크된 문서를 목록에서 찾을 수 없습니다."));
     return;
   }
     selectedDocumentPath = match.path;
@@ -4947,7 +4967,7 @@ ui.filePreviewMarkdown.addEventListener("click", (event) => {
   const kind = chatFileKind(rawTarget);
   const resolved = resolveRelativePreviewPath(filePreviewContext.path, rawTarget);
   if (!kind || !resolved) {
-    showToast("프로젝트 안의 Markdown, HTML 또는 이미지 링크만 열 수 있습니다.");
+    showToast(t("프로젝트 안의 Markdown, HTML 또는 이미지 링크만 열 수 있습니다."));
     return;
   }
   void openChatFilePreview(
@@ -5132,14 +5152,14 @@ ui.composerForm.addEventListener("drop", handleComposerImageDrop);
 window.addEventListener("dragend", clearComposerDragState);
 setInterval(() => { void drainQueues(); }, 500);
 // ---- Slash-command autocomplete (composer) ----
-const SLASH_CLAUDE = [["clear","대화 컨텍스트 지우기"],["compact","대화 요약·압축"],["model","모델 변경"],["review","코드 리뷰"],["init","CLAUDE.md 생성"],["agents","서브에이전트"],["cost","토큰/비용"],["config","설정"],["memory","메모리"],["status","상태"],["resume","세션 재개"],["export","내보내기"],["help","도움말"]];
-const SLASH_CODEX = [["clear","대화 지우기"],["compact","요약·압축"],["model","모델 변경"],["approvals","승인 정책"],["new","새 대화"],["diff","변경 diff"],["status","상태"],["init","AGENTS.md 생성"],["quit","종료"],["help","도움말"]];
+const SLASH_CLAUDE = () => [["clear",t("대화 컨텍스트 지우기")],["compact",t("대화 요약·압축")],["model",t("모델 변경")],["review",t("코드 리뷰")],["init",t("CLAUDE.md 생성")],["agents",t("서브에이전트")],["cost",t("토큰/비용")],["config",t("설정")],["memory",t("메모리")],["status",t("상태")],["resume",t("세션 재개")],["export",t("내보내기")],["help",t("도움말")]];
+const SLASH_CODEX = () => [["clear",t("대화 지우기")],["compact",t("요약·압축")],["model",t("모델 변경")],["approvals",t("승인 정책")],["new",t("새 대화")],["diff",t("변경 diff")],["status",t("상태")],["init",t("AGENTS.md 생성")],["quit",t("종료")],["help",t("도움말")]];
 let acItems = [];
 let acIndex = 0;
 let acTrigger = null;
 
 function slashCatalog() {
-  return selectedAgent()?.aiToolId === "codex" ? SLASH_CODEX : SLASH_CLAUDE;
+  return selectedAgent()?.aiToolId === "codex" ? SLASH_CODEX() : SLASH_CLAUDE();
 }
 function renderComposerAc() {
   const el = ui.composerAc;
@@ -5216,8 +5236,8 @@ ui.copyOutputButton.addEventListener("click", async () => {
     : (ui.outputText.textContent || "");
   try {
     await navigator.clipboard.writeText(content);
-    showToast("터미널 내용을 복사했습니다.");
-  } catch { showToast("복사하지 못했습니다."); }
+    showToast(t("터미널 내용을 복사했습니다."));
+  } catch { showToast(t("복사하지 못했습니다.")); }
 });
 ui.terminalFollowButton?.addEventListener("click", () => {
   followTerminalOutput(terminals.get(ui.terminalMount));
@@ -5239,9 +5259,9 @@ addEventListener("beforeinstallprompt", (event) => {
   deferredInstallPrompt = event;
   ui.installButton.hidden = false;
 });
-addEventListener("appinstalled", () => { ui.installButton.hidden = true; showToast("Acedia Remote를 설치했습니다."); });
+addEventListener("appinstalled", () => { ui.installButton.hidden = true; showToast(t("Acedia Remote를 설치했습니다.")); });
 addEventListener("online", () => { if (nativePageActive) void fetchState(); });
-addEventListener("offline", () => { setConnection("offline", "오프라인"); });
+addEventListener("offline", () => { setConnection("offline", t("오프라인")); });
 addEventListener("popstate", (event) => {
   routeDepth = Number.isSafeInteger(Number(event.state?.multiagentDepth))
     ? Math.max(0, Number(event.state.multiagentDepth))
@@ -5322,11 +5342,11 @@ function updateSidebarToggleState() {
     ? ui.navigationPane.classList.contains("open")
     : !appShell?.classList.contains("nav-collapsed");
   ui.sidebarToggle.setAttribute("aria-expanded", String(expanded));
-  ui.sidebarToggle.setAttribute("aria-label", expanded ? "탐색 메뉴 접기" : "탐색 메뉴 열기");
-  ui.sidebarToggle.title = expanded ? "좌측 목록 접기" : "좌측 목록 열기";
+  ui.sidebarToggle.setAttribute("aria-label", expanded ? t("탐색 메뉴 접기") : t("탐색 메뉴 열기"));
+  ui.sidebarToggle.title = expanded ? t("좌측 목록 접기") : t("좌측 목록 열기");
   ui.sessionNavButton.setAttribute("aria-expanded", String(expanded));
-  ui.sessionNavButton.setAttribute("aria-label", expanded ? "세션 목록 접기" : "세션 목록 열기");
-  ui.sessionNavButton.title = expanded ? "좌측 세션 목록 접기" : "좌측 세션 목록 열기";
+  ui.sessionNavButton.setAttribute("aria-label", expanded ? t("세션 목록 접기") : t("세션 목록 열기"));
+  ui.sessionNavButton.title = expanded ? t("좌측 세션 목록 접기") : t("좌측 세션 목록 열기");
   ui.sessionNavButton.textContent = isMobile() && expanded ? "×" : expanded ? "‹" : "☰";
 }
 function applyNavCollapsed(collapsed) {
@@ -5372,8 +5392,8 @@ if (
 ) {
   ui.notifyButton.classList.add("enabled");
   ui.notifyButton.title = window.__MULTIAGENT_NATIVE_APP__
-    ? "휴대폰 모니터링 상태 확인 중"
-    : "알림 켜짐";
+    ? t("휴대폰 모니터링 상태 확인 중")
+    : t("알림 켜짐");
 }
 applyNavCollapsed(
   localStorage.getItem(NAV_COLLAPSE_KEY) === "1"

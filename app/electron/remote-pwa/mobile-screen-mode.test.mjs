@@ -10,7 +10,7 @@ const script = fs.readFileSync(
 describe("Remote mobile Screen routing", () => {
   it("hides Screen navigation and uses a session-only search label on mobile", () => {
     expect(script).toContain("ui.screensSection.hidden = mobile;");
-    expect(script).toContain('? "프로젝트 · 세션 검색"');
+    expect(script).toContain('? t("프로젝트 · 세션 검색")');
   });
 
   it("does not choose a Screen as the mobile default", () => {

@@ -46,6 +46,12 @@ sources:
   - id: remote-ui-smoke
     resource: ../app/scripts/electron-remote-pwa-smoke.mjs
     title: "Desktop and mobile Remote PWA runtime smoke"
+  - id: remote-language
+    resource: ../app/electron/remote-pwa/i18n.js
+    title: "Remote display language and locale formatting"
+  - id: remote-styles
+    resource: ../app/electron/remote-pwa/styles.css
+    title: "Remote typography and responsive layout"
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Desktop browser ownership and Remote frame provider"
@@ -93,6 +99,7 @@ the extracted modules have these responsibilities:
 | `remote-pwa/chat-markup.js` | Escaping, Markdown fragments and project file-link markup |
 | `remote-pwa/chat-render.js` | User/assistant turns, tool details and diffs |
 | `remote-pwa/chat-history.js` | Pure sequence deduplication, ordering and overlapping-page merging |
+| `remote-pwa/i18n.js`, `remote-pwa/translations.js` | App-language messages, trusted initial-shell bindings and locale-aware usage dates |
 | `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, HTML capabilities and one shared document API dispatcher |
 | `services/remote-http.mjs` | JSON headers, body length and response serialization |
 | `services/web-services.mjs` | Server lifecycle, authentication, session APIs, static asset allowlist and tunnel orchestration |
@@ -104,12 +111,44 @@ The client modules are individually allowlisted as JavaScript assets and include
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
 
+## Readability and display language
+
+Remote and Local Dashboard share a 16px base with 14–16px body/control text and
+12px minimum captions and chart labels. Usage cards use larger totals, spaced
+sections and responsive columns. Buttons use at least 40px height for primary
+actions, with 44px usage controls on mobile. The usage page has a 1600px content
+limit on wide displays; period selectors wrap on narrow screens. Font sizing
+does not scale the whole page or xterm canvas. Terminal text uses 15px in session
+view and 14px in split panes.[^remote-styles]
+
+The coordinator includes the resolved desktop `language` in Remote view,
+Monitor state and usage-catalog synchronization. `/api/state` exposes it to the
+shared browser client. A normal state poll applies a changed language without
+reloading the page; Remote has no independent language selector. System default
+is resolved on the desktop, not from the visiting browser. The public
+`/auth/mode` response also supplies the language for the sign-in page without
+exposing session data.[^remote-client][^web-services]
+
+Korean and English UI messages are catalogued explicitly. Chinese, Traditional
+Chinese, Japanese and Spanish use translated entries where available and the
+desktop's English fallback policy for remaining messages. Dates, month labels,
+compact token counts and reset times use the resolved locale; chart labels no
+longer depend on Korean display labels in usage history responses. Only trusted
+initial-shell nodes and explicit UI message calls are translated. Project and
+account names, chat content, document content and provider output retain their
+original text. Language changes preserve composer drafts.[^remote-language]
+
 Chat helper tests import the production modules directly instead of slicing
 functions out of the main source. `npm --prefix app run electron:remote-pwa-smoke`
 starts an isolated Remote server and checks the real module graph, chat rendering,
 document-link preview, history ordering and service-worker activation at desktop
-and mobile widths. This does not verify live GitHub OAuth, public tunnels, or an
-installed Android WebView.[^chat-markup][^chat-render][^chat-history][^remote-ui-smoke]
+and mobile widths. The readability checks render populated usage history at
+1920, 1280 and 390px, measure caption/control sizes, reject horizontal overflow,
+and change the source language while checking draft and user-content preservation.
+The smoke also checks all six resolved locale settings and English sign-in.
+This does not verify live GitHub OAuth, public tunnels, or an installed Android
+WebView. Version-specific results are recorded in the
+[Remote UI review](remote-ui-review-2026-09-12.md).[^chat-markup][^chat-render][^chat-history][^remote-ui-smoke]
 
 ## Authentication and approval
 
@@ -284,6 +323,8 @@ Operational Dashboard behavior is documented separately in
 [^chat-render]: Chat turn and tool DOM rendering
 [^chat-history]: Chat page merging and sequence ordering
 [^remote-ui-smoke]: Desktop and mobile Remote PWA runtime smoke
+[^remote-language]: Remote display language and locale formatting
+[^remote-styles]: Remote typography and responsive layout
 [^electron-main]: Desktop browser ownership and Remote frame provider
 [^pty-submit]: PTY message formatting and ordered submission
 [^device-monitor]: Android foreground-monitor token service

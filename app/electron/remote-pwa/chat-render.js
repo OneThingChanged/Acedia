@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import { make } from "./dom.js";
 import { inlineMd, mdToHtml } from "./chat-markup.js";
 
@@ -54,7 +55,7 @@ function renderAssistantTurn(run, agent = null) {
       }
     } else if (block.kind === "reasoning") {
       const d = make("details", "chat-work");
-      d.append(make("summary", "", "추론"));
+      d.append(make("summary", "", t("추론")));
       const wrap = make("div", "chat-tools");
       const pre = make("pre", "", block.text);
       wrap.appendChild(pre);
@@ -65,13 +66,13 @@ function renderAssistantTurn(run, agent = null) {
       md.innerHTML = mdToHtml(block.text, agent);
       bodyNodes.push(md);
     } else if (block.kind === "image") {
-      bodyNodes.push(make("div", "chat-md", "🖼 이미지"));
+      bodyNodes.push(make("div", "chat-md", t("🖼 이미지")));
     }
   }
 
   if (tools.length) {
     const group = make("details", "chat-work");
-    group.append(make("summary", "", `작업 · 툴 ${tools.length}개`));
+    group.append(make("summary", "", t("작업 · 툴 {0}개", [tools.length])));
     const list = make("div", "chat-tools");
     for (const tool of tools) {
       const label = toolLabel(tool);
@@ -81,7 +82,7 @@ function renderAssistantTurn(run, agent = null) {
       item.appendChild(summary);
       if (tool.diff) item.appendChild(renderDiff(tool.diff));
       if (tool.output !== undefined && tool.output !== null || !tool.diff) {
-        item.appendChild(make("pre", tool.isError ? "err" : "", tool.output ?? "(출력 없음)"));
+        item.appendChild(make("pre", tool.isError ? "err" : "", tool.output ?? t("(출력 없음)")));
       }
       list.appendChild(item);
     }

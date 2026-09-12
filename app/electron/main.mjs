@@ -889,6 +889,7 @@ function dashboardPwaState() {
   return {
     pwa: true,
     remote: true,
+    language: s.language,
     agents: liveOutputForAgents(agents),
     view: {
       projects: s.projects ?? [],
@@ -5444,7 +5445,7 @@ async function invokeCommand(event, command, rawArgs) {
       return null;
     case "sync_usage_catalog":
       usageIndex.syncCatalog(args.projects, args.agents);
-      usageDashboard.sync({ projects: args.projects, agents: args.agents });
+      usageDashboard.sync({ language: args.language, projects: args.projects, agents: args.agents });
       return null;
     case "sync_monitor_state":
       monitorService.sync(args);

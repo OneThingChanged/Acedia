@@ -109,6 +109,8 @@ const REMOTE_ATTACHMENT_TYPES = new Map([
 ]);
 const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/dom.js", { file: "dom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/i18n.js", { file: "i18n.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/translations.js", { file: "translations.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-markup.js", { file: "chat-markup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -1242,6 +1244,7 @@ export class RemoteDashboardService {
       sendJson(response, 200, {
         configured: Boolean(this.config.client_id),
         web: Boolean(this.config.client_id && this.config.client_secret && this.config.public_hostname),
+        language: this.view?.language || "en",
       });
       return true;
     }
@@ -1337,6 +1340,8 @@ export class RemoteDashboardService {
           "/login",
           "/pwa/styles.css",
           "/pwa/login.js",
+          "/pwa/i18n.js",
+          "/pwa/translations.js",
           "/icon.svg",
           "/icons/icon-192.png",
           "/icons/icon-512.png",
@@ -1508,6 +1513,7 @@ export class RemoteDashboardService {
             generatedAt: new Date().toISOString(),
             agents: this.agents,
             view: this.view,
+            language: this.view?.language,
             ...runtime,
             mobileApp: remoteMobileApkInfo(this.mobileApkPath),
           });

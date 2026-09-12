@@ -19,10 +19,11 @@ describe("Electron dashboard server", () => {
     roots.push(root);
     const service = new LocalDashboardService({ title: "Test", defaultPort: 0, baseDir: root, configName: "test.json" });
     services.push(service);
-    service.sync({ agents: [{ id: "a", name: "세션", status: "working" }] });
+    service.sync({ language: "en", agents: [{ id: "a", name: "세션", status: "working" }] });
     const status = await service.start();
     const state = await fetch(`${status.url}/api/state`).then((response) => response.json());
     expect(state.title).toBe("Test");
+    expect(state.language).toBe("en");
     expect(state.agents[0].name).toBe("세션");
   });
 
@@ -117,6 +118,7 @@ describe("Electron dashboard server", () => {
     service.config.server_port = 0;
     service.syncAgents([{ id: "agent-1", name: "세션 1", project: "ProjectA", status: "working" }]);
     service.syncView({
+      language: "en",
       projects: [{ id: "p1", name: "ProjectA" }],
       agents: [
         { id: "agent-1", projectId: "p1" },
@@ -388,9 +390,9 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v63');
+    expect(workerBody).toContain('multiagent-remote-v64');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
-    for (const name of ["dom.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
+    for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
       expect(module.status).toBe(200);
       expect(module.headers.get("content-type")).toContain("javascript");
@@ -401,6 +403,10 @@ describe("Electron dashboard server", () => {
     expect(workerBody).toContain('url.pathname.startsWith("/downloads/")');
     expect(workerBody).toContain('url.pathname.startsWith("/preview/")');
     expect(stateBody.pwa).toBe(true);
+    expect(stateBody.language).toBe("en");
+    service.syncView({ ...service.view, language: "ja" });
+    expect((await fetch(`${status.url}/api/state`).then(r => r.json())).language).toBe("ja");
+    expect((await fetch(`${status.url}/auth/mode`).then(r => r.json())).language).toBe("ja");
     expect(stateBody.mobileApp).toEqual({
       available: true,
       downloadUrl: "/downloads/Acedia-Mobile.apk",
@@ -1243,6 +1249,8 @@ describe("Electron dashboard server", () => {
     expect(page).toContain("Remote Monitor");
     const state = await fetch(`${status.url}/api/state`).then((r) => r.json());
     expect(state.pwa).toBe(true);
+    service.sync({ language: "es" });
+    expect((await fetch(`${status.url}/api/state`).then(r => r.json())).language).toBe("es");
     const usage = await fetch(`${status.url}/api/usage?refresh=1`).then((r) => r.json());
     expect(usage.tokens).toMatchObject({ events: 2, totalTokens: 25 });
     const chat = await fetch(`${status.url}/api/chat?id=agent-9&before=450&limit=75`).then((r) => r.json());
@@ -1494,7 +1502,7 @@ describe("Electron dashboard server", () => {
     });
     const poll = await pollResponse.json();
 
-    expect(mode).toEqual({ configured: true, web: false });
+    expect(mode).toEqual({ configured: true, web: false, language: "en" });
     expect(start.user_code).toBe("ABCD-EFGH");
     expect(poll).toEqual({ login: "owner-user", approved: true });
     expect(pollResponse.headers.get("set-cookie")).toContain("multiagent_remote=");

@@ -1126,6 +1126,7 @@ function App() {
   useEffect(() => {
     if (!runtimeFlags || !isCoordinatorWindow || !remoteEnabled) return;
     const payload = {
+      language,
       projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1176,11 +1177,13 @@ function App() {
     remoteEnabled,
     runtimeFlags,
     disabledTools,
+    language,
   ]);
 
   useEffect(() => {
     if (!runtimeFlags || !isCoordinatorWindow) return;
     const payload = {
+      language,
       projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1203,11 +1206,12 @@ function App() {
     if (usageCatalogJsonRef.current === json) return;
     usageCatalogJsonRef.current = json;
     invoke("sync_usage_catalog", payload).catch(() => {});
-  }, [projects, agents, isCoordinatorWindow, runtimeFlags]);
+  }, [projects, agents, isCoordinatorWindow, runtimeFlags, language]);
 
   useEffect(() => {
     if (!runtimeFlags || !isCoordinatorWindow) return;
     const payload = {
+      language,
       projects: projects.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1257,6 +1261,7 @@ function App() {
     isCoordinatorWindow,
     runtimeFlags,
     disabledTools,
+    language,
   ]);
 
   useEffect(() => {
