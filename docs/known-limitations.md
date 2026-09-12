@@ -35,6 +35,9 @@ sources:
   - id: desktop-manifest
     resource: ../app/package.json
     title: "Desktop updater and packaging configuration"
+  - id: exe-updater
+    resource: ../app/electron/services/github-exe-update.mjs
+    title: "Standard EXE manifest and download verification"
   - id: store-guide
     resource: microsoft-store-release-guide.md
     title: "Microsoft Store release status and operating procedure"
@@ -92,10 +95,10 @@ does not package the Android APK.[^runtime-variant]
 
 ## Windows distribution
 
-Windows installers currently have no trusted Authenticode signature. Update
-manifests carry the installer SHA-512 and Electron Updater verifies it, but a
-fresh manual installation can still show an unknown-publisher warning. Revisit
-this limitation when a trusted Windows code-signing certificate is configured.[^desktop-manifest]
+Windows installers currently have no trusted Authenticode signature. The Standard
+EXE updater verifies file size and SHA-256 against `latest-exe.json`, but a fresh
+manual installation can still show an unknown-publisher warning. Revisit this
+limitation when a trusted Windows code-signing certificate is configured.[^desktop-manifest][^exe-updater]
 
 The Store MSIX pipeline has completed Partner Center identity binding, package
 validation, private certification, and a real Store installation for version
@@ -127,4 +130,5 @@ do not keep completed fixes here as “implemented candidates.”
 [^usage-service]: Local usage derivation
 [^runtime-variant]: Variant restrictions
 [^desktop-manifest]: Desktop updater and packaging configuration
+[^exe-updater]: Standard EXE manifest and download verification
 [^store-guide]: Microsoft Store release status and operating procedure

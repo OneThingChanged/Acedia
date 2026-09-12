@@ -8,7 +8,6 @@ import { pipeline } from "node:stream/promises";
 // not in the trusted MultiAgent renderer.  The preview server deliberately
 // exposes only a short-lived, project-scoped capability URL.
 const PREVIEW_TTL_MS = 15 * 60_000;
-const MAX_HTML_BYTES = 2 * 1024 * 1024;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SKIPPED_DIRS = new Set([
   ".build-tools",
@@ -152,9 +151,8 @@ function responseHeaders(contentType, size, isHtml) {
 }
 
 export class DocumentPreviewService {
-  constructor({ ttlMs = PREVIEW_TTL_MS, maxHtmlBytes = MAX_HTML_BYTES } = {}) {
+  constructor({ ttlMs = PREVIEW_TTL_MS } = {}) {
     this.ttlMs = ttlMs;
-    this.maxHtmlBytes = maxHtmlBytes;
     this.server = null;
     this.port = null;
     this.entries = new Map();
@@ -213,7 +211,8 @@ export class DocumentPreviewService {
     if (!HTML_EXTENSIONS.has(extension)) throw new Error("HTML 파일만 전용 브라우저에서 열 수 있습니다.");
     const stats = fs.statSync(resolved);
     if (!stats.isFile()) throw new Error("HTML 파일을 찾을 수 없습니다.");
-    if (stats.size > this.maxHtmlBytes) throw new Error("HTML 문서는 2MB 이하여야 합니다.");
+    // Desktop previews stream directly into an isolated browser view. They do
+    // not need the size cap used by buffered document readers.
     await this.start();
     this.prune();
     const token = crypto.randomBytes(32).toString("base64url");

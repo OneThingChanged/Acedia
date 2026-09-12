@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.4",
+  "multiAgentReleaseVersion": "1.8.1.5",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -25,6 +25,7 @@
     "electron:smoke": "electron electron/pty-smoke.mjs",
     "electron:bridge-smoke": "node scripts/electron-bridge-smoke.mjs",
     "electron:browser-background-smoke": "electron scripts/electron-browser-background-smoke.mjs",
+    "electron:document-preview-smoke": "electron scripts/electron-document-preview-smoke.mjs",
     "electron:browser-download-smoke": "electron scripts/electron-browser-download-smoke.mjs",
     "electron:browser-form-smoke": "electron scripts/electron-browser-form-smoke.mjs",
     "electron:remote-pwa-smoke": "electron scripts/electron-remote-pwa-smoke.mjs",
@@ -115,9 +116,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.4-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.5-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.4",
+      "uninstallDisplayName": "Acedia 1.8.1.5",
       "include": "electron/installer.nsh"
     },
     "publish": [

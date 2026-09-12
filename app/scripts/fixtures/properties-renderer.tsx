@@ -17,6 +17,7 @@ window.fixtureSetQuotaData = data => { quota = data.limits; quotaProfiles = data
 window.multiAgentElectron = {
   invoke: async (command, args = {}) => {
     window.fixtureCalls.push({ command, args });
+    if (command === "usage_rate_limits_get" && args.refresh && window.fixtureRefreshHandler) return window.fixtureRefreshHandler();
     if (command === "session_storage_list") return { sessions: entries.filter(entry => args.includeAllProjectSessions || args.sessions.some(query => query.sessionId === entry.sessionId)) };
     if (command === "session_storage_delete") { entries = entries.filter(entry => entry.sessionId !== args.sessionId); return null; }
     if (command.endsWith("_accounts_list")) return [{ id: "default", label: "기존 로그인", state: "default" }, { id: extraId, label: "보조 계정", state: "saved" }];

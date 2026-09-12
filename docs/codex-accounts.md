@@ -106,8 +106,11 @@ views and transcript indexing recognize the additional homes.
 
 Historical token totals include all indexed profiles. Codex quota snapshots are
 stored under separate profile keys and shown with the profile label in the
-usage bar; they are snapshots reported by local Codex transcripts. Profiles
-without a reported quota snapshot appear as pending, without a percentage bar.
+usage bar. Refresh queries each registered account through account-only app-server
+RPCs, including idle and hidden accounts, while transcript snapshots remain a
+fallback. Failed refreshes preserve the last figures and identify login, timeout,
+failure or unavailable states. Profiles without a quota snapshot appear as pending,
+without a percentage bar. See [usage refresh](usage-accounting.md).
 Registered profiles are listed even before a session is started; visibility can be
 changed in Account quotas. See [profile display management](properties-and-usage.md).
 Registering the same

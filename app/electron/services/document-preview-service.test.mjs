@@ -60,6 +60,29 @@ describe("DocumentPreviewService", () => {
     expect(outside.status).toBe(404);
   });
 
+  it("streams large HTML entry pages and linked pages without truncating multibyte content", async () => {
+    const root = await fixture();
+    const service = new DocumentPreviewService(); services.push(service);
+    const html = "<!doctype html><meta charset=utf-8><link rel=stylesheet href=style.css><a href=detail.htm>Detail</a><!--"
+      + "문서 데이터 ".repeat(350_000) + "--><h1>Document end</h1>";
+    const bytes = Buffer.byteLength(html);
+    expect(bytes).toBeGreaterThan(5 * 1024 * 1024);
+    await fs.writeFile(path.join(root, "docs", "index.html"), html);
+    await fs.writeFile(path.join(root, "docs", "detail.htm"), html);
+    const preview = await service.issue({ folder: root, relativePath: "docs/index.html" });
+    const head = await fetch(preview.url, { method: "HEAD" });
+    expect(head.status).toBe(200); expect(head.headers.get("content-length")).toBe(String(bytes));
+    expect(await head.text()).toBe("");
+    const response = await fetch(preview.url);
+    expect(response.status).toBe(200); expect(await response.text()).toBe(html);
+    expect(response.headers.get("content-security-policy")).toContain("sandbox");
+    const linked = await fetch(new URL("detail.htm", preview.url));
+    expect(linked.status).toBe(200); expect(await linked.text()).toBe(html);
+    expect((await fetch(new URL("style.css", preview.url))).status).toBe(200);
+    const direct = await service.issue({ folder: root, relativePath: "docs/detail.htm" });
+    expect((await fetch(direct.url)).status).toBe(200);
+  });
+
   it("expires capability URLs", async () => {
     const root = await fixture();
     const service = new DocumentPreviewService({ ttlMs: 1 });

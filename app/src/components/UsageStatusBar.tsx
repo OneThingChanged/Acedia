@@ -122,9 +122,10 @@ function ProviderLimitDetails({
   );
 }
 
-function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChange, onClose }: {
+function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChange, onClose, refreshing, refreshError, onRefresh }: {
   summary: UsageRateLimitSummary | null; settings: StatusBarSettings; selectedKey: string | null;
   onSelect: (key: string) => void; onChange: (key: string, hidden: boolean) => Promise<void>; onClose: () => void;
+  refreshing: boolean; refreshError: boolean; onRefresh: () => void;
 }) {
   const { language, text } = useAppLanguage();
   const [tab, setTab] = useState("current");
@@ -136,7 +137,7 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
     const label = profile?.id === "default" ? `${group.label} · ${text("기본", "Default")}` : group.label;
     const selectable = canSelectStatusAccount(group, settings);
     const planType = group.limits.find(limit => limit.planType)?.planType;
-    return <article className={`property-card usage-account-card${group.key === selectedKey ? " usage-account-card-selected" : ""}`} key={group.key} data-profile-key={group.key}><div className="property-card-heading"><strong><span className="usage-provider-icon" style={{color:group.iconColor}}>{group.icon}</span> {label}{planType && <em className="usage-provider-plan">{planType}</em>}</strong>{profile && <button className="btn-secondary" disabled={busy} onClick={async () => {
+    return <article className={`property-card usage-account-card${group.key === selectedKey ? " usage-account-card-selected" : ""}`} key={group.key} data-profile-key={group.key}><div className="property-card-heading"><strong><span className="usage-provider-icon" style={{color:group.iconColor}}>{group.icon}</span> {label}{planType && <em className="usage-provider-plan">{planType}</em>}</strong>{profile && <button className="btn-secondary" disabled={busy || refreshing} onClick={async () => {
       setBusy(true); setError("");
       try { await onChange(profile.key, profile.visible); } catch { setError(text("표시 설정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save visibility. Please try again.")); } finally { setBusy(false); }
     }}>{profile.visible ? text("기본 표시에서 숨기기", "Hide from default view") : text("기본 화면에 표시", "Show in default view")}</button>}</div>
@@ -148,6 +149,15 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
       {!selectable && profile?.registered !== false && <small>{text("상태 표시줄 설정에서 이 도구를 켜면 선택할 수 있습니다.", "Enable this tool in Status bar settings to select it.")}</small>}
     </label>}
     {profile && !profile.registered && <p className="property-note">{text("등록된 계정이 없는 저장된 한도입니다.", "Stored quota for an account no longer registered.")}</p>}
+    {profile?.registered && (refreshing || profile.refresh) && <p className="usage-account-refresh-state" data-state={refreshing ? "refreshing" : profile.refresh?.status}>
+      {refreshing ? text("최신 한도 조회 중…", "Checking latest quota…")
+        : profile.refresh?.status === "success" ? text("최신 한도 조회 완료", "Latest quota retrieved")
+        : profile.refresh?.status === "login_required" ? text("로그인이 필요합니다. 설정 → 에이전트에서 다시 로그인하세요.", "Sign in again in Settings → Agents.")
+        : profile.refresh?.status === "timeout" ? text("조회 시간이 초과되었습니다. 다시 새로고침하세요.", "The request timed out. Refresh to retry.")
+        : profile.refresh?.status === "unavailable" ? text("이 계정의 사용 한도를 제공받지 못했습니다.", "Usage quota is unavailable for this account.")
+        : text("한도를 조회하지 못했습니다. 다시 새로고침하세요.", "Could not retrieve quota. Refresh to retry.")}
+      {!refreshing && profile.refresh?.status !== "success" && group.limits.length > 0 && <small>{text("아래 수치는 마지막으로 확인한 사용량입니다.", "The figures below are the last known usage.")}</small>}
+    </p>}
     {group.limits[0] ? <ProviderLimitDetails limit={group.limits[0]} providerLabel={group.label} now={Date.now()}/> : <p className="usage-quota-pending">{text("한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다.", "Quota not available yet. It will appear when data is collected for this registered account.")}</p>}
     {group.limits.length > 1 && <details><summary>{text("추가 한도", "Additional limits")} · {group.limits.length - 1}</summary>{group.limits.slice(1).map(limit => <div key={limit.limitId}><small>{formatUpdatedAgo(limit.updatedAt, Date.now(), language)}</small><ProviderLimitDetails limit={limit} providerLabel={group.label} now={Date.now()}/></div>)}</details>}
     {profile && <details><summary>{text("프로필 식별자", "Profile identifier")}</summary><code>{profile.key}</code></details>}
@@ -156,7 +166,7 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
   return <PropertiesDialog title={text("에이전트 사용량", "Agent usage")} subtitle={text("계정별 한도 · 하단바 표시 계정", "Account quotas · Status bar account")} activeTab={tab} onTabChange={setTab} onClose={onClose} busy={busy} tabs={[
     { id: "current", label: text("현재 계정", "Current accounts"), content: <><h3>{text("현재 계정", "Current accounts")}</h3><p className="property-note">{text("모든 계정의 사용량을 여기서 확인하고, 하단바에 표시할 계정 하나를 선택하세요. 이 선택은 세션의 로그인 계정을 바꾸지 않습니다.", "Review all account quotas here and choose one account for the status bar. This does not change session logins.")}</p><p className="property-note">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>{render(groups.filter(current))}</> },
     { id: "other", label: text("이전·기타 프로필", "Other profiles"), content: <><h3>{text("이전·기타 프로필", "Other profiles")}</h3><p className="property-note">{text("이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 같은 이름이나 수치만으로 계정을 합치지 않습니다. 숨겨도 로그인·대화·사용량 기록은 유지됩니다.", "Archived profiles, accounts no longer registered and profiles hidden by you. Names and percentages do not merge accounts. Hiding preserves logins, conversations and usage history.")}</p>{render(groups.filter(group => !current(group)))}</> },
-  ]} footer={<span role="status">{error || text("하단바 선택은 앱 작업창에 공유됩니다. 프로필 숨기기는 원격 화면에도 적용됩니다.", "The status bar selection is shared across app workspaces. Profile visibility also applies to remote views.")}</span>}/>;
+  ]} footer={<><span role="status">{error || (refreshError ? text("사용량을 갱신하지 못했습니다. 다시 시도하세요.", "Could not refresh usage. Please retry.") : text("새로고침하면 등록된 모든 계정의 사용 한도를 조회합니다.", "Refresh checks usage quotas for all registered accounts."))}</span><button className="btn-secondary usage-refresh-all" disabled={busy || refreshing} onClick={onRefresh}>{refreshing ? text("갱신 중…", "Refreshing…") : text("모든 계정 새로고침", "Refresh all accounts")}</button></>}/>;
 }
 
 export function UsageStatusBar({
@@ -175,15 +185,16 @@ export function UsageStatusBar({
   const [profilesOpen, setProfilesOpen] = useState(false);
   const visibilitySaving = useRef(false);
   const requestSerial = useRef(0);
+  const liveRefreshPending = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const load = useCallback(async (refresh: boolean) => {
-    if (visibilitySaving.current) return;
+    if (visibilitySaving.current || liveRefreshPending.current) return;
     const request = ++requestSerial.current;
-    if (refresh) setRefreshing(true);
+    if (refresh) { liveRefreshPending.current = true; setRefreshing(true); }
     try {
       const next = await invoke<UsageRateLimitSummary>("usage_rate_limits_get", {
         refresh,
@@ -196,8 +207,8 @@ export function UsageStatusBar({
       if (request !== requestSerial.current) return;
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (refresh) liveRefreshPending.current = false;
+      if (request === requestSerial.current) { setLoading(false); setRefreshing(false); }
     }
   }, []);
 
@@ -314,6 +325,7 @@ export function UsageStatusBar({
         {refreshing ? text("갱신 중", "Refreshing") : text("새로고침", "Refresh")}
       </button>
       {profilesOpen && <UsageProfilesDialog summary={summary} settings={settings} selectedKey={provider?.key ?? null}
+        refreshing={refreshing} refreshError={Boolean(error)} onRefresh={() => void load(true)}
         onSelect={key => setSettings(updateStatusBar({selectedAccount:key}))}
         onClose={() => setProfilesOpen(false)} onChange={async (profileKey, hidden) => {
         visibilitySaving.current = true; ++requestSerial.current;

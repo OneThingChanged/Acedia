@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { codexUsageSnapshot } from "./codex-usage.mjs";
 
 const RATE_LIMIT_TAIL_BYTES = 1024 * 1024;
 const RATE_LIMIT_TRANSCRIPT_LIMIT = 32;
@@ -142,6 +143,8 @@ export class UsageService {
     this.catalog = { projects: [], agents: [] };
     this.database = null;
     this.rateLimitRefresh = null;
+    this.accountRefresh = new Map();
+    this.codexUsageFetcher = options.codexUsageFetcher ?? null;
     this.dailyRollupSync = false;
     // Claude has no rate-limit snapshot inside its transcript (unlike Codex's
     // token_count.rate_limits), so account limits are read live from the OAuth
@@ -701,10 +704,10 @@ export class UsageService {
         },
         signal: controller.signal,
       });
-      if (!response.ok) return null;
+      if (!response.ok) return { status: response.status === 401 ? "login_required" : "failed" };
       return { usage: await response.json(), subscriptionType: creds.subscriptionType };
     } catch {
-      return null;
+      return { status: controller.signal.aborted ? "timeout" : "failed" };
     } finally {
       clearTimeout(timer);
     }
@@ -774,9 +777,9 @@ export class UsageService {
     this.claudeRateLimitRefresh = (async () => {
       const accounts = this.claudeAccounts?.() ?? [{ id: "default" }];
       let updated = false;
-      for (const account of accounts) {
+      await this.refreshAccounts("claude", accounts, async account => {
         const result = await this.fetchClaudeUsage(account);
-        if (!result?.usage) continue;
+        if (!result?.usage) return result?.status || "login_required";
         const snapshots = this.claudeRateLimitSnapshots(
           result.usage, result.subscriptionType, Math.floor(Date.now() / 1000)
         );
@@ -788,18 +791,45 @@ export class UsageService {
           this.writeRateLimitSnapshot(snapshot);
         }
         updated ||= snapshots.length > 0;
-      }
+        return snapshots.length ? "success" : "unavailable";
+      });
       if (updated) this.claudeRateLimitFetchedAt = Date.now();
       return updated;
     })().finally(() => { this.claudeRateLimitRefresh = null; });
     return this.claudeRateLimitRefresh;
   }
 
+  async refreshAccounts(provider, accounts, fetchAccount) {
+    // Bound simultaneous helpers/requests, but a failed account never blocks the rest.
+    let index = 0;
+    await Promise.all(Array.from({ length: Math.min(2, accounts.length) }, async () => {
+      while (index < accounts.length) {
+        const account = accounts[index++];
+        let status;
+        try { status = await fetchAccount(account); } catch { status = "failed"; }
+        this.accountRefresh.set(`${provider}:${account.id}`, { status, checkedAt: Date.now() });
+      }
+    }));
+  }
+
+  async refreshLiveCodexRateLimits() {
+    if (!this.codexUsageFetcher) return;
+    await this.refreshAccounts("codex", this.codexAccounts?.() ?? [{ id: "default" }], async account => {
+      const result = await this.codexUsageFetcher(account);
+      if (result?.status !== "success") return result?.status || "failed";
+      const snapshot = codexUsageSnapshot(result.data, account);
+      if (!snapshot) return "unavailable";
+      this.writeRateLimitSnapshot(snapshot);
+      return "success";
+    });
+  }
+
   async refreshRateLimits() {
     if (this.rateLimitRefresh) return this.rateLimitRefresh;
     this.rateLimitRefresh = (async () => {
       await Promise.allSettled([
-        this.refreshCodexRateLimits(),
+        // Cached transcripts remain a fallback even when the live request fails.
+        this.refreshCodexRateLimits().catch(() => {}).then(() => this.refreshLiveCodexRateLimits()),
         this.refreshClaudeRateLimits(true),
       ]);
       return this.rateLimitSummary();
@@ -824,13 +854,14 @@ export class UsageService {
       archived: /^(?:[a-z]:[\\/]|\\\\).+\s+\(Company 이전\)$/i.test(account?.label || ""),
       registered: id === "default" || !registry || !!account,
       current: id === "default" || this.catalog.agents.some(agent => !agent.sshHostId && agent.aiToolId === provider && (agent[`${provider}AccountId`] || "default") === id),
+      refresh: this.accountRefresh.get(`${provider}:${id}`),
     };
   }
 
   setProfileVisibility(profileKey, hidden) {
     if (typeof profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
     const [provider, accountId] = profileKey.split(":");
-    const known = this.accountProfiles?.(provider)?.some(account => account.id === accountId) || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
+    const known = accountId === "default" || this.accountProfiles?.(provider)?.some(account => account.id === accountId) || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
     if (!known) throw new TypeError("Unknown usage profile");
     this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profileKey, Number(hidden));
     return this.rateLimitSummary();
@@ -877,6 +908,11 @@ export class UsageService {
     for (const provider of ["codex", "claude"]) for (const account of this.accountProfiles?.(provider) ?? []) {
       const profile = profileFor(`${provider}:${account.id}`);
       if (profile) profiles.set(profile.key, profile);
+    }
+    for (const provider of ["codex", "claude"]) {
+      if (!this.accountRefresh.has(`${provider}:default`)) continue;
+      const profile = profileFor(provider);
+      profiles.set(profile.key, profile);
     }
     return {
       updatedAt: limits.reduce((latest, limit) => Math.max(latest, limit.updatedAt), 0),

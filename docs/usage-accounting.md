@@ -60,10 +60,11 @@ input.
 
 ## Account limits
 
-Codex limit snapshots come from recent transcript `token_count` events. The scan
-retains its first 32 prioritized candidates and adds one candidate for every other
-account represented in the remaining sources, so a busy account cannot consume all
-scan slots. Claude
+Explicit refresh queries every registered Codex account through the CLI app-server's
+`account/rateLimits/read` RPC using that account's isolated login environment. No
+thread or model turn is started. Recent transcript `token_count` snapshots remain
+a fallback: the scan retains its first 32 prioritized candidates and adds one for
+every other account represented in the sources. Claude
 limits are fetched from the local Claude Code OAuth usage endpoint only when a
 usable local credential exists. These percentages describe provider reset
 windows, not “tokens remaining” in the local history database.[^usage-service][^status-bar]
@@ -74,14 +75,19 @@ the default login retains its existing keys. Unavailable profiles preserve their
 last snapshot without overwriting another account. The transcript scan includes
 every managed Claude `projects/` root. See [Claude account profiles](claude-accounts.md).
 
-Refresh failures preserve the last useful snapshot and expose an error/staleness
-state rather than replacing it with a fabricated zero.
+Footer Refresh and Agent usage → Refresh all accounts query idle and hidden accounts
+as well as active ones, with at most two simultaneous requests per provider. Duplicate
+refreshes share one job; a partial failure does not stop remaining account queries.
+Refresh failures preserve the last useful snapshot and its timestamp, with separate
+login-required, timeout, failure and unavailable states. A passive cache read cannot
+discard a live refresh response. Codex helpers are stopped on completion or timeout.
 
 Account-wide and model limits are grouped by provider and account ID. Registered
 Codex and Claude profiles appear separately even without linked sessions or quota
 snapshots. An independent profile inventory carries these accounts; missing quotas
 show a pending message instead of a made-up percentage. Default logins appear when
-they have a snapshot. Legacy folder-label profiles, unregistered accounts and manually
+they have a snapshot or a live lookup result, including missing authentication.
+Legacy folder-label profiles, unregistered accounts and manually
 hidden profiles live in a separate review area. The exact legacy label format is only
 a reversible display hint; an explicit visibility choice takes precedence. Users can
 hide or explicitly show each profile, including accounts without snapshots, without

@@ -29,6 +29,9 @@ const failureLabels: Record<string, [string, string]> = {
   login_start_failed: ["로그인을 시작하지 못했습니다. CLI 설치 상태를 확인하고 다시 시도하세요.", "Could not start login. Check the CLI installation and try again."],
 };
 
+const canSelectAsDefault = (account: Account) =>
+  account.id === "default" ? account.state === "default" : account.state === "saved";
+
 function useAccounts(provider: Provider) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,7 +180,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
   const makeDefault = (account: Account) => void run(async () => {
     const latest = await refresh();
     if (!live.current) return;
-    if (!latest?.some(a => a.id === account.id && a.state === "saved")) throw new Error("Account is not ready");
+    if (!latest?.some(a => a.id === account.id && canSelectAsDefault(a))) throw new Error("Account is not ready");
     if (!await onMakeDefault?.(account.id)) throw new Error("Default was not saved");
   }, text("기본 계정을 저장하지 못했습니다. 계정 상태를 확인하고 다시 시도하세요.", "Could not save the default account. Check its status and try again."));
   const renameAccount = () => {
@@ -278,14 +281,19 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
             {a.id === defaultAccountId && <span className="agent-account-badge">{text("기본 계정", "Default account")}</span>}
           </div><div className="agent-row-sub">{stateLabels[a.state] ? text(...stateLabels[a.state]) : text("상태 확인 필요", "Check status")}</div></div>
         </div>
-        {a.id !== "default" && <div className="account-list-actions">
+        <div className="account-list-actions">
+          {onMakeDefault && a.id !== defaultAccountId && canSelectAsDefault(a) &&
+            <button type="button" className="btn-secondary" disabled={!canAct || adding || !!editing}
+              onClick={() => makeDefault(a)}>{text("기본 계정으로 설정", "Set as default")}</button>}
+          {a.id !== "default" && <>
           {a.state === "saved" || a.state === "pending"
             ? <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { requestedFlowFocus.current = true; setActiveId(a.id); setError(""); }}>{a.state === "saved" ? text("계정 정보", "Account info") : text("진행 보기", "View progress")}</button>
             : <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{retryLabel(a)}</button>}
           {a.state === "saved" && <button type="button" className="btn-secondary" disabled={!canAct || !!pending || adding} onClick={() => startLogin(a)}>{text("다시 로그인", "Sign in again")}</button>}
           <button type="button" className="btn-secondary" disabled={!canAct || adding} onClick={() => { setError(""); setEditing({ id: a.id, label: a.label, mode: "rename" }); }}>{text("이름 변경", "Rename")}</button>
           <button type="button" className="btn-secondary account-remove-button" disabled={!canAct || adding} onClick={() => { setError(""); setEditing({ id: a.id, label: a.label, mode: "remove" }); }}>{text("삭제", "Remove")}</button>
-        </div>}
+          </>}
+        </div>
         {editing?.id === a.id && <form key={editing.mode} className="account-edit" aria-label={editing.mode === "rename" ? text("계정 이름 변경", "Rename account") : text("계정 삭제 확인", "Confirm account removal")}
           onKeyDown={event => { if (event.key === "Escape" && !busy) { event.preventDefault(); event.stopPropagation(); setEditing(null); } }}
           onSubmit={event => { event.preventDefault(); if (canAct) editing.mode === "rename" ? renameAccount() : removeAccount(); }}>
@@ -300,6 +308,7 @@ export function AccountsPanel({ defaultAccountId = "default", provider = "codex"
         </form>}
       </div>)}
     </div>
+    {onMakeDefault && <p className="agent-hint">{text("기본 계정으로 설정하면 새 로컬 세션에 처음 선택됩니다. 기존 로그인(Default)으로 언제든 되돌릴 수 있습니다.", "The default is initially selected for new local sessions. You can return to Existing login (Default) at any time.")}</p>}
     <p className="agent-hint">{text("기존 세션의 계정은 세션 속성 → 실행 옵션에서 변경합니다.", "Change an existing session's account in Session properties → Launch options.")}</p>
   </section>;
 }

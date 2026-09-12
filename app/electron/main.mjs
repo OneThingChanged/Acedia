@@ -70,6 +70,7 @@ import {
   TunnelService,
 } from "./services/web-services.mjs";
 import { UsageService } from "./services/usage-service.mjs";
+import { fetchCodexUsage } from "./services/codex-usage.mjs";
 import { DiagnosticsService } from "./services/diagnostics-service.mjs";
 import { UpdaterLifecycle } from "./services/updater-lifecycle.mjs";
 import { GithubExeUpdateService } from "./services/github-exe-update.mjs";
@@ -741,6 +742,17 @@ function writeMiraControlAgentInput({
 
 const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService);
 usageIndex.codexAccountForPath = (sourcePath) => codexAccounts.accountForPath(sourcePath);
+usageIndex.codexAccounts = () => [{ id: "default", label: "Codex" }, ...codexAccounts.accounts];
+usageIndex.codexUsageFetcher = async account => {
+  if (codexAccounts.login?.id === account.id || (account.id !== "default" &&
+    !fs.existsSync(path.join(codexAccounts.home(account.id), "auth.json")))) return { status: "login_required" };
+  const args = ["app-server", ...(account.id === "default" ? [] : ["-c", "cli_auth_credentials_store=file"])];
+  const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
+  const command = native ? { file: native, args } : {
+    file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", `codex.cmd ${args.join(" ")}`],
+  };
+  return fetchCodexUsage({ command, env: codexAccounts.environment(account.id) });
+};
 usageIndex.accountProfiles = provider => (provider === "codex" ? codexAccounts : claudeAccounts).accounts;
 usageIndex.claudeAccounts = () => [
   { id: "default", label: "Claude", credentialsPath: path.join(claudeAccounts.home(), ".credentials.json") },

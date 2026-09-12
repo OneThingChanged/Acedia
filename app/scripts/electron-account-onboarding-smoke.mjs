@@ -47,6 +47,7 @@ async function exercise() {
     check(flow().textContent.includes("로그인을 시작하지 못했습니다"), "Login start failure was hidden");
     const account = (await window.fixtureInvoke(provider + "_accounts_list"))[1];
     check(account.state === "failed", "Expected failed login");
+    check(!button("기본 계정으로 설정", document.querySelector(`[data-account-id="${account.id}"]`)), "Unready account can be selected as default");
     await window.fixtureInvoke("fixture_mode", { provider, mode: "normal" });
     await click("다시 로그인", flow());
     check(flow().textContent.includes("브라우저에서 로그인 중"), "Pending step missing");
@@ -87,9 +88,30 @@ async function exercise() {
     check(window.fixtureDefaults(provider).dangerous && window.fixtureDefaults(provider).launchOptions.args[0] === "--verbose", "Default selection lost other options");
     await click("완료", flow()); check(!flow(), "Done did not close the flow");
     check(document.activeElement === button("＋ 계정 추가"), "Completion lost keyboard focus");
+    const defaultRow = () => document.querySelector('[data-account-id="default"]');
+    const savedRow = () => document.querySelector(`[data-account-id="${account.id}"]`);
+    const sessionKey = "multiagent.agents.v1";
+    const previousSessions = JSON.stringify([{ id: "existing", aiToolId: provider, [provider + "AccountId"]: account.id, lastSessionId: "keep-session" }]);
+    localStorage.setItem(sessionKey, previousSessions);
+    Storage.prototype.setItem = function(k, v) { if (k === key) throw new Error("fixture default reset failure"); return setter.call(this, k, v); };
+    await click("기본 계정으로 설정", defaultRow());
+    check(document.body.textContent.includes("기본 계정을 저장하지 못했습니다"), "Default reset failure was hidden");
+    check(window.fixtureDefaults(provider)[provider + "AccountId"] === account.id && !!savedRow().querySelector('.agent-account-badge'), "Failed reset changed the selected default");
+    Storage.prototype.setItem = setter;
+    await click("기본 계정으로 설정", defaultRow());
+    check(window.fixtureDefaults(provider)[provider + "AccountId"] === "default", "Existing login was not persisted as default");
+    check(document.querySelector('.agent-defaults select').value === "default" && !!defaultRow().querySelector('.agent-account-badge'), "Default row and dropdown disagree");
+    check(!savedRow().querySelector('.agent-account-badge'), "Previous default badge remained");
+    check(!button("이름 변경", defaultRow()) && !button("삭제", defaultRow()), "Built-in account gained destructive actions");
+    check(window.fixtureDefaults(provider).dangerous && window.fixtureDefaults(provider).launchOptions.args[0] === "--verbose", "Reset lost launch preferences");
+    check(localStorage.getItem(sessionKey) === previousSessions, "Changing the default rewrote existing sessions");
+    await click("기본 계정으로 설정", savedRow());
+    check(window.fixtureDefaults(provider)[provider + "AccountId"] === account.id && document.querySelector('.agent-defaults select').value === account.id, "Saved account row failed to set default");
+    check(!!savedRow().querySelector('.agent-account-badge') && !defaultRow().querySelector('.agent-account-badge'), "Default badges did not follow row selection");
     await click("계정 정보");
     check(flow().textContent.includes("새 세션의 기본 계정입니다"), "Result could not be reopened");
     await click("완료", flow());
+    console.log("ACCOUNT_DEFAULT_ROW_SELECTION_OK " + provider);
   }
   await click("Codex");
   await until(() => button("계정 정보") && !button("계정 정보").disabled);

@@ -17,6 +17,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.5 release](release-1-8-1-5-2026-09-12.md) - Default account selection, live quotas, large HTML previews and startup reliability.
 * [Acedia 1.8.1.0 release](release-1-8-1-0-2026-09-12.md) - Account management, work handoff, quota selection, split browsers and release verification.
 * [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 하단바 단일 계정 선택.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Completed stages, acceptance criteria and remaining verification boundaries.
@@ -30,7 +31,7 @@ configuration that supports it.
 
 ## Sessions and integrations
 
-* [계정 등록 흐름](account-registration.md) - Account creation, login results, renaming, removal and default-account recovery.
+* [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
 * [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
@@ -38,7 +39,7 @@ configuration that supports it.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, and usage surfaces.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
 * [Remote service](remote-service.md) - External Remote/PWA/Android access, authentication boundary, and conversation UX prototype.
-* [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, and account limits.
+* [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
 * [Embedded browser MCP](embedded-browser-mcp.md) - Always-on shared browser tabs, managed MCP startup, annotations, and isolation rules.
 * [Embedded browser form automation plan](browser-form-automation-plan.md) - Implemented state-aware targeting and safe form controls, with remaining hardening and rollout tests.
 

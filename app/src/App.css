@@ -392,6 +392,13 @@ body,
 .usage-status-chevron { color: var(--app-muted); flex-shrink: 0; }
 .usage-account-card .property-card-heading > strong { overflow-wrap: anywhere; min-width: 0; }
 .usage-account-card-selected { border-color: var(--app-accent, #58a6ff); }
+.usage-account-refresh-state { font-size: 12px; color: var(--app-muted); }
+.usage-account-refresh-state small { display: block; margin-top: 4px; }
+.usage-account-refresh-state[data-state="success"] { color: var(--app-success-dot, #3fb950); }
+.usage-account-refresh-state[data-state="failed"],
+.usage-account-refresh-state[data-state="timeout"],
+.usage-account-refresh-state[data-state="login_required"] { color: var(--app-warning, #d29922); }
+.usage-refresh-all { flex-shrink: 0; }
 .usage-account-choice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; font-size: 12px; line-height: 1.6; }
 .usage-account-choice input { accent-color: var(--app-accent, #58a6ff); margin: 0; }
 .usage-account-choice-disabled { cursor: default; color: var(--app-muted); }

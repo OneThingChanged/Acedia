@@ -8,6 +8,7 @@ export type UsageRateLimitWindow = {
 export type UsageAccountProfile = {
   key: string; provider: string; id: string; label: string;
   registered: boolean; current: boolean; hidden: boolean; visible: boolean; archived?: boolean;
+  refresh?: { status: "success" | "login_required" | "timeout" | "failed" | "unavailable"; checkedAt: number };
 };
 
 export type UsageRateLimit = {

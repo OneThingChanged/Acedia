@@ -237,7 +237,18 @@ previews the target; it does not capture or send data.[^browser-ui]
 Local HTML opens through a random project-scoped preview capability. Tokens
 expire after 15 minutes and permit only approved GET/HEAD assets under the
 canonical project root. Traversal, symlink escape, sensitive/build/cache paths,
-unsupported types, and oversized HTML are rejected.[^preview-service]
+and unsupported types are rejected. Desktop HTML has no fixed file-size cutoff:
+the server streams approved files directly into the isolated browser view, including
+reports larger than 2MB. GET/HEAD retain the exact content length, and linked HTML
+and assets use the same capability checks. Remote's separate buffered document
+reader retains its own limits.[^preview-service]
+
+`npm run electron:document-preview-smoke` in `app/` verifies a HTML fixture over
+5MB, relative script loading, button interaction and the absence of Node/workspace
+bridges. `ACEDIA_PREVIEW_DOCUMENT` can select an additional local HTML file for a
+read-only rendering check; `ACEDIA_PREVIEW_SCREENSHOT` optionally saves its image.
+The preview service tests also compare the full multibyte document, linked `.htm`
+content and HEAD metadata to detect truncation.
 
 The browser view does not receive the workspace preload. Snapshots and
 annotations cap text, links, controls, attributes, selectors, and HTML; cookies,
