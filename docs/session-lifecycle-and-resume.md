@@ -18,6 +18,9 @@ sources:
   - id: terminal-service
     resource: ../app/electron/services/terminal-session-service.mjs
     title: "PTY lifecycle service"
+  - id: terminal-launcher
+    resource: ../app/electron/services/terminal-launcher.mjs
+    title: "Local and SSH terminal launch preparation"
   - id: session-index
     resource: ../app/electron/services/session-service.mjs
     title: "Provider transcript and session index"
@@ -78,6 +81,12 @@ compatibility flags, dangerous mode, and optional content-worker settings.
 Local Codex and Claude sessions resume through provider session identifiers;
 Windows SSH can resume when its reverse-hook path is available.[^spawn][^session-index]
 
+The Electron launcher waits for browser integration, prepares the selected
+account's configuration and environment, and checks that the launch generation
+is still current before creating a process. Preparation failures release any
+reserved SSH reverse port. A Codex account home receives its complete dormant
+MCP transport before the CLI starts.[^terminal-launcher]
+
 Changing a provider session pin or another launch-only option requires
 deactivating and reopening the PTY. It does not rewrite a running CLI process.
 
@@ -100,6 +109,10 @@ their process trees are closed, and the next launch restores their placeholders.
 Processes are reconstructed on selection using provider resume
 metadata.[^reopen-journal][^spawn]
 
+Full teardown also invalidates launch generations that are still waiting for
+browser or account setup. Completion of that asynchronous preparation cannot
+create a new PTY after the pending launch was closed.[^terminal-service]
+
 The provider transcript remains the canonical provider resume record.
 MultiAgent incrementally indexes its complete JSONL lines into a session-isolated
 SQLite store for chat restoration, paging, locally submitted composer messages,
@@ -121,6 +134,7 @@ of silently opening an empty replacement database.[^conversation-store]
   input instead of sending to an ambiguous process.
 
 [^terminal-service]: PTY lifecycle service
+[^terminal-launcher]: Local and SSH terminal launch preparation
 [^app-shell]: On-demand workspace restoration and explicit activation
 [^pane-slot]: Standby placeholders and terminal allocation guard
 [^session-index]: Provider transcript and session index

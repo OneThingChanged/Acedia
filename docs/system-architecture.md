@@ -13,6 +13,12 @@ sources:
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Electron main process"
+  - id: terminal-launcher
+    resource: ../app/electron/services/terminal-launcher.mjs
+    title: "Terminal launch preparation and resource ownership"
+  - id: hook-service
+    resource: ../app/electron/services/hook-service.mjs
+    title: "Serialized agent configuration updates"
   - id: preload
     resource: ../app/electron/preload.cjs
     title: "Renderer preload bridge"
@@ -52,6 +58,22 @@ runtime validation.[^preload][^main-contract][^renderer-contract]
 External HTML does not execute in the trusted workspace renderer. Local preview
 and web content use native views with a narrow annotation preload. Remote web
 clients talk to desktop-owned services rather than spawning their own PTYs.
+
+## Terminal launch boundary
+
+The main process wires `createTerminalLauncher` to the browser broker, provider
+accounts, shell resolver and native PTY implementation. The launcher prepares
+the local or SSH command, account environment and hook configuration, then
+transfers the running process to `TerminalSessionService`. Preparation errors
+release reserved SSH ports; session teardown owns resources after registration.
+Generation checks cancel stale launches both before preparation and before
+native process creation.[^terminal-launcher]
+
+Project and account-home configuration updates share one serialized merge
+queue. All input files in an update are read and parsed before any are written.
+Only a missing file is treated as empty; read errors and invalid JSON stop the
+update without replacing the affected configuration. This is preflight
+validation, not a transaction across multiple filesystem writes.[^hook-service]
 
 ## Workspace domain model
 
@@ -101,6 +123,8 @@ MCP](embedded-browser-mcp.md).[^electron-main]
 Electron is the only desktop host and release target.
 
 [^electron-main]: Electron main process
+[^terminal-launcher]: Terminal launch preparation and resource ownership
+[^hook-service]: Serialized agent configuration updates
 [^preload]: Renderer preload bridge
 [^main-contract]: Main-process IPC validation
 [^renderer-contract]: Renderer IPC types

@@ -30,6 +30,10 @@ export class TerminalSessionService {
     return generation;
   }
 
+  isSpawnCurrent(id, generation) {
+    return this.generations.get(id) === generation;
+  }
+
   has(id) {
     return this.sessions.has(id);
   }
@@ -57,7 +61,7 @@ export class TerminalSessionService {
     entry.lastInputAt = entry.lastOutputAt = entry.lastViewedAt = entry.startedAt;
     const bellParser = new TerminalBellParser();
 
-    if (this.generations.get(id) !== generation || this.sessions.has(id)) {
+    if (!this.isSpawnCurrent(id, generation) || this.sessions.has(id)) {
       this.#release(entry, true);
       return false;
     }
@@ -164,7 +168,9 @@ export class TerminalSessionService {
   }
 
   closeAll(reason = "app-quit") {
-    for (const id of [...this.sessions.keys()]) this.close(id, reason);
+    // Pending launches also own a generation, even before their PTY exists.
+    const ids = new Set([...this.generations.keys(), ...this.sessions.keys()]);
+    for (const id of ids) this.close(id, reason);
   }
 
   #publish(entry, data) {

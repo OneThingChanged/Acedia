@@ -289,17 +289,22 @@ async function atomicWrite(filePath, body) {
   }
 }
 
-// Merge our managed hooks into a JSON settings file (Claude .claude/
-// settings.local.json, Qwen .qwen/settings.json — same shape), preserving all
-// other keys and replacing only our previously-injected (__source) entries.
-function mergeJsonSettingsHooks(existing, helperPath, events) {
+function parseJsonSettings(existing) {
   let settings;
   try {
     settings = existing.trim() ? JSON.parse(existing) : {};
   } catch {
-    settings = {};
+    throw new Error("Cannot update agent settings: existing settings must be valid JSON.");
   }
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    throw new Error("Cannot update agent settings: existing settings must be a JSON object.");
+  }
+  return settings;
+}
+
+// Preserve other settings and replace only previously injected hook entries.
+function mergeJsonSettingsHooks(existing, helperPath, events) {
+  const settings = parseJsonSettings(existing);
   if (!settings.hooks || typeof settings.hooks !== "object" || Array.isArray(settings.hooks)) {
     settings.hooks = {};
   }
@@ -323,13 +328,7 @@ function mergeClaude(existing, helperPath) {
 
 function mergeMcpJson(existing, command, scriptPath) {
   if (!command || !scriptPath) return existing;
-  let settings;
-  try {
-    settings = existing.trim() ? JSON.parse(existing) : {};
-  } catch {
-    settings = {};
-  }
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
+  const settings = parseJsonSettings(existing);
   if (!settings.mcpServers || typeof settings.mcpServers !== "object" || Array.isArray(settings.mcpServers)) {
     settings.mcpServers = {};
   }
@@ -701,43 +700,28 @@ export class HookService {
   async setupProject(folder, aiToolId) {
     const root = path.resolve(String(folder || ""));
     if (!fs.existsSync(root)) throw new Error("프로젝트 폴더를 찾을 수 없습니다.");
-    const task = async () => {
-      if (aiToolId === "claude") {
-        const target = path.join(root, ".claude", "settings.local.json");
-        const before = await fsPromises.readFile(target, "utf8").catch(() => "");
-        const after = mergeClaude(before, this.helperPath);
-        if (before !== after) await atomicWrite(target, after);
-        let mcpChanged = false;
-        if (this.mcpScriptPath) {
-          const mcpTarget = path.join(root, ".mcp.json");
-          const mcpBefore = await fsPromises.readFile(mcpTarget, "utf8").catch(() => "");
-          const mcpAfter = mergeClaudeMcp(mcpBefore, "node", this.mcpScriptPath);
-          if (mcpBefore !== mcpAfter) {
-            await atomicWrite(mcpTarget, mcpAfter);
-            mcpChanged = true;
-          }
-        }
-        return before !== after || mcpChanged;
-      }
-      if (aiToolId === "codex") {
-        const target = path.join(root, ".codex", "config.toml");
-        const before = await fsPromises.readFile(target, "utf8").catch(() => "");
-        const after = mergeCodex(before, this.helperPath, this.mcpScriptPath);
-        if (before !== after) await atomicWrite(target, after);
-        return before !== after;
-      }
-      if (aiToolId === "qwen") {
-        const target = path.join(root, ".qwen", "settings.json");
-        const before = await fsPromises.readFile(target, "utf8").catch(() => "");
-        const after = mergeQwen(before, this.helperPath);
-        if (before !== after) await atomicWrite(target, after);
-        return before !== after;
-      }
-      return false;
-    };
-    const result = this.mergeQueue.then(task, task);
-    this.mergeQueue = result.catch(() => {});
-    return result;
+    const updates = [];
+    if (aiToolId === "claude") {
+      updates.push({
+        target: path.join(root, ".claude", "settings.local.json"),
+        merge: before => mergeClaude(before, this.helperPath),
+      });
+      if (this.mcpScriptPath) updates.push({
+        target: path.join(root, ".mcp.json"),
+        merge: before => mergeClaudeMcp(before, "node", this.mcpScriptPath),
+      });
+    } else if (aiToolId === "codex") {
+      updates.push({
+        target: path.join(root, ".codex", "config.toml"),
+        merge: before => mergeCodex(before, this.helperPath, this.mcpScriptPath),
+      });
+    } else if (aiToolId === "qwen") {
+      updates.push({
+        target: path.join(root, ".qwen", "settings.json"),
+        merge: before => mergeQwen(before, this.helperPath),
+      });
+    }
+    return this.#mergeSettings(updates);
   }
 
   async setupCodexHome(home) {
@@ -746,12 +730,32 @@ export class HookService {
       throw new Error("Codex account home is unavailable.");
     }
     if (!this.mcpScriptPath) return false;
-    const target = path.join(path.resolve(requested), "config.toml");
+    return this.#mergeSettings([{
+      target: path.join(path.resolve(requested), "config.toml"),
+      merge: before => mergeCodexMcp(before, this.mcpScriptPath),
+    }]);
+  }
+
+  #mergeSettings(updates) {
     const task = async () => {
-      const before = await fsPromises.readFile(target, "utf8").catch(() => "");
-      const after = mergeCodexMcp(before, this.mcpScriptPath);
-      if (before !== after) await atomicWrite(target, after);
-      return before !== after;
+      // Validate every input before writing any of this project's settings.
+      // Missing files can be created; unreadable files must never be replaced.
+      const changes = [];
+      for (const { target, merge } of updates) {
+        const before = await fsPromises.readFile(target, "utf8").catch(error => {
+          if (error.code === "ENOENT") return "";
+          throw error;
+        });
+        let after;
+        try {
+          after = merge(before);
+        } catch (error) {
+          throw new Error(`Cannot update ${target}: ${error.message}`, { cause: error });
+        }
+        if (before !== after) changes.push({ target, after });
+      }
+      for (const { target, after } of changes) await atomicWrite(target, after);
+      return changes.length > 0;
     };
     const result = this.mergeQueue.then(task, task);
     this.mergeQueue = result.catch(() => {});

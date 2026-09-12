@@ -23,7 +23,8 @@ import {
   Tray,
 } from "electron";
 import fs from "node:fs";
-import { prepareLaunchCommand, mergeLaunchEnvironment } from "./services/agent-launch.mjs";
+import { createTerminalLauncher } from "./services/terminal-launcher.mjs";
+import { selectedAccountId } from "./services/provider-accounts.mjs";
 import { promises as fsPromises } from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -46,20 +47,13 @@ import {
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
-import { devElectronEnvironment } from "./services/dev-terminal-environment.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage } from "./services/pty-submit.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
-import {
-  CodexScrollbackFilter,
-  PassThroughTerminalFilter,
-} from "./services/terminal-stream.mjs";
 import { TerminalSessionService } from "./services/terminal-session-service.mjs";
-import { terminateWindowsProcessTree } from "./services/process-tree.mjs";
 import {
-  buildInteractiveSshArgs,
   findWindowsExecutable,
   generateSshKey,
   readPublicKey,
@@ -232,7 +226,7 @@ let lastWorkspaceWindowId = "primary";
 const runtimeByWebContents = new Map();
 /** @type {Map<string, number>} agentId → webContents.id of the workspace window that owns it */
 const detachedAgents = new Map();
-/** @type {Map<string, {id: string, name: string, process: import('node-pty').IPty, initTimer: NodeJS.Timeout | null, aiToolId: string, cwd: string | null, ssh: unknown, filter: CodexScrollbackFilter | PassThroughTerminalFilter, buffer: import('./services/terminal-stream.mjs').SequencedTerminalBuffer, subscribers: Set<number>}>} */
+/** @type {Map<string, {id: string, name: string, process: import('node-pty').IPty, initTimer: NodeJS.Timeout | null, aiToolId: string, cwd: string | null, ssh: unknown, filter: import("./services/terminal-stream.mjs").CodexScrollbackFilter | import("./services/terminal-stream.mjs").PassThroughTerminalFilter, buffer: import('./services/terminal-stream.mjs').SequencedTerminalBuffer, subscribers: Set<number>}>} */
 const ptys = new Map();
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
@@ -413,9 +407,6 @@ function removedAccountIds() {
   // A damaged optional registry still reports its error in account settings;
   // it must not prevent the rest of the workspace from opening.
   return { codex: codexAccounts.removedAccounts.map(account => account.id), claude: claudeAccounts.removedAccounts.map(account => account.id) };
-}
-function selectedAccountId(args) {
-  return (args.aiToolId === "claude" ? args.claudeAccountId : args.codexAccountId) || "default";
 }
 function accountTranscriptRoot(tool, accountId) {
   const accounts = accountsForTool(tool);
@@ -2960,169 +2951,22 @@ async function testPasswordSshConnection(ssh, password) {
   });
 }
 
-async function spawnPty(args, event) {
-  const id = asString(args.id).trim();
-  if (!id) throw new Error("PTY id가 비어 있습니다.");
-  if (accountSwitches.has(id)) throw new Error("계정 변경 중입니다. 잠시 후 다시 열어 주세요.");
-  if (terminalSessions.has(id)) return { reattached: true };
-  const spawnGeneration = terminalSessions.beginSpawn(id);
-
-  const aiToolId = asString(args.aiToolId).trim();
-  if (["codex", "claude", "qwen"].includes(aiToolId)) {
-    // A CLI reads MCP configuration only during its own startup. Do not spawn
-    // it until the hidden browser profile and authenticated loopback broker
-    // are both ready, otherwise the failed MCP stays failed for that session.
-    await ensureBrowserIntegrationReady();
-  } else {
-    await hookReady?.catch(() => {});
-  }
-
-  const ssh = args.ssh ? asObject(args.ssh) : null;
-  if (ssh && args.launchOptions) throw new Error("Advanced launch settings are available for local sessions only.");
-  let executable;
-  let shellArgs;
-  let reversePort = null;
-  if (ssh) {
-    executable = findWindowsExecutable(process.platform === "win32" ? "ssh.exe" : "ssh");
-    if (!executable) throw new Error("OpenSSH 클라이언트를 찾을 수 없습니다.");
-    reversePort = allocateRemotePort(id);
-    shellArgs = buildInteractiveSshArgs(
-      ssh,
-      asString(args.initCommand),
-      {
-        agentId: id,
-        port: hookService.port,
-        reversePort,
-        token: hookService.token,
-        aiToolId,
-      }
-    );
-  } else {
-    executable = defaultShell(asString(args.shell).trim() || null);
-    const lower = path.basename(executable).toLowerCase();
-    shellArgs = lower.includes("powershell") || lower === "pwsh.exe" ? ["-NoLogo"] : [];
-  }
-  const requestedCwd = asString(args.cwd).trim();
-  const asarSegment = `${path.sep}app.asar${path.sep}`;
-  const isPackagedVirtualPath =
-    requestedCwd.endsWith(`${path.sep}app.asar`) || requestedCwd.includes(asarSegment);
-  const cwd =
-    requestedCwd && !isPackagedVirtualPath && fs.existsSync(requestedCwd)
-      ? requestedCwd
-      : os.homedir();
-  if (!ssh && (aiToolId === "codex" || aiToolId === "claude" || aiToolId === "qwen") && cwd) {
-    await hookService.setupProject(cwd, aiToolId);
-  }
-  const accounts = !ssh ? accountsForTool(aiToolId) : null;
-  const accountId = selectedAccountId(args);
-  const accountEnv = accounts ? accounts.environment(accountId) : process.env;
-  if (accounts?.login?.id === accountId) {
-    throw new Error("로그인 완료 후 세션을 열어 주세요.");
-  }
-  const binding = accountBindings.get(id);
-  if (accounts && binding && (binding.toolId !== aiToolId || binding.accountId !== accountId)) {
-    throw new Error("계정 선택이 변경되었습니다. 세션을 다시 열어 주세요.");
-  }
-  if (!ssh && aiToolId === "codex") {
-    await hookService.setupCodexHome(
-      accountEnv.CODEX_HOME || path.join(os.homedir(), ".codex")
-    );
-  }
-  const ptyCols = asPositiveInt(args.cols, 120);
-  const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions);
-  const initialPrompt = asString(args.initialPrompt);
-  const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
-    shell: executable, toolId: aiToolId, env: launchEnvironment,
-    extraArgs: initialPrompt ? [initialPrompt] : [],
-  });
-  const ptyRows = asPositiveInt(args.rows, 30);
-  const outputFilter =
-    aiToolId === "codex"
-      ? new CodexScrollbackFilter(ptyRows, ptyCols)
-      : new PassThroughTerminalFilter();
-  if (terminalSessions.generations.get(id) !== spawnGeneration || accountSwitches.has(id)) {
-    outputFilter.dispose();
-    if (reversePort) remotePorts.delete(reversePort);
-    return { reattached: false, cancelled: true };
-  }
-  let processHandle;
-  try {
-    processHandle = nodePty.spawn(executable, shellArgs, {
-      name: "xterm-256color",
-      cols: ptyCols,
-      rows: ptyRows,
-      cwd,
-      env: {
-        ...(devUrl ? devElectronEnvironment(launchEnvironment) : launchEnvironment),
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        MULTIAGENT_AGENT_ID: id,
-        MULTIAGENT_PORT: String(hookService.port || ""),
-        MULTIAGENT_TOKEN: hookService.token || "",
-        MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath,
-      },
-      useConpty: true,
-    });
-  } catch (error) {
-    outputFilter.dispose();
-    if (reversePort) remotePorts.delete(reversePort);
-    throw error;
-  }
-  const entry = {
-    id,
-    name: asString(args.name).trim() || id,
-    process: processHandle,
-    codexAccountId: !ssh && aiToolId === "codex" ? accountId : null,
-    claudeAccountId: !ssh && aiToolId === "claude" ? accountId : null,
-    initTimer: null,
-    aiToolId,
-    cwd,
-    ssh: ssh ? { ...ssh, reversePort, passwordInjected: false } : null,
-    filter: outputFilter,
-    quitCommand:
-      aiToolId === "codex" || aiToolId === "claude" || aiToolId === "qwen" || aiToolId === "cline"
-        ? "/quit\r"
-        : "exit\r",
-    terminate:
-      process.platform === "win32" &&
-      !ssh &&
-      (aiToolId === "codex" ||
-        aiToolId === "claude" ||
-        aiToolId === "qwen" ||
-        aiToolId === "cline")
-        ? () => terminateWindowsProcessTree(processHandle.pid)
-        : null,
-    release: () => {
-      if (reversePort) remotePorts.delete(reversePort);
-    },
-    onRawData(data) {
-      if (
-        entry.ssh?.authMethod === "password" &&
-        !entry.ssh.passwordInjected &&
-        /(?:password|암호)\s*:/i.test(data)
-      ) {
-        const password = sshPasswords.get(asString(entry.ssh.hostId));
-        if (password) {
-          entry.ssh.passwordInjected = true;
-          processHandle.write(`${password}\r`);
-        }
-      }
-    },
-  };
-  if (!terminalSessions.register(entry, spawnGeneration)) {
-    return { reattached: false, cancelled: true };
-  }
-
-  const initCommand = launchCommand;
-  if (initCommand) {
-    entry.initTimer = setTimeout(() => {
-      entry.initTimer = null;
-      if (terminalSessions.get(id)?.process !== processHandle) return;
-      processHandle.write(`${initCommand}\r`);
-    }, 600);
-  }
-  return { reattached: false };
-}
+const spawnPty = createTerminalLauncher({
+  terminalSessions,
+  hookService,
+  ensureBrowserIntegrationReady,
+  waitForHooks: () => hookReady?.catch(() => {}),
+  accountsForTool,
+  accountBindings,
+  accountSwitches,
+  defaultShell,
+  allocateRemotePort,
+  releaseRemotePort: (port) => remotePorts.delete(port),
+  sshPasswords,
+  browserMcpScriptPath,
+  spawnProcess: (...args) => nodePty.spawn(...args),
+  development: Boolean(devUrl),
+});
 
 function resolveExistingPath(folder, rawPath) {
   const cleaned = asString(rawPath)

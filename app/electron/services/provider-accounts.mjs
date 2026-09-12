@@ -6,6 +6,10 @@ import { storedAccountIdentity } from "./account-identity.mjs";
 
 const validId = (id) => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id);
 
+export function selectedAccountId(args) {
+  return (args.aiToolId === "claude" ? args.claudeAccountId : args.codexAccountId) || "default";
+}
+
 // Credentials stay in provider-owned homes, never in renderer storage or IPC.
 export class ProviderAccounts {
   constructor(storageDir, provider, { startLogin, baseEnv = process.env } = {}) {
