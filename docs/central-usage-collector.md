@@ -175,3 +175,7 @@ enrollment, settings mapping, protected credentials, upload, pause and dashboard
 ### Calendar analysis and recent-history pagination
 
 The dashboard provides daily, Monday-based weekly and calendar-month token tables in Asia/Seoul. Full-period aggregates are scoped to the current employee credentials and selected account/employee/device; they are independent of the latest-500-event response. Empty periods display zero, boundary periods include only records inside the selected range, and analysis tables show 12 periods per page. Recent history defaults to 25 rows with 25/50/100-row and page selectors. These are collected token totals, not employee-attributed subscription quota consumption.
+
+## API baseline cost comparison
+
+[API 단가 기준 환산액](usage-cost-comparison.md) documents the shared pricing snapshot, USD display, unsupported-record coverage and separate observed subscription quotas. Central and Remote totals use different datasets. This is a comparison baseline, not provider billing or a monetary weekly allowance.

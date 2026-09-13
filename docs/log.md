@@ -2,6 +2,10 @@
 
 ## 2026-09-13
 
+* **1.8.1.9 source preparation**: Added shared USD baseline pricing, Remote token/USD comparison, central day/week/month charts and dated AI/model/effort breakdowns. Period selection scopes employee/account details; names navigate to detail views. Folded secondary summaries, skills and raw period tables. Local server updated; product release not published. See [cost comparison](usage-cost-comparison.md).
+
+* **USD baseline comparison**: Consolidated central-server and Remote cost comparison documentation in [API 단가 기준 환산액](usage-cost-comparison.md). Recorded two-decimal display, full-precision aggregation, unsupported-record coverage, quota separation and validated local/source scope; no product release performed.
+
 * **1.8.1.8**: Added local worker log viewing and a separate right-aligned session toolbar. Added automatic collector login switching with historical attribution preserved, plus session/turn grouping and metadata backfill. User confirmed the development toolbar layout.
 
 ## 2026-09-12

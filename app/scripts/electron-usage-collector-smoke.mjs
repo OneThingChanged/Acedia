@@ -172,8 +172,10 @@ if (!process.versions.electron) {
       if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('.recent-history').textContent`)).includes('Effort: high · Fast: 켜짐'))throw Error('Runtime metadata not delivered');
       const tokenHeaders = await dashboard.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.recent-history th'),e=>e.textContent)`);
       if(!['일반 입력','캐시 입력','출력·추론','요청 전체'].every(h=>tokenHeaders.includes(h)))throw Error('Token breakdown headers missing');
-      const tokenRows = await dashboard.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.recent-history tbody tr'),r=>Array.from(r.cells,c=>c.textContent).slice(-4))`);
+      const tokenRows = await dashboard.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.recent-history tbody tr'),r=>['일반 입력','캐시 입력','출력·추론','요청 전체'].map(h=>r.cells[Array.from(r.closest('table').querySelectorAll('th'),e=>e.textContent).indexOf(h)].textContent))`);
       if(!tokenRows.some(r=>JSON.stringify(r)===JSON.stringify(['80','20','40','140'])))throw Error('Token breakdown does not match stored counters');
+      if(!tokenHeaders.includes('기준 환산액'))throw Error('Cost column missing');
+      if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('#detail').textContent`)).includes('실제 청구액이나 주간 한도 소진율이 아닙니다'))throw Error('Cost basis missing');
       const historyState = () => dashboard.webContents.executeJavaScript(`({rows:document.querySelectorAll('.recent-history tbody tr').length,range:document.querySelector('.history-range').textContent,previous:document.querySelector('.recent-history [data-action="previous"]').disabled,next:document.querySelector('.recent-history [data-action="next"]').disabled})`);
       let pageState = await historyState();
       if(pageState.rows!==25||!pageState.range.includes('1–25')||!pageState.previous)throw Error('First history page failed');
@@ -185,6 +187,12 @@ if (!process.versions.electron) {
         await dashboard.webContents.executeJavaScript(`document.querySelector('[aria-label="페이지당 기록 수"]').value='${size}';document.querySelector('[aria-label="페이지당 기록 수"]').dispatchEvent(new Event('change'));`);
         pageState = await historyState(); if(pageState.rows!==expected||!pageState.previous)throw Error('History size/reset failed');
       }
+      if(!(await dashboard.webContents.executeJavaScript(`document.querySelectorAll('#detail .usage-period-bar').length > 0 && document.querySelector('#detail .usage-period-detail').textContent.includes('사용자별 상세')`)))throw Error('Account user chart missing');
+      await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-metric="tokens"]').click();[...document.querySelectorAll('#detail .usage-period-bar')].at(-1).click();`);
+      if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-metric="tokens"]').getAttribute('aria-pressed')==='true' && document.querySelectorAll('#detail .usage-period-detail tbody tr').length>0`)))throw Error('Chart selection failed');
+      await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-metric="usd"]').click();`);
+      await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-model-metric="requests"]').click();document.querySelector('#detail .model-item').click();`);
+      if(!(await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-model-metric="requests"]').getAttribute('aria-pressed')==='true' && document.querySelector('#detail .model-selection').textContent.includes('회') && document.querySelector('#detail .model-donut')`)))throw Error('Model composition interaction failed');
       for(const unit of ['day','week','month']) {
         await dashboard.webContents.executeJavaScript(`document.querySelector('#detail [data-unit="${unit}"]').click();`);
         const summary = await dashboard.webContents.executeJavaScript(`document.querySelector('#detail .period-summary').textContent`);

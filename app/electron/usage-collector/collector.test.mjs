@@ -60,6 +60,12 @@ describe('central usage collector', () => {
     expect(summary.timeline.reduce((sum, row) => sum + row.total, 0)).toBe(1007);
     const own = await request(f.origin, route, { credential: f.collector.credential() });
     expect(own.timeline.every(row => row.employeeId === f.employee.id)).toBe(true);
+    expect(own.modelBreakdown.every(row=>row.employeeId===f.employee.id)).toBe(true);
+    expect(own.modelBreakdown.reduce((n,r)=>n+r.requests,0)).toBe(501);
+    expect(summary.modelBreakdown.reduce((n,r)=>n+r.tokens,0)).toBe(1007);
+    expect(own.costs.every(row => row.employeeId === f.employee.id)).toBe(true);
+    expect(summary.costs.reduce((n,r)=>n+r.unpriced,0)).toBe(502);
+    expect(summary.recent[0].baselineUsd).toBeNull();
     expect(own.timeline.reduce((sum, row) => sum + row.total, 0)).toBe(1002);
     expect(own.timeline.map(row => [new Date(row.day).toISOString().slice(0, 10), row.total])).toEqual([['2026-01-01', 2], ['2026-01-02', 1000]]);
   });

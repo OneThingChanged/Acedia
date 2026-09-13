@@ -216,6 +216,11 @@
               </div>
               <span id="usageTokenEvents">사용 기록 확인 중</span>
             </div>
+            <div class="usage-history-mode" id="usageMeasure" aria-label="Usage metric">
+              <button type="button" data-measure="tokens" class="selected">토큰</button>
+              <button type="button" data-measure="usd">USD</button>
+            </div>
+            <p id="usageCostNote" hidden></p>
             <div class="usage-history-mode" id="usageHistoryMode" aria-label="사용량 조회 단위">
               <button type="button" data-usage-period="week">주</button>
               <button class="selected" type="button" data-usage-period="month">월</button>

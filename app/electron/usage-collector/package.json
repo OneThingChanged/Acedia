@@ -6,5 +6,5 @@
   "description": "Acedia usage collector, server and local MCP adapter",
   "engines": { "node": ">=22.13.0" },
   "bin": { "acedia-usage": "cli.mjs" },
-  "files": ["cli.mjs", "watcher.mjs", "collector.mjs", "credentials.mjs", "parser.mjs", "protocol.mjs", "metadata.mjs", "quota.mjs", "server.mjs", "dashboard.html", "dashboard.js", "periods.mjs", "plugins", "README.md"]
+  "files": ["cli.mjs", "watcher.mjs", "collector.mjs", "credentials.mjs", "parser.mjs", "protocol.mjs", "metadata.mjs", "quota.mjs", "server.mjs", "dashboard.html", "dashboard.js", "periods.mjs", "pricing.mjs", "plugins", "README.md"]
 }

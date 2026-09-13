@@ -100,3 +100,7 @@ identity. See [profile display management](properties-and-usage.md).[^usage-serv
 [^usage-tests]: Usage aggregation tests
 [^usage-ui]: Dashboard and Remote usage UI
 [^status-bar]: Desktop account-limit status bar
+
+## API baseline cost comparison
+
+[API 단가 기준 환산액](usage-cost-comparison.md) documents the shared pricing snapshot, USD display, unsupported-record coverage and separate observed subscription quotas. Central and Remote totals use different datasets. This is a comparison baseline, not provider billing or a monetary weekly allowance.

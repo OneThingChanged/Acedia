@@ -37,7 +37,7 @@ void app.whenReady().then(async () => {
     fs.writeFileSync(path.join(project, "guide.md"), "# Remote document fixture");
     usage = new UsageService(path.join(root, "usage.db"), { scan: async () => [] });
     const now = new Date();
-    const event = usage.db().prepare("INSERT INTO usage_events (source_key, ts, tool, input_tokens, output_tokens, total_tokens, raw_kind) VALUES (?, ?, 'codex', ?, ?, ?, 'test')");
+    const event = usage.db().prepare("INSERT INTO usage_events (source_key, ts, tool, input_tokens, output_tokens, total_tokens, raw_kind, model) VALUES (?, ?, 'codex', ?, ?, ?, 'codex_token_count_v2', 'gpt-6-astra')");
     for (let day = 1; day <= now.getDate(); day++) {
       const total = 73_000_000 + day * 12_000_000;
       event.run(`day-${day}`, Math.floor(new Date(now.getFullYear(), now.getMonth(), day, 0).getTime() / 1000), total - 12345, 12345, total);
@@ -146,6 +146,10 @@ void app.whenReady().then(async () => {
       assert(await win.webContents.executeJavaScript("document.querySelector('#usageProviderGrid').scrollWidth<=document.querySelector('#usageProviderGrid').clientWidth"), "Account cards overflowed");
       service.syncView({ ...service.view, language: "en" });
       await waitFor(win, "document.documentElement.lang==='en' && document.querySelector('#usageHistoryTitle').textContent==='Monthly token usage'");
+      await win.webContents.executeJavaScript("document.querySelector('[data-measure=usd]').click()");
+      await waitFor(win,"document.querySelector('#usageHistoryTitle').textContent==='API baseline value (USD)'");
+      assert(await win.webContents.executeJavaScript("/^\\$[\\d,]+\\.\\d{2}$/.test(document.querySelector('#usageSelectedTotal').textContent) && document.querySelector('#usageChart rect') !== null && document.querySelector('#usageSelectedTotal').textContent !== '$0.00' && !document.querySelector('#usageCostNote').hidden && document.querySelector('#usageCostNote').textContent.includes('excluded')"), "USD format/coverage missing");
+      await win.webContents.executeJavaScript("document.querySelector('[data-measure=tokens]').click()");
       const metrics = await win.webContents.executeJavaScript(`(() => {
         document.querySelector('#usageView').scrollTop=0;
         const view=document.querySelector('#usageView');

@@ -1,6 +1,10 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["API 기준 환산액 (USD)","API baseline value (USD)"],
+  ["표준·짧은 문맥 단가 기준. 실제 청구액·주간 한도가 아닙니다. Fast·긴 문맥·캐시 쓰기·도구 비용 제외. 환산 {0}건, 제외 {1}건. 단가 {2}.","Standard short-context baseline, not billed cost or weekly allowance. Excludes Fast, long-context, cache-write and tool charges. Priced: {0}; excluded: {1}. Rates: {2}."],
+  ["{0} · {1} USD 기준 환산액 · {2}개 기록","{0} · {1} baseline USD · {2} records"],
+  ["USD 기준 환산액. 합계 {0}, 최고 구간 {1}","Baseline USD chart. Total {0}, peak {1}"],
   ["작업 중","Working","工作中","工作中","作業中","Trabajando"],
   ["답변 필요","Needs attention","需要确认","需要確認","要確認","Requiere atención"],
   ["복구 중","Recovering","恢复中","復原中","復旧中","Recuperando"],

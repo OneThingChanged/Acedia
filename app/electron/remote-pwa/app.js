@@ -1937,11 +1937,22 @@ function usageSvgNode(name, attributes = {}) {
   return node;
 }
 
+let usageMeasure = "tokens";
+const usageAmount = row => usageMeasure === "usd" ? Number(row?.baselineUsd) || 0 : tokenCount(row?.totalTokens);
+const usageMoney = value => '$' + (Number(value) || 0).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+const usageFormat = value => usageMeasure === "usd" ? usageMoney(value) : formatTokenCount(value);
+const usageCompact = value => usageMeasure === "usd" ? usageMoney(value) : formatCompactTokenCount(value);
+$('#usageMeasure').addEventListener('click', event => {
+  const measure = event.target.closest('[data-measure]')?.dataset.measure;
+  if (!measure) return;
+  usageMeasure = measure;
+  renderUsageHistory();
+});
 function renderUsageChart() {
   const history = usageSummary?.history || {};
   const timeline = Array.isArray(history.buckets) ? history.buckets : [];
-  const total = tokenCount(history?.totals?.totalTokens);
-  const maximum = Math.max(0, ...timeline.map((bucket) => tokenCount(bucket?.totalTokens)));
+  const total = usageAmount(history.totals);
+  const maximum = Math.max(0, ...timeline.map((bucket) => usageAmount(bucket)));
   ui.usageChartEmpty.hidden = maximum > 0;
   ui.usageChart.hidden = maximum <= 0;
   ui.usageChart.replaceChildren();
@@ -1968,7 +1979,7 @@ function renderUsageChart() {
   for (let step = 0; step <= 4; step += 1) {
     const ratio = step / 4;
     const y = margin.top + plotHeight * ratio;
-    const value = Math.round(maximum * (1 - ratio));
+    const value = maximum * (1 - ratio);
     svg.appendChild(usageSvgNode("line", {
       class: "usage-chart-grid-line",
       x1: margin.left,
@@ -1982,12 +1993,12 @@ function renderUsageChart() {
       y: y + 3,
       "text-anchor": "end",
     });
-    label.textContent = formatCompactTokenCount(value);
+    label.textContent = usageCompact(value);
     svg.appendChild(label);
   }
 
   timeline.forEach((bucket, index) => {
-    const value = tokenCount(bucket?.totalTokens);
+    const value = usageAmount(bucket);
     const barHeight = value > 0 ? Math.max(2, (value / maximum) * plotHeight) : 0;
     const x = margin.left + index * slotWidth + (slotWidth - barWidth) / 2;
     const y = margin.top + plotHeight - barHeight;
@@ -2003,7 +2014,7 @@ function renderUsageChart() {
       rx: Math.min(4, barWidth / 2),
     });
     const title = usageSvgNode("title");
-    title.textContent = t("{0} · {1} 토큰 · {2}개 기록", [bucketLabel(bucket, usageSelection.mode), formatTokenCount(value), formatTokenCount(bucket?.events)]);
+    title.textContent = t(usageMeasure === "usd" ? "{0} · {1} USD 기준 환산액 · {2}개 기록" : "{0} · {1} 토큰 · {2}개 기록", [bucketLabel(bucket, usageSelection.mode), usageFormat(value), formatTokenCount(bucket?.events)]);
     bar.appendChild(title);
     svg.appendChild(bar);
 
@@ -2021,7 +2032,7 @@ function renderUsageChart() {
 
   ui.usageChart.setAttribute(
     "aria-label",
-    t("선택 기간 토큰 사용량 그래프. 합계 {0} 토큰, 최고 구간 {1} 토큰", [formatTokenCount(total), formatTokenCount(maximum)]),
+    t(usageMeasure === "usd" ? "USD 기준 환산액. 합계 {0}, 최고 구간 {1}" : "선택 기간 토큰 사용량 그래프. 합계 {0} 토큰, 최고 구간 {1} 토큰", [usageFormat(total), usageFormat(maximum)]),
   );
   ui.usageChart.appendChild(svg);
 }
@@ -2233,8 +2244,8 @@ function renderUsageHistory() {
   const previousTotals = history.previous?.totals || {};
   const buckets = Array.isArray(history.buckets) ? history.buckets : [];
   const quickBuckets = Array.isArray(history.quickBuckets) ? history.quickBuckets : [];
-  const total = tokenCount(totals.totalTokens);
-  const previousTotal = tokenCount(previousTotals.totalTokens);
+  const total = usageAmount(totals);
+  const previousTotal = usageAmount(previousTotals);
   const delta = previousTotal > 0 ? ((total - previousTotal) / previousTotal) * 100 : null;
   const visibleEnd = text(history.range?.endDate);
   const visibleBuckets = buckets.filter((bucket) => {
@@ -2243,10 +2254,13 @@ function renderUsageHistory() {
   });
   const averageDivisor = Math.max(1, visibleBuckets.length);
   const peak = visibleBuckets.reduce((best, bucket) => (
-    tokenCount(bucket?.totalTokens) > tokenCount(best?.totalTokens) ? bucket : best
+    usageAmount(bucket) > usageAmount(best) ? bucket : best
   ), null);
 
-  ui.usageHistoryTitle.textContent = copy.heading;
+  ui.usageHistoryTitle.textContent = usageMeasure === "usd" ? t("API 기준 환산액 (USD)") : copy.heading;
+  for (const button of $('#usageMeasure').querySelectorAll('button')) { button.classList.toggle('selected',button.dataset.measure===usageMeasure); button.setAttribute('aria-pressed',String(button.dataset.measure===usageMeasure)); }
+  $('#usageCostNote').hidden = usageMeasure !== 'usd';
+  $('#usageCostNote').textContent = t("표준·짧은 문맥 단가 기준. 실제 청구액·주간 한도가 아닙니다. Fast·긴 문맥·캐시 쓰기·도구 비용 제외. 환산 {0}건, 제외 {1}건. 단가 {2}.", [totals.pricedEvents || 0, totals.unpricedEvents || 0, history.pricing?.date || '—']);
   ui.usageHistoryDescription.textContent = copy.description;
   ui.usageHistoryRange.textContent = `${text(history.range?.startDate)} — ${visibleEnd}`;
   ui.usagePreviousPeriod.textContent = copy.previousButton;
@@ -2275,13 +2289,13 @@ function renderUsageHistory() {
   }
 
   const quickRenderKey = JSON.stringify([
-    getLanguage(),
+    getLanguage(), usageMeasure,
     usageSelection.mode,
     usageSelection.year,
     usageSelection.month,
     usageSelection.week,
     history.current,
-    quickBuckets.map((bucket) => [bucket?.value, bucket?.totalTokens]),
+    quickBuckets.map((bucket) => [bucket?.value, bucket?.totalTokens, bucket?.baselineUsd]),
   ]);
   if (quickRenderKey !== usageQuickRenderKey) {
     usageQuickRenderKey = quickRenderKey;
@@ -2301,7 +2315,7 @@ function renderUsageHistory() {
       button.classList.toggle("selected", selected);
       button.append(
         make("span", "", usageSelection.mode === "week" ? t("{0}주차", [value]) : monthLabel(value)),
-        make("small", "", formatCompactTokenCount(bucket?.totalTokens)),
+        make("small", "", usageCompact(usageAmount(bucket))),
       );
       quickFragment.appendChild(button);
     }
@@ -2310,17 +2324,17 @@ function renderUsageHistory() {
   }
 
   ui.usageSelectedLabel.textContent = t("선택 {0}", [copy.unit]);
-  ui.usageSelectedTotal.textContent = formatTokenCount(total);
+  ui.usageSelectedTotal.textContent = usageFormat(total);
   ui.usageSelectedMeta.textContent = usagePeriodMeta(totals);
   ui.usageComparisonLabel.textContent = t("{0} 대비", [copy.previous]);
   ui.usageComparisonValue.textContent = delta == null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
   ui.usageComparisonValue.className = delta == null ? "" : delta >= 0 ? "usage-summary-healthy" : "usage-summary-critical";
-  ui.usageComparisonMeta.textContent = t("{0} 사용량 {1}", [copy.previous, formatTokenCount(previousTotal)]);
+  ui.usageComparisonMeta.textContent = t("{0} 사용량 {1}", [copy.previous, usageFormat(previousTotal)]);
   ui.usageAverageLabel.textContent = t("{0} 평균", [copy.average]);
-  ui.usageAverageValue.textContent = formatTokenCount(Math.round(total / averageDivisor));
+  ui.usageAverageValue.textContent = usageFormat(usageMeasure === "usd" ? total / averageDivisor : Math.round(total / averageDivisor));
   ui.usageAverageMeta.textContent = t("{0}{1} 집계", [visibleBuckets.length, usageSelection.mode === "year" ? t("개월") : t("일")]);
   ui.usagePeakLabel.textContent = t("최고 사용{0}", [copy.peak]);
-  ui.usagePeakValue.textContent = formatTokenCount(peak?.totalTokens);
+  ui.usagePeakValue.textContent = usageFormat(usageAmount(peak));
   ui.usagePeakMeta.textContent = peak ? bucketLabel(peak, usageSelection.mode) : "—";
   ui.usageChartTitle.textContent = usageSelection.mode === "year"
     ? t("{0}년 월별 사용량", [usageSelection.year])
@@ -2330,7 +2344,7 @@ function renderUsageHistory() {
   ui.usageChartDescription.textContent = usageSelection.mode === "year"
     ? t("월별 장기 추세를 비교합니다.")
     : t("선택 기간 안의 일별 사용량 분포입니다.");
-  ui.usageChartSummary.textContent = t("{0}{1} 합계 {2}", [visibleBuckets.length, usageSelection.mode === "year" ? t("개월") : t("일"), formatTokenCount(total)]);
+  ui.usageChartSummary.textContent = t("{0}{1} 합계 {2}", [visibleBuckets.length, usageSelection.mode === "year" ? t("개월") : t("일"), usageFormat(total)]);
   ui.usageBreakdownTitle.textContent = t("선택 {0} 토큰 상세", [copy.unit]);
   ui.usageTotalTokens.textContent = formatTokenCount(totals.totalTokens);
   ui.usageInputTokens.textContent = formatTokenCount(totals.inputTokens);

@@ -334,3 +334,25 @@ describe("Electron usage index", () => {
     service.close();
   });
 });
+
+
+it("shares baseline pricing across month, week, year and excludes unknown models", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "usage-price-")); roots.push(root);
+  const service = new UsageService(path.join(root,"usage.db"),{});
+  try {
+    const insert = service.db().prepare("INSERT INTO usage_events(source_key,ts,tool,model,input_tokens,cache_read_tokens,output_tokens,reasoning_output_tokens,total_tokens,raw_kind) VALUES(?,?,'codex',?,1000,9000,80,20,10100,'codex_token_count_v2')");
+    const now = new Date(2026,7,15,12).getTime();
+    insert.run('a',new Date(2026,7,4,12).getTime()/1000,'gpt-6-astra');
+    insert.run('b',new Date(2026,7,4,13).getTime()/1000,'gpt-5.6-luna');
+    insert.run('c',new Date(2026,7,4,14).getTime()/1000,'unknown');
+    for (const selection of [{mode:'month',year:2026,month:8},{mode:'week',year:2026,week:32},{mode:'year',year:2026}]) {
+      const history = service.usageHistory(selection,now);
+      expect(history.totals.baselineUsd).toBeCloseTo(0.0245);
+      expect(history.totals).toMatchObject({pricedEvents:2,unpricedEvents:1});
+      expect(history.buckets.reduce((s,r)=>s+r.baselineUsd,0)).toBeCloseTo(0.0245);
+      expect(history.quickBuckets.reduce((s,r)=>s+r.baselineUsd,0)).toBeCloseTo(0.0245);
+    }
+    insert.run('d',new Date(2026,7,4,15).getTime()/1000,'gpt-6-astra');
+    expect(service.usageHistory({mode:'month',year:2026,month:8},now).totals.baselineUsd).toBeCloseTo(0.0485);
+  } finally { service.close(); }
+});

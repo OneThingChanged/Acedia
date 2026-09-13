@@ -40,6 +40,7 @@ configuration that supports it.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, usage surfaces and app-language synchronization.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
 * [Remote service](remote-service.md) - Remote/PWA/Android access, readable shared UI, app-language synchronization and authentication boundaries.
+* [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
 * [Central usage collector](central-usage-collector.md) - Employee/account attribution, company receiver, Acedia and standalone collection, plugin scope and ordinary-chat limitations.
 * [Embedded browser MCP](embedded-browser-mcp.md) - Always-on shared browser tabs, managed MCP startup, annotations, and isolation rules.

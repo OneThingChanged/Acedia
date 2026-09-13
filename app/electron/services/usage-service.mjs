@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { baselineCost, PRICE_BASIS } from "../usage-collector/pricing.mjs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -50,6 +51,9 @@ function localDateKey(value) {
 function normalizedTokenTotals(row = {}) {
   return {
     events: number(row.events),
+    baselineUsd: Number(row.baselineUsd) || 0,
+    pricedEvents: number(row.pricedEvents),
+    unpricedEvents: number(row.unpricedEvents),
     inputTokens: number(row.inputTokens),
     outputTokens: number(row.outputTokens),
     cacheReadTokens: number(row.cacheReadTokens),
@@ -60,6 +64,7 @@ function normalizedTokenTotals(row = {}) {
 }
 
 const TOKEN_TOTAL_FIELDS = [
+  "baselineUsd", "pricedEvents", "unpricedEvents",
   "events",
   "inputTokens",
   "outputTokens",
@@ -940,6 +945,31 @@ export class UsageService {
     return this.tokenTotals();
   }
 
+  costBuckets(startAt = null, endAt = null, bucket = "day") {
+    const clauses = [], params = [];
+    if (startAt != null) { clauses.push("ts >= ?"); params.push(startAt / 1000); }
+    if (endAt != null) { clauses.push("ts < ?"); params.push(endAt / 1000); }
+    const revision = this.db().prepare('SELECT total_changes() n').get().n;
+    if (this.costRevision !== revision) { this.costRevision = revision; this.costCache = new Map(); }
+    const cacheKey = JSON.stringify([startAt,endAt,bucket]);
+    if (this.costCache.has(cacheKey)) return this.costCache.get(cacheKey);
+    const rows = this.db().prepare(`SELECT strftime('${bucket === "month" ? "%Y-%m" : "%Y-%m-%d"}',ts,'unixepoch','localtime') bucketKey,
+      tool,model,raw_kind,COUNT(*) events,SUM(input_tokens) input,SUM(cache_read_tokens) cacheRead,
+      SUM(output_tokens) output,SUM(reasoning_output_tokens) reasoning
+      FROM usage_events ${clauses.length ? 'WHERE '+clauses.join(' AND ') : ''} GROUP BY bucketKey,tool,model,raw_kind`).all(...params);
+    const result = new Map();
+    for (const row of rows) {
+      const value = row.raw_kind === 'codex_token_count_v2' ? baselineCost({...row,provider:row.tool}) : null;
+      const totals = result.get(row.bucketKey) || { baselineUsd:0, pricedEvents:0, unpricedEvents:0 };
+      if (value == null) totals.unpricedEvents += row.events;
+      else { totals.baselineUsd += value; totals.pricedEvents += row.events; }
+      result.set(row.bucketKey,totals);
+    }
+    if (this.costCache.size >= 16) this.costCache.clear();
+    this.costCache.set(cacheKey,result);
+    return result;
+  }
+
   tokenTotals(startAt = null, endAt = null) {
     this.ensureDailyRollup();
     const clauses = [];
@@ -958,7 +988,8 @@ export class UsageService {
       COALESCE(SUM(cache_write_tokens),0) cacheWriteTokens,
       COALESCE(SUM(reasoning_output_tokens),0) reasoningOutputTokens,
       COALESCE(SUM(total_tokens),0) totalTokens FROM usage_daily${where}`).get(...params);
-    return normalizedTokenTotals(totals);
+    const costs = [...this.costBuckets(startAt,endAt).values()];
+    return normalizedTokenTotals({ ...totals, ...Object.fromEntries(["baselineUsd","pricedEvents","unpricedEvents"].map(field=>[field,costs.reduce((sum,row)=>sum+row[field],0)])) });
   }
 
   tokenBuckets(startAt, endAt, bucket = "day") {
@@ -978,7 +1009,8 @@ export class UsageService {
       localDateKey(new Date(Number(startAt))),
       localDateKey(new Date(Number(endAt))),
     );
-    return new Map(rows.map((row) => [String(row.bucketKey), normalizedTokenTotals(row)]));
+    const costs = this.costBuckets(startAt,endAt,bucket);
+    return new Map(rows.map((row) => [String(row.bucketKey), normalizedTokenTotals({...row,...costs.get(String(row.bucketKey))})]));
   }
 
   usageHistory(selection = null, now = Date.now()) {
@@ -1089,6 +1121,7 @@ export class UsageService {
     const displayedEnd = endDisplay > todayEnd ? current : endDisplay;
 
     return {
+      pricing: PRICE_BASIS,
       selection: selected,
       current: { year: currentYear, month: currentMonth, week: currentWeek, weekYear: currentIsoWeek.year },
       availableYears: Array.from(

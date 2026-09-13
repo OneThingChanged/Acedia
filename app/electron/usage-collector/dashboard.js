@@ -133,27 +133,105 @@ function recentHistory(records, requestsOnly = false) {
     previous.disabled = recentPage === 1; next.disabled = recentPage === count; pages.disabled = records.length === 0;
     const hideAccount = detailSelection?.type === 'account';
     const showCacheWrite = records.some(r => r.cacheWrite > 0), tokens = n => n == null ? '미수집' : fmt(n);
-    body.replaceChildren(table(['시각', ...(hideAccount ? [] : ['AI 계정']), '사용자 · PC', '모델 · 실행 설정', '일반 입력', '캐시 입력', ...(showCacheWrite ? ['캐시 쓰기'] : []), '출력·추론', '요청 전체'], records.slice(start, end).map(r => { const sender = el('div', '', r.sender?.windowsUser || '과거 기록 · 미수집'); const connection = el('details', 'connection-details'); connection.append(el('summary', '', '접속 정보'), el('small', 'secondary', r.sender?.localIps?.join(', ') || 'IP 미수집'), el('small', 'secondary', deviceName(r.deviceId))); sender.append(connection); const account = el('div', '', accountName(r.accountId)); account.append(el('small', 'secondary', r.providerIdentity?.email || '당시 로그인 미확인')); const output = r.output == null || (r.provider === 'codex' && r.reasoning == null) ? null : r.output + (r.reasoning || 0); const runtime = el('div', '', r.model || '모델 미확인'); runtime.append(el('small', 'secondary', `Effort: ${r.effort || '미확인'} · Fast: ${r.fast == null ? '미확인' : r.fast ? '켜짐' : '꺼짐'}`)); return [when(r.occurredAt), ...(hideAccount ? [] : [account]), sender, runtime, tokens(r.input), tokens(r.cacheRead), ...(showCacheWrite ? [tokens(r.cacheWrite)] : []), tokens(output), fmt(r.total)]; })));
+    body.replaceChildren(table(['시각', ...(hideAccount ? [] : ['AI 계정']), '사용자 · PC', '모델 · 실행 설정', '일반 입력', '캐시 입력', ...(showCacheWrite ? ['캐시 쓰기'] : []), '출력·추론', '요청 전체', '기준 환산액'], records.slice(start, end).map(r => { const sender = el('div', '', r.sender?.windowsUser || '과거 기록 · 미수집'); const connection = el('details', 'connection-details'); connection.append(el('summary', '', '접속 정보'), el('small', 'secondary', r.sender?.localIps?.join(', ') || 'IP 미수집'), el('small', 'secondary', deviceName(r.deviceId))); sender.append(connection); const account = el('div', '', accountName(r.accountId)); account.append(el('small', 'secondary', r.providerIdentity?.email || '당시 로그인 미확인')); const output = r.output == null || (r.provider === 'codex' && r.reasoning == null) ? null : r.output + (r.reasoning || 0); const runtime = el('div', '', r.model || '모델 미확인'); runtime.append(el('small', 'secondary', `Effort: ${r.effort || '미확인'} · Fast: ${r.fast == null ? '미확인' : r.fast ? '켜짐' : '꺼짐'}`)); return [when(r.occurredAt), ...(hideAccount ? [] : [account]), sender, runtime, tokens(r.input), tokens(r.cacheRead), ...(showCacheWrite ? [tokens(r.cacheWrite)] : []), tokens(output), fmt(r.total), money(r.baselineUsd)]; })));
   }
   size.onchange = () => { recentPageSize = Number(size.value); recentPage = 1; draw(); };
   pages.onchange = () => { recentPage = Number(pages.value); draw(); };
   previous.onclick = () => { recentPage--; draw(); }; next.onclick = () => { recentPage++; draw(); };
   draw(); return root;
 }
+const money = value => value == null ? '환산 불가' : '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function costEntries(selection) {
+  const allowed = new Set(allowedAccounts().map(a => a.id));
+  return (data.costs || []).filter(r => allowed.has(r.accountId) && (!selection || r[selection.type === 'account' ? 'accountId' : selection.type === 'employee' ? 'employeeId' : 'deviceId'] === selection.id));
+}
+function costCard(selection) {
+  const card = el('section', 'card account-section'), entries = costEntries(selection);
+  const usd = entries.reduce((n,r)=>n+r.usd,0), priced = entries.reduce((n,r)=>n+r.priced,0), unpriced = entries.reduce((n,r)=>n+r.unpriced,0);
+  card.append(el('h2', '', 'API 기준 환산액'), el('strong', '', priced ? money(usd) : '환산 가능한 기록 없음'), el('p', 'note', `${data.pricing?.label || ''} · ${data.pricing?.date || ''} · USD. 실제 청구액이나 주간 한도 소진율이 아닙니다. Fast·긴 문맥 할증, 캐시 쓰기와 도구 비용은 반영하지 않습니다.`), el('p', 'note', `환산 ${fmt(priced)}건 · 모델 단가 또는 토큰 세부 수치 미확인 ${fmt(unpriced)}건 제외. 기존 기록도 같은 단가표로 비교합니다.`));
+  const source = el('a', '', '공식 단가표'); source.href = 'https://developers.openai.com/api/docs/pricing'; source.target = '_blank'; source.rel = 'noopener noreferrer'; card.append(source);
+  const groups = new Map();
+  for (const r of entries) { const key = selection?.type === 'account' ? r.employeeId : r.accountId; const g = groups.get(key) || {usd:0,priced:0,unpriced:0}; g.usd+=r.usd;g.priced+=r.priced;g.unpriced+=r.unpriced;groups.set(key,g); }
+  card.append(table([selection?.type === 'account' ? '직원' : '계정', '기준 환산액', '환산 / 제외 기록'], [...groups].sort((a,b)=>b[1].usd-a[1].usd).map(([id,g])=>[selection?.type === 'account' ? employeeName(id) : accountName(id), g.priced ? money(g.usd) : '환산 불가', `${fmt(g.priced)} / ${fmt(g.unpriced)}`])));
+  return card;
+}
+function modelComposition(selection) {
+  const root=el('section','card account-section model-composition'), header=el('div','cardhead'), controls=el('div','period-choices'), body=el('div');
+  header.append(el('h2','','AI · 모델 · Effort 사용 구성'),controls);root.append(header,body);
+  let metric='usd';
+  const allowed=new Set(allowedAccounts().map(a=>a.id)), groups=new Map();
+  for(const row of data.modelBreakdown||[]) {
+    if(!allowed.has(row.accountId)|| (selection?.type==='employee'?row.employeeId!==selection.id:selection?.type==='account'?row.accountId!==selection.id:false) || (selection?.fromDay!=null && (row.day<selection.fromDay||row.day>=selection.toDay)))continue;
+    const key=JSON.stringify([row.provider,row.model,row.effort]);let g=groups.get(key);
+    if(!g){g={provider:row.provider,model:row.model,effort:row.effort,usd:0,tokens:0,requests:0,priced:0,unpriced:0};groups.set(key,g);}
+    for(const field of ['usd','tokens','requests','priced','unpriced'])g[field]+=row[field];
+  }
+  const title=g=>`${g.provider==='codex'?'Codex':g.provider==='claude'?'Claude':g.provider} · ${g.model||'모델 미확인'} · ${g.effort||'Effort 미확인'}`;
+  function draw(){
+    controls.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.modelMetric===metric)));
+    const rows=[...groups.values()].sort((a,b)=>b[metric]-a[metric]),total=rows.reduce((n,r)=>n+r[metric],0),excluded=rows.reduce((n,r)=>n+r.unpriced,0);
+    const format=n=>metric==='usd'?money(n):fmt(n), label={usd:'USD 환산액',tokens:'토큰',requests:'요청 수'}[metric];
+    const grid=el('div','model-grid'), donut=el('div','model-donut'), hole=el('div','model-hole'), ranking=el('div','model-ranking'), detail=el('div','model-selection');
+    hole.append(el('small','',label),el('strong','',total===0?'—':format(total)));donut.append(hole);
+    const colors=['#a991f7','#45cbb0','#5ca9ef','#e5b35d','#e3819a','#91bc68'];let offset=0;const stops=[];
+    for(const [i,r] of rows.entries()){
+      const share=total>0?r[metric]/total*100:0,color=colors[i%colors.length];stops.push(`${color} ${offset}% ${offset+share}%`);offset+=share;
+      const b=el('button','model-item'), line=el('div','ranktitle');line.append(el('span','',title(r)),el('strong','',total>0?share.toFixed(1)+'%':'—'));b.append(line,el('small','',metric==='requests'?`${fmt(r.requests)}회 요청`:`${format(r[metric])} · ${fmt(r.requests)}회 요청`));const progress=track(share);progress.firstChild.style.background=color;b.append(progress);
+      b.onclick=()=>{detail.replaceChildren(el('strong','',title(r)),el('p','',`${fmt(r.requests)}회 · ${fmt(r.tokens)} 토큰 · ${r.priced?money(r.usd):'환산 불가'} · 환산 제외 ${fmt(r.unpriced)}건`));};ranking.append(b);
+    }
+    donut.style.background=total>0?'conic-gradient('+stops.join(',')+')':'var(--line)';donut.setAttribute('role','img');donut.setAttribute('aria-label',label+' 조합별 비중. 상세 값은 옆 목록 참조');
+    grid.append(donut,ranking);detail.textContent='항목을 눌러 요청 수·토큰·환산액을 확인하세요.';
+    body.replaceChildren(el('p','note',`${selection?.fromDay!=null?new Date(selection.fromDay).toISOString().slice(0,10)+'부터 선택 구간':'선택 기간'}·계정 필터 내 ${label} 합계 대비 비중입니다. 메인·서브에이전트 포함. 구독 한도 소진율이 아닙니다.${metric==='usd'?' 표준·짧은 문맥 기준이며 환산 제외 '+fmt(excluded)+'건은 분모에서 제외합니다.':''}`),...(rows.length?[grid,detail]:[empty('사용 기록이 없습니다.')]),table(['AI · 모델 · Effort','요청 수','토큰','USD 환산액','환산 제외'],rows.map(r=>[title(r),fmt(r.requests),fmt(r.tokens),r.priced?money(r.usd):'환산 불가',fmt(r.unpriced)])));
+  }
+  for(const [value,label] of [['usd','USD 환산액'],['tokens','토큰'],['requests','요청 수']]){const b=el('button','',label);b.dataset.modelMetric=value;b.onclick=()=>{metric=value;draw();};controls.append(b);}
+  draw();return root;
+}
 function periodAnalysis(selection) {
   const root = el('section', 'period-analysis'), heading = el('div', 'cardhead'), choices = el('div', 'period-choices'), content = el('div');
   heading.append(el('h2', '', '기간별 사용량 분석'), choices); root.append(heading, el('p', 'note', '한국 시간(Asia/Seoul) · 주 시작은 월요일입니다. 선택한 조회 기간 전체 기록을 집계하며, 기간 경계의 주·월은 조회 범위에 포함된 사용량만 표시합니다.'), content);
-  let page = 1;
+  let page = 1, metric = 'usd', selectedDay = null;
+  const metricButtons = el('div', 'period-choices');
+  for (const [value,label] of [['usd','USD 환산액'],['tokens','토큰']]) { const b = el('button','',label); b.dataset.metric=value; b.onclick=()=>{metric=value;draw();};metricButtons.append(b); }
+  root.insertBefore(metricButtons,content);
   const entries = (data.timeline || []).filter(r => !selection || (selection.type === 'account' ? r.accountId === selection.id : selection.type === 'employee' ? r.employeeId === selection.id : r.deviceId === selection.id));
   function draw() {
     const periods = usagePeriods(entries, analysisUnit, data.from, data.to, allowedAccounts()), pages = Math.max(1, Math.ceil(periods.length / 12));
     page = Math.min(page, pages); choices.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.unit === analysisUnit)));
     const visible = periods.slice((page - 1) * 12, page * 12), max = Math.max(1, ...periods.map(p => p.total));
-    const rows = visible.map(p => { const amount = el('div', 'period-amount', fmt(p.total)); amount.append(track(p.total / max * 100)); return [p.label, amount, fmt(p.shared), fmt(p.personal), fmt(p.events)]; });
+    const costPeriods = usagePeriods(costEntries(selection).map(r=>({...r,total:r.usd,events:r.unpriced})), analysisUnit, data.from, data.to, allowedAccounts());
+    const rows = visible.map(p => { const amount = el('div', 'period-amount', fmt(p.total)); amount.append(track(p.total / max * 100)); return [p.label, amount, fmt(p.shared), fmt(p.personal), fmt(p.events), money(p.events > 0 && costPeriods.find(c=>c.day===p.day)?.events === p.events ? null : costPeriods.find(c=>c.day===p.day)?.total || 0), fmt(costPeriods.find(c=>c.day===p.day)?.events || 0)]; });
     const nav = el('div', 'history-pagination'), prev = el('button', '', '이전'), next = el('button', '', '다음');
     prev.disabled = page === 1; next.disabled = page === pages; prev.onclick = () => { page--; draw(); }; next.onclick = () => { page++; draw(); };
     nav.append(el('span', 'period-summary', `전체 ${fmt(periods.reduce((sum, p) => sum + p.total, 0))} 토큰 · ${page} / ${pages} 페이지`), prev, next);
-    content.replaceChildren(nav, table(['기간', '전체 토큰', '공용 토큰', '개인 토큰', '기록 수'], rows));
+    const costMap = new Map(costPeriods.map(p=>[p.day,p]));
+    const valueOf = p => metric === 'usd' ? costMap.get(p.day)?.total || 0 : p.total;
+    const format = value => metric === 'usd' ? money(value) : fmt(value);
+    metricButtons.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.metric===metric)));
+    if (!visible.some(p=>p.day===selectedDay)) selectedDay=visible[0]?.day;
+    const groupField = selection?.type === 'account' ? 'employeeId' : 'accountId';
+    const groupName = selection?.type === 'account' ? employeeName : accountName;
+    const scoped = entries.filter(r=>allowedAccounts().some(a=>a.id===r.accountId));
+    const ids = [...new Set(scoped.map(r=>r[groupField]))];
+    const grouped = ids.map(id=>({id,tokens:new Map(usagePeriods(scoped.filter(r=>r[groupField]===id),analysisUnit,data.from,data.to,allowedAccounts()).map(p=>[p.day,p])),costs:new Map(usagePeriods(costEntries(selection).filter(r=>r[groupField]===id).map(r=>({...r,total:r.usd,events:r.unpriced})),analysisUnit,data.from,data.to,allowedAccounts()).map(p=>[p.day,p]))}));
+    const colors=['#a991f7','#45cbb0','#5ca9ef','#e5b35d','#e3819a','#91bc68'];
+    const chart = el('div','usage-period-chart'), legend = el('div','usage-period-legend');
+    const maximum=Math.max(0,...visible.map(valueOf));
+    const scale=el('p','note',`현재 페이지 범위 ${format(0)} – ${format(maximum)} · 막대를 눌러 상세 확인${metric==='usd'?' · 표준·짧은 문맥 기준, 실제 청구액·한도가 아님. 환산 제외 '+fmt(costPeriods.reduce((n,p)=>n+p.events,0))+'건':''}`);
+    grouped.forEach((g,i)=>{const label=el('span','',groupName(g.id));label.style.borderLeft='8px solid '+colors[i%colors.length];legend.append(label);});
+    for(const p of [...visible].reverse()) {
+      const bar=el('button','usage-period-bar');bar.type='button';bar.setAttribute('aria-label',p.label+' · '+format(valueOf(p)));bar.setAttribute('aria-pressed',String(p.day===selectedDay));
+      const stack=el('span','usage-period-stack');stack.style.height=(maximum?valueOf(p)/maximum*210:0)+'px';
+      for(const [i,g] of grouped.entries()) { const n=metric==='usd'?g.costs.get(p.day)?.total||0:g.tokens.get(p.day)?.total||0; const segment=el('span');segment.style.flex=String(n);segment.style.background=colors[i%colors.length];segment.title=groupName(g.id)+' · '+format(n);stack.append(segment); }
+      bar.append(stack,el('small','',p.label));bar.onclick=()=>{selectedDay=p.day;draw();};chart.append(bar);
+    }
+    const selected=periods.find(p=>p.day===selectedDay);
+    const toDay=analysisUnit==='month'?Date.UTC(new Date(selectedDay).getUTCFullYear(),new Date(selectedDay).getUTCMonth()+1,1):selectedDay+(analysisUnit==='week'?7:1)*86400000;
+    const detail=el('div','usage-period-detail');detail.append(el('h3','',`${selected?.label||''} · ${selection?.type==='account'?'사용자별':'계정별'} 상세`),table([selection?.type==='account'?'사용자':'계정','토큰','USD 환산액','환산 제외'],grouped.map(g=>{const t=g.tokens.get(selectedDay),c=g.costs.get(selectedDay);return [button(groupName(g.id),b=>showDetail(selection?.type==='account'?'employee':'account',g.id,b)),fmt(t?.total||0),money(t?.events>0&&c?.events===t.events?null:c?.total||0),fmt(c?.events||0)];})));
+    const kpis=el('div','usage-period-kpis');const sum=periods.reduce((n,p)=>n+valueOf(p),0), peak=periods.reduce((a,b)=>valueOf(a)>valueOf(b)?a:b,periods[0]);
+    for(const [label,value] of [['기간 합계',format(sum)],['구간 평균',format(sum/Math.max(1,periods.length))],['최대 구간',peak?peak.label+' · '+format(valueOf(peak)):'—']]){const box=el('div');box.append(el('small','',label),el('strong','',value));kpis.append(box);}
+    const periodTable=el('details','usage-supporting');periodTable.append(el('summary','','기간별 수치 전체 보기'), table(['기간', '전체 토큰', '공용 토큰', '개인 토큰', '기록 수', '기준 환산액', '환산 제외'], rows));
+    const selectedHeading=el('div','selected-period-heading');selectedHeading.append(el('strong','',`선택 구간 · ${selected?.label||'—'}`),el('small','','아래 사용자·계정별 사용량과 모델 구성이 이 구간에 맞춰 표시됩니다.'));
+    content.replaceChildren(kpis,nav,scale,legend,chart,selectedHeading,detail,...(selected?[modelComposition({...selection,fromDay:selectedDay,toDay})]:[]),periodTable);
   }
   for (const [unit, title] of [['day', '일별'], ['week', '주별'], ['month', '월별']]) { const b = el('button', '', title); b.dataset.unit = unit; b.onclick = () => { analysisUnit = unit; page = 1; draw(); }; choices.append(b); }
   draw(); return root;
@@ -193,7 +271,7 @@ function render() {
   $('#limits-section').hidden = tab !== 'overview'; $('#stats').hidden = tab !== 'overview';
   $('#stats').replaceChildren(...[['전체 토큰', total, '선택한 기간의 수집 합계'], ['공용 계정', shared, '직원별 사용량을 합산'], ['개인 계정', total - shared, '등록된 개인 계정'], ['보고 기기', data.devices.filter(d => !d.revoked).length, '접근 권한이 있는 기기']].map(([label, value, note]) => { const s = el('section', 'stat'); s.append(el('label', '', label), el('strong', '', fmt(value)), el('small', '', note)); return s; }));
   $('#analysis-section').hidden = tab !== 'overview';
-  $('#analysis-section').replaceChildren(periodAnalysis());
+  $('#analysis-section').replaceChildren(costCard(), periodAnalysis());
   $('#limits').replaceChildren(...(accounts.length ? accounts.map(quotaCard) : [empty('연결할 AI 계정을 등록하세요.')]));
   const pending = (data.refreshRequests || []).filter(r => accounts.some(a => a.id === r.accountId) && !(data.reports || []).some(s => s.accountId === r.accountId && s.checkedAt >= r.requestedAt));
   $('#refresh-state').textContent = pending.length ? `${pending.length}개 계정 · 수집기 응답 대기` : '';
@@ -262,19 +340,16 @@ function renderDetail() {
     if (data.role === 'admin' && !d.revoked) detail.append(button('기기 접근 폐기', async () => { if (confirm('이 기기의 전송·조회 권한을 폐기할까요?')) await guarded(async () => { await api('/v1/admin/revoke', { id }); await refresh(); }); }));
   }
   const rows = selectedRows().filter(r => type === 'account' ? r.accountId === id : type === 'employee' ? r.employeeId === id : true);
-  if (type === 'employee') { field('선택 기간 직원 전체 토큰', fmt(employeeAccountUsage(id).total)); detail.append(employeeAccountBreakdown(id)); }
-  if (type === 'account') {
-    const card = el('section', 'card account-section'), total = (data.accountTotals || []).find(a => a.accountId === id)?.total;
-    card.append(el('h2', '', '직원별 사용량'), el('p', 'note', '선택한 기간의 계정 전체 사용량 중 각 직원이 사용한 비율입니다.'), table(['직원', '사용 토큰', '계정 사용률'], rows.sort((a, b) => b.total - a.total).map(r => { const share = total > 0 ? r.total / total * 100 : null, cell = el('div', 'account-employee-share', percentLabel(share)); if (share != null) cell.append(track(share)); return [employeeName(r.employeeId), fmt(r.total), cell]; })));
-    detail.append(card);
-  }
+  if (type === 'employee') { field('선택 기간 직원 전체 토큰', fmt(employeeAccountUsage(id).total)); const fold=el('details','usage-supporting');fold.append(el('summary','','전체 조회 기간 · 계정 사용률'),employeeAccountBreakdown(id));detail.append(fold); }
+  const analysis = periodAnalysis({ type, id }); analysis.classList.add('card', 'account-section'); detail.append(analysis);
   if (type === 'employee' || type === 'account') {
     const observations = (data.skills || []).filter(s => (type === 'employee' ? s.employeeId === id : s.accountId === id) && allowedAccounts().some(a => a.id === s.accountId));
     const grouped = new Map();
     for (const s of observations) { const old = grouped.get(s.name) || { name: s.name, calls: 0, lastUsed: 0 }; old.calls += s.calls; old.lastUsed = Math.max(old.lastUsed, s.lastUsed); grouped.set(s.name, old); }
-    const card = el('section', 'card account-section skill-usage'); card.append(el('h2', '', '사용한 스킬'), el('p', 'note', '실행 로그의 SKILL.md 읽기 요청을 감지합니다. 설치 목록이나 대화 중 언급은 집계하지 않으며, 실제 실행 성공·스킬별 토큰은 의미하지 않습니다. 이후 토큰 기록과 함께 전송됩니다.'), table(['스킬', '읽기 요청 수', '마지막 감지'], [...grouped.values()].sort((a,b)=>b.calls-a.calls).map(s=>[s.name,fmt(s.calls),when(s.lastUsed)]))); detail.append(card);
+    const card = el('section', 'card account-section skill-usage'); card.append(el('h2', '', '사용한 스킬'), el('p', 'note', '실행 로그의 SKILL.md 읽기 요청을 감지합니다. 설치 목록이나 대화 중 언급은 집계하지 않으며, 실제 실행 성공·스킬별 토큰은 의미하지 않습니다. 이후 토큰 기록과 함께 전송됩니다.'), table(['스킬', '읽기 요청 수', '마지막 감지'], [...grouped.values()].sort((a,b)=>b.calls-a.calls).map(s=>[s.name,fmt(s.calls),when(s.lastUsed)]))); const skillFold=el('details','usage-supporting');skillFold.append(el('summary','','사용한 스킬'),card);detail.append(skillFold);
   }
-  const analysis = periodAnalysis({ type, id }); if (type === 'account' || type === 'employee') analysis.classList.add('card', 'account-section'); detail.append(analysis);
+  const costFold=el('details','usage-supporting');costFold.append(el('summary','','전체 조회 기간 · 환산 기준과 계정별 금액'),costCard({type,id}));detail.append(costFold);
+
   const appendSection = (title, note, content) => { if (title === 'Windows 계정별 사용량') { const fold = el('details', 'sender-details'); fold.append(el('summary', '', 'PC·Windows 계정별 상세'), el('h2', '', title), el('p', 'note', note), content); detail.append(fold); return; } if (type === 'account' || type === 'employee') { const card = el('section', 'card account-section'); card.append(el('h2', '', title), el('p', 'note', note), content); detail.append(card); } else detail.append(el('h2', '', title), el('p', 'note', note), content); };
   const senders = selectedSenders().filter(r => type === 'account' ? r.accountId === id : type === 'employee' ? r.employeeId === id : r.deviceId === id);
   appendSection('Windows 계정별 사용량', '선택 기간 전체 합계입니다. 사용 당시 PC·IP가 달라지면 나누어 표시합니다.', table(['Windows 계정', '직원 · AI 계정', 'PC · 로컬 IP', '토큰'], senders.map(r => { const pc = el('div', '', r.hostname || 'PC 미수집'); pc.append(el('small', 'secondary', r.localIps.join(', ') || 'IP 미수집')); const owner = el('div', '', employeeName(r.employeeId)); owner.append(el('small', 'secondary', accountName(r.accountId))); return [r.windowsUser || '과거 기록 · 미수집', owner, pc, fmt(r.total)]; })));
