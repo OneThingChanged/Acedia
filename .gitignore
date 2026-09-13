@@ -63,3 +63,6 @@ node_modules/
 
 # Local mobile build products (release binaries are attached separately)
 /mobile/artifacts/
+
+# Distribution archives belong in GitHub Release assets, never Git
+*.zip

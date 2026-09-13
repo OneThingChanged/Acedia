@@ -16,7 +16,12 @@ export function text(value, name, max = 128) {
 export function serverUrl(raw) {
   const url = new URL(raw);
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('Use a server origin without credentials, path or query');
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw Error('HTTPS required outside loopback');
+  const octets = url.hostname.split('.').map(Number);
+  const privateLan = /^\d+\.\d+\.\d+\.\d+$/.test(url.hostname) && octets.every(n => n >= 0 && n <= 255)
+    && (octets[0] === 10 || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31 || octets[0] === 192 && octets[1] === 168);
+  const allowedHttp = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    || process.env.ACEDIA_USAGE_ALLOW_LAN_HTTP === '1' && privateLan;
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && allowedHttp)) throw Error('HTTPS required outside loopback; private IPv4 HTTP requires explicit LAN mode');
   return url.origin;
 }
 export function validateEvent(value) {

@@ -38,8 +38,8 @@ sources:
 | `.acedia/usage-server-live/` | 현재 실행 중인 로컬 서버 폴더 |
 | `.acedia/usage-server-live/runtime/` | 서버에서 실제 사용하는 런타임 복사본 |
 | `.acedia/usage-server-live/data/` | 현재 서버의 DB와 보호된 관리 키 |
-| `.acedia/acedia-usage-server-0.1.0.zip` | 다른 PC에서 새 서버를 실행할 배포 ZIP |
-| `.acedia/usage-collector-dist/acedia-usage-collector-0.1.0.tgz` | 직원 PC용 수집기 패키지. 서버 ZIP과 별개 |
+| `.acedia/Acedia-Usage-Server-LAN-20260913.zip` | 서버와 사용자 ZIP을 포함한 사내망 배포 묶음 |
+| `.acedia/Acedia-Usage-Server-LAN-20260913/downloads/acedia-usage-client.zip` | 직원에게 전달하는 설치 ZIP |
 
 소스 파일만 고쳐서는 이미 실행 중인 `runtime/` 복사본이 바뀌지 않습니다. 변경 후 패키지를 다시 만들고 해당 실행 폴더에 반영해야 합니다.
 
@@ -49,10 +49,9 @@ sources:
 
 ```powershell
 node app/scripts/package-usage-server.mjs .acedia/usage-server-package
-Compress-Archive -Path '.acedia/usage-server-package/*' -DestinationPath '.acedia/usage-server-package.zip'
 ```
 
-생성된 폴더에는 `start.mjs`, `admin.mjs`, `package.json`, `README.md`, `runtime/`이 들어갑니다. 실행 중인 서버의 DB·관리 키는 포함하지 않습니다. 저장소의 `usage-server/`만 복사하면 `runtime/`이 없으므로 위 패키징 절차를 사용합니다.
+Windows에서 실행하면 출력 폴더와 같은 이름의 `.zip`을 함께 생성합니다. 폴더에는 `start.mjs`, `start-lan.cmd`, `admin.mjs`, `package.json`, `README.md`, `runtime/`, `client/`, `downloads/acedia-usage-client.zip`이 들어갑니다. 사용자 ZIP에는 설치 안내·Codex 플러그인 원본·수집기 런타임이 포함됩니다. 서버와 사용자 PC 모두 Node.js 22.13 이상이 필요합니다. 실행 중인 서버의 DB·관리 키는 포함하지 않습니다. 저장소의 `usage-server/`만 복사하면 `runtime/`이 없으므로 위 패키징 절차를 사용합니다.
 
 ## 새 서버 실행
 
@@ -78,7 +77,7 @@ node admin.mjs --copy --home "D:/AcediaUsageServer/data"
 
 `--home`을 생략해 서버를 실행했다면 관리 명령에서도 생략합니다. `ACEDIA_USAGE_ADMIN_TOKEN`으로 관리 키를 별도 지정한 경우 관리 도구에도 같은 환경 설정이 필요합니다. 배포 패키지는 개발 PC의 로컬 접속 키를 포함하지 않습니다.
 
-이 명령은 포그라운드 실행이며 Windows 서비스나 부팅 자동 실행을 설치하지 않습니다. 다른 직원 PC에서 접속할 운영 서버는 HTTPS 역방향 프록시와 접근 가능한 서버 주소를 준비해야 합니다. 기본 `127.0.0.1`은 해당 PC에서만 접근할 수 있고, 수집기는 원격 평문 HTTP 연결을 거부합니다. 이 개발 PC에서는 다른 프로젝트와 충돌하지 않도록 3007을 사용합니다.
+이 명령은 포그라운드 실행이며 Windows 서비스나 부팅 자동 실행을 설치하지 않습니다. HTTPS 역방향 프록시를 사용할 수 있습니다. 기본 `127.0.0.1`은 해당 PC에서만 접근합니다. 사내망 HTTP 배포는 아래 LAN 모드를 명시적으로 사용합니다. 이 개발 PC에서는 다른 프로젝트와 충돌하지 않도록 3007을 사용합니다.
 
 ## 직원과 계정 연결
 
@@ -168,3 +167,30 @@ Acedia Codex 세션 상단의 작업자(Workers) 버튼으로 오른쪽 읽기 �
 ## API 단가 기준 환산액
 
 중앙 서버는 전체 현황·계정·직원 상세·기간 분석·개별 요청에 USD 환산액을 표시합니다. 달러는 소수점 두 자리이며 실제 청구액이나 구독 한도가 아닌 비교 지표입니다. 계산식, 제외 범위, Remote와의 차이 및 적용 상태는 [API 단가 기준 환산액](usage-cost-comparison.md)을 참고합니다.
+
+
+## 서버·사용자 통합 배포 · 2026-09-13
+
+1. 서버 PC에 생성된 서버 ZIP을 풀고 `start-lan.cmd`를 실행합니다. `0.0.0.0:3007`로 수신하며 인증은 유지됩니다. Windows 방화벽은 회사 정책에 맞춰 TCP 3007을 사내 서브넷에 허용합니다. 자동 방화벽 변경이나 포트 포워딩은 하지 않습니다.
+2. 서버 PC에서 `node admin.mjs --copy`로 새 관리 키를 복사하고 웹에 로그인합니다. 직원 이름은 Windows 사용자명으로 등록하면 식별하기 쉽습니다. 공용 계정은 로그인 이메일을 별도로 등록합니다.
+3. 등록 관리에서 직원의 일회용 코드(15분 유효)를 발급합니다. 직원에게 `http://<서버의 사설 IPv4>:3007`, 코드와 사용자 ZIP을 전달합니다. ZIP은 `/downloads/acedia-usage-client.zip`에서 로그인 없이 받을 수 있는 코드 전용 파일입니다. 관리자 키·DB·인증 토큰은 포함하지 않습니다.
+4. 사용자 PC에는 Codex 로그인 및 한 번 이상의 실행 기록이 있어야 합니다. ZIP을 풀고 `install.cmd`를 실행해 서버 주소, LAN HTTP 사용 여부, Codex 홈, 등록 코드를 입력합니다. 로그인 계정은 서버에서 대조해 공용 등록과 일치하면 공용, 그렇지 않으면 개인으로 연결합니다. 수집 시작 이전 기록은 자동 전송하지 않습니다.
+5. 설치기는 `%LOCALAPPDATA%/AcediaUsageClient`에 실행 파일과 전용 marketplace를 설치하고 `%LOCALAPPDATA%/AcediaUsage`에 사용자별 보호된 연결 정보를 저장합니다. 설치 직후 독립 watcher가 시작됩니다. 이미 사용 중인 설치·다른 등록 프로필은 덮어쓰지 않습니다. 중단된 동일 설치는 같은 입력으로 이어갈 수 있습니다.
+6. 설치 완료 화면의 `codex plugin marketplace add "<설치 폴더>"`와 `codex plugin add acedia-usage@acedia-usage-company`를 실행하고 새 Codex 세션을 엽니다. 개인 marketplace 파일은 수정하지 않습니다. Codex 플러그인이 활성화되면 수집기를 시작하고 사용량 조회 도구를 제공합니다. 플러그인 없이도 수집기는 작동합니다.
+7. 재부팅 후에는 설치 폴더의 `run.cmd`를 실행하거나 설치된 Codex 플러그인을 사용하는 새 세션을 엽니다. Windows 서비스·로그인 자동 실행은 설치하지 않습니다. 서버의 수집 상태에서 PC·Windows 사용자·마지막 보고를 확인합니다.
+
+LAN HTTP는 암호화되지 않습니다. 사용자 설치에서 명시적으로 허용한 경우에만 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`의 IPv4 리터럴에 연결합니다. 공인 IP·임의 DNS 이름·IPv6 우회는 허용하지 않습니다. 기본 HTTPS 정책은 그대로이며 회사망 밖에서는 HTTPS를 사용합니다. `admin` 짧은 키와 로그인 생략 옵션은 LAN 서버에서 사용할 수 없습니다.
+
+현재 통합 설치 대상은 Windows의 Codex CLI입니다. Claude와 일반 ChatGPT 채팅 수집은 이 배포의 검증 대상이 아닙니다. 다른 물리 PC와 회사 방화벽을 통한 검증은 실제 설치 환경에서 확인해야 합니다.
+
+
+### 통합 배포 검증 상태
+
+2026-09-13 전체 테스트 706개와 플러그인 manifest 검증을 통과했습니다. 격리된 Windows 사용자 폴더에서 패키징, ZIP의 숨김 플러그인 파일 포함, 다운로드 바이트 일치, 일회용 등록, 계정 연결, watcher의 새 토큰 기록 전송 및 별도 CODEX_HOME의 marketplace 추가·플러그인 설치를 확인했습니다. 사설 IPv4 HTTP 허용과 공인 주소 거부도 테스트했습니다. 실제 다른 물리 PC·방화벽 통과는 미검증입니다.
+
+EXE 1.8.1.9는 커밋 `5464087`로 공개했고 이전 버전의 업데이트 감지·다운로드 SHA-256을 검증했습니다. 이후 추가한 LAN 통합 패키지는 별도 로컬 산출물이며 해당 EXE에 포함되지 않습니다. 실행 중인 로컬 서버의 교체·재시작은 자동 승인 검토에서 차단되어 기존 런타임을 유지했습니다. 새 서버 ZIP으로 실행한 서버에서 사용자 ZIP 다운로드를 제공합니다.
+
+
+### GitHub 배포 규칙
+
+배포 ZIP은 Git에 커밋하지 않습니다(`*.zip` 제외). 서버·사용자 ZIP은 독립 GitHub Release `usage-server-v0.1.1`의 첨부 자산으로 배포하고, 해당 태그는 패키지 생성에 사용한 소스 커밋을 가리킵니다. 서버와 수집기 패키지 버전은 `0.1.1`입니다. Standard EXE 공개 버전은 `1.8.1.9`를 유지하며, 서버 변경을 포함하는 다음 데스크톱 소스 버전은 `1.8.1.10`입니다. 이 서버 릴리스에는 EXE 업데이트 manifest를 포함하지 않으며 GitHub의 최신 EXE 릴리스 지정도 바꾸지 않습니다.

@@ -1,6 +1,6 @@
 {
   "name": "acedia-usage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Collect registered CLI usage and read employee-scoped company usage reports.",
   "author": {
     "name": "Acedia"

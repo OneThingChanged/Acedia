@@ -9,7 +9,7 @@ import { CAPABILITIES, hash, token, text, validateEvent } from './protocol.mjs';
 import { validateDevice, validateIdentity, validateQuota } from './metadata.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
-export function createUsageServer({ databasePath, adminToken, allowLocalAdmin = false, localTestNoLogin = false }) {
+export function createUsageServer({ databasePath, adminToken, allowLocalAdmin = false, localTestNoLogin = false, clientPackagePath = null }) {
   const localAdmin = allowLocalAdmin && adminToken === 'admin';
   if (typeof adminToken !== 'string' || (adminToken.length < 24 && !localAdmin)) throw Error('Set a random admin token of at least 24 characters');
   fs.mkdirSync(path.dirname(databasePath), { recursive: true, mode: 0o700 });
@@ -78,6 +78,12 @@ export function createUsageServer({ databasePath, adminToken, allowLocalAdmin = 
     const send = (status, value) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (req.method === 'GET' && url.pathname === '/downloads/acedia-usage-client.zip') {
+        if (!clientPackagePath || !fs.existsSync(clientPackagePath)) { send(404, { error: 'Client package unavailable; build the server distribution first' }); return; }
+        res.setHeader('content-type', 'application/zip');
+        res.setHeader('content-disposition', 'attachment; filename="acedia-usage-client.zip"');
+        res.end(fs.readFileSync(clientPackagePath)); return;
+      }
       if (req.method === 'GET' && ['/', '/dashboard.js', '/periods.mjs'].includes(url.pathname)) {
         res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'");
         res.setHeader('content-type', url.pathname === '/' ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8');
