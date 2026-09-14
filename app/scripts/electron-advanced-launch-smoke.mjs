@@ -53,6 +53,15 @@ async function exerciseUI() {
   check(!document.querySelector(".advanced-launch-error"), "Error did not clear");
   button("Claude").click(); await wait(); await open();
   check(!window.fixtureDefaults("claude").launchOptions, "Provider settings leaked");
+  button("Gemini CLI").click(); await wait(); await open();
+  check(document.body.textContent.includes("npm install -g @google/gemini-cli"), "Gemini installation guidance missing");
+  check(!window.fixtureDefaults("gemini").launchOptions, "Gemini inherited another provider's options");
+  button("+ 인수 추가").click(); await wait(); await change("추가 인수 1", "--model");
+  button("+ 인수 추가").click(); await wait(); await change("추가 인수 2", "gemini-fixture");
+  check(window.fixtureDefaults("gemini").launchOptions.args[1] === "gemini-fixture", "Gemini launch settings were not saved");
+  button("Antigravity CLI").click(); await wait(); await open();
+  check(document.body.textContent.includes("agy를 실행하면"), "Antigravity login guidance missing");
+  check(!window.fixtureDefaults("agy").dangerous, "Antigravity approval bypass enabled by default");
   button("Codex").click(); await wait(); await open();
   check(field("추가 인수 2").value === "work space", "Provider switch lost saved values");
   window.fixtureShow("new"); await wait();
@@ -63,6 +72,9 @@ async function exerciseUI() {
   check(button("만들기").disabled, "Creation allowed invalid draft");
   field("환경변수 2 삭제").click(); await wait(); button("만들기").click(); await wait();
   check(JSON.stringify(window.fixtureCreated.launchOptions) === JSON.stringify(saved), "Creation payload lost advanced settings: " + JSON.stringify({ actual: window.fixtureCreated.launchOptions, expected: saved }));
+  tool.value = "agy"; tool.dispatchEvent(new Event("change", { bubbles: true })); await wait();
+  button("만들기").click(); await wait();
+  check(window.fixtureCreated.aiToolId === "agy" && !window.fixtureCreated.dangerous, "Antigravity session selection failed");
   window.fixtureShow("session"); await wait(); button("실행 옵션").click(); await wait(); await open();
   check(!window.fixtureAgent.launchOptions, "Legacy session adopted new defaults implicitly");
   button("현재 기본값 불러오기").click(); await wait();

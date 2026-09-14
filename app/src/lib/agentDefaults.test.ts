@@ -10,6 +10,15 @@ function storage() {
   return data;
 }
 describe("per-tool new session defaults", () => {
+  it("persists Gemini launch defaults and keeps unsupported integrations disabled", () => {
+    storage();
+    expect(loadAgentDefaults("gemini").dangerous).toBe(false);
+    saveAgentDefaults("gemini", { ...loadAgentDefaults("gemini"), dangerous: true, useAltScreen: true });
+    expect(loadAgentDefaults("gemini")).toMatchObject({ dangerous: true, useAltScreen: false, workerSettings: undefined });
+    const { agent } = buildNewProjectWithFirstAgent({ name: "Gemini", folder: "project", aiToolId: "gemini", dangerous: false });
+    expect(agent.aiToolId).toBe("gemini");
+    expect(agent.dangerous).toBe(false);
+  });
   it("snapshots advanced options on creation and restores them independently from later defaults", () => {
     storage();
     const launchOptions = { executable: "", args: ["--profile", "work space"], env: [{ name: "LANG", value: "ko_KR.UTF-8" }] };

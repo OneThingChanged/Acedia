@@ -32,6 +32,8 @@ configuration that supports it.
 
 ## Sessions and integrations
 
+* [Gemini and Antigravity CLI terminal sessions](gemini-cli.md) - Installation, personal-account migration, launch settings and integration boundaries.
+
 * [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
@@ -47,6 +49,8 @@ configuration that supports it.
 * [Embedded browser form automation plan](browser-form-automation-plan.md) - Implemented state-aware targeting and safe form controls, with remaining hardening and rollout tests.
 
 ## Delivery and maintenance
+
+* [Acedia 1.8.1.12](release-1-8-1-12.md) - Google CLI terminal integration and Dashboard/Remote chat scroll preservation.
 
 * [Acedia 1.8.1.11](release-1-8-1-11.md) - Release terminal colors and child Git repository selection.
 

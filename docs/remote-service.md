@@ -201,6 +201,11 @@ Enter. No real account or external model is used. This does not reproduce every
 CLI/version or prove that an already-installed desktop build has this fix.
 
 Submission handling locks each session while its composer request is pending.
+The shared Dashboard/Remote chat preserves its scroll position through composer
+resizing, attachment/queue changes and chat rerenders. A view within 80 pixels
+of the bottom stays at the bottom; a user reading earlier messages retains the
+current scroll offset. Restoration occurs synchronously so consecutive renders
+cannot lose bottom-following between animation frames.
 Successful replies clear only the accepted draft revision and attachments, preserving
 new edits made while waiting. Queued entries retain a request ID across retries;
 failed queue heads pause until explicit retry. Both HTTP servers persist a bounded

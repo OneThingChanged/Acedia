@@ -93,6 +93,8 @@ const MAX_REMOTE_ATTACHMENT_REQUEST_BYTES = 12 * 1024 * 1024;
 const REMOTE_SESSION_TOOLS = new Map([
   ["claude", { id: "claude", label: "Claude Code", supportsDangerous: true }],
   ["codex", { id: "codex", label: "Codex", supportsDangerous: true }],
+  ["gemini", { id: "gemini", label: "Gemini CLI", supportsDangerous: true }],
+  ["agy", { id: "agy", label: "Antigravity CLI", supportsDangerous: true }],
   ["qwen", { id: "qwen", label: "Qwen", supportsDangerous: true }],
   ["cline", { id: "cline", label: "Cline", supportsDangerous: false }],
   ["none", { id: "none", label: "Shell only", supportsDangerous: false }],

@@ -41,6 +41,11 @@ describe("advanced agent launch", () => {
     const command = prepareLaunchCommand("codex resume saved --no-alt-screen", { args: ["a'b", "$(echo bad)", "two words"] }, { toolId: "codex", shell: "/bin/bash", platform: "linux" });
     expect(command).toBe("'codex' resume saved --no-alt-screen 'a'\"'\"'b' '$(echo bad)' 'two words'");
   });
+  it("supports Gemini model arguments without changing the approval mode", () => {
+    expect(prepareLaunchCommand("gemini --approval-mode=yolo", { args: ["--model", "gemini-model"] }, {
+      toolId: "gemini", shell: "/bin/bash", platform: "linux",
+    })).toBe("'gemini' --approval-mode=yolo '--model' 'gemini-model'");
+  });
   it("quotes an automatic first prompt as one trailing argv value", () => {
     const prompt = "[Account switch handoff] inspect $(echo bad) and 'continue'";
     const command = prepareLaunchCommand("codex --no-alt-screen", undefined, {

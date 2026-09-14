@@ -2616,6 +2616,8 @@ function availableSessionTools() {
     ["claude", { id: "claude", label: "Claude Code", supportsDangerous: true }],
     ["codex", { id: "codex", label: "Codex", supportsDangerous: true }],
     ["qwen", { id: "qwen", label: "Qwen", supportsDangerous: true }],
+    ["gemini", { id: "gemini", label: "Gemini CLI", supportsDangerous: true }],
+    ["agy", { id: "agy", label: "Antigravity CLI", supportsDangerous: true }],
     ["cline", { id: "cline", label: "Cline", supportsDangerous: false }],
     ["none", { id: "none", label: "Shell only", supportsDangerous: false }],
   ]);
@@ -2917,6 +2919,7 @@ function updateComposerSendState() {
 function resizeComposerInput() {
   const input = ui.messageInput;
   if (!input) return;
+  const chatScroll = captureChatScroll();
   input.style.height = "auto";
   const styles = getComputedStyle(input);
   const minHeight = Number.parseFloat(styles.minHeight) || 42;
@@ -2931,9 +2934,11 @@ function resizeComposerInput() {
   const nextHeight = Math.min(contentHeight, maxHeight);
   input.style.height = `${Math.ceil(nextHeight)}px`;
   input.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
+  restoreChatScroll(chatScroll);
 }
 
 function renderComposerAttachments() {
+  const chatScroll = captureChatScroll();
   const attachments = currentAttachments();
   ui.composerAttachments.replaceChildren();
   ui.composerAttachments.hidden = attachments.length === 0;
@@ -2965,6 +2970,7 @@ function renderComposerAttachments() {
     ui.composerAttachments.appendChild(item);
   });
   updateComposerSendState();
+  restoreChatScroll(chatScroll);
 }
 
 function readFileDataUrl(file) {
@@ -3203,6 +3209,7 @@ function syncComposerAgent(agent) {
 }
 
 function clearAcceptedComposer(agentId, snapshot) {
+  const chatScroll = captureChatScroll();
   const currentDraft = composerAgentId === agentId ? ui.messageInput.value : sessionDrafts.get(agentId);
   const unchanged = !snapshot || ((composerRevisions.get(agentId) || 0) === snapshot.revision && currentDraft === snapshot.draft);
   if (unchanged) sessionDrafts.delete(agentId);
@@ -3216,6 +3223,7 @@ function clearAcceptedComposer(agentId, snapshot) {
   accepted.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
   attachmentDrafts.set(agentId, attachments.filter(attachment => !accepted.includes(attachment)));
   if (selectedAgent()?.id === agentId) renderComposerAttachments();
+  restoreChatScroll(chatScroll);
 }
 
 // Never inject a queued instruction into a running turn. Cancellation and
@@ -3227,10 +3235,11 @@ const agentReady = (agent) => !agentBusy(agent) && !agentInitializing(agent) && 
 function renderComposerQueue() {
   const el = ui.composerQueue;
   if (!el) return;
+  const chatScroll = captureChatScroll();
   el.replaceChildren();
   const agent = selectedAgent();
   const queue = queueForAgent(agent?.id, { create: false });
-  if (!agent || !queue.length) { el.hidden = true; return; }
+  if (!agent || !queue.length) { el.hidden = true; restoreChatScroll(chatScroll); return; }
   el.hidden = false;
   const head = make("div", "composer-queue-head", t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   const error = sessionQueueErrors.get(agent.id);
@@ -3262,6 +3271,7 @@ function renderComposerQueue() {
     row.appendChild(cancel);
     el.appendChild(row);
   });
+  restoreChatScroll(chatScroll);
 }
 
 async function drainQueues() {
@@ -4146,12 +4156,27 @@ function bindChatAutoLoad() {
   });
 }
 
+function captureChatScroll() {
+  const el = ui.chatView;
+  if (!el || !el.clientHeight) return null;
+  return { agentId: selectedAgent()?.id, top: el.scrollTop,
+    bottom: el.scrollHeight - el.scrollTop - el.clientHeight < 80 };
+}
+
+function restoreChatScroll(position) {
+  const el = ui.chatView;
+  if (!position || !el || selectedAgent()?.id !== position.agentId) return;
+  // Restore in the same layout update. A deferred scroll lets another render
+  // observe the intermediate position and mistakenly stop following the tail.
+  el.scrollTop = position.bottom ? el.scrollHeight : position.top;
+}
+
 function renderChat(data) {
   const el = ui.chatView;
   if (!el) return;
   bindChatAutoLoad();
   lastChatData = data;
-  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  const chatScroll = captureChatScroll();
   const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
   const frag = document.createDocumentFragment();
   if (data?.unsupported) {
@@ -4284,7 +4309,7 @@ function renderChat(data) {
     }
   }
   el.replaceChildren(frag);
-  if (nearBottom) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  restoreChatScroll(chatScroll);
 }
 
 let lastChatKey = "";

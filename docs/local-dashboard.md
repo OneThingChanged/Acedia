@@ -50,6 +50,10 @@ does the Dashboard return `201 Created`.[^web-services][^session-create-broker]
 
 ## Update behavior
 
+Chat stays at the bottom when sending from the bottom, including composer
+resizing and subsequent chat rerenders. Reading older messages preserves the
+current scroll offset. This behavior is shared with Remote.[^remote-client]
+
 Initial terminal state is delivered as a snapshot; later output arrives as SSE
 deltas. Hook and workspace changes refresh the projected state. Periodic client
 refresh remains a recovery mechanism, not the authoritative activity source.[^remote-client]

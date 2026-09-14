@@ -2,6 +2,14 @@
 
 ## 2026-09-14
 
+* **1.8.1.12**: Consolidated Gemini/Antigravity setup, personal-account migration, terminal-only boundaries and Dashboard/Remote scroll behavior in [release notes](release-1-8-1-12.md). Verified 717 tests and Electron launch/Remote UI smoke checks.
+
+* **Antigravity CLI**: Added the separate `agy` tool after confirming Gemini CLI's personal-account service retirement. Installed Antigravity 1.2.2 locally and verified executable help/version and 47 focused tests.
+
+* **Dashboard/Remote chat scrolling**: Preserve bottom-following and history reading position through message submission, composer layout changes and chat rerenders. Added desktop/mobile Electron smoke coverage.
+
+* **Gemini CLI sessions**: Added tool selection, settings/installation detection, local launch defaults, SSH command handling and Remote session creation. Documented terminal-only integration boundaries in [Gemini CLI](gemini-cli.md).
+
 * **1.8.1.11 release preparation**: Verified 710 tests, production build, PTY/color smoke, packaged bridge/lifecycle and packaged source equality. Recorded artifact and verification scope in [release notes](release-1-8-1-11.md).
 
 * **Release terminal colors**: Removed the development-only guard from PTY `NO_COLOR` cleanup. Added release-condition regressions for Codex, Claude and shell sessions, including mixed-case Windows keys and preservation of the source environment. See [Development and build](development-and-build.md).

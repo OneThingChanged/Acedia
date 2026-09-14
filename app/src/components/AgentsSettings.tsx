@@ -18,7 +18,7 @@ type QwenRegionInfo = {
 type ToolAvailability = Record<string, { available: boolean; path: string | null }>;
 
 // Tools that can be availability-checked + offered in the new-session picker.
-const CHECKABLE_TOOL_IDS = ["claude", "codex", "qwen", "cline"];
+const CHECKABLE_TOOL_IDS = ["claude", "codex", "gemini", "agy", "qwen", "cline"];
 
 export function AgentsSettings({
   navigation,
@@ -83,7 +83,7 @@ export function AgentsSettings({
     window.addEventListener("multiagent:accounts-changed", accountsChanged);
     return () => { window.removeEventListener("storage", sync); window.removeEventListener("multiagent:accounts-changed", accountsChanged); };
   }, [tab]);
-  const tabs = ["common", "codex", "claude", "qwen", "cline"];
+  const tabs = ["common", "codex", "claude", "gemini", "agy", "qwen", "cline"];
   const selectTab = (id: string) => { setTab(id); setDefaults(loadAgentDefaults(id)); setSaveError(""); };
   useEffect(() => { if (navigation?.agentTab) selectTab(navigation.agentTab); }, [navigation]);
   const prefix = "agents." + tab;
@@ -120,6 +120,20 @@ export function AgentsSettings({
       {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} settingId={prefix + ".accounts"}
         defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId}
         onMakeDefault={accountId => updateDefaults(tab === "codex" ? { codexAccountId: accountId } : { claudeAccountId: accountId })} />}
+      {tab === "gemini" && <div className="agent-settings-card">
+        <div className="agent-settings-row"><div>
+          <div className="agent-row-title">{text("Gemini CLI 설치와 로그인", "Gemini CLI installation and login")}</div>
+          <div className="agent-row-sub">{text("셸에서 아래 명령으로 설치한 뒤 gemini를 실행해 로그인하세요. 기존 CLI 로그인과 설정을 사용합니다.", "Install with the command below, then run gemini to sign in. Uses your existing CLI login and settings.")}</div>
+          <code>npm install -g @google/gemini-cli</code>
+          <div className="agent-row-sub">{text("개인 Google 계정·AI Pro·Ultra 로그인은 지원 종료되었습니다. 해당 계정은 Antigravity CLI를 선택하세요.", "Personal Google account, AI Pro and Ultra sign-in is no longer supported. Select Antigravity CLI for these accounts.")}</div>
+          <div className="agent-row-sub">{text("현재 터미널 세션을 지원합니다. 앱 내 대화 기록·사용량·계정 관리와 자동 대화 복원은 지원하지 않습니다.", "Terminal sessions are supported. In-app chat history, usage, account management and automatic conversation recovery are not available.")}</div>
+        </div></div>
+      </div>}
+      {tab === "agy" && <div className="agent-settings-card"><div className="agent-settings-row"><div>
+        <div className="agent-row-title">{text("Google 로그인", "Google sign-in")}</div>
+        <div className="agent-row-sub">{text("Antigravity CLI를 설치한 뒤 새 세션에서 선택하세요. agy를 실행하면 기존 로그인을 사용하거나 브라우저 로그인으로 안내합니다.", "Install Antigravity CLI and select it in a new session. Running agy uses an existing login or opens browser sign-in.")}</div>
+        <div className="agent-row-sub">{text("터미널 방식이며 앱 내 계정 관리·사용량·대화 기록·자동 복원은 아직 지원하지 않습니다.", "Terminal integration; in-app accounts, usage, chat history and automatic recovery are not yet supported.")}</div>
+      </div></div></div>}
       {tab === "qwen" && <>
       <div className="agent-block" {...settingTarget("agents.qwen.region")}>
         <div className="agent-row-title">{text("Qwen 리전 (나라)", "Qwen region")}<SettingScope id="agents.qwen.region" /></div>

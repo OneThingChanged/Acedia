@@ -7,9 +7,9 @@ import {
 describe("defaultAiToolId", () => {
   it("uses the first enabled agent tool and always falls back to shell", () => {
     expect(defaultAiToolId([])).toBe("claude");
-    expect(defaultAiToolId(["claude", "codex"])).toBe("qwen");
+    expect(defaultAiToolId(["claude", "codex"])).toBe("gemini");
     expect(
-      defaultAiToolId(["claude", "codex", "qwen", "cline", "none"])
+      defaultAiToolId(["claude", "codex", "gemini", "agy", "qwen", "cline", "none"])
     ).toBe("none");
   });
 });

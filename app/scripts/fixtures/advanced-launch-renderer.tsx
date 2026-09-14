@@ -10,6 +10,7 @@ window.multiAgentElectron = {
   invoke: async command => command === "check_tools" ? {
     codex: { available: true, path: "C:/fixture/codex.exe" },
     claude: { available: true, path: "C:/fixture/claude.exe" },
+    agy: { available: true, path: "C:/fixture/agy.exe" },
   } : command.endsWith("_accounts_list") ? [{ id: "default", label: "Existing login", state: "default" }] : null,
   showOpenDialog: async () => window.fixtureDialogResult,
   onEvent: () => () => {},

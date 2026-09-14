@@ -160,6 +160,7 @@ const SKIPPED_DOC_DIRS = new Set([
   ".codex",
   ".git",
   ".qwen",
+  ".gemini",
   ".tmp",
   "node_modules",
   "target",
@@ -2818,7 +2819,7 @@ function findExecutableOnPath(name) {
 // Check whether each agent CLI is installed/resolvable on the app's PATH, so
 // Settings can show availability and the new-session picker can hide missing
 // ones. Uses the same PATH the app spawns with.
-const CHECKABLE_TOOLS = { claude: "claude", codex: "codex", qwen: "qwen", cline: "cline" };
+const CHECKABLE_TOOLS = { claude: "claude", codex: "codex", gemini: "gemini", agy: "agy", qwen: "qwen", cline: "cline" };
 function checkToolAvailability() {
   const out = {};
   for (const [id, cmd] of Object.entries(CHECKABLE_TOOLS)) {

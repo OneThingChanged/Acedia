@@ -17,6 +17,7 @@ const SKIPPED_DIRS = new Set([
   ".git",
   ".next",
   ".qwen",
+  ".gemini",
   ".tmp",
   ".venv",
   "__pycache__",

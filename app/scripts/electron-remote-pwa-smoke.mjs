@@ -52,7 +52,7 @@ void app.whenReady().then(async () => {
       },
       chatProvider: async () => ({ sessionId: "fixture", blocks: [
         { sequence: 1, role: "user", kind: "text", text: "Read guide.md · 사용량 · 문서" },
-        { sequence: 2, role: "assistant", kind: "text", text: "**Module rendering works**" },
+        { sequence: 2, role: "assistant", kind: "text", text: "**Module rendering works**\n\n" + "Scroll fixture paragraph.\n\n".repeat(60) },
       ] }),
     });
     service.config.server_port = 0;
@@ -96,12 +96,25 @@ void app.whenReady().then(async () => {
         const type = value => { input.value = value; input.dispatchEvent(new Event('input', {bubbles:true})); };
         const submit = () => form.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));
         try {
+          const chat = document.querySelector('#chatView');
+          const atBottom = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight < 3;
+          chat.scrollTop = chat.scrollHeight;
+          type(Array(10).fill('multiline composer fixture').join('\\n'));
+          if (!atBottom()) throw new Error('Composer growth lost chat bottom');
+          type('first message');
+          if (!atBottom()) throw new Error('Composer shrink lost chat bottom');
+          chat.scrollTop = 200;
+          const readingTop = chat.scrollTop;
+          type(Array(10).fill('history reading fixture').join('\\n'));
+          if (Math.abs(chat.scrollTop - readingTop) > 2) throw new Error('Composer growth moved history reader');
+          chat.scrollTop = chat.scrollHeight;
           type('first message'); submit(); submit();
           const locked = document.querySelector('#sendButton').disabled;
           type('next draft');
           if (!finish) throw new Error('Composer did not start a submission');
           finish();
           await new Promise(resolve => setTimeout(resolve, 50));
+          if (!atBottom()) throw new Error('Submission lost chat bottom');
           return { sends, locked, draft: input.value, queue: document.querySelector('#composerQueue').textContent };
         } finally { window.fetch = originalFetch; }
       })()`);
@@ -114,8 +127,11 @@ void app.whenReady().then(async () => {
       await waitFor(win, "document.documentElement.lang==='en' && document.querySelector('#documentsButton strong').textContent==='Documents'");
       if (width < 800) assert(await win.webContents.executeJavaScript("document.querySelector('#searchInput').placeholder==='Search projects and sessions'"), "Language change lost mobile search wording");
       assert(await win.webContents.executeJavaScript("document.querySelector('#messageInput').value==='next draft' && document.querySelector('#chatView').textContent.includes('사용량 · 문서')"), "Language change altered the draft or user content");
+      assert(await win.webContents.executeJavaScript("const chat=document.querySelector('#chatView');chat.scrollHeight-chat.scrollTop-chat.clientHeight<3"), "Chat rerender lost bottom position");
+      await win.webContents.executeJavaScript("document.querySelector('#chatView').scrollTop=200");
       service.syncView({ ...service.view, language: "ko" });
       await waitFor(win, "document.documentElement.lang==='ko'");
+      assert(await win.webContents.executeJavaScript("Math.abs(document.querySelector('#chatView').scrollTop-200)<3"), "Chat rerender moved history reader");
       await win.webContents.executeJavaScript("document.querySelector('#filePreviewClose').click();document.querySelector('#usageButton').click()");
       await waitFor(win, "document.querySelector('#filePreviewOverlay').hidden && document.querySelector('#usageProviderGrid').getClientRects().length>0");
       await waitFor(win, "document.querySelector('#usageProviderGrid > .usage-provider-card') && document.querySelector('.usage-profile-review')");

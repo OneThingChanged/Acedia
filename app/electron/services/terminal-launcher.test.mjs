@@ -242,4 +242,16 @@ describe("terminal launch lifecycle", () => {
     expect(f.dependencies.spawnProcess.mock.calls[0][2].cwd).toBe(os.homedir());
     expect(f.sessions.get("session-a").quitCommand).toBe("exit\r");
   });
+  it("starts Gemini with the CLI lifecycle and no unsupported hook configuration", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const launch = createTerminalLauncher({ ...f.dependencies, platform: "win32", defaultShell: () => "pwsh.exe" });
+    await launch({ ...f.args, aiToolId: "gemini", initCommand: "gemini" });
+    expect(f.dependencies.hookService.setupProject).not.toHaveBeenCalled();
+    expect(f.dependencies.hookService.setupCodexHome).not.toHaveBeenCalled();
+    expect(f.sessions.get("session-a").quitCommand).toBe("/quit\r");
+    expect(f.sessions.get("session-a").terminate).toBeTypeOf("function");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(f.processes[0].write).toHaveBeenCalledWith("gemini; exit $LASTEXITCODE\r");
+  });
 });

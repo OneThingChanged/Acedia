@@ -15,6 +15,25 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("Gemini terminal sessions", () => {
+  it("launches Antigravity with its own approval flag and native Windows SSH command", async () => {
+    const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous: true } as Agent;
+    expect((await buildSpawnArgs(agent, null, vi.fn())).initCommand).toBe("agy --dangerously-skip-permissions");
+    expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows" })).toBe("agy");
+  });
+  it.each([false, true])("builds interactive launches with dangerous=%s without provider recovery", async dangerous => {
+    const agent = { id: "gemini-a", aiToolId: "gemini", folder: "C:/workspace", dangerous, lastSessionId: "unrelated" } as Agent;
+    const result = await buildSpawnArgs(agent, null, vi.fn());
+    expect(result).toMatchObject({ initCommand: dangerous ? "gemini --approval-mode=yolo" : "gemini", cwd: "C:/workspace", ssh: null });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+  it("uses the Windows SSH shim and leaves POSIX commands portable", () => {
+    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "windows" })).toBe("gemini.cmd");
+    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "posix" })).toBe("gemini");
+    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "windows", preferCmdShim: false })).toBe("gemini");
+  });
+});
+
 it("preserves saved shell commands and refuses a missing SSH target", async () => {
   const agent = { id: "shell", aiToolId: "none", folder: "C:/workspace", shellCommand: "echo fixture" } as Agent;
   expect(await buildSpawnArgs(agent, null, vi.fn())).toMatchObject({ initCommand: "echo fixture", cwd: "C:/workspace", ssh: null });

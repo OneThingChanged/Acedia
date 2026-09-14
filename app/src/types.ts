@@ -90,6 +90,22 @@ export const AI_TOOLS: AiTool[] = [
     dangerousFlag: "--dangerously-bypass-approvals-and-sandbox",
   },
   {
+    id: "gemini",
+    label: "Gemini CLI",
+    icon: "✦",
+    iconColor: "#4285f4",
+    command: "gemini",
+    dangerousFlag: "--approval-mode=yolo",
+  },
+  {
+    id: "agy",
+    label: "Antigravity CLI",
+    icon: "✦",
+    iconColor: "#8ab4f8",
+    command: "agy",
+    dangerousFlag: "--dangerously-skip-permissions",
+  },
+  {
     id: "qwen",
     label: "Qwen",
     icon: "◆",

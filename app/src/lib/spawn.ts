@@ -57,6 +57,7 @@ export function resolveRemoteToolCommand(
   if (aiToolId === "codex" && command === "codex") return "codex.cmd";
   if (aiToolId === "claude" && command === "claude") return "claude.cmd";
   if (aiToolId === "qwen" && command === "qwen") return "qwen.cmd";
+  if (aiToolId === "gemini" && command === "gemini") return "gemini.cmd";
   if (aiToolId === "cline" && command === "cline") return "cline.cmd";
   return command;
 }
