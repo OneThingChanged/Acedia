@@ -48,6 +48,8 @@ configuration that supports it.
 
 ## Delivery and maintenance
 
+* [Acedia 1.8.1.11](release-1-8-1-11.md) - Release terminal colors and child Git repository selection.
+
 * [사용량 수집 서버 운영 가이드](usage-server-operations.md) - 서버 소스·실행·배포 파일 위치, 설치와 계정 등록, 테마, 데이터 보관 및 검증 범위.
 * [Development and build](development-and-build.md) - Local setup, tests, smoke checks, and desktop/mobile build entry points.
 * [Release playbook](release-playbook.md) - Signing, artifact verification, publication, and updater invariants.

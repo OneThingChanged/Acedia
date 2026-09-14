@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { prepareLaunchCommand, mergeLaunchEnvironment } from "./agent-launch.mjs";
 import { selectedAccountId } from "./provider-accounts.mjs";
-import { devElectronEnvironment } from "./dev-terminal-environment.mjs";
+import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
 import { buildInteractiveSshArgs, findWindowsExecutable } from "./ssh-service.mjs";
 import { CodexScrollbackFilter, PassThroughTerminalFilter } from "./terminal-stream.mjs";
 import { terminateWindowsProcessTree } from "./process-tree.mjs";
@@ -31,7 +31,6 @@ export function createTerminalLauncher({
   sshPasswords,
   browserMcpScriptPath,
   spawnProcess,
-  development = false,
   baseEnv = process.env,
   platform = process.platform,
   resolveSshExecutable = () => findWindowsExecutable(platform === "win32" ? "ssh.exe" : "ssh"),
@@ -151,7 +150,7 @@ export function createTerminalLauncher({
         rows: ptyRows,
         cwd,
         env: {
-          ...(development ? devElectronEnvironment(launchEnvironment) : launchEnvironment),
+          ...guiTerminalEnvironment(launchEnvironment),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           MULTIAGENT_AGENT_ID: id,

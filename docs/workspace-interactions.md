@@ -33,6 +33,9 @@ sources:
   - id: file-tree
     resource: ../app/src/components/FileTreePanel.tsx
     title: "File tree panel"
+  - id: git-discovery
+    resource: ../app/electron/services/git-submodules.mjs
+    title: "Child Git repository discovery"
   - id: document-viewer
     resource: ../app/src/components/DocViewer.tsx
     title: "Document viewer"
@@ -173,9 +176,17 @@ successful move.[^session-storage-ui][^session-storage-service]
 
 ## Files, Git, and documents
 
-The right sidebar selects the project root or a discovered Git submodule,
+The right sidebar selects the project root or a discovered child Git repository,
 filters the file tree, opens the native Explorer location, and exposes Git
 changes/history. Filtered folders with no matching descendants are omitted.[^file-tree]
+
+The repository selector also works when the project root itself is not a Git
+repository. Discovery includes nested `.git` directories and worktree `.git`
+files, while retaining declared submodules (uninitialized ones stay disabled).
+The scan skips common dependency, build and Unreal generated folders, does not
+traverse directory symlinks, and is limited to 10,000 directories and 200 entries.
+Selecting a child scopes both files and Source Control to that repository; the
+selection is remembered per project.[^file-tree][^git-discovery]
 
 Markdown renders in the React document viewer, images use the image viewer, and
 HTML opens in the isolated embedded browser. Document and Git tabs participate
@@ -248,6 +259,7 @@ The domain invariants behind these interactions are documented in
 [^terminal-area]: Terminal and chat surface
 [^chat-view]: Persistent chat history and artifacts
 [^file-tree]: File tree panel
+[^git-discovery]: Child Git repository discovery
 [^document-viewer]: Document viewer
 [^settings]: Settings surface
 [^app-language]: Application language preference

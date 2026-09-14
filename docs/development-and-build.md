@@ -74,14 +74,15 @@ The development runner starts Vite on port `4420` and the Electron host. It
 should reuse/clean its own child processes rather than requiring a second Vite
 instance.[^dev-runner]
 
-The runner removes inherited `NO_COLOR` from the Electron child's environment;
-the dev host also clears it at PTY creation, including after Electron's own
-relaunch path. Both use the same environment helper.
+The development runner removes inherited `NO_COLOR` from the Electron child's
+environment. All desktop channels also clear it at PTY creation, including
+packaged releases and Electron's own relaunch path, using the same helper.
 Automation consoles can set it to `1`, which otherwise reaches the interactive
 GUI PTYs and disables Codex colors despite `TERM=xterm-256color`. The launching
 console and Vite retain their own environment. Restart the dev app through this
-runner to apply the fix; an already running Electron/CLI process retains its
-old environment. Previously stored plain output cannot regain missing ANSI
+runner to apply the fix, or install a release containing it and restart the
+session; an already running CLI process retains its old environment.
+Previously stored plain output cannot regain missing ANSI
 sequences automatically, but resuming a saved CLI conversation can render its
 history again with colors. The dev host retries renderer loading for up to 30
 seconds while a replacement Vite server starts.[^dev-runner]

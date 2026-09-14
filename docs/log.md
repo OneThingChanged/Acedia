@@ -1,5 +1,13 @@
 # OKF Update Log
 
+## 2026-09-14
+
+* **1.8.1.11 release preparation**: Verified 710 tests, production build, PTY/color smoke, packaged bridge/lifecycle and packaged source equality. Recorded artifact and verification scope in [release notes](release-1-8-1-11.md).
+
+* **Release terminal colors**: Removed the development-only guard from PTY `NO_COLOR` cleanup. Added release-condition regressions for Codex, Claude and shell sessions, including mixed-case Windows keys and preservation of the source environment. See [Development and build](development-and-build.md).
+
+* **Child Git repositories**: The right sidebar now discovers child repositories even under a non-Git project root, including worktree Git files. Documented scan exclusions and limits in [Workspace interactions](workspace-interactions.md). Three discovery tests and TypeScript checking passed; installed-app UI verification remains pending.
+
 ## 2026-09-13
 
 * **1.8.1.9 source preparation**: Added shared USD baseline pricing, Remote token/USD comparison, central day/week/month charts and dated AI/model/effort breakdowns. Period selection scopes employee/account details; names navigate to detail views. Folded secondary summaries, skills and raw period tables. Local server updated; product release not published. See [cost comparison](usage-cost-comparison.md).

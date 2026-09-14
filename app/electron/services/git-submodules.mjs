@@ -65,8 +65,14 @@ export async function discoverGitSubmodules(folder, maxEntries = 200) {
   const queue = [{ repository: root, prefix: "" }];
   const visitedRepositories = new Set();
   const results = new Map();
+  const skippedDirectories = new Set([
+    ".git", "node_modules", ".venv", "venv", "__pycache__",
+    "binaries", "intermediate", "saved", "deriveddatacache",
+    "dist", "build", "target", ".next", ".cache",
+  ]);
 
-  while (queue.length > 0 && results.size < maxEntries) {
+  // Bound filesystem work even when a project contains large generated trees.
+  while (queue.length > 0 && results.size < maxEntries && visitedRepositories.size < 10000) {
     const current = queue.shift();
     const repositoryKey =
       process.platform === "win32"
@@ -74,6 +80,32 @@ export async function discoverGitSubmodules(folder, maxEntries = 200) {
         : current.repository;
     if (visitedRepositories.has(repositoryKey)) continue;
     visitedRepositories.add(repositoryKey);
+
+    let children;
+    try {
+      children = await fsPromises.readdir(current.repository, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    if (current.prefix && children.some((entry) =>
+      entry.name === ".git" && (entry.isDirectory() || entry.isFile())
+    ) && !results.has(current.prefix)) {
+      results.set(current.prefix, {
+        name: path.basename(current.repository),
+        relative_path: current.prefix,
+        url: "",
+        initialized: true,
+      });
+    }
+    // Do not follow symlinks/junctions outside the project or into cycles.
+    for (const child of children) {
+      if (!child.isDirectory() || child.isSymbolicLink() || skippedDirectories.has(child.name.toLowerCase())) continue;
+      if (queue.length + visitedRepositories.size >= 10000) break;
+      queue.push({
+        repository: path.join(current.repository, child.name),
+        prefix: current.prefix ? `${current.prefix}/${child.name}` : child.name,
+      });
+    }
 
     let definitions;
     try {

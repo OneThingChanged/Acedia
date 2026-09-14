@@ -62,6 +62,19 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it.each(["codex", "claude", "shell"])("removes inherited NO_COLOR for release %s sessions", async aiToolId => {
+    const f = fixture();
+    const inherited = { Path: "fixture-path", NO_COLOR: "1", No_Color: "1", CODEX_HOME: os.tmpdir() };
+    if (f.providers[aiToolId]) f.providers[aiToolId].environment.mockReturnValue(inherited);
+    const launch = createTerminalLauncher({ ...f.dependencies, development: false, baseEnv: inherited });
+    await launch({ ...f.args, aiToolId });
+    const env = f.dependencies.spawnProcess.mock.calls[0][2].env;
+    expect(Object.keys(env).some(key => key.toUpperCase() === "NO_COLOR")).toBe(false);
+    expect(env).toMatchObject({ Path: "fixture-path", TERM: "xterm-256color", COLORTERM: "truecolor" });
+    expect(inherited.NO_COLOR).toBe("1");
+    expect(inherited.No_Color).toBe("1");
+  });
+
   it("waits for the broker and account configuration before spawning with isolated credentials", async () => {
     const f = fixture();
     const ready = deferred();

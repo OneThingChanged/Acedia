@@ -2986,7 +2986,6 @@ const spawnPty = createTerminalLauncher({
   sshPasswords,
   browserMcpScriptPath,
   spawnProcess: (...args) => nodePty.spawn(...args),
-  development: Boolean(devUrl),
 });
 
 function resolveExistingPath(folder, rawPath) {

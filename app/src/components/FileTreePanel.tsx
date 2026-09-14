@@ -1316,11 +1316,11 @@ export function FileTreePanel({
           >
             <option value="">
               {submodulesLoading
-                ? text("서브모듈 확인 중…", "Checking submodules…")
-                : `Main · ${shownProject?.name ?? "Project"}`}
+                ? text("저장소 확인 중…", "Checking repositories…")
+                : text(`프로젝트 · ${shownProject?.name ?? "Project"}`, `Project · ${shownProject?.name ?? "Project"}`)}
             </option>
             {submodules.length > 0 && (
-              <optgroup label="Submodules">
+              <optgroup label={text("하위 Git 저장소", "Child Git repositories")}>
                 {submodules.map((entry) => (
                   <option
                     key={entry.relative_path}
