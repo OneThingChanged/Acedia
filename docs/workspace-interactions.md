@@ -133,7 +133,7 @@ update existing views across windows and apply to new terminals. Lower scrollbac
 limits can trim screen history without deleting stored conversations. See the
 [settings roadmap](settings-expansion-roadmap.md) for defaults, scope and validation.
 
-All agents, including [Gemini CLI](gemini-cli.md), have a terminal view. Codex and Claude additionally have a
+All agents, including [Antigravity CLI](gemini-cli.md), have a terminal view. Codex and Claude additionally have a
 transcript-backed chat view; other tools remain terminal-only. Sending to an
 inactive chat-capable session first activates it and then waits for startup
 readiness before delivery.[^terminal-area]
@@ -208,7 +208,7 @@ General. System default, Korean, English, Simplified Chinese, Traditional Chines
 (Taiwan), Japanese, and Spanish apply immediately and persist on this PC.
 General contains theme, notification sound, and Desktop Pet settings.
 
-Agents settings has General, Codex, Claude, Gemini CLI, Antigravity CLI, Qwen, and Cline tabs with keyboard
+Agents settings has General, Codex, Claude, Antigravity CLI, Qwen, and Cline tabs with keyboard
 arrow/Home/End navigation. General owns the usage-bar toggle and installation
 status overview. Each tool owns its enabled toggle; Codex contains account
 management, Claude contains independent local account management, Qwen contains

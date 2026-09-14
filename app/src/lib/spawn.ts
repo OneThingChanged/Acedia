@@ -57,7 +57,6 @@ export function resolveRemoteToolCommand(
   if (aiToolId === "codex" && command === "codex") return "codex.cmd";
   if (aiToolId === "claude" && command === "claude") return "claude.cmd";
   if (aiToolId === "qwen" && command === "qwen") return "qwen.cmd";
-  if (aiToolId === "gemini" && command === "gemini") return "gemini.cmd";
   if (aiToolId === "cline" && command === "cline") return "cline.cmd";
   return command;
 }
@@ -82,6 +81,7 @@ export async function buildSpawnArgs(
   sessionPins: Record<string, string> | null,
   setAgentSessionId: (id: string, sessionId: string | null) => void
 ): Promise<SpawnArgs> {
+  if (agent.aiToolId === "gemini") throw new Error("Gemini CLI는 제거되었습니다. 새 Antigravity CLI 세션을 만드세요. Gemini CLI was removed; create a new Antigravity CLI session.");
   if (agent.idleResumeSessionId && (agent.sshHostId || !agent.folder || !["codex","claude"].includes(agent.aiToolId) || (sessionPins?.[agent.id] && sessionPins[agent.id] !== agent.idleResumeSessionId))) throw new Error("자동 중지된 세션의 복원 대상이 변경되었습니다. 확인 후 다시 여세요.");
   const tool = toolForId(agent.aiToolId);
   const sshHost = agent.sshHostId ? findSshHost(agent.sshHostId) : null;

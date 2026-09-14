@@ -9,7 +9,7 @@ import { CodexScrollbackFilter, PassThroughTerminalFilter } from "./terminal-str
 import { terminateWindowsProcessTree } from "./process-tree.mjs";
 
 const HOOK_TOOLS = new Set(["codex", "claude", "qwen"]);
-const CLI_TOOLS = new Set([...HOOK_TOOLS, "cline", "gemini", "agy"]);
+const CLI_TOOLS = new Set([...HOOK_TOOLS, "cline", "agy"]);
 
 const asString = (value) => typeof value === "string" ? value : "";
 const asObject = (value) => value && typeof value === "object" ? value : {};

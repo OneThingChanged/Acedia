@@ -5,8 +5,8 @@ const context = { buildVariant: "standard" as const, disabledTools: [] };
 describe("settings search catalog", () => {
   it("matches option names, spaced Korean, English and provider filters", () => {
     const ids = (query: string) => searchSettings(query, context).map(item => item.id);
-    expect(ids("환경변수")).toEqual(["codex", "claude", "gemini", "agy", "qwen", "cline"].map(tool => "agents." + tool + ".env"));
-    expect(ids("gemini environment")).toEqual(["agents.gemini.env"]);
+    expect(ids("환경변수")).toEqual(["codex", "claude", "agy", "qwen", "cline"].map(tool => "agents." + tool + ".env"));
+    expect(ids("antigravity environment")).toEqual(["agents.agy.env"]);
     expect(ids("환경 변수")).toEqual(ids("환경변수"));
     expect(ids(" CLAUDE   environment ")).toEqual(["agents.claude.env"]);
     expect(ids("codex 기본 계정")[0]).toBe("agents.codex.defaultAccount");

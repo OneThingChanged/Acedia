@@ -2,6 +2,10 @@
 
 ## 2026-09-14
 
+* **1.8.1.13 release preparation**: Built the Gemini removal EXE, verified packaged bridge/lifecycle and source equality, and recorded installer metadata in [release notes](release-1-8-1-13.md). Full suite: 718 tests passed.
+
+* **Gemini CLI removal**: Removed the tool from desktop settings and creation menus and the Remote catalog. Preserved existing sessions with an explicit restart error directing users to a new Antigravity session. Local CLI installations remain untouched.
+
 * **1.8.1.12**: Consolidated Gemini/Antigravity setup, personal-account migration, terminal-only boundaries and Dashboard/Remote scroll behavior in [release notes](release-1-8-1-12.md). Verified 717 tests and Electron launch/Remote UI smoke checks.
 
 * **Antigravity CLI**: Added the separate `agy` tool after confirming Gemini CLI's personal-account service retirement. Installed Antigravity 1.2.2 locally and verified executable help/version and 47 focused tests.

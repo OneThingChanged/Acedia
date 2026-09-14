@@ -90,14 +90,6 @@ export const AI_TOOLS: AiTool[] = [
     dangerousFlag: "--dangerously-bypass-approvals-and-sandbox",
   },
   {
-    id: "gemini",
-    label: "Gemini CLI",
-    icon: "✦",
-    iconColor: "#4285f4",
-    command: "gemini",
-    dangerousFlag: "--approval-mode=yolo",
-  },
-  {
     id: "agy",
     label: "Antigravity CLI",
     icon: "✦",
@@ -137,6 +129,8 @@ export function toolSupportsChat(aiToolId: string | null | undefined): boolean {
 }
 
 export function toolForId(id: string): AiTool {
+  // Keep saved sessions recognizable without offering the retired CLI.
+  if (id === "gemini") return { id, label: "Gemini CLI (removed)", icon: "✦", iconColor: "#8b949e", command: "" };
   return (
     AI_TOOLS.find((t) => t.id === id) ??
     AI_TOOLS.find((t) => t.id === "none") ??

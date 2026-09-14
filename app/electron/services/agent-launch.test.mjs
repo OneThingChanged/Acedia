@@ -41,10 +41,10 @@ describe("advanced agent launch", () => {
     const command = prepareLaunchCommand("codex resume saved --no-alt-screen", { args: ["a'b", "$(echo bad)", "two words"] }, { toolId: "codex", shell: "/bin/bash", platform: "linux" });
     expect(command).toBe("'codex' resume saved --no-alt-screen 'a'\"'\"'b' '$(echo bad)' 'two words'");
   });
-  it("supports Gemini model arguments without changing the approval mode", () => {
-    expect(prepareLaunchCommand("gemini --approval-mode=yolo", { args: ["--model", "gemini-model"] }, {
-      toolId: "gemini", shell: "/bin/bash", platform: "linux",
-    })).toBe("'gemini' --approval-mode=yolo '--model' 'gemini-model'");
+  it("supports Antigravity model arguments without changing the approval mode", () => {
+    expect(prepareLaunchCommand("agy --dangerously-skip-permissions", { args: ["--model", "agy-model"] }, {
+      toolId: "agy", shell: "/bin/bash", platform: "linux",
+    })).toBe("'agy' --dangerously-skip-permissions '--model' 'agy-model'");
   });
   it("quotes an automatic first prompt as one trailing argv value", () => {
     const prompt = "[Account switch handoff] inspect $(echo bad) and 'continue'";

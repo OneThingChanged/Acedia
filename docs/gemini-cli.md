@@ -1,6 +1,6 @@
 ---
 type: Integration
-title: Gemini and Antigravity CLI terminal sessions
+title: Antigravity CLI terminal sessions
 description: Google CLI installation, terminal launch settings and current integration boundaries.
 status: stable
 sources:
@@ -15,7 +15,7 @@ sources:
   - resource: https://docs.cloud.google.com/gemini/docs/codeassist/overview
 ---
 
-# Gemini and Antigravity CLI terminal sessions
+# Antigravity CLI terminal sessions
 
 ## Antigravity for personal Google accounts
 
@@ -35,40 +35,31 @@ checked locally. The user's screenshot confirmed successful Google AI Pro
 sign-in and an interactive prompt; a live model response inside Acedia has not
 been verified.
 
-## Gemini CLI
+## Launch settings and integration boundaries
 
-Gemini CLI is available in the new-project/session picker and in Settings →
-Agents → Gemini CLI. Install it with `npm install -g @google/gemini-cli`, then
-run `gemini` to complete the CLI's login flow. Acedia detects the executable on
-PATH and uses the existing CLI login and configuration. Refresh installation
-status after installation; restart Acedia if its inherited PATH is stale.
+Antigravity participates in terminal panes, splits, Remote session creation and
+SSH launching. Install and authenticate the CLI on each SSH host. Per-tool
+and local session defaults support executable paths, arguments and non-reserved
+environment variables. Google credentials remain excluded from persisted launch
+options. Local sessions use `/quit` for graceful shutdown, and inherited
+`NO_COLOR` is removed when creating the PTY.
 
-Normal sessions launch `gemini` with approval prompts enabled. Explicitly
-enabling Dangerous mode adds `--approval-mode=yolo`. Per-tool defaults and
-local session overrides support an executable path, arguments (for example
-`--model` plus the desired model), and non-reserved environment variables.
-Gemini/Google API keys and credential-file environment settings stay outside
-the persisted advanced-options editor, like other provider credentials.
+The integration is terminal-only: Acedia does not capture Antigravity hooks,
+automatically configure browser MCP, index chat history, manage accounts or
+collect usage/quotas. Restarting starts a new conversation unless an explicit
+resume argument is supplied.
 
-Gemini participates in terminal panes, splits, Remote session creation and SSH
-launching. Windows SSH hosts use `gemini.cmd` unless shim preference is disabled.
-The CLI must be installed and authenticated on the SSH host. Local CLI sessions
-use `/quit` for graceful shutdown and the existing agent process lifecycle.
-Inherited `NO_COLOR` is removed when creating the PTY.
+## Removed Gemini CLI integration
 
-Both integrations are terminal-only. Acedia does not yet capture their hooks or
-automatically configure its browser MCP, recover a specific conversation,
-index Gemini chat history, manage multiple Gemini accounts, or collect Gemini
-usage/quotas. Restarting starts a new CLI conversation unless the user supplies
-an explicit resume argument. Existing Gemini CLI configuration is not rewritten.
+Gemini CLI is no longer offered in new projects, sessions, settings or the
+Remote catalog. Saved Gemini sessions remain recognizable but cannot restart;
+the launch error directs users to create a new Antigravity CLI session. Sessions
+are not silently converted. Existing CLI installations, credentials and
+configuration on the computer are preserved.
 
 ## Verification
 
-Gemini CLI was updated locally from 0.34.0 to 0.59.0 and its executable version
-was verified. The update does not restore retired personal-account access.
-Automated coverage checks normal/Dangerous command generation, SSH shim
-selection, default persistence, advanced arguments, CLI lifecycle and Remote
-session creation. Electron settings smoke verifies Gemini arguments and
-Antigravity settings/new-session selection. The complete unit suite passed
-717 tests; native and cmd-shim PTY smoke checks passed. Actual model requests
-and remote-host Google CLI execution are not part of these checks.
+Automated coverage checks Antigravity command generation, launch defaults,
+CLI lifecycle, Remote creation and rejection of saved Gemini launches. Electron
+smoke covers Antigravity settings and new-session selection. Actual model
+requests and remote-host execution are outside these checks.

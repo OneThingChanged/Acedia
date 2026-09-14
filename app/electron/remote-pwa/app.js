@@ -2616,7 +2616,6 @@ function availableSessionTools() {
     ["claude", { id: "claude", label: "Claude Code", supportsDangerous: true }],
     ["codex", { id: "codex", label: "Codex", supportsDangerous: true }],
     ["qwen", { id: "qwen", label: "Qwen", supportsDangerous: true }],
-    ["gemini", { id: "gemini", label: "Gemini CLI", supportsDangerous: true }],
     ["agy", { id: "agy", label: "Antigravity CLI", supportsDangerous: true }],
     ["cline", { id: "cline", label: "Cline", supportsDangerous: false }],
     ["none", { id: "none", label: "Shell only", supportsDangerous: false }],

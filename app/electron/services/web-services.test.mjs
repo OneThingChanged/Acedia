@@ -784,7 +784,7 @@ describe("Electron dashboard server", () => {
       agents: [{ id: "agent-1", projectId: "project-a" }],
       availableTools: [
         { id: "codex", label: "Codex", supportsDangerous: true },
-        { id: "gemini", label: "Gemini CLI", supportsDangerous: true },
+        { id: "agy", label: "Antigravity CLI", supportsDangerous: true },
         { id: "none", label: "Shell only", supportsDangerous: false },
       ],
       groups: [],
@@ -849,12 +849,12 @@ describe("Electron dashboard server", () => {
         dangerous: true,
       }),
     });
-    const geminiCreated = await fetch(`${status.url}/api/session/create`, {
+    const agyCreated = await fetch(`${status.url}/api/session/create`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: status.url },
-      body: JSON.stringify({ projectId: "project-a", name: "Remote Gemini", aiToolId: "gemini", dangerous: false }),
+      body: JSON.stringify({ projectId: "project-a", name: "Remote Antigravity", aiToolId: "agy", dangerous: false }),
     });
-    expect(geminiCreated.status).toBe(201);
+    expect(agyCreated.status).toBe(201);
     const unavailableTool = await fetch(`${status.url}/api/session/create`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: status.url },
@@ -899,7 +899,7 @@ describe("Electron dashboard server", () => {
       name: "Remote Codex",
       aiToolId: "codex",
       dangerous: true,
-    }, { projectId: "project-a", name: "Remote Gemini", aiToolId: "gemini", dangerous: false }]);
+    }, { projectId: "project-a", name: "Remote Antigravity", aiToolId: "agy", dangerous: false }]);
     expect(unavailableTool.status).toBe(400);
     expect(renamed.status).toBe(202);
     expect(renames).toEqual([{ id: "agent-1", name: "New name" }]);

@@ -15,22 +15,25 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Gemini terminal sessions", () => {
+describe("Antigravity terminal sessions", () => {
+  it("rejects a saved Gemini session instead of silently launching a shell", async () => {
+    await expect(buildSpawnArgs({ id: "legacy", aiToolId: "gemini" } as Agent, null, vi.fn())).rejects.toThrow("Gemini CLI was removed");
+  });
   it("launches Antigravity with its own approval flag and native Windows SSH command", async () => {
     const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous: true } as Agent;
     expect((await buildSpawnArgs(agent, null, vi.fn())).initCommand).toBe("agy --dangerously-skip-permissions");
     expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows" })).toBe("agy");
   });
   it.each([false, true])("builds interactive launches with dangerous=%s without provider recovery", async dangerous => {
-    const agent = { id: "gemini-a", aiToolId: "gemini", folder: "C:/workspace", dangerous, lastSessionId: "unrelated" } as Agent;
+    const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous, lastSessionId: "unrelated" } as Agent;
     const result = await buildSpawnArgs(agent, null, vi.fn());
-    expect(result).toMatchObject({ initCommand: dangerous ? "gemini --approval-mode=yolo" : "gemini", cwd: "C:/workspace", ssh: null });
+    expect(result).toMatchObject({ initCommand: dangerous ? "agy --dangerously-skip-permissions" : "agy", cwd: "C:/workspace", ssh: null });
     expect(invokeMock).not.toHaveBeenCalled();
   });
   it("uses the Windows SSH shim and leaves POSIX commands portable", () => {
-    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "windows" })).toBe("gemini.cmd");
-    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "posix" })).toBe("gemini");
-    expect(resolveRemoteToolCommand("gemini", "gemini", { remoteOs: "windows", preferCmdShim: false })).toBe("gemini");
+    expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows" })).toBe("agy");
+    expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "posix" })).toBe("agy");
+    expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows", preferCmdShim: false })).toBe("agy");
   });
 });
 

@@ -59,7 +59,7 @@ export function prepareLaunchCommand(command, raw, { shell, platform = process.p
   if (!options && extraArgs.length === 0) return command;
   const problem = launchOptionsProblem(options);
   if (problem) throw new Error("Invalid advanced launch settings: " + problem);
-  if (!["codex", "claude", "gemini", "agy", "qwen", "cline"].includes(toolId)) {
+  if (!["codex", "claude", "agy", "qwen", "cline"].includes(toolId)) {
     throw new Error("Advanced launch settings require an agent CLI.");
   }
   if (options?.executable) {
