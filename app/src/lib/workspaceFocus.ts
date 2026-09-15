@@ -5,6 +5,11 @@ export type FocusTarget = {
   focus: () => void;
 };
 
+export function canAutoFocusTerminal(doc: Pick<Document, 'querySelector' | 'activeElement'> = document) {
+  return !doc.querySelector('.modal-backdrop, [role="menu"], [role="listbox"]') &&
+    !doc.activeElement?.closest('input, select, textarea:not(.xterm-helper-textarea), button, [contenteditable="true"], [role="combobox"]');
+}
+
 export function activeAgentIdForGroupState(state: GroupState): string | null {
   if (!state.activeGroupId || !state.activePath) return null;
   const group = state.groups.find(

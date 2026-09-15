@@ -745,7 +745,10 @@ export class HookService {
     return this.#mergeSettings([{
       target: path.join(path.resolve(requested), "config.toml"),
       merge: before => mergeCodexMcp(before, this.mcpScriptPath),
-    }]);
+    }, ...["SKILL.md", "scripts/browser.py"].map(relative => ({
+      target: path.join(path.resolve(requested), "skills", "acedia-browser", relative),
+      merge: () => fs.readFileSync(new URL(`./acedia-browser-skill/${relative}`, import.meta.url), "utf8"),
+    }))]);
   }
 
   #mergeSettings(updates) {

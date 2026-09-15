@@ -1,0 +1,33 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it, vi } from 'vitest';
+import { BrowserExtensions } from './browser-extensions.mjs';
+const roots = [];
+const root = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-ext-')); roots.push(dir); return dir; };
+afterEach(() => roots.splice(0).forEach(dir => fs.rmSync(dir, { recursive: true, force: true })));
+const fixture = () => { const dir = root(); fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'Fixture', version: '1.0' })); return dir; };
+it('persists profile isolation and restores enabled extensions after restart', async () => {
+  const storage = root(), directory = fixture();
+  const apis = new Map();
+  const getSession = p => { if (!apis.has(p.id)) apis.set(p.id, { extensions: { loadExtension: vi.fn(async () => ({ id: 'fixture', name: 'Fixture', version: '1.0' })), removeExtension: vi.fn() } }); return apis.get(p.id); };
+  const service = new BrowserExtensions(storage, getSession), profile = { id: 'a' };
+  const [added] = await service.change(profile, 'add', { directory });
+  expect(added.status).toBe('loaded');
+  expect(await service.list({ id: 'b' })).toEqual([]);
+  await expect(service.change(profile, 'add', { directory })).rejects.toThrow('already');
+  expect((await new BrowserExtensions(storage, getSession).list(profile))[0].status).toBe('loaded');
+  expect((await service.change(profile, 'toggle', { id: added.id, enabled: false }))[0].status).toBe('disabled');
+  expect(getSession(profile).extensions.removeExtension).toHaveBeenCalledWith('fixture');
+  expect((await new BrowserExtensions(storage, getSession).list(profile))[0].status).toBe('disabled');
+  await expect(service.change({ id: 'b' }, 'remove', { id: added.id })).rejects.toThrow('not found');
+  expect(await service.change(profile, 'remove', { id: added.id })).toEqual([]);
+  expect(fs.existsSync(directory)).toBe(true);
+});
+it('keeps failed entries retryable and rejects invalid manifests', async () => {
+  const api = { loadExtension: vi.fn().mockRejectedValueOnce(new Error('unsupported')).mockResolvedValue({ id: 'ok', name: 'Fixture', version: '1.0' }) };
+  const service = new BrowserExtensions(root(), () => ({ extensions: api }));
+  expect((await service.change({ id: 'a' }, 'add', { directory: fixture() }))[0]).toMatchObject({ status: 'error', error: 'unsupported' });
+  expect((await service.list({ id: 'a' }))[0]).toMatchObject({ status: 'loaded', error: '' });
+  await expect(service.change({ id: 'a' }, 'add', { directory: root() })).rejects.toThrow();
+});

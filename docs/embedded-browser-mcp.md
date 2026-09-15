@@ -137,7 +137,7 @@ must already be ready.[^electron-main]
 
 The fixed tools are:
 
-* `browser_tabs`, `browser_open`, and `browser_navigate`;
+* `browser_tabs`, `browser_open`, `browser_show`, and `browser_navigate`;
 * `browser_snapshot` and `browser_screenshot`;
 * `browser_click` and `browser_type`;
 * `browser_upload_files`;
@@ -148,6 +148,21 @@ The fixed tools are:
 * `browser_attach_annotation`.[^browser-server]
 
 Arbitrary page JavaScript is intentionally not exposed as a tool.
+
+### Showing a browser beside chat (next EXE release)
+
+`browser_open` accepts `placement: "right"` to show a new page beside the owning
+conversation, or `"tab"` to show it in the conversation pane. Omitting placement
+keeps background automation unchanged. `browser_show` requires an existing `tabId`
+and defaults to `"right"`; it connects and reveals the same tab without navigation.
+A tab already separated into another pane in the same Screen keeps its placement.
+A tab sharing the conversation's leaf moves into a right-hand split once.
+
+The bundled `acedia-browser` skill is installed in the selected Codex account's
+`skills/` directory before local launch. Requests such as “우측에 브라우저 띄워줘”
+use this workflow. Its Python helper supports the authenticated local bridge when
+the current CLI has not discovered the MCP tools. The updated app must be running;
+installing the skill alone does not add the new show action to an older EXE.
 
 ## State-aware form automation
 

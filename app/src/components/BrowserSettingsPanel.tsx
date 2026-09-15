@@ -2,14 +2,16 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
 import { SettingLabel, SettingScope, settingTarget } from './SettingsSearch';
+import { BrowserExtensionsPanel } from './BrowserExtensionsPanel';
 
 export type BrowserPreferences = { revision: number; home: string; search: string; zoom: number; links: string; profiles: { id: string; label: string }[]; defaultProfile: string; restoreTabs: boolean };
 export function BrowserSettingsPanel() {
   const { text } = useAppLanguage();
   const [value, setValue] = useState<BrowserPreferences | null>(null);
+  const [savedProfiles, setSavedProfiles] = useState<BrowserPreferences['profiles']>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const load = () => { setBusy(true); void invoke<BrowserPreferences>('browser_preferences_get').then(next => { setValue(next); setMessage(''); })
+  const load = () => { setBusy(true); void invoke<BrowserPreferences>('browser_preferences_get').then(next => { setValue(next); setSavedProfiles(next.profiles); setMessage(''); })
     .catch(() => setMessage(text('설정을 불러오지 못했습니다.', 'Could not load settings.'))).finally(() => setBusy(false)); };
   useEffect(load, []);
   const row = (id: string, control: ReactNode, hint: string) => <label className="agent-settings-row terminal-settings-row" {...settingTarget(id)}>
@@ -34,7 +36,8 @@ export function BrowserSettingsPanel() {
       <button className="btn-secondary" style={{ marginTop: 12 }} disabled={value.profiles.length >= 32} onClick={() => setValue({ ...value, profiles: [...value.profiles, { id: crypto.randomUUID(), label: text('새 프로필', 'New profile') }] })}>{text('＋ 프로필 추가', '＋ Add profile')}</button>
       <p className="check-hint">{text('열린 탭이 있는 프로필을 제거하려면 해당 탭을 먼저 닫으세요. 변경 후 저장을 누르세요.', 'Close a profile’s open tabs before removing it. Save to apply your changes.')}</p>
     </div><button className="btn-primary" style={{ marginTop: 16 }} onClick={() => { setBusy(true); void invoke<BrowserPreferences>('browser_preferences_set', { patch: value, revision: value.revision })
-      .then(next => { setValue(next); setMessage(text('저장했습니다.', 'Saved.')); }).catch(() => setMessage(text('저장하지 못했습니다. 입력값을 확인하거나 다른 창의 변경을 다시 불러오세요.', 'Could not save. Check the values or reload changes from another window.'))).finally(() => setBusy(false)); }}>{text('저장', 'Save')}</button></fieldset>}
+      .then(next => { setValue(next); setSavedProfiles(next.profiles); setMessage(text('저장했습니다.', 'Saved.')); }).catch(() => setMessage(text('저장하지 못했습니다. 입력값을 확인하거나 다른 창의 변경을 다시 불러오세요.', 'Could not save. Check the values or reload changes from another window.'))).finally(() => setBusy(false)); }}>{text('저장', 'Save')}</button></fieldset>}
+    {savedProfiles.length > 0 && <BrowserExtensionsPanel profiles={savedProfiles}/>}
     <button className="btn-secondary" disabled={busy} style={{ marginTop: 12 }} onClick={load}>{text('다시 불러오기', 'Reload settings')}</button>
     {message && <p role="status">{message}</p>}
   </section>;

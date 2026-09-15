@@ -113,7 +113,7 @@ import {
 import { useAttentionState } from "./hooks/useAttentionState";
 import { useSessionLifecycleActions } from "./hooks/useSessionLifecycleActions";
 import { useNativeViewOcclusion } from "./hooks/useNativeViewOcclusion";
-import { scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
+import { canAutoFocusTerminal, scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
 import { isStandbySession, parseRememberedSessionIds, restoreStandbyEligibility } from "./lib/sessionStandby";
 import type { QuickOpenItem } from "./lib/quickOpen";
 import {
@@ -173,6 +173,7 @@ import { TopBar } from "./components/TopBar";
 import { TerminalArea } from "./components/TerminalArea";
 import { NewAgentModal } from "./components/NewAgentModal";
 import { NewProjectModal } from "./components/NewProjectModal";
+import { useRendererConfirmation } from "./hooks/useRendererConfirmation";
 import { DeleteSessionModal } from "./components/DeleteSessionModal";
 import { ToastContainer } from "./components/Toast";
 import {
@@ -2105,16 +2106,17 @@ function App() {
       getTarget: (agentId) => termsRef.current.get(agentId)?.term,
       requestFrame: window.requestAnimationFrame.bind(window),
       cancelFrame: window.cancelAnimationFrame.bind(window),
-      shouldFocus: () => !document.querySelector(".modal-backdrop") &&
-        !(document.activeElement instanceof HTMLElement &&
-          document.activeElement.closest('input, select, textarea:not(.xterm-helper-textarea), [contenteditable="true"]')),
+      shouldFocus: () => canAutoFocusTerminal(),
     });
   }, []);
 
   const settleSessionDeletionUi = useCallback(() => {
-    flushTransientInteractionState();
+    // The user may have opened another menu while PTY shutdown was pending.
+    // Only clear transient UI before confirmation, never after async cleanup.
     restoreWorkspaceFocus();
-  }, [flushTransientInteractionState, restoreWorkspaceFocus]);
+  }, [restoreWorkspaceFocus]);
+  const catalogConfirmation = useRendererConfirmation();
+  const deletingProjectsRef = useRef(new Set<string>());
 
   // ---- Group operations (delegated to lib/groupOps as pure functions)
 
@@ -2158,6 +2160,10 @@ function App() {
     applyGroupOp,
     beforeDeleteConfirm: flushTransientInteractionState,
     afterDeleteSettled: settleSessionDeletionUi,
+    onDeleteBlocked: () => { void catalogConfirmation.confirm({
+      title: text("삭제할 수 없습니다", "Cannot delete"), confirmLabel: text("확인", "OK"), hideCancel: true,
+      message: text("다른 작업창에서 사용 중인 세션입니다. 해당 창에서 먼저 비활성화해 주세요.", "This session is in use in another window. Deactivate it there first."),
+    }); },
   });
 
   const commitGroupState = useCallback((next: groupOps.GroupState) => {
@@ -2582,7 +2588,7 @@ function App() {
     );
   }, []);
 
-  const removeProjectFolder = useCallback((id: string) => {
+  const removeProjectFolder = useCallback(async (id: string) => {
     const folder = projectFoldersRef.current.find((item) => item.id === id);
     if (!folder) return;
     const childCount = projectsRef.current.filter(
@@ -2591,13 +2597,14 @@ function App() {
     const childLine = childCount
       ? text(`\n포함된 프로젝트 ${childCount}개는 미분류로 이동합니다.`, `\n${childCount} contained projects will be moved to Uncategorized.`)
       : "";
-    if (!window.confirm(text(`"${folder.name}" 폴더를 삭제할까요?${childLine}`, `Delete the “${folder.name}” folder?${childLine}`))) {
+    flushTransientInteractionState();
+    if (!await catalogConfirmation.confirm({ title: text("폴더 삭제", "Delete folder"), message: text(`"${folder.name}" 폴더를 삭제할까요?${childLine}`, `Delete the “${folder.name}” folder?${childLine}`) })) {
       return;
     }
     removedProjectFolderIdsRef.current.add(id);
     setProjectFolders((current) => current.filter((item) => item.id !== id));
     setProjects((current) => unassignProjectFolder(current, id));
-  }, [text]);
+  }, [text, catalogConfirmation.confirm, flushTransientInteractionState]);
 
   const reorderProjectFolder = useCallback(
     (draggedId: string, targetId: string, before: boolean) => {
@@ -2632,75 +2639,79 @@ function App() {
   const removeProject = useCallback(
     async (projectId: string) => {
       const project = projectsRef.current.find((p) => p.id === projectId);
-      if (!project) return;
-      const members = agentsRef.current.filter(
+      if (!project || deletingProjectsRef.current.has(projectId)) return;
+      let members = agentsRef.current.filter(
         (a) => a.projectId === projectId
       );
       const foreignMembers = members.filter((agent) =>
         detachedAgentIdsRef.current.has(agent.id)
       );
       if (foreignMembers.length > 0) {
-        window.alert(
-          text(`다른 작업창에서 사용 중인 세션 ${foreignMembers.length}개가 있습니다. 해당 창에서 세션을 닫거나 비활성화한 뒤 프로젝트를 삭제해 주세요.`, `${foreignMembers.length} sessions are in use in another window. Close or deactivate them there before deleting the project.`)
-        );
+        flushTransientInteractionState();
+        await catalogConfirmation.confirm({ title: text("삭제할 수 없습니다", "Cannot delete"), confirmLabel: text("확인", "OK"), hideCancel: true,
+          message: text(`다른 작업창에서 사용 중인 세션 ${foreignMembers.length}개가 있습니다. 해당 창에서 세션을 닫거나 비활성화한 뒤 프로젝트를 삭제해 주세요.`, `${foreignMembers.length} sessions are in use in another window. Close or deactivate them there before deleting the project.`) });
         return;
       }
       const sessionLine =
         members.length > 0
           ? text(`\n세션 ${members.length}개도 함께 삭제됩니다.`, `\n${members.length} sessions will also be deleted.`)
           : "";
-      const ok = window.confirm(
-        text(`"${project.name}" 프로젝트를 삭제할까요?${sessionLine}\n이 동작은 되돌릴 수 없습니다.`, `Delete the “${project.name}” project?${sessionLine}\nThis action cannot be undone.`)
-      );
-      if (!ok) return;
+      flushTransientInteractionState();
+      const ok = await catalogConfirmation.confirm({ title: text("프로젝트 삭제", "Delete project"), message: text(`"${project.name}" 프로젝트를 삭제할까요?${sessionLine}\n이 동작은 되돌릴 수 없습니다.`, `Delete the “${project.name}” project?${sessionLine}\nThis action cannot be undone.`)
+      });
+      if (!ok || deletingProjectsRef.current.has(projectId) || !projectsRef.current.some(p => p.id === projectId)) return;
+      members = agentsRef.current.filter(a => a.projectId === projectId);
+      if (members.some(a => detachedAgentIdsRef.current.has(a.id))) return;
+      deletingProjectsRef.current.add(projectId);
+      try {
+        for (const a of members) {
+          await invoke(
+            isElectronRuntime() ? "terminal_session_action" : "kill_pty",
+            isElectronRuntime()
+              ? { id: a.id, action: "close" }
+              : { id: a.id }
+          ).catch(() => {});
+          const entry = termsRef.current.get(a.id);
+          entry?.term.dispose();
+          termsRef.current.delete(a.id);
+          clearScrollback(a.id);
+        }
 
-      for (const a of members) {
-        await invoke(
-          isElectronRuntime() ? "terminal_session_action" : "kill_pty",
-          isElectronRuntime()
-            ? { id: a.id, action: "close" }
-            : { id: a.id }
-        ).catch(() => {});
-        const entry = termsRef.current.get(a.id);
-        entry?.term.dispose();
-        termsRef.current.delete(a.id);
-        clearScrollback(a.id);
-      }
-
-      const memberIds = new Set(members.map((m) => m.id));
-      removedProjectIdsRef.current.add(projectId);
-      for (const id of memberIds) {
-        removedAgentIdsRef.current.add(id);
-      }
-      setAgents((prev) => prev.filter((a) => !memberIds.has(a.id)));
-      for (const id of memberIds) {
-        applyGroupOp((s) => groupOps.removeAgentFromLayout(s, id));
-      }
-      // Also prune this project's doc and git-history tabs from every layout.
-      applyGroupOp((s) => {
-        let state = s;
-        for (const group of s.groups) {
-          for (const tabId of collectAgentIds(group.layout)) {
-            if (
-              (isDocTabId(tabId) &&
-                parseDocTabId(tabId)?.projectId === projectId) ||
-              (isGitHistoryTabId(tabId) &&
-                parseGitHistoryTabId(tabId)?.projectId === projectId)
-            ) {
-              state = groupOps.removeAgentFromLayout(state, tabId);
+        const memberIds = new Set(members.map((m) => m.id));
+        removedProjectIdsRef.current.add(projectId);
+        for (const id of memberIds) {
+          removedAgentIdsRef.current.add(id);
+        }
+        setAgents((prev) => prev.filter((a) => !memberIds.has(a.id)));
+        for (const id of memberIds) {
+          applyGroupOp((s) => groupOps.removeAgentFromLayout(s, id));
+        }
+        // Also prune this project's doc and git-history tabs from every layout.
+        applyGroupOp((s) => {
+          let state = s;
+          for (const group of s.groups) {
+            for (const tabId of collectAgentIds(group.layout)) {
+              if (
+                (isDocTabId(tabId) &&
+                  parseDocTabId(tabId)?.projectId === projectId) ||
+                (isGitHistoryTabId(tabId) &&
+                  parseGitHistoryTabId(tabId)?.projectId === projectId)
+              ) {
+                state = groupOps.removeAgentFromLayout(state, tabId);
+              }
             }
           }
+          return state;
+        });
+        setProjects((prev) => prev.filter((p) => p.id !== projectId));
+        if (activeProjectIdRef.current === projectId) {
+          setActiveProjectId(null);
+          setActiveGroupId(null);
+          setActivePath(null);
         }
-        return state;
-      });
-      setProjects((prev) => prev.filter((p) => p.id !== projectId));
-      if (activeProjectIdRef.current === projectId) {
-        setActiveProjectId(null);
-        setActiveGroupId(null);
-        setActivePath(null);
-      }
+      } finally { deletingProjectsRef.current.delete(projectId); restoreWorkspaceFocus(); }
     },
-    [applyGroupOp, text]
+    [applyGroupOp, text, catalogConfirmation.confirm, flushTransientInteractionState, restoreWorkspaceFocus]
   );
 
   const createAgent = useCallback(
@@ -3127,12 +3138,13 @@ function App() {
   );
 
   const showBrowserTab = useCallback(
-    (browserId: string, ownerAgentId: string | null, preferredPath?: Path) => {
+    (browserId: string, ownerAgentId: string | null, preferredPath?: Path, placement?: "right" | "tab") => {
       const tabId = makeBrowserTabId(browserId);
       if (ownerAgentId) {
         documentOwnerByTabRef.current.set(tabId, ownerAgentId);
       }
       applyGroupOp((state) => {
+        if (placement === "right" && ownerAgentId) return groupOps.showBrowserBeside(state, tabId, ownerAgentId);
         // Preserve a browser tab that the user deliberately moved to another
         // split; subsequent MCP actions should focus it, not move it back.
         for (const group of state.groups) {
@@ -3273,12 +3285,12 @@ function App() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    listen<{ browserId: string; agentId?: string | null }>(
+    listen<{ browserId: string; agentId?: string | null; placement?: "right" | "tab" }>(
       "document-browser:show-tab",
       (event) => {
         const browserId = event.payload?.browserId?.trim();
         if (!browserId) return;
-        showBrowserTab(browserId, event.payload.agentId?.trim() || null);
+        showBrowserTab(browserId, event.payload.agentId?.trim() || null, undefined, event.payload.placement);
       }
     ).then((remove) => {
       if (disposed) remove();
@@ -4162,6 +4174,10 @@ function App() {
           updateProvider={runtimeFlags?.update_provider ?? "github"}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+      {catalogConfirmation.pending && (
+        <DeleteSessionModal name="" {...catalogConfirmation.pending}
+          onConfirm={() => catalogConfirmation.settle(true)} onCancel={() => catalogConfirmation.settle(false)} />
       )}
       {pendingDeletion && (
         <DeleteSessionModal name={pendingDeletion.name}

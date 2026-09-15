@@ -32,6 +32,14 @@ export async function verifyBrowserSettings(window, records, integration) {
     const mcp = await integration({ agentId: 'browser-settings-fixture', action: 'open', body: { url: home, profileId } });
     assert.equal(mcp.tab.profileId, profileId);
     assert.equal(mcp.tab.profileLabel, 'Work');
+    await window.webContents.executeJavaScript(`window.browserShowEvents = []; window.stopBrowserShowEvents = window.multiAgentElectron.onEvent('document-browser:show-tab', event => window.browserShowEvents.push(event)); true;`);
+    const shown = await integration({ agentId: 'browser-settings-fixture', action: 'show', body: { tabId: mcp.tab.tabId, placement: 'right' } });
+    assert.equal(shown.ok, true);
+    const events = await window.webContents.executeJavaScript('window.stopBrowserShowEvents(); window.browserShowEvents');
+    assert.ok(events.some(e => e.browserId === mcp.tab.tabId && e.placement === 'right' && e.agentId === 'browser-settings-fixture'));
+    const invalid = await integration({ agentId: 'browser-settings-fixture', action: 'show', body: { placement: 'right' } });
+    assert.equal(invalid.httpStatus, 400);
+    console.log('BROWSER_SHOW_RIGHT_BRIDGE_OK');
     await call('document_browser_hub_close', { browserId: mcp.tab.browserId });
     await call('document_browser_hub_close', { browserId: isolated.browserId });
     console.log('BROWSER_SETTINGS_RUNTIME_OK');

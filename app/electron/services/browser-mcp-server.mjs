@@ -32,8 +32,13 @@ const tools = [
   },
   {
     name: "browser_open",
-    description: "Open a new visible tab in the session's shared Acedia browser. Uses the configured home page when URL is omitted.",
-    inputSchema: { type: "object", properties: { url: { type: "string" }, profileId: { type: "string", description: "Profile ID from browser_tabs. Omit to use the default profile." } }, additionalProperties: false },
+    description: "Open a tab in the session's Acedia browser. Set placement to right to show it beside the conversation, or tab to show it in the conversation pane. Otherwise opens in the background. Uses the configured home page when URL is omitted.",
+    inputSchema: { type: "object", properties: { url: { type: "string" }, placement: { type: "string", enum: ["right", "tab"] }, profileId: { type: "string", description: "Profile ID from browser_tabs. Omit to use the default profile." } }, additionalProperties: false },
+  },
+  {
+    name: "browser_show",
+    description: "Reveal and connect an existing Acedia browser tab beside the current conversation. Reuses the tab without navigating or creating a duplicate.",
+    inputSchema: { type: "object", properties: { tabId: { type: "string" }, placement: { type: "string", enum: ["right", "tab"], default: "right" } }, required: ["tabId"], additionalProperties: false },
   },
   {
     name: "browser_navigate",
@@ -191,6 +196,7 @@ async function callTool(name, args) {
   switch (name) {
     case "browser_tabs": return callBrowser("status", {}, "GET");
     case "browser_open": return callBrowser("open", body);
+    case "browser_show": return callBrowser("show", body);
     case "browser_navigate": return callBrowser("navigate", body);
     case "browser_snapshot": return callBrowser("snapshot", body);
     case "browser_screenshot": return callBrowser("screenshot", body);

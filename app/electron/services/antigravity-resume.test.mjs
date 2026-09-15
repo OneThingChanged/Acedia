@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { SessionService } from './session-service.mjs';
 import { HookService } from './hook-service.mjs';
 const { sessionEvent } = createRequire(import.meta.url)('./antigravity-statusline.cjs');
+const { assertInvokeRequest } = createRequire(import.meta.url)('../ipc-contract.cjs');
 const roots = [];
 const root = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-agy-resume-')); roots.push(dir); return dir; };
 afterEach(() => roots.splice(0).forEach(dir => fs.rmSync(dir, { recursive: true, force: true })));
@@ -18,9 +19,11 @@ it('persists independent session IDs in a shared folder and refuses latest-folde
     event: 'session-start', hook_event_name: 'AntigravitySession' })));
   const reopened = new SessionService(directory);
   for (const [agentId, expected] of [['a', first], ['b', second]]) {
-    expect(await reopened.resolveAntigravity({ agentId, folder: directory, directory })).toBe(expected);
+    const args = assertInvokeRequest('resolve_cli_session', { aiToolId: 'agy', agentId, folder: directory });
+    expect(await reopened.resolveAntigravity({ ...args, directory })).toBe(expected);
   }
-  expect(await reopened.resolveAntigravity({ agentId: 'new', folder: directory, directory })).toBeNull();
+  const fresh = assertInvokeRequest('resolve_cli_session', { aiToolId: 'agy', agentId: 'new', folder: directory });
+  expect(await reopened.resolveAntigravity({ ...fresh, directory })).toBeNull();
   fs.unlinkSync(path.join(directory, `${first}.db`));
   await expect(reopened.resolveAntigravity({ agentId: 'a', folder: directory, directory })).rejects.toThrow('unavailable');
   await expect(reopened.resolveAntigravity({ agentId: 'b', folder: path.join(directory, 'changed'), directory })).rejects.toThrow('폴더');

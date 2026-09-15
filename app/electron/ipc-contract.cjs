@@ -4,6 +4,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "accounts_removed", "codex_accounts_rename", "claude_accounts_rename", "codex_accounts_remove", "claude_accounts_remove",
   "browser_preferences_get",
   "browser_preferences_set",
+  "browser_extensions_list", "browser_extensions_change",
   "idle_preferences_get", "idle_preferences_set", "idle_view_update", "idle_session_suspend",
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
@@ -249,6 +250,16 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "browser_extensions_list":
+    case "browser_extensions_change":
+      if (typeof args.profileId !== "string" || !args.profileId || args.profileId.length > 128) throw new TypeError("Invalid browser profile");
+      if (command === "browser_extensions_change") {
+        if (!["add", "remove", "toggle"].includes(args.action)) throw new TypeError("Invalid extension action");
+        if (args.action === "add") assertPathString(args.directory, "extension directory");
+        else assertId(args);
+        if (args.action === "toggle" && typeof args.enabled !== "boolean") throw new TypeError("Invalid extension state");
+      }
+      break;
     case "codex_accounts_rename":
     case "claude_accounts_rename":
       if (typeof args.label !== "string" || !args.label.trim() || args.label.length > 80) throw new TypeError("Invalid account label");
@@ -273,7 +284,8 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "resolve_cli_session":
     case "relink_cli_session":
-      if (!["codex", "claude"].includes(args.aiToolId)) throw new TypeError("Invalid account provider");
+      if (!["codex", "claude"].includes(args.aiToolId)
+        && !(command === "resolve_cli_session" && args.aiToolId === "agy")) throw new TypeError("Invalid account provider");
       assertPathString(args.folder, "session folder", true);
       for (const key of ["codexAccountId", "claudeAccountId"]) {
         if (args[key] != null && (typeof args[key] !== "string" || (args[key] !== "default" && !SESSION_STORAGE_ID_RE.test(args[key])))) throw new TypeError("Invalid account id");

@@ -114,6 +114,8 @@ describe("Electron hook configuration", () => {
     expect(configured).toContain('command = "node"');
     expect(configured).toContain("enabled = false");
     expect(configured).not.toContain("[[hooks.");
+    expect(fs.readFileSync(path.join(home, 'skills/acedia-browser/SKILL.md'), 'utf8')).toContain('browser_show');
+    expect(fs.readFileSync(path.join(home, 'skills/acedia-browser/scripts/browser.py'), 'utf8')).toContain('MULTIAGENT_AGENT_ID');
     expect(await service.setupCodexHome(home)).toBe(false);
   });
 
@@ -251,6 +253,7 @@ describe("browser MCP stdio bridge", () => {
       });
       const names = response.result.tools.map((tool) => tool.name);
       expect(names).toEqual(expect.arrayContaining([
+        "browser_show",
         "browser_get_control",
         "browser_form_state",
         "browser_set_checked",
@@ -260,6 +263,7 @@ describe("browser MCP stdio bridge", () => {
         "browser_wait_for",
         "browser_upload_files",
       ]));
+      expect(response.result.tools.find(tool => tool.name === 'browser_open').inputSchema.properties.placement.enum).toContain('right');
     } finally {
       child.stdin.end();
       child.kill();

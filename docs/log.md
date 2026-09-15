@@ -2,6 +2,14 @@
 
 ## 2026-09-15
 
+* **1.8.1.16 source handoff**: Consolidated browser extensions/skill, Antigravity IPC validation and deletion-focus changes. Final full suite: 123 files / 737 tests passed; previous collector-distribution failures remain recorded without claiming a collector fix. TypeScript and OKF validation passed. [Source notes](release-1-8-1-16.md) explicitly separate Git delivery from pending EXE publication.
+
+* **Browser beside conversation (unreleased)**: Added `browser_show` and `browser_open` placement, with right-side splitting and existing-tab reuse. Bundled the `acedia-browser` skill and local helper for automatic installation in each launched Codex account home. Skill validation, helper transport, 84 focused tests, production frontend build and Electron show-event bridge passed.
+
+* **Browser extensions (unreleased)**: Added profile-specific unpacked extension registration, enable/disable/removal, automatic loading when a profile opens and retryable load errors. Real Electron content-script isolation and settings UI smoke passed. See [browser preferences](browser-preferences.md).
+
+* **Deletion input focus**: Removed remaining native project/folder deletion confirmations and blocked-deletion alerts. Guarded surviving-pane deferred focus and stopped late deletion cleanup from clearing newly opened menus. Electron cancellation/confirmation and real pointer/select checks passed. See [workspace interactions](workspace-interactions.md).
+
 * **1.8.1.15 release preparation**: Built and verified exact Antigravity conversation recovery in the EXE channel. Packaged bridge/lifecycle and source equality passed; see [release notes](release-1-8-1-15.md).
 
 * **Antigravity automatic recovery**: Capture exact conversation IDs through the authenticated status-line bridge and persist per-agent ownership. Resume with `--conversation`, reject old launch reports and never choose another folder conversation. Verified the live CLI recovery path and session-index persistence; see [integration](gemini-cli.md).

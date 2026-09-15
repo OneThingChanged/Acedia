@@ -245,6 +245,24 @@ export function splitWith(
   };
 }
 
+// Keep an already separated browser in its user-chosen pane. Move a browser
+// sharing the conversation's leaf into a new right-hand leaf exactly once.
+export function showBrowserBeside(state: GroupState, tabId: string, ownerId: string): GroupState {
+  const owner = groupOf(state.groups, ownerId);
+  if (!owner) return state;
+  const ownerPath = findLeafPath(owner.layout, ownerId)!;
+  const existing = groupOf(state.groups, tabId);
+  const existingPath = existing ? findLeafPath(existing.layout, tabId) : null;
+  if (existing && existingPath && existing.id === owner.id && !pathEq(existingPath, ownerPath)) {
+    return selectAgent(state, tabId);
+  }
+  if (preventsIncoming(owner, tabId) || preventsOutgoing(existing, owner.id)) return state;
+  let next = state;
+  if (existing && existingPath) next = closeDocTab({ ...state, activeGroupId: existing.id, activePath: existingPath }, existingPath, tabId);
+  next = selectAgent(next, ownerId);
+  return splitWith(next, tabId, "h", owner.projectId);
+}
+
 export function closeTab(
   state: GroupState,
   path: Path,

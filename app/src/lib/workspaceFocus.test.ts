@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GroupState } from "./groupOps";
 import {
   activeAgentIdForGroupState,
+  canAutoFocusTerminal,
   scheduleActiveTerminalFocus,
 } from "./workspaceFocus";
 
@@ -22,6 +23,14 @@ const state: GroupState = {
 };
 
 describe("workspace focus recovery", () => {
+  it("blocks deferred terminal focus while an input or native select owns focus", () => {
+    const doc = { querySelector: () => null, activeElement: { closest: () => ({}) } } as unknown as Document;
+    expect(canAutoFocusTerminal(doc)).toBe(false);
+    const empty = { querySelector: () => null, activeElement: null } as unknown as Document;
+    expect(canAutoFocusTerminal(empty)).toBe(true);
+    const overlay = { querySelector: () => ({}), activeElement: null } as unknown as Document;
+    expect(canAutoFocusTerminal(overlay)).toBe(false);
+  });
   it("does not steal focus when a form or modal opens during recovery", () => {
     const queued: FrameRequestCallback[] = [];
     const focus = vi.fn();

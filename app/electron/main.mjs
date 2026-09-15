@@ -6,6 +6,7 @@ import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
+import { BrowserExtensions } from "./services/browser-extensions.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { BrowserActivity } from "./services/browser-activity.mjs";
 import {
@@ -21,6 +22,7 @@ import {
   powerSaveBlocker,
   safeStorage,
   screen,
+  session,
   shell,
   Tray,
 } from "electron";
@@ -444,6 +446,7 @@ const powerPolicy = new WorkPowerPolicy(powerSaveBlocker);
 const bellTimes = new Map();
 const savedCommands = new SavedCommands(app.getPath("userData"));
 const browserSettings = browserPreferences(app.getPath("userData"));
+const browserExtensions = new BrowserExtensions(app.getPath("userData"), profile => session.fromPartition(profile.partition));
 const browserTabs = new BrowserTabStore(app.getPath("userData"));
 let restoringBrowserTabs = true;
 const browserActivity = new BrowserActivity({
@@ -1851,23 +1854,25 @@ function attachDocumentBrowserToWindow(record, targetWindow) {
   return true;
 }
 
-function showBrowserIntegrationTab(record, agentId) {
-  if (!record || record.view.webContents.isDestroyed()) return;
+function showBrowserIntegrationTab(record, agentId, placement = "tab") {
+  if (!record || record.view.webContents.isDestroyed()) return false;
   const targetWindow = browserParentWindowForAgent(agentId);
-  if (!targetWindow || !attachDocumentBrowserToWindow(record, targetWindow)) return;
+  if (!targetWindow || !attachDocumentBrowserToWindow(record, targetWindow)) return false;
   const normalizedAgentId = String(agentId || "").trim();
   if (normalizedAgentId) {
     record.agentId = normalizedAgentId;
     documentBrowserByAgent.set(normalizedAgentId, record.id);
   }
   const runtime = runtimeByWebContents.get(targetWindow.webContents.id);
-  if (!runtime?.workspace_window) return;
+  if (!runtime?.workspace_window) return false;
   sendEvent(targetWindow, "document-browser:show-tab", {
     browserId: record.id,
     agentId: String(agentId || "").trim() || null,
+    placement,
     url: sanitizeBrowserUrl(record.view.webContents.getURL() || record.previewUrl),
   });
   publishDocumentBrowserCatalog();
+  return true;
 }
 
 async function refreshDocumentBrowserPreview(record) {
@@ -1955,6 +1960,7 @@ async function createDocumentBrowserWindowNow({
   // decide which views are visible, including multiple browser panes in a split.
 
   const profile = browserProfile(browserSettings.get(), profileId);
+  await browserExtensions.list(profile);
   const preview = folder && relativePath
     ? await documentPreviewService.issue({ folder, relativePath })
     : { token: "", url: "", relativePath: relativePath || "" };
@@ -2135,6 +2141,8 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
   const normalizedAgentId = String(agentId || "").trim();
   if (!normalizedAgentId) return { ok: false, httpStatus: 400, error: "agent id is required" };
   if (action === "status") return browserIntegrationStatus(normalizedAgentId);
+  if ((action === "open" || action === "show") && body.placement != null && !["right", "tab"].includes(body.placement)) return { ok: false, httpStatus: 400, error: "Invalid browser placement" };
+  if (action === "show" && (typeof body.tabId !== "string" || !body.tabId.trim())) return { ok: false, httpStatus: 400, error: "tabId is required" };
   if (action === "open") {
     const target = new URL(String(body.url || browserSettings.get().home).trim());
     if (!isHttpUrl(target.href)) return { ok: false, httpStatus: 400, error: "HTTP 또는 HTTPS 주소만 열 수 있습니다." };
@@ -2148,7 +2156,9 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
       background: true,
     });
     const record = documentBrowserWindows.get(created.browserId);
-    if (reveal) showBrowserIntegrationTab(record, normalizedAgentId);
+    if (reveal || body.placement) {
+      if (!showBrowserIntegrationTab(record, normalizedAgentId, body.placement || "tab")) return { ok: false, httpStatus: 409, error: "The session workspace is not available. Open the session in Acedia.", tab: browserIntegrationTabSnapshot(record) };
+    }
     return { ok: true, tab: browserIntegrationTabSnapshot(record) };
   }
 
@@ -2156,6 +2166,10 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
   if (!record) return { ok: false, httpStatus: 404, error: "브라우저 탭을 찾을 수 없습니다." };
   if (reveal) showBrowserIntegrationTab(record, normalizedAgentId);
   switch (action) {
+    case "show": {
+      const shown = showBrowserIntegrationTab(record, normalizedAgentId, body.placement || "right");
+      return { ok: shown, ...(shown ? {} : { httpStatus: 409, error: "The session workspace is not available. Open the session in Acedia." }), tab: browserIntegrationTabSnapshot(record) };
+    }
     case "navigate": {
       const target = new URL(String(body.url || "").trim());
       if (!isHttpUrl(target.href)) return { ok: false, httpStatus: 400, error: "HTTP 또는 HTTPS 주소만 열 수 있습니다." };
@@ -4891,6 +4905,13 @@ async function invokeCommand(event, command, rawArgs) {
     }
     case "browser_preferences_get":
       return browserSettings.get();
+    case "browser_extensions_list":
+    case "browser_extensions_change": {
+      if (!runtimeByWebContents.get(event.sender.id)?.workspace_window) throw new Error("Open extension settings in a workspace window.");
+      const profile = browserProfile(browserSettings.get(), args.profileId);
+      return command === "browser_extensions_list" ? browserExtensions.list(profile)
+        : browserExtensions.change(profile, args.action, args);
+    }
     case "collector_status": return getCentralCollector().status();
     case "collector_pause": return getCentralCollector().pause();
     case "collector_enroll": return getCentralCollector().enroll(args.server, args.code, args.name);
@@ -4903,8 +4924,12 @@ async function invokeCommand(event, command, rawArgs) {
     ].filter(source => fs.existsSync(source.path));
     case "browser_preferences_set": {
       const patch = asObject(args.patch);
+      const previous = browserSettings.get();
       if (Array.isArray(patch.profiles) && [...documentBrowserWindows.values()].some(r => !patch.profiles.some(p => p.id === r.profileId))) throw new Error("Close a profile's browser tabs before removing it.");
       const next = browserSettings.set(patch, args.revision);
+      for (const profile of previous.profiles.filter(p => !next.profiles.some(n => n.id === p.id))) {
+        await browserExtensions.removeProfile(browserProfile(previous, profile.id));
+      }
       for (const record of documentBrowserWindows.values()) {
         if (!record.view.webContents.isDestroyed()) record.view.webContents.setZoomFactor(next.zoom / 100);
       }

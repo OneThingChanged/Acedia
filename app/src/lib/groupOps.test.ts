@@ -610,3 +610,21 @@ describe("doc tabs", () => {
     expect(findLeafPath(g.layout, DOC)).toEqual([1]);
   });
 });
+
+ describe('showBrowserBeside', () => {
+  it('splits a conversation on the right and reuses the separated browser', () => {
+    const initial = leafState(['a']);
+    const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a');
+    expect(findLeafPath(next.groups[0].layout, 'a')).toEqual([0]);
+    expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
+    const again = ops.showBrowserBeside(next, 'browser:fixture', 'a');
+    expect(again.groups[0].layout).toEqual(next.groups[0].layout);
+  });
+  it('moves a browser out of the conversation tab strip without losing other tabs', () => {
+    const initial = ops.openAsTab(leafState(['a']), 'browser:fixture');
+    const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a');
+    expect(findLeafPath(next.groups[0].layout, 'a')).toEqual([0]);
+    expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
+    expect(ops.showBrowserBeside(next, 'browser:other', 'missing')).toBe(next);
+  });
+ });

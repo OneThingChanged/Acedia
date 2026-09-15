@@ -99,15 +99,17 @@ worker to Codex Luna with max reasoning. The creation dialog keeps these
 choices editable, including explicitly disabling both workers; launch-only
 worker settings take effect when the PTY starts.[^app-shell]
 
-Permanent deletion uses an in-app confirmation modal instead of blocking
-`window.confirm()`, keeping form interaction within the renderer. MultiAgent
-first commits removal of context-menu and drag backdrops. Whether confirmation
-is cancelled or deletion finishes, transient interaction state is cleared again
-and the surviving active terminal is focused after its pane mounts, unless a
-modal or form control has taken focus. Confirmation rechecks session ownership
-and guards against duplicate deletion requests. Layout
-state and imperative refs advance together so deletion cannot leave keyboard or
-pointer input bound to the removed session.[^session-lifecycle-actions][^workspace-focus]
+Project, project-folder and session deletion use in-app confirmation instead
+of blocking native dialogs. Deletion-blocked notices also remain in the
+renderer. Context-menu and drag backdrops are cleared before confirmation;
+asynchronous PTY cleanup must not clear a new menu opened in the meantime.
+The surviving pane's deferred terminal focus and deletion focus restoration
+both respect open modals, menus, inputs, selects and editable controls.
+Confirmation rechecks ownership and guards against duplicate deletion requests.
+Layout state and imperative refs advance together. The Electron deletion smoke
+checks cancellation and confirmation with real pointer input and native select
+keyboard interaction, in addition to React lifecycle assertions.
+[^session-lifecycle-actions][^workspace-focus]
 
 ## Screens, tabs, and splits
 

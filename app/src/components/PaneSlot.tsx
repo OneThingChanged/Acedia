@@ -1,3 +1,4 @@
+import { canAutoFocusTerminal } from "../lib/workspaceFocus";
 import {
   useEffect,
   useRef,
@@ -612,7 +613,9 @@ export function PaneSlot({
     if (!active || !activeAgent) return;
     const entry = termsRef.current.get(activeAgent.id);
     if (!entry) return;
-    const raf = requestAnimationFrame(() => entry.term.focus());
+    const raf = requestAnimationFrame(() => {
+      if (canAutoFocusTerminal()) entry.term.focus();
+    });
     return () => cancelAnimationFrame(raf);
   }, [active, activeAgent?.id, termsRef]);
 

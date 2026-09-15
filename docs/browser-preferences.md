@@ -11,6 +11,9 @@ sources:
   - resource: ../app/electron/services/browser-profiles.mjs
   - resource: ../app/scripts/electron-browser-profiles-smoke.mjs
   - resource: ../app/electron/main.mjs
+  - resource: ../app/src/components/BrowserExtensionsPanel.tsx
+  - resource: ../app/electron/services/browser-extensions.mjs
+  - resource: ../app/scripts/electron-browser-extensions-smoke.mjs
 ---
 
 # 브라우저 설정과 프로필
@@ -47,6 +50,23 @@ sources:
 프로필로 백그라운드에 복원한다. 로컬 문서 미리보기와 인증 토큰·코드가 포함된 주소는
 저장하지 않는다. 네트워크 실패는 탭을 남겨 다시 불러올 수 있게 한다. 창을 닫고 트레이에
 남기는 동작과 앱을 완전히 재시작하는 동작은 구분한다.
+
+## 확장 프로그램 (1.8.1.16 소스 반영, EXE 미배포)
+
+설정 → 브라우저 → 브라우저 확장 프로그램에서 저장된 프로필을 선택하고
+`manifest.json`이 들어 있는 압축 해제된 확장 폴더를 추가한다. 추가·켜기/끄기·제거는
+즉시 저장된다. 기존 페이지는 새로고침해야 하며, 다음 실행에서 해당 프로필을 열 때
+확장이 자동 로드된다. 원본 폴더를 유지해야 한다. 로드 실패는 목록에 표시하며
+상태 새로고침 / 재시도로 다시 로드할 수 있다. 제거는 등록만 지우고 원본 파일은 유지한다.
+프로필을 제거하면 해당 프로필의 확장 등록과 로드도 정리한다.
+
+Chrome 웹스토어 직접 설치, CRX, 확장 도구모음 버튼·팝업은 지원하지 않는다.
+Electron의 일부 Chrome API만 제공하므로 개별 확장의 호환성 확인이 필요하다.
+신뢰하는 확장만 추가한다. 확장은 허용된 사이트의 내용을 읽거나 변경할 수 있다.
+확장 설정은 앱 프로필의 `browser-extensions.json`에 저장한다.
+
+검증: `node scripts/electron-browser-extensions-smoke.mjs` (`app/`). 실제 Electron에서
+콘텐츠 스크립트 실행, 프로필 격리, 켜기/끄기와 설정 UI의 추가·전환·제거를 확인한다.
 
 ## 검증
 

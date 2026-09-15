@@ -5,6 +5,7 @@ export type RuntimeCommand =
   | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"
   | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
   | "browser_preferences_get" | "browser_preferences_set"
+  | "browser_extensions_list" | "browser_extensions_change"
   | "codex_accounts_switch"
   | "claude_accounts_switch"
   | "codex_accounts_list"

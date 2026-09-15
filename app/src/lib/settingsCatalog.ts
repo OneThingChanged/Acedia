@@ -52,6 +52,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("commands.library", "commands", "저장 명령", "Saved commands", "action", "전역 프로젝트 실행 shell script global project"),
   entry("commands.startup", "commands", "프로젝트 시작 명령", "Project startup command", "projectStart", "자동 실행 startup script"),
   entry("browser.profiles", "browser", "브라우저 프로필", "Browser profiles", "saved", "로그인 쿠키 계정 cookies login account"),
+  entry("browser.extensions", "browser", "브라우저 확장 프로그램", "Browser extensions", "saved", "확장 설치 폴더 extension unpacked chrome manifest"),
   entry("browser.defaultProfile", "browser", "기본 브라우저 프로필", "Default browser profile", "saved", "새 탭 계정 new tab"),
   entry("browser.restore", "browser", "웹 탭 복원", "Restore web tabs", "saved", "재시작 restart restore"),
   entry("browser.home", "browser", "시작 페이지", "Home page", "saved", "새 탭 new tab homepage"),

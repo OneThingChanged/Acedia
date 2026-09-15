@@ -25,6 +25,7 @@ type SessionLifecycleOptions = {
   applyGroupOp: ApplyGroupOp;
   beforeDeleteConfirm?: () => void;
   afterDeleteSettled?: () => void;
+  onDeleteBlocked?: () => void;
 };
 
 function disposeTerminal(
@@ -48,6 +49,7 @@ export function useSessionLifecycleActions({
   applyGroupOp,
   beforeDeleteConfirm,
   afterDeleteSettled,
+  onDeleteBlocked,
 }: SessionLifecycleOptions) {
   const [pendingDeletion, setPendingDeletion] = useState<Agent | null>(null);
   const deletingRef = useRef(false);
@@ -155,16 +157,15 @@ export function useSessionLifecycleActions({
     );
     if (!agent) return;
     if (detachedAgentIdsRef.current.has(agentId)) {
-      window.alert(
-        "다른 작업창에서 사용 중인 세션입니다. 해당 창에서 먼저 비활성화해 주세요."
-      );
+      beforeDeleteConfirm?.();
+      onDeleteBlocked?.();
       return;
     }
     // Keep confirmation in the renderer so dismissal does not cross the
     // blocking native dialog focus boundary.
     beforeDeleteConfirm?.();
     setPendingDeletion(agent);
-  }, [agentsRef, beforeDeleteConfirm, detachedAgentIdsRef]);
+  }, [agentsRef, beforeDeleteConfirm, detachedAgentIdsRef, onDeleteBlocked]);
 
   const cancelDeletion = useCallback(() => {
     setPendingDeletion(null);

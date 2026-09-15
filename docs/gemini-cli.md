@@ -95,6 +95,12 @@ The external CLI's status-line schema remains an integration dependency.
 
 ## Automatic conversation recovery
 
+Source version **1.8.1.16** fixes `Invalid account provider` during Antigravity
+startup in 1.8.1.15. The shared IPC validator rejected `agy` before the resolver
+could run. Session resolution now accepts it; Codex/Claude account relinking
+remains unchanged. This is an Acedia validation error, not a Google login error.
+The EXE containing this fix has not yet been published.
+
 The status-line bridge reports `conversation_id` (or its `session_id` alias) to
 Acedia's authenticated local hook server. Each local Antigravity launch receives
 an independent launch identifier. Reports are accepted only for the live owning

@@ -5,6 +5,20 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("validates extension management requests", () => {
+    expect(contract.assertInvokeRequest('browser_extensions_list', { profileId: 'multiagent-browser' })).toBeTruthy();
+    expect(() => contract.assertInvokeRequest('browser_extensions_change', { profileId: 'multiagent-browser', action: 'unknown' })).toThrow();
+    expect(() => contract.assertInvokeRequest('browser_extensions_change', { profileId: 'multiagent-browser', action: 'toggle', id: 'fixture', enabled: 'yes' })).toThrow();
+    expect(() => contract.assertInvokeRequest('browser_extensions_list', {})).toThrow();
+  });
+  it("allows Antigravity session resolution without enabling account relinking", () => {
+    const args = { aiToolId: "agy", agentId: "session", folder: "project" };
+    expect(contract.assertInvokeRequest("resolve_cli_session", args)).toMatchObject(args);
+    expect(() => contract.assertInvokeRequest("relink_cli_session", args)).toThrow("Invalid account provider");
+    expect(() => contract.assertInvokeRequest("resolve_cli_session", { ...args, aiToolId: "unknown" })).toThrow("Invalid account provider");
+    expect(() => contract.assertInvokeRequest("resolve_cli_session", { ...args, folder: {} })).toThrow();
+  });
+
   it("allows Claude account management while rejecting malformed profile identifiers", () => {
     const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     expect(contract.assertInvokeRequest("claude_accounts_create", { label: "Work" })).toMatchObject({ label: "Work" });

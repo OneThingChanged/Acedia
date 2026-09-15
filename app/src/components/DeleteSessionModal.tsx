@@ -2,8 +2,12 @@ import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { useAppLanguage } from "../lib/appLanguage";
 import { sessionDeletionMessage } from "../lib/sessionLifecycle";
 
-export function DeleteSessionModal({ name, onConfirm, onCancel }: {
+export function DeleteSessionModal({ name, title, message, confirmLabel, hideCancel, onConfirm, onCancel }: {
   name: string;
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  hideCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -27,13 +31,13 @@ export function DeleteSessionModal({ name, onConfirm, onCancel }: {
     }}>
       <div className="modal" role="alertdialog" aria-modal="true"
         aria-labelledby="delete-session-title" aria-describedby="delete-session-message">
-        <h2 className="modal-title" id="delete-session-title">{text("세션 삭제", "Delete session")}</h2>
+        <h2 className="modal-title" id="delete-session-title">{title || text("세션 삭제", "Delete session")}</h2>
         <p className="modal-text" id="delete-session-message" style={{ whiteSpace: "pre-line" }}>
-          {text(sessionDeletionMessage(name), `Delete the “${name}” session?\nThis stops the running process and removes it from Acedia.\nThis cannot be undone.`)}
+          {message || text(sessionDeletionMessage(name), `Delete the “${name}” session?\nThis stops the running process and removes it from Acedia.\nThis cannot be undone.`)}
         </p>
         <div className="modal-actions">
-          <button className="btn-secondary" autoFocus onClick={onCancel}>{text("취소", "Cancel")}</button>
-          <button className="btn-primary" onClick={onConfirm}>{text("삭제", "Delete")}</button>
+          {!hideCancel && <button className="btn-secondary" autoFocus onClick={onCancel}>{text("취소", "Cancel")}</button>}
+          <button className="btn-primary" autoFocus={hideCancel} onClick={onConfirm}>{confirmLabel || text("삭제", "Delete")}</button>
         </div>
       </div>
     </div>
