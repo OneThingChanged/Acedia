@@ -3,6 +3,26 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const http = require('node:http');
+
+function sessionEvent(payload, env = process.env) {
+  const session = payload?.conversation_id || payload?.session_id;
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session || '') ||
+      !env.MULTIAGENT_AGENT_ID || !env.MULTIAGENT_AGY_LAUNCH_ID || !env.MULTIAGENT_TOKEN) return null;
+  return { id: env.MULTIAGENT_AGENT_ID, token: env.MULTIAGENT_TOKEN, event: 'session-start',
+    hook_event_name: 'AntigravitySession', session_id: session,
+    launch_id: env.MULTIAGENT_AGY_LAUNCH_ID, cwd: typeof payload.cwd === 'string' ? payload.cwd : null };
+}
+
+function reportSession(payload) {
+  const event = sessionEvent(payload);
+  const port = Number(process.env.MULTIAGENT_PORT);
+  if (!event || !Number.isInteger(port) || port < 1 || port > 65535) return;
+  const request = http.request({ hostname: '127.0.0.1', port, path: '/event', method: 'POST',
+    headers: { 'content-type': 'application/json' }, timeout: 1500 }, response => response.resume());
+  request.on('timeout', () => request.destroy()); request.on('error', () => {});
+  request.end(JSON.stringify(event));
+}
 
 function sanitizeQuota(payload, now = Date.now()) {
   const quota = {};
@@ -24,7 +44,9 @@ if (require.main === module) {
   process.stdin.on('end', () => {
     const directory = __dirname;
     try {
-      const snapshot = sanitizeQuota(JSON.parse(input));
+      const payload = JSON.parse(input);
+      reportSession(payload);
+      const snapshot = sanitizeQuota(payload);
       const temporary = path.join(directory, `quota-${process.pid}.tmp`);
       try {
         fs.writeFileSync(temporary, JSON.stringify(snapshot), { mode: 0o600 });
@@ -42,4 +64,4 @@ if (require.main === module) {
     } catch { /* Preserve a functioning CLI even if a custom display fails. */ }
   });
 }
-module.exports = { sanitizeQuota };
+module.exports = { sanitizeQuota, sessionEvent };

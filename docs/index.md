@@ -74,3 +74,5 @@ configuration that supports it.
 * [Acedia 1.8.1.13](release-1-8-1-13.md) - Gemini CLI removal and Antigravity CLI retention.
 
 * [Acedia 1.8.1.14](release-1-8-1-14.md) - Antigravity quota collection and Gemini five-hour/weekly status-bar display.
+
+* [Acedia 1.8.1.15](release-1-8-1-15.md) - Exact Antigravity conversation recovery per session.

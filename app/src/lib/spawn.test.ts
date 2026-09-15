@@ -16,6 +16,25 @@ beforeEach(() => {
 });
 
 describe("Antigravity terminal sessions", () => {
+  it("resumes only the resolved conversation and propagates missing-session errors", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous: true } as Agent;
+    invokeMock.mockResolvedValue(id);
+    const save = vi.fn();
+    expect((await buildSpawnArgs(agent, null, save)).initCommand).toBe(`agy --conversation ${id} --dangerously-skip-permissions`);
+    expect(save).toHaveBeenCalledWith(agent.id, id);
+    invokeMock.mockRejectedValue(new Error("Saved Antigravity conversation is unavailable"));
+    await expect(buildSpawnArgs(agent, null, save)).rejects.toThrow("unavailable");
+  });
+  it("prefers a pinned conversation and rejects unsafe resolved IDs", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const agent = { id: "agy-a", aiToolId: "agy", lastSessionId: "old", folder: "C:/workspace" } as Agent;
+    invokeMock.mockResolvedValue(id);
+    await buildSpawnArgs(agent, { "agy-a": id }, vi.fn());
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ preferredSessionId: id }));
+    invokeMock.mockResolvedValue("x; echo unsafe");
+    await expect(buildSpawnArgs(agent, null, vi.fn())).rejects.toThrow("Invalid Antigravity");
+  });
   it("rejects a saved Gemini session instead of silently launching a shell", async () => {
     await expect(buildSpawnArgs({ id: "legacy", aiToolId: "gemini" } as Agent, null, vi.fn())).rejects.toThrow("Gemini CLI was removed");
   });
@@ -24,11 +43,11 @@ describe("Antigravity terminal sessions", () => {
     expect((await buildSpawnArgs(agent, null, vi.fn())).initCommand).toBe("agy --dangerously-skip-permissions");
     expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows" })).toBe("agy");
   });
-  it.each([false, true])("builds interactive launches with dangerous=%s without provider recovery", async dangerous => {
-    const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous, lastSessionId: "unrelated" } as Agent;
+  it.each([false, true])("starts new conversations with dangerous=%s when no owned ID exists", async dangerous => {
+    const agent = { id: "agy-a", aiToolId: "agy", folder: "C:/workspace", dangerous } as Agent;
     const result = await buildSpawnArgs(agent, null, vi.fn());
     expect(result).toMatchObject({ initCommand: dangerous ? "agy --dangerously-skip-permissions" : "agy", cwd: "C:/workspace", ssh: null });
-    expect(invokeMock).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ aiToolId: "agy", agentId: "agy-a", preferredSessionId: null }));
   });
   it("uses the Windows SSH shim and leaves POSIX commands portable", () => {
     expect(resolveRemoteToolCommand("agy", "agy", { remoteOs: "windows" })).toBe("agy");

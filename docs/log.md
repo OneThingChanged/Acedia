@@ -2,6 +2,10 @@
 
 ## 2026-09-15
 
+* **1.8.1.15 release preparation**: Built and verified exact Antigravity conversation recovery in the EXE channel. Packaged bridge/lifecycle and source equality passed; see [release notes](release-1-8-1-15.md).
+
+* **Antigravity automatic recovery**: Capture exact conversation IDs through the authenticated status-line bridge and persist per-agent ownership. Resume with `--conversation`, reject old launch reports and never choose another folder conversation. Verified the live CLI recovery path and session-index persistence; see [integration](gemini-cli.md).
+
 * **1.8.1.14 release preparation**: Documented Antigravity quota setup and refresh limits; verified EXE build, packaged bridge/lifecycle and packaged collector/renderer equality. See [release notes](release-1-8-1-14.md).
 
 * **Antigravity quotas**: Connected official CLI status-line quota snapshots to desktop and Remote usage summaries. Added Gemini five-hour/weekly status-bar display, stale-data messaging and preservation of custom status-line commands. Verified real local quota receipt and Electron UI; see [Antigravity integration](gemini-cli.md).

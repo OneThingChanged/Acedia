@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { prepareLaunchCommand, mergeLaunchEnvironment } from "./agent-launch.mjs";
 import { selectedAccountId } from "./provider-accounts.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
@@ -145,6 +146,7 @@ export function createTerminalLauncher({
         ? new CodexScrollbackFilter(ptyRows, ptyCols)
         : new PassThroughTerminalFilter();
     let processHandle;
+    const agyLaunchId = !ssh && aiToolId === "agy" ? randomUUID() : "";
     try {
       processHandle = spawnProcess(executable, shellArgs, {
         name: "xterm-256color",
@@ -156,6 +158,7 @@ export function createTerminalLauncher({
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           MULTIAGENT_AGENT_ID: id,
+          MULTIAGENT_AGY_LAUNCH_ID: agyLaunchId,
           MULTIAGENT_PORT: String(hookService.port || ""),
           MULTIAGENT_TOKEN: hookService.token || "",
           MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath,
@@ -169,6 +172,7 @@ export function createTerminalLauncher({
     }
     const entry = {
       id,
+      agyLaunchId,
       name: asString(args.name).trim() || id,
       process: processHandle,
       codexAccountId: !ssh && aiToolId === "codex" ? accountId : null,

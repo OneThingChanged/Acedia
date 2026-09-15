@@ -46,10 +46,10 @@ environment variables. Google credentials remain excluded from persisted launch
 options. Local sessions use `/quit` for graceful shutdown, and inherited
 `NO_COLOR` is removed when creating the PTY.
 
-The integration is terminal-only: Acedia does not capture Antigravity hooks,
-automatically configure browser MCP, index chat history, manage accounts or
-collect token usage. Account quotas are collected as described below. Restarting
-starts a new conversation unless an explicit resume argument is supplied.
+The integration uses the terminal and official status-line metadata. Acedia does
+not yet capture work-state hooks, automatically configure browser MCP, index
+chat history, manage accounts or collect token usage. Account quotas and exact
+conversation recovery are supported as described below.
 
 ## Removed Gemini CLI integration
 
@@ -92,3 +92,31 @@ sessions do not install a bridge or contribute local account quotas.
 Verified with installed Antigravity 1.2.2 and a real signed-in account without a
 model request, plus parser/persistence tests and Electron status-bar UI smoke.
 The external CLI's status-line schema remains an integration dependency.
+
+## Automatic conversation recovery
+
+The status-line bridge reports `conversation_id` (or its `session_id` alias) to
+Acedia's authenticated local hook server. Each local Antigravity launch receives
+an independent launch identifier. Reports are accepted only for the live owning
+PTY; repeated IDs are deduplicated, and reports from an old launch are rejected.
+Only session identity and the workspace path are used; transcript contents are
+not collected for recovery.
+
+Acedia persists the ID in its per-agent session index and renderer state. On
+restart it passes `agy --conversation <ID>`. Agents sharing one folder retain
+independent IDs. A pin takes precedence. Recovery never uses `--continue` or
+falls back to the most recent conversation in a folder. Invalid IDs, missing
+conversation databases and changed indexed workspaces stop the launch with an
+error. Conflicting advanced conversation/continue flags must be removed when
+automatic recovery is active.
+
+An old session without a captured ID starts fresh. To keep an older conversation,
+select it with Antigravity's `/resume`; once its identity is reported, later
+restarts recover that exact conversation. SSH and automatic idle suspension are
+outside this integration. The local conversation database must remain available,
+and the CLI remains responsible for validating the signed-in account.
+
+Verified with two agents sharing a folder, persisted-index reopening, old-launch
+rejection and an actual Antigravity 1.2.2 `--conversation` startup. The live check
+captured the same ID and resolved it after reopening Acedia's index without
+sending a model prompt.

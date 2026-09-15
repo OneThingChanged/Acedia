@@ -421,6 +421,7 @@ export class HookService {
     sendEvent,
     sessionService,
     onHook = null,
+    validateAntigravitySession = () => false,
     integrationProvider = null,
     activateAgent = null,
     writeAgentInput = null,
@@ -433,6 +434,8 @@ export class HookService {
     this.sendEvent = sendEvent;
     this.sessionService = sessionService;
     this.onHook = onHook;
+    this.validateAntigravitySession = validateAntigravitySession;
+    this.antigravitySessions = new Map();
     this.integrationProvider = integrationProvider;
     this.activateAgent = activateAgent;
     this.writeAgentInput = writeAgentInput;
@@ -640,6 +643,15 @@ export class HookService {
       if (payload?.token !== this.token) {
         response.writeHead(401).end();
         return;
+      }
+      if (payload.hook_event_name === "AntigravitySession") {
+        if (payload.event !== "session-start" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(payload.session_id || "") ||
+            !this.validateAntigravitySession(payload)) { response.writeHead(400).end(); return; }
+        const key = `${payload.launch_id}:${payload.session_id}`;
+        if (this.antigravitySessions.get(payload.id) === key) { response.writeHead(200).end("ok"); return; }
+        this.antigravitySessions.set(payload.id, key);
+        // This event links identity only; do not index Google transcripts as Codex.
+        payload.transcript_path = null;
       }
       const event = {
         id: String(payload.id || ""),

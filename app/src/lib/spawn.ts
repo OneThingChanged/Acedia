@@ -167,6 +167,20 @@ export async function buildSpawnArgs(
     // Cline keeps its own session store; resume the latest CLI session for this
     // project folder via `cline --id <id>` (queried from `cline history`, no
     // hooks required). Local only — the history query runs on this machine.
+    if (agent.aiToolId === "agy" && !sshHost) {
+      const sessionId = await invoke<string | null>("resolve_cli_session", {
+        aiToolId: "agy", agentId: agent.id, folder: agent.folder,
+        preferredSessionId: sessionPins?.[agent.id] ?? agent.lastSessionId ?? null,
+      });
+      if (sessionId) {
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(sessionId)) throw new Error("Invalid Antigravity conversation ID.");
+        if (launchOptions?.args?.some(arg => /^(--conversation|--continue|-c)(=|$)/.test(arg))) {
+          throw new Error("자동 복원과 고급 실행의 conversation/continue 옵션이 충돌합니다. 고급 실행의 복원 옵션을 제거하세요.");
+        }
+        cmd += ` --conversation ${sessionId}`;
+        if (agent.lastSessionId !== sessionId) setAgentSessionId(agent.id, sessionId);
+      }
+    }
     if (agent.aiToolId === "cline" && !sshHost && agent.folder) {
       try {
         const clineSession = await invoke<string | null>(

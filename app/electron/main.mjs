@@ -555,6 +555,10 @@ function publishAgentHookEvent(eventName, payload) {
 
 const hookService = new HookService({
   baseDir: hookBaseDir,
+  validateAntigravitySession: payload => {
+    const entry = ptys.get(payload.id);
+    return entry?.aiToolId === "agy" && !entry.ssh && !!entry.agyLaunchId && entry.agyLaunchId === payload.launch_id;
+  },
   integrationProvider: () => miraControlSnapshot(),
   activateAgent: (agentId) => activateMiraControlAgent(agentId),
   writeAgentInput: (request) => writeMiraControlAgentInput(request),
@@ -5427,6 +5431,9 @@ async function invokeCommand(event, command, rawArgs) {
       return claudeAccounts.beginLogin(args.accountId);
     case "claude_accounts_cancel_login": claudeAccounts.cancelLogin({ accountId: args.accountId }); return null;
     case "resolve_cli_session": {
+      if (args.aiToolId === "agy") return sessionService.resolveAntigravity({
+        agentId: args.agentId, folder: args.folder, preferredSessionId: args.preferredSessionId,
+      });
       const previousBinding = accountBindings.get(args.agentId);
       if (accountSwitches.has(args.agentId) || (previousBinding &&
           (previousBinding.toolId !== args.aiToolId || previousBinding.accountId !== selectedAccountId(args)))) {

@@ -125,6 +125,7 @@ export class SessionService {
     this.indexPath = path.join(storageDir, "electron-session-index.json");
     this.catalogPath = path.join(storageDir, "session-storage-catalog.json");
     this.notes = new Map();
+    this.notesPersistChain = Promise.resolve();
     this.catalog = new Map();
     this.catalogUpdatedAt = 0;
     this.catalogScannedTools = new Set();
@@ -147,11 +148,15 @@ export class SessionService {
   }
 
   async persistNotes() {
-    await fsPromises.mkdir(this.storageDir, { recursive: true });
-    const body = JSON.stringify(Object.fromEntries(this.notes), null, 2);
-    const temp = `${this.indexPath}.${process.pid}.tmp`;
-    await fsPromises.writeFile(temp, body, "utf8");
-    await fsPromises.rename(temp, this.indexPath);
+    const write = async () => {
+      await fsPromises.mkdir(this.storageDir, { recursive: true });
+      const body = JSON.stringify(Object.fromEntries(this.notes), null, 2);
+      const temp = `${this.indexPath}.${process.pid}.tmp`;
+      await fsPromises.writeFile(temp, body, "utf8");
+      await fsPromises.rename(temp, this.indexPath);
+    };
+    this.notesPersistChain = this.notesPersistChain.catch(() => {}).then(write);
+    return this.notesPersistChain;
   }
 
   loadCatalog() {
@@ -252,7 +257,7 @@ export class SessionService {
     return true;
   }
 
-  async noteHook({ id, event, session_id, transcript_path, cwd }) {
+  async noteHook({ id, event, session_id, transcript_path, cwd, hook_event_name }) {
     await this.catalogHookTranscript({
       event,
       session_id,
@@ -261,6 +266,7 @@ export class SessionService {
     }).catch(() => {});
     if (!id || !session_id || event !== "session-start") return;
     this.notes.set(id, {
+      ...(hook_event_name === "AntigravitySession" ? { provider: "agy" } : {}),
       sessionId: session_id,
       transcriptPath: transcript_path || null,
       cwd: cwd || null,
@@ -380,6 +386,20 @@ export class SessionService {
     const match = entries.find(entry => entry.sessionId === preferredSessionId && sameFolder(entry.cwd, folder) && isInsideRoot(entry.transcriptPath, transcriptRoot));
     if (!match) return null;
     try { const stat = await fsPromises.stat(match.transcriptPath); return stat.isFile() && stat.size > 0 ? match.sessionId : null; } catch { return null; }
+  }
+
+  async resolveAntigravity({ agentId, folder, preferredSessionId, directory = path.join(os.homedir(), ".gemini", "antigravity-cli", "conversations") }) {
+    const note = this.notes.get(agentId);
+    const owned = note?.provider === "agy" ? note : null;
+    const candidate = preferredSessionId || owned?.sessionId;
+    if (!candidate) return null;
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(candidate)) throw new Error("Antigravity 대화 ID가 올바르지 않습니다. Invalid Antigravity conversation ID.");
+    if (owned?.sessionId === candidate && owned.cwd && folder && !sameFolder(owned.cwd, folder)) {
+      throw new Error("Antigravity 대화의 작업 폴더가 변경되었습니다. 새 세션을 만들거나 기존 폴더를 복원하세요.");
+    }
+    const file = path.join(directory, `${candidate}.db`);
+    try { if (fs.statSync(file).isFile() && fs.statSync(file).size > 0) return candidate; } catch {}
+    throw new Error("저장된 Antigravity 대화를 찾을 수 없습니다. 대화 파일과 로그인 계정을 확인하세요. Saved Antigravity conversation is unavailable.");
   }
 
   async resolve({
