@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { readAntigravityQuota } from "./antigravity-usage.mjs";
 import { baselineCost, PRICE_BASIS } from "../usage-collector/pricing.mjs";
 import os from "node:os";
 import path from "node:path";
@@ -143,6 +144,8 @@ function usageHistorySelection(selection, now) {
 
 export class UsageService {
   constructor(databasePath, sessionService, options = {}) {
+    this.antigravityQuotaFile = options.antigravityQuotaFile ?? null;
+    this.antigravityQuotaUpdatedAt = 0;
     this.databasePath = databasePath;
     this.sessionService = sessionService;
     this.catalog = { projects: [], agents: [] };
@@ -844,7 +847,30 @@ export class UsageService {
     return this.rateLimitRefresh;
   }
 
+  syncAntigravityQuota() {
+    if (!this.antigravityQuotaFile) return;
+    const result = readAntigravityQuota(this.antigravityQuotaFile);
+    if (!result) {
+      if (this.accountRefresh.has("agy:default")) this.accountRefresh.set("agy:default", { status: "unavailable", checkedAt: Date.now() });
+      return;
+    }
+    this.accountRefresh.set("agy:default", { status: result.status, checkedAt: result.updatedAt });
+    if (result.updatedAt === this.antigravityQuotaUpdatedAt) return;
+    const db = this.db();
+    db.exec("SAVEPOINT agy_quota");
+    try {
+      db.prepare("DELETE FROM usage_rate_limits WHERE limit_id LIKE 'agy:%'").run();
+      for (const snapshot of result.snapshots) this.writeRateLimitSnapshot(snapshot);
+      db.exec("RELEASE agy_quota");
+      this.antigravityQuotaUpdatedAt = result.updatedAt;
+    } catch (error) { db.exec("ROLLBACK TO agy_quota; RELEASE agy_quota"); throw error; }
+  }
+
   usageProfile(limitId) {
+    if (limitId === "agy" || limitId.startsWith("agy:")) return {
+      key: "agy:default", provider: "agy", id: "default", label: "Antigravity", registered: true,
+      current: true, archived: false, refresh: this.accountRefresh.get("agy:default"),
+    };
     const match = /^(codex|claude)(?::([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}))?(?::|$)/.exec(limitId);
     if (!match) return null;
     if (match[1] === "codex" && limitId !== "codex" && !match[2]) return null;
@@ -864,8 +890,9 @@ export class UsageService {
   }
 
   setProfileVisibility(profileKey, hidden) {
-    if (typeof profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
+    if (typeof profileKey !== "string" || !/^(codex|claude|agy):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
     const [provider, accountId] = profileKey.split(":");
+    if (provider === "agy" && accountId !== "default") throw new TypeError("Unknown usage profile");
     const known = accountId === "default" || this.accountProfiles?.(provider)?.some(account => account.id === accountId) || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
     if (!known) throw new TypeError("Unknown usage profile");
     this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profileKey, Number(hidden));
@@ -873,6 +900,7 @@ export class UsageService {
   }
 
   rateLimitSummary() {
+    this.syncAntigravityQuota();
     const visibility = new Map(this.db().prepare("SELECT profile_key, hidden FROM usage_profile_visibility").all().map(row => [row.profile_key, !!row.hidden]));
     const profileFor = limitId => {
       const profile = this.usageProfile(limitId);
@@ -882,7 +910,7 @@ export class UsageService {
     const rows = this.db().prepare(`SELECT * FROM usage_rate_limits
       WHERE updated_at >= ? AND limit_id NOT LIKE 'codex\\_%' ESCAPE '\\'
       ORDER BY
-      CASE limit_id WHEN 'codex' THEN 0 WHEN 'claude' THEN 1 ELSE 2 END,
+      CASE limit_id WHEN 'codex' THEN 0 WHEN 'claude' THEN 1 WHEN 'agy:gemini' THEN 2 ELSE 3 END,
       updated_at DESC`).all(freshAfter);
     const rateWindow = (row, prefix) => row[`${prefix}_used_percent`] == null ? null : ({
       usedPercent: Number(row[`${prefix}_used_percent`]),
@@ -914,7 +942,7 @@ export class UsageService {
       const profile = profileFor(`${provider}:${account.id}`);
       if (profile) profiles.set(profile.key, profile);
     }
-    for (const provider of ["codex", "claude"]) {
+    for (const provider of ["codex", "claude", "agy"]) {
       if (!this.accountRefresh.has(`${provider}:default`)) continue;
       const profile = profileFor(provider);
       profiles.set(profile.key, profile);

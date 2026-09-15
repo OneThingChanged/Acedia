@@ -150,7 +150,8 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
     </label>}
     {profile && !profile.registered && <p className="property-note">{text("등록된 계정이 없는 저장된 한도입니다.", "Stored quota for an account no longer registered.")}</p>}
     {profile?.registered && (refreshing || profile.refresh) && <p className="usage-account-refresh-state" data-state={refreshing ? "refreshing" : profile.refresh?.status}>
-      {refreshing ? text("최신 한도 조회 중…", "Checking latest quota…")
+      {profile.provider === "agy" ? (profile.refresh?.status === "success" ? text("Antigravity CLI에서 받은 한도입니다.", "Quota received from Antigravity CLI.") : text("마지막으로 수신한 한도입니다. Antigravity 세션에서 /usage를 실행해 갱신하세요.", "Last received quota. Run /usage in an Antigravity session to update it."))
+        : refreshing ? text("최신 한도 조회 중…", "Checking latest quota…")
         : profile.refresh?.status === "success" ? text("최신 한도 조회 완료", "Latest quota retrieved")
         : profile.refresh?.status === "login_required" ? text("로그인이 필요합니다. 설정 → 에이전트에서 다시 로그인하세요.", "Sign in again in Settings → Agents.")
         : profile.refresh?.status === "timeout" ? text("조회 시간이 초과되었습니다. 다시 새로고침하세요.", "The request timed out. Refresh to retry.")
@@ -178,7 +179,7 @@ export function UsageStatusBar({
   projects: Project[];
   onSelectProject: (projectId: string) => void;
 }) {
-  const { text } = useAppLanguage();
+  const { text, language } = useAppLanguage();
   const [settings, setSettings] = useState(loadStatusBar);
   useEffect(() => subscribeStatusBar(setSettings), []);
   const [summary, setSummary] = useState<UsageRateLimitSummary | null>(null);
@@ -296,11 +297,17 @@ export function UsageStatusBar({
                       {formatUsagePercent(displayUsagePercent(window.usedPercent, settings.display))} {settings.display === "used" ? text("사용", "used") : text("남음", "left")}
                     </b>
                     <span className="usage-status-limit-meta">
-                      {shortName || formatResetShort(window.resetsAt, now)}
+                      {provider.key === "agy" ? `${shortName} · ${formatUsageWindow(window.windowMinutes, language)}` : shortName || formatResetShort(window.resetsAt, now)}
                     </span>
+                    {provider.key === "agy" && limit.primary && limit.secondary && <>
+                      <b className={`usage-tone-${usageTone(limit.secondary.usedPercent)}`}>
+                        {formatUsagePercent(displayUsagePercent(limit.secondary.usedPercent, settings.display))} {settings.display === "used" ? text("사용", "used") : text("남음", "left")}
+                      </b>
+                      <span className="usage-status-limit-meta">{formatUsageWindow(limit.secondary.windowMinutes, language)}</span>
+                    </>}
                   </span>
                 );
-              })}</> : <strong>{text("에이전트 사용량", "Agent usage")}</strong>}
+              })}{provider.key === "agy" && provider.profile?.refresh?.status !== "success" && <span className="usage-status-pending">{text("마지막 수신", "Last received")}</span>}</> : <strong>{text("에이전트 사용량", "Agent usage")}</strong>}
               {statusText && <span className="usage-status-pending">{statusText}</span>}
               <span className="usage-status-chevron" aria-hidden="true">⌃</span>
             </button>

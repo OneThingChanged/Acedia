@@ -71,6 +71,7 @@ import {
   RemoteDashboardService,
   TunnelService,
 } from "./services/web-services.mjs";
+import { installAntigravityStatusline, antigravityQuotaPath } from "./services/antigravity-usage.mjs";
 import { UsageService } from "./services/usage-service.mjs";
 import { fetchCodexUsage } from "./services/codex-usage.mjs";
 import { DiagnosticsService } from "./services/diagnostics-service.mjs";
@@ -743,7 +744,7 @@ function writeMiraControlAgentInput({
   };
 }
 
-const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService);
+const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService, { antigravityQuotaFile: antigravityQuotaPath() });
 let centralCollector = null;
 function getCentralCollector() {
   const isolated = !app.isPackaged || userDataOverride || bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;
@@ -2978,6 +2979,10 @@ const spawnPty = createTerminalLauncher({
   hookService,
   ensureBrowserIntegrationReady,
   waitForHooks: () => hookReady?.catch(() => {}),
+  setupAntigravityUsage: () => {
+    try { installAntigravityStatusline(); }
+    catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
+  },
   accountsForTool,
   accountBindings,
   accountSwitches,

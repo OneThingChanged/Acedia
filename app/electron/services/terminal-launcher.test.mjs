@@ -62,6 +62,12 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it.each([false, true])("installs the Antigravity quota bridge only for local sessions (SSH=%s)", async remote => {
+    const f = fixture(); const setupAntigravityUsage = vi.fn();
+    const launch = createTerminalLauncher({ ...f.dependencies, setupAntigravityUsage });
+    await launch({ ...f.args, aiToolId: "agy", ...(remote ? { ssh: { host: "example.test", user: "test" } } : {}) });
+    expect(setupAntigravityUsage).toHaveBeenCalledTimes(remote ? 0 : 1);
+  });
   it.each(["codex", "claude", "shell"])("removes inherited NO_COLOR for release %s sessions", async aiToolId => {
     const f = fixture();
     const inherited = { Path: "fixture-path", NO_COLOR: "1", No_Color: "1", CODEX_HOME: os.tmpdir() };

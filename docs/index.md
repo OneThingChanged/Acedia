@@ -32,7 +32,7 @@ configuration that supports it.
 
 ## Sessions and integrations
 
-* [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, personal-account migration, launch settings and integration boundaries.
+* [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, account quotas, personal-account migration and integration boundaries.
 
 * [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
@@ -72,3 +72,5 @@ configuration that supports it.
 * [Acedia 1.8.1.8](release-1-8-1-8.md) - 작업자 로그, 계정 자동 전환과 기록 묶음.
 
 * [Acedia 1.8.1.13](release-1-8-1-13.md) - Gemini CLI removal and Antigravity CLI retention.
+
+* [Acedia 1.8.1.14](release-1-8-1-14.md) - Antigravity quota collection and Gemini five-hour/weekly status-bar display.

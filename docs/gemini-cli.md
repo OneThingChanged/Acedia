@@ -9,6 +9,8 @@ sources:
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/terminal-launcher.mjs
   - resource: ../app/electron/services/web-services.mjs
+  - resource: ../app/electron/services/antigravity-usage.mjs
+  - resource: https://www.antigravity.google/docs/cli/statusline/
   - resource: https://geminicli.com/docs/get-started/installation/
   - resource: https://geminicli.com/docs/cli/cli-reference/
   - resource: https://antigravity.google/docs/cli/install/
@@ -46,8 +48,8 @@ options. Local sessions use `/quit` for graceful shutdown, and inherited
 
 The integration is terminal-only: Acedia does not capture Antigravity hooks,
 automatically configure browser MCP, index chat history, manage accounts or
-collect usage/quotas. Restarting starts a new conversation unless an explicit
-resume argument is supplied.
+collect token usage. Account quotas are collected as described below. Restarting
+starts a new conversation unless an explicit resume argument is supplied.
 
 ## Removed Gemini CLI integration
 
@@ -63,3 +65,30 @@ Automated coverage checks Antigravity command generation, launch defaults,
 CLI lifecycle, Remote creation and rejection of saved Gemini launches. Electron
 smoke covers Antigravity settings and new-session selection. Actual model
 requests and remote-host execution are outside these checks.
+
+## Antigravity account quota in the status bar
+
+Local Antigravity launches install Acedia's status-line bridge in
+`~/.gemini/antigravity-cli/acedia-statusline`. The official status-line JSON
+provides quota remaining fractions and reset timestamps. The bridge stores only
+validated quota fields, a hashed account identifier, plan and receipt time;
+credentials, email addresses, prompts and transcripts are not persisted.
+Existing custom status-line commands are saved and forwarded the original input.
+The native default line remains visible when no custom command exists.
+
+Select **Antigravity** in the status bar's account list. Gemini's five-hour and
+weekly quotas share one entry, with other buckets in the details. The shared
+used/remaining display setting applies. Desktop polling imports new snapshots;
+Remote receives the same provider and quotas. This does not query AI Studio
+billing, collect token totals or restore Gemini CLI tool selection.
+
+An already-running CLI needs to restart once to load the bridge. CLI state
+changes deliver snapshots; `/usage` in the CLI requests a backend quota refresh.
+Acedia's Refresh button rereads the last received snapshot, not Google's backend.
+After five minutes without a payload the UI identifies the data as last received.
+Empty quota data clears old buckets, including after an account change. SSH
+sessions do not install a bridge or contribute local account quotas.
+
+Verified with installed Antigravity 1.2.2 and a real signed-in account without a
+model request, plus parser/persistence tests and Electron status-bar UI smoke.
+The external CLI's status-line schema remains an integration dependency.

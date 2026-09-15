@@ -22,6 +22,7 @@ export function createTerminalLauncher({
   hookService,
   ensureBrowserIntegrationReady,
   waitForHooks,
+  setupAntigravityUsage = () => {},
   accountsForTool,
   accountBindings,
   accountSwitches,
@@ -78,6 +79,7 @@ export function createTerminalLauncher({
       if (!ssh && HOOK_TOOLS.has(aiToolId) && cwd) {
         await hookService.setupProject(cwd, aiToolId);
       }
+      if (!ssh && aiToolId === "agy") await setupAntigravityUsage();
       const accounts = !ssh ? accountsForTool(aiToolId) : null;
       const accountId = selectedAccountId(args);
       const accountEnv = accounts ? accounts.environment(accountId) : baseEnv;

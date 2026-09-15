@@ -135,12 +135,14 @@ export type UsageProviderGroup = UsageProviderMeta & {
 const PROVIDER_META: Record<string, Omit<UsageProviderMeta, "key">> = {
   codex: { label: "Codex", icon: "⬢", iconColor: "#10a37f" },
   claude: { label: "Claude", icon: "✻", iconColor: "#cc785c" },
+  agy: { label: "Antigravity", icon: "✦", iconColor: "#a78bfa" },
   gemini: { label: "Gemini", icon: "✦", iconColor: "#4796e3" },
 };
 
 export function usageProviderKey(limit: UsageRateLimit) {
   if (limit.profile) return limit.profile.id === "default" ? limit.profile.provider : limit.profile.key;
   const id = limit.limitId.toLowerCase();
+  if (id === "agy" || id.startsWith("agy:")) return "agy";
   if (id.startsWith("codex:")) return id;
   if (id === "codex" || id.startsWith("codex")) return "codex";
   if (id === "claude" || id.startsWith("claude")) return "claude";

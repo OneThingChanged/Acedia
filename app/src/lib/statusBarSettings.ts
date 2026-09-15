@@ -1,8 +1,8 @@
 export const LS_STATUS_BAR = 'multiagent.statusBar.v1';
 const CHANGED = 'multiagent:status-bar-changed';
 import type { UsageProviderGroup } from './usageRateLimits';
-export type StatusBarSettings = { codex: boolean; claude: boolean; gemini: boolean; other: boolean; resources: boolean; ports: boolean; display: 'used' | 'remaining'; selectedAccount: string | null };
-export const DEFAULT_STATUS_BAR: StatusBarSettings = {codex:true,claude:true,gemini:true,other:true,resources:true,ports:true,display:'used',selectedAccount:null};
+export type StatusBarSettings = { codex: boolean; claude: boolean; gemini: boolean; agy: boolean; other: boolean; resources: boolean; ports: boolean; display: 'used' | 'remaining'; selectedAccount: string | null };
+export const DEFAULT_STATUS_BAR: StatusBarSettings = {codex:true,claude:true,gemini:true,agy:true,other:true,resources:true,ports:true,display:'used',selectedAccount:null};
 export function normalizeStatusBar(value: unknown): StatusBarSettings {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Partial<StatusBarSettings> : {};
   return Object.fromEntries(Object.entries(DEFAULT_STATUS_BAR).map(([key,fallback]) => [key,
@@ -25,7 +25,7 @@ export function subscribeStatusBar(listener: (value: StatusBarSettings) => void)
 }
 export function showUsageProvider(key: string, settings: StatusBarSettings) {
   const base = key.toLowerCase().split(':')[0];
-  return settings[base === 'codex' || base === 'claude' || base === 'gemini' ? base : 'other'];
+  return settings[base === 'codex' || base === 'claude' || base === 'gemini' || base === 'agy' ? base : 'other'];
 }
 export function canSelectStatusAccount(group: UsageProviderGroup, settings: StatusBarSettings) {
   return group.profile?.visible !== false && group.profile?.registered !== false && showUsageProvider(group.key, settings);

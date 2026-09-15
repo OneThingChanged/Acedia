@@ -2041,7 +2041,7 @@ function usageProviderMeta(limit) {
   const id = text(limit?.limitId).toLowerCase();
   if (limit?.profile?.key) {
     const profile = limit.profile;
-    const base = profile.provider === "claude" ? { label: "Claude", icon: "✻", color: "#cc785c" } : { label: "Codex", icon: "⬢", color: "#10a37f" };
+    const base = profile.provider === "agy" ? { label: "Antigravity", icon: "✦", color: "#a78bfa" } : profile.provider === "claude" ? { label: "Claude", icon: "✻", color: "#cc785c" } : { label: "Codex", icon: "⬢", color: "#10a37f" };
     return { ...base, key: profile.key, label: profile.id === "default" ? base.label : `${base.label} · ${profile.label}` };
   }
   if (id === "codex" || id.startsWith("codex")) {

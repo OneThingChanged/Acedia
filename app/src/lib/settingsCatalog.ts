@@ -45,7 +45,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("idle.minutes","idle","유휴 시간","Idle time","saved","대기 중지 시간 minutes"),
   ...[
     ["enabled", "상태 표시줄 표시", "Show status bar"], ["codex", "Codex 한도 표시", "Show Codex quota"],
-    ["claude", "Claude 한도 표시", "Show Claude quota"], ["gemini", "Gemini 한도 표시", "Show Gemini quota"],
+    ["claude", "Claude 한도 표시", "Show Claude quota"], ["gemini", "Gemini 한도 표시", "Show Gemini quota"], ["agy", "Antigravity 한도 표시", "Show Antigravity quota"],
     ["other", "기타 제공자 한도 표시", "Show other provider quotas"], ["resources", "리소스 표시", "Show resources"],
     ["ports", "포트 표시", "Show ports"], ["display", "한도 비율 표시", "Quota percentage display"],
   ].map(([id,ko,en]) => entry("status."+id,"status",ko,en,"app","상태 표시줄 사용 남은 status bar remaining used")),

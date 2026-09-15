@@ -1,5 +1,11 @@
 # OKF Update Log
 
+## 2026-09-15
+
+* **1.8.1.14 release preparation**: Documented Antigravity quota setup and refresh limits; verified EXE build, packaged bridge/lifecycle and packaged collector/renderer equality. See [release notes](release-1-8-1-14.md).
+
+* **Antigravity quotas**: Connected official CLI status-line quota snapshots to desktop and Remote usage summaries. Added Gemini five-hour/weekly status-bar display, stale-data messaging and preservation of custom status-line commands. Verified real local quota receipt and Electron UI; see [Antigravity integration](gemini-cli.md).
+
 ## 2026-09-14
 
 * **1.8.1.13 release preparation**: Built the Gemini removal EXE, verified packaged bridge/lifecycle and source equality, and recorded installer metadata in [release notes](release-1-8-1-13.md). Full suite: 718 tests passed.
