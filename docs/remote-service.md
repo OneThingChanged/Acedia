@@ -163,6 +163,14 @@ not be committed to the repository.
 
 ## Session and content surface
 
+From 1.8.1.17, desktop chat and the Remote composer use Enter to send (or queue
+while working) and Ctrl+Enter to insert a newline at the selection. Cmd+Enter is
+also accepted for newline. Plain Enter/Tab accepts a visible autocomplete item;
+Ctrl+Enter still inserts a newline while suggestions are open. IME composition
+events, including keyCode 229, do not trigger submission. Remote newline edits
+update the session draft, revision and textarea height through the input event.
+The Remote service-worker cache is v65 so refreshed clients receive the change.
+
 Authenticated clients can read projected workspace/session state, stream
 terminal output, submit input and attachments, cancel or activate work, create
 or rename sessions, and view supported Codex/Claude chat transcripts. The

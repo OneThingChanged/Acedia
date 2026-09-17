@@ -1056,6 +1056,7 @@ function ChatComposer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     // Autocomplete popup takes priority over the send/newline keys.
     if (ac) {
       if (e.key === "ArrowDown") {
@@ -1068,7 +1069,7 @@ function ChatComposer({
         setAc({ ...ac, index: (ac.index - 1 + ac.items.length) % ac.items.length });
         return;
       }
-      if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
+      if ((e.key === "Enter" && !e.ctrlKey && !e.metaKey) || e.key === "Tab") {
         e.preventDefault();
         acceptAutocomplete(ac.items[ac.index]);
         return;

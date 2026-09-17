@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-17
+
+* **1.8.1.17 composer keys**: Aligned Remote with desktop chat: Enter sends, Ctrl/Cmd+Enter inserts a newline even with autocomplete open. Added IME composition guards, localized hints and Remote cache v65. See [release notes](release-1-8-1-17.md). EXE publication is tracked separately from source validation.
+
 ## 2026-09-15
 
 * **1.8.1.16 source handoff**: Consolidated browser extensions/skill, Antigravity IPC validation and deletion-focus changes. Final full suite: 123 files / 737 tests passed; previous collector-distribution failures remain recorded without claiming a collector fix. TypeScript and OKF validation passed. [Source notes](release-1-8-1-16.md) explicitly separate Git delivery from pending EXE publication.

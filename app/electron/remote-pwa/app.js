@@ -2903,7 +2903,7 @@ function updateComposerSendState() {
     ? initializingTerminal
       ? t("세션 초기화가 끝나면 입력할 수 있습니다")
       : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : t("메시지 입력");
+    : t("메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈");
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
@@ -5246,6 +5246,14 @@ ui.messageInput.addEventListener("input", () => {
 });
 ui.messageInput.addEventListener("blur", () => setTimeout(() => { acItems = []; renderComposerAc(); }, 120));
 ui.messageInput.addEventListener("keydown", (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    const input = ui.messageInput;
+    input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
   // Autocomplete popup takes priority.
   if (acItems.length) {
     if (event.key === "ArrowDown") { event.preventDefault(); acIndex = (acIndex + 1) % acItems.length; renderComposerAc(); return; }
@@ -5253,7 +5261,7 @@ ui.messageInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); acceptComposerAc(acIndex); return; }
     if (event.key === "Escape") { event.preventDefault(); acItems = []; renderComposerAc(); return; }
   }
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+  if (event.key === "Enter") {
     event.preventDefault();
     void sendSelectedMessage();
     return;

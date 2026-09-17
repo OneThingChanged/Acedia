@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.17 EXE release](release-1-8-1-17.md) - Enter sends, Ctrl+Enter inserts a newline; includes the 1.8.1.16 source changes.
+
 * [Acedia 1.8.1.16 source changes](release-1-8-1-16.md) - Browser extensions, browser skill and right-side display, deletion focus and Antigravity startup fixes. EXE publication pending.
 
 * [Remote UI review — 1.8.1.6](remote-ui-review-2026-09-12.md) - Readability at normal zoom, desktop language synchronization and verification results.

@@ -1,6 +1,7 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈","Message · Enter sends · Ctrl+Enter inserts a line break","输入消息 · Enter 发送 · Ctrl+Enter 换行","輸入訊息 · Enter 傳送 · Ctrl+Enter 換行","メッセージ · Enter で送信 · Ctrl+Enter で改行","Mensaje · Enter envía · Ctrl+Enter inserta un salto de línea"],
   ["API 기준 환산액 (USD)","API baseline value (USD)"],
   ["표준·짧은 문맥 단가 기준. 실제 청구액·주간 한도가 아닙니다. Fast·긴 문맥·캐시 쓰기·도구 비용 제외. 환산 {0}건, 제외 {1}건. 단가 {2}.","Standard short-context baseline, not billed cost or weekly allowance. Excludes Fast, long-context, cache-write and tool charges. Priced: {0}; excluded: {1}. Rates: {2}."],
   ["{0} · {1} USD 기준 환산액 · {2}개 기록","{0} · {1} baseline USD · {2} records"],
