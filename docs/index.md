@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.18 EXE release](release-1-8-1-18.md) - Wrapped terminal file links and external codex-lb connection settings.
+
 * [Acedia 1.8.1.17 EXE release](release-1-8-1-17.md) - Enter sends, Ctrl+Enter inserts a newline; includes the 1.8.1.16 source changes.
 
 * [Acedia 1.8.1.16 source changes](release-1-8-1-16.md) - Browser extensions, browser skill and right-side display, deletion focus and Antigravity startup fixes. EXE publication pending.
@@ -41,6 +43,7 @@ configuration that supports it.
 * [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
+* [External codex-lb connection](codex-lb-connection.md) - Opt-in server connection, encrypted API key, launch settings and server-owned account routing.
 * [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, usage surfaces and app-language synchronization.

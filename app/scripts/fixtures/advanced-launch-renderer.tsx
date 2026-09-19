@@ -11,7 +11,8 @@ window.multiAgentElectron = {
     codex: { available: true, path: "C:/fixture/codex.exe" },
     claude: { available: true, path: "C:/fixture/claude.exe" },
     agy: { available: true, path: "C:/fixture/agy.exe" },
-  } : command.endsWith("_accounts_list") ? [{ id: "default", label: "Existing login", state: "default" }] : null,
+  } : command === "codex_lb_get" ? { settings: { enabled: false, baseUrl: "http://127.0.0.1:2455/backend-api/codex", supportsWebsockets: true }, hasApiKey: false, keyStorageAvailable: true, revision: 0, error: null }
+    : command.endsWith("_accounts_list") ? [{ id: "default", label: "Existing login", state: "default" }] : null,
   showOpenDialog: async () => window.fixtureDialogResult,
   onEvent: () => () => {},
 };

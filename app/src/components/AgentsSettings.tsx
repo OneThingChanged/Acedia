@@ -8,6 +8,7 @@ import { AGENT_DEFAULTS_KEY, loadAgentDefaults, saveAgentDefaults, type AgentDef
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
+import { CodexLbSettings } from "./CodexLbSettings";
 
 type QwenRegionInfo = {
   available: boolean;
@@ -117,6 +118,7 @@ export function AgentsSettings({
     </> : <>
       <div className="agent-settings-toolhead"><span className="agent-settings-toolicon" style={{ color: tool.iconColor }}>{tool.icon}</span><div><h3>{tool.label}</h3><p>{text("로그인 환경과 새 세션의 실행 설정", "Login environment and defaults for new sessions")}</p></div>{availability(tab)}</div>
       <div className="agent-settings-card"><label className="agent-settings-row" {...settingTarget(prefix + ".enabled")}><div><div className="agent-row-title">{tool.label} {text("사용", "enabled")}<SettingScope id={prefix + ".enabled"} /></div><div className="agent-row-sub">{text("새 세션을 만들 때 도구 목록에 표시합니다.", "Show this tool in the new session picker.")}</div></div><input type="checkbox" role="switch" checked={!disabledTools.includes(tab)} onChange={e => onToggleTool(tab, e.target.checked)} /></label></div>
+      {tab === "codex" && <CodexLbSettings />}
       {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} settingId={prefix + ".accounts"}
         defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId}
         onMakeDefault={accountId => updateDefaults(tab === "codex" ? { codexAccountId: accountId } : { claudeAccountId: accountId })} />}

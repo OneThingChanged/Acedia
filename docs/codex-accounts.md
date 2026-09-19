@@ -24,6 +24,11 @@ sources:
 
 # Codex account profiles
 
+For server-managed account routing, see [external codex-lb connection](codex-lb-connection.md).
+When enabled, the local profile still determines CLI home and transcript storage;
+codex-lb selects the upstream account. Local account quotas do not represent the
+server pool.
+
 ## User workflow
 
 Open **Settings → Agents → Codex → Login accounts → Add account**, enter a display

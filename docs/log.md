@@ -1,5 +1,11 @@
 # OKF Update Log
 
+## 2026-09-19
+
+* **1.8.1.18 EXE preparation**: Combined wrapped terminal file links with the external codex-lb connection. Real xterm pointer clicks passed on both rows of hard/soft-wrapped image and Markdown paths. EXE packaging reuses the verified APK; publication and local installation are tracked separately. See [release notes](release-1-8-1-18.md).
+
+* **External codex-lb connection (unreleased)**: Added opt-in server settings, Windows-encrypted API keys, model-catalog probes and invocation-local Codex provider overrides. The external server owns routing and accounts. Focused tests, real Electron UI/IPC/encryption smoke and an installed-CLI catalog request against a loopback fixture passed; live pool routing and deployment remain unverified. See [connection behavior](codex-lb-connection.md).
+
 ## 2026-09-17
 
 * **1.8.1.17 composer keys**: Aligned Remote with desktop chat: Enter sends, Ctrl/Cmd+Enter inserts a newline even with autocomplete open. Added IME composition guards, localized hints and Remote cache v65. See [release notes](release-1-8-1-17.md). EXE publication is tracked separately from source validation.

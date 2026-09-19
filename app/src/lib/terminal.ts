@@ -10,6 +10,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { buildHardWrappedPath } from "./terminalWrappedPath";
 import type { DropZone, TerminalEntry } from "../types";
 import { loadAppTheme, type AppThemeId } from "./appTheme";
 import { DEFAULT_TERMINAL_SETTINGS, loadTerminalSettings, terminalSettingsOptions, updateTerminalSettings } from "./terminalSettings";
@@ -654,6 +655,8 @@ function buildLogicalLine(
 ): { text: string; cellMap: CellRef[] } | null {
   const buffer = term.buffer.active;
   if (!buffer.getLine(rowIndex)) return null;
+  const hardWrapped = buildHardWrappedPath(buffer, term.cols, rowIndex);
+  if (hardWrapped) return hardWrapped;
 
   // Walk up to the first row of this logical line.
   let start = rowIndex;

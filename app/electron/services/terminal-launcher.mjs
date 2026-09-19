@@ -24,6 +24,7 @@ export function createTerminalLauncher({
   ensureBrowserIntegrationReady,
   waitForHooks,
   setupAntigravityUsage = () => {},
+  codexLbLaunch = () => null,
   accountsForTool,
   accountBindings,
   accountSwitches,
@@ -98,10 +99,17 @@ export function createTerminalLauncher({
       }
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
+      const codexLb = !ssh && aiToolId === "codex" ? codexLbLaunch() : null;
+      if (codexLb) {
+        for (const key of Object.keys(launchEnvironment)) {
+          if (key.toUpperCase() === "ACEDIA_CODEX_LB_API_KEY") delete launchEnvironment[key];
+        }
+        Object.assign(launchEnvironment, codexLb.env);
+      }
       const initialPrompt = asString(args.initialPrompt);
       const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
         shell: executable, toolId: aiToolId, env: launchEnvironment, platform,
-        extraArgs: initialPrompt ? [initialPrompt] : [],
+        extraArgs: [...(codexLb?.args ?? []), ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
       return {

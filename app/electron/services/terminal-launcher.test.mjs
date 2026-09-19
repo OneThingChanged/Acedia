@@ -62,6 +62,34 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it("applies external codex-lb only to a new local Codex launch, preserving home and resume", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const codexLbLaunch = vi.fn(() => ({ env: { ACEDIA_CODEX_LB_API_KEY: "lb-secret" }, args: ["-c", 'model_provider="codex-lb"'] }));
+    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch });
+    await launch({ ...f.args, initCommand: "codex resume saved-id", initialPrompt: "continue work" });
+    const env = f.dependencies.spawnProcess.mock.calls[0][2].env;
+    expect(env.CODEX_HOME).toContain("account-a");
+    expect(env.ACEDIA_CODEX_LB_API_KEY).toBe("lb-secret");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"codex-lb\"' 'continue work'\r");
+    expect(f.processes[0].write.mock.calls[0][0]).not.toContain("lb-secret");
+    await launch({ ...f.args });
+    expect(codexLbLaunch).toHaveBeenCalledOnce();
+  });
+  it("does not apply codex-lb to SSH or another provider", async () => {
+    const f = fixture(); const codexLbLaunch = vi.fn(() => { throw new Error("must not run"); });
+    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch });
+    await launch({ ...f.args, aiToolId: "claude" });
+    await launch({ ...f.args, id: "remote", ssh: { host: "example.test", user: "test" } });
+    expect(codexLbLaunch).not.toHaveBeenCalled();
+  });
+  it("does not fall back to direct Codex when connection preparation fails", async () => {
+    const f = fixture();
+    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch: () => { throw new Error("key unavailable"); } });
+    await expect(launch({ ...f.args, initCommand: "codex" })).rejects.toThrow("key unavailable");
+    expect(f.dependencies.spawnProcess).not.toHaveBeenCalled();
+  });
   it.each([false, true])("installs the Antigravity quota bridge only for local sessions (SSH=%s)", async remote => {
     const f = fixture(); const setupAntigravityUsage = vi.fn();
     const launch = createTerminalLauncher({ ...f.dependencies, setupAntigravityUsage });

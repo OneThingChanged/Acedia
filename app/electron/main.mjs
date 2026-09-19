@@ -50,6 +50,7 @@ import {
 } from "./services/miracontrol-integration.mjs";
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
+import { CodexLbConnection } from "./services/codex-lb.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
@@ -2992,6 +2993,7 @@ async function testPasswordSshConnection(ssh, password) {
   });
 }
 
+const codexLbConnection = new CodexLbConnection(app.getPath("userData"), { safeStorage });
 const spawnPty = createTerminalLauncher({
   terminalSessions,
   hookService,
@@ -3002,6 +3004,7 @@ const spawnPty = createTerminalLauncher({
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
   },
   accountsForTool,
+  codexLbLaunch: () => codexLbConnection.launch(),
   accountBindings,
   accountSwitches,
   defaultShell,
@@ -5439,6 +5442,9 @@ async function invokeCommand(event, command, rawArgs) {
       sendEventToAll("accounts:changed", result);
       return result;
     }
+    case "codex_lb_get": return codexLbConnection.get();
+    case "codex_lb_save": return codexLbConnection.save(args);
+    case "codex_lb_test": return codexLbConnection.test(args);
     case "codex_accounts_list": return codexAccounts.list();
     case "codex_accounts_create": return codexAccounts.create(args.label);
     case "codex_accounts_login":
