@@ -3082,6 +3082,8 @@ function App() {
       setWorkspaceMode("sessions");
       const docId = makeDocTabId(projectId, relativePath);
       if (ownerAgentId) documentOwnerByTabRef.current.set(docId, ownerAgentId);
+      // A mounted document otherwise receives no change when its file is reopened.
+      window.dispatchEvent(new CustomEvent("acedia:document-reopen", { detail: docId }));
       applyGroupOp((s) => {
         const group = s.groups.find((g) => g.id === s.activeGroupId);
         // Already open in the active screen → just focus it.

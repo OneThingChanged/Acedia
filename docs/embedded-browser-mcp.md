@@ -250,6 +250,11 @@ previews the target; it does not capture or send data.[^browser-ui]
 ## Isolation and sanitization
 
 Local HTML opens through a random project-scoped preview capability. Tokens
+are renewed and the original file is loaded again when a local document is
+reopened, including reuse of an existing browser tab. Explicitly opening an
+already visible document also refreshes it. This reads updated HTML and relative
+assets without creating another tab; ordinary external browser tabs are unaffected.
+Tokens
 expire after 15 minutes and permit only approved GET/HEAD assets under the
 canonical project root. Traversal, symlink escape, sensitive/build/cache paths,
 and unsupported types are rejected. Desktop HTML has no fixed file-size cutoff:

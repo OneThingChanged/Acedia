@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DocumentPreviewService } from "../electron/services/document-preview-service.mjs";
+import { refreshDocumentPreview } from "../electron/services/document-preview-refresh.mjs";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-document-preview-"));
 app.setPath("userData", path.join(root, "profile"));
@@ -28,6 +29,22 @@ app.whenReady().then(async () => {
     assert.equal(await window.webContents.executeJavaScript("document.querySelector('button').click(); document.querySelector('button').textContent"), "Clicked");
     assert.equal(window.isVisible(), false);
     console.log("LARGE_DOCUMENT_PREVIEW_OK streamed HTML, relative script, interaction, isolated renderer");
+    const record = { folder: root, relativePath: "large.html", token: issued.token,
+      previewUrl: issued.url, view: { webContents: window.webContents } };
+    fs.writeFileSync(path.join(root, "large.html"), '<h1>Updated document</h1><script src="preview.js"></script>');
+    fs.writeFileSync(path.join(root, "preview.js"), "document.title='Updated script';");
+    assert.equal(await refreshDocumentPreview(record, preview), false);
+    assert.equal(await window.webContents.executeJavaScript("document.querySelector('h1').textContent"), "Large document");
+    assert.equal(await refreshDocumentPreview(record, preview, true), true);
+    assert.deepEqual(await window.webContents.executeJavaScript("({title:document.title, heading:document.querySelector('h1').textContent})"),
+      { title: "Updated script", heading: "Updated document" });
+    assert.notEqual(record.token, issued.token);
+    assert.equal(preview.isPreviewUrl(issued.url, issued.token), false);
+    preview.release(record.token);
+    assert.equal(await refreshDocumentPreview(record, preview), true);
+    assert.equal(await window.webContents.executeJavaScript("document.title"), "Updated script");
+    assert.equal(await refreshDocumentPreview({ folder: "", relativePath: "" }, preview, true), false);
+    console.log("DOCUMENT_REOPEN_REFRESH_OK updated HTML and script, expired preview recovery, external browser unchanged");
 
     // Optional read-only reproduction against a reported local HTML file.
     const documentPath = process.env.ACEDIA_PREVIEW_DOCUMENT;

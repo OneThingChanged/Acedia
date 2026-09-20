@@ -62,6 +62,13 @@ export function DocViewer({
   const relativePath = ref?.relativePath ?? "";
   const [state, setState] = useState<DocViewerState>({ phase: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    const reopen = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === docId) setReloadKey((key) => key + 1);
+    };
+    window.addEventListener("acedia:document-reopen", reopen);
+    return () => window.removeEventListener("acedia:document-reopen", reopen);
+  }, [docId]);
   const [embeddedBrowser, setEmbeddedBrowser] = useState<{
     browserId: string;
     docId: string;

@@ -84,6 +84,7 @@ import { LocalDeveloperUpdateService } from "./services/local-developer-update.m
 import { cleanupLegacyElectronShortcuts } from "./services/windows-shortcut-cleanup.mjs";
 import { discoverGitSubmodules } from "./services/git-submodules.mjs";
 import { DocumentPreviewService } from "./services/document-preview-service.mjs";
+import { refreshDocumentPreview } from "./services/document-preview-refresh.mjs";
 import {
   buildBrowserAnnotation,
   normalizeBrowserCaptureRect,
@@ -1876,19 +1877,8 @@ function showBrowserIntegrationTab(record, agentId, placement = "tab") {
   return true;
 }
 
-async function refreshDocumentBrowserPreview(record) {
-  if (!record.folder || !record.relativePath) return;
-  if (documentPreviewService.isPreviewUrl(record.previewUrl, record.token)) return;
-  const previousToken = record.token;
-  const preview = await documentPreviewService.issue({
-    folder: record.folder,
-    relativePath: record.relativePath,
-  });
-  record.token = preview.token;
-  record.previewUrl = preview.url;
-  documentPreviewService.release(previousToken);
-  await record.view.webContents.loadURL(preview.url);
-  publishDocumentBrowser(record);
+async function refreshDocumentBrowserPreview(record, force = false) {
+  if (await refreshDocumentPreview(record, documentPreviewService, force)) publishDocumentBrowser(record);
 }
 
 function documentBrowserSourceKey(folder, relativePath) {
@@ -1954,6 +1944,7 @@ async function createDocumentBrowserWindowNow({
         documentBrowserByAgent.set(normalizedAgentId, record.id);
       }
       publishDocumentBrowserCatalog();
+      await refreshDocumentBrowserPreview(record, true);
       return { browserId: record.id };
     }
   }

@@ -1,5 +1,11 @@
 # OKF Update Log
 
+## 2026-09-21
+
+* **1.8.1.19 release preparation**: Desktop suite passed 766 tests; mobile typecheck and 24 tests passed. User requested a newly built Android APK alongside the EXE; Android versionCode increases to 19. See [release notes](release-1-8-1-19.md). Package validation and publication are tracked separately.
+
+* **Local HTML reopen refresh**: Reopening a document renews its preview and loads the latest file in the reused browser tab. Opening an already mounted document also triggers a fresh read. Electron preview smoke verified changed HTML and relative JavaScript, expired-token recovery and exclusion of external browser records. Source change only; installed EXE update is separate.
+
 ## 2026-09-19
 
 * **1.8.1.18 EXE preparation**: Combined wrapped terminal file links with the external codex-lb connection. Real xterm pointer clicks passed on both rows of hard/soft-wrapped image and Markdown paths. EXE packaging reuses the verified APK; publication and local installation are tracked separately. See [release notes](release-1-8-1-18.md).
