@@ -1,3 +1,4 @@
+import { createHostingView } from './hosting.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make } from "./dom.js";
@@ -25,6 +26,9 @@ const ui = {
   sidebarBackdrop: $("#sidebarBackdrop"),
   overviewButton: $("#overviewButton"),
   documentsButton: $("#documentsButton"),
+  hostingButton: $("#hostingButton"),
+  hostingView: $("#hostingView"),
+  mobileHostingButton: $("#mobileHostingButton"),
   documentProjectCount: $("#documentProjectCount"),
   usageButton: $("#usageButton"),
   usageProviderCount: $("#usageProviderCount"),
@@ -210,6 +214,7 @@ let activeFilter = FILTERS.includes(initialUrl.searchParams.get("filter"))
   ? initialUrl.searchParams.get("filter")
   : "all";
 function selectionFromUrl(url) {
+  if (url.searchParams.get("hosting") === "1") return { type: "hosting", id: null };
   if (url.searchParams.get("usage") === "1") return { type: "usage", id: null };
   if (url.searchParams.get("docs")) return { type: "documents", id: url.searchParams.get("docs") };
   if (url.searchParams.get("screen")) return { type: "screen", id: url.searchParams.get("screen") };
@@ -217,6 +222,8 @@ function selectionFromUrl(url) {
   return { type: "monitor", id: null };
 }
 let selection = selectionFromUrl(initialUrl);
+const hosting = createHostingView(ui.hostingView);
+let hostingLoaded = false;
 let selectedDocumentPath = initialUrl.searchParams.get("file") || null;
 let documentSidebarOpen = selection.type === "documents" && !selectedDocumentPath;
 let returnScreenId = null;
@@ -576,6 +583,8 @@ function updateUrl({ push = false } = {}) {
   url.searchParams.delete("docs");
   url.searchParams.delete("file");
   url.searchParams.delete("usage");
+  url.searchParams.delete("hosting");
+  if (selection.type === "hosting") url.searchParams.set("hosting", "1");
   if (selection.type === "session") url.searchParams.set("agent", selection.id);
   if (selection.type === "screen") url.searchParams.set("screen", selection.id);
   if (selection.type === "usage") url.searchParams.set("usage", "1");
@@ -697,6 +706,8 @@ function renderNavigation() {
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");
+  ui.hostingButton.classList.toggle("selected", selection.type === "hosting");
+  ui.mobileHostingButton.classList.toggle("active", selection.type === "hosting");
 }
 
 function renderMonitor() {
@@ -2534,6 +2545,7 @@ async function loadUsage(refresh = false) {
 }
 
 function renderSelection() {
+  hosting.translate();
   ui.appShell.dataset.view = selection.type;
   document.documentElement.classList.toggle(
     "remote-workspace-locked",
@@ -2543,6 +2555,8 @@ function renderSelection() {
   ui.screenView.hidden = selection.type !== "screen";
   ui.documentsView.hidden = selection.type !== "documents";
   ui.usageView.hidden = selection.type !== "usage";
+  ui.hostingView.hidden = selection.type !== "hosting";
+  if (selection.type === "hosting" && !hostingLoaded) { hostingLoaded = true; void hosting.load(); }
   ui.sessionView.hidden = selection.type !== "session";
   syncDocumentSidebar();
   if (selection.type === "monitor") renderMonitor();
@@ -2558,6 +2572,8 @@ function renderSelection() {
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");
+  ui.hostingButton.classList.toggle("selected", selection.type === "hosting");
+  ui.mobileHostingButton.classList.toggle("active", selection.type === "hosting");
   ui.mobileMonitorButton.classList.toggle("active", selection.type === "monitor");
   ui.mobileSessionsButton.classList.toggle("active", ["screen", "session"].includes(selection.type));
   ui.mobileDocumentsButton.classList.toggle("active", selection.type === "documents");
@@ -2833,6 +2849,11 @@ function selectDocuments(projectId = null) {
   renderNavigation();
   renderSelection();
   closeSidebar();
+}
+
+function selectHosting() {
+  selection = { type: "hosting", id: null }; returnScreenId = null;
+  updateUrl({ push: true }); renderNavigation(); renderSelection(); closeSidebar();
 }
 
 function selectUsage() {
@@ -4814,6 +4835,8 @@ async function initializeNotifications() {
 ui.overviewButton.addEventListener("click", () => selectMonitor("all"));
 ui.documentsButton.addEventListener("click", () => selectDocuments(selection.type === "documents" ? selection.id : null));
 ui.usageButton.addEventListener("click", selectUsage);
+ui.hostingButton.addEventListener("click", selectHosting);
+ui.mobileHostingButton.addEventListener("click", selectHosting);
 ui.refreshUsageButton.addEventListener("click", () => { void loadUsage(true); });
 ui.usageHistoryMode.addEventListener("click", (event) => {
   const mode = event.target.closest("button")?.dataset.usagePeriod;

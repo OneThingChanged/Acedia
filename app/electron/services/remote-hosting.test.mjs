@@ -1,0 +1,32 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { afterEach, expect, it } from 'vitest';
+import { RemoteDashboardService } from './web-services.mjs';
+import { hostingUrl } from './remote-hosting.mjs';
+const cleanup=[];
+afterEach(async()=>{for(const fn of cleanup.splice(0).reverse())await fn();});
+it('hosts HTML and assets with isolated, revocable preview links',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'hosting-test-')); cleanup.push(()=>fs.rmSync(root,{recursive:true,force:true}));
+ let received;
+ const upstream=http.createServer((req,res)=>{ received=req.headers; res.setHeader('content-type',req.url.endsWith('.css')?'text/css':'text/html'); res.end(req.url.endsWith('.css')?'body{background:url(/img.png)}':'<html><head></head><body><img src="assets/a.png"><link href="/site.css"></body></html>'); });
+ await new Promise(r=>upstream.listen(0,'127.0.0.1',r));cleanup.push(()=>new Promise(r=>upstream.close(r)));
+ const service=new RemoteDashboardService({baseDir:root}); service.config.server_port=0; const status=await service.start();cleanup.push(()=>service.stop());
+ const api=async body=>fetch(status.url+'/api/hosting',{method:body?'POST':'GET',headers:{'content-type':'application/json',origin:status.url},...(body?{body:JSON.stringify(body)}:{})});
+ const added=await (await api({action:'add',name:'Fixture',url:`http://127.0.0.1:${upstream.address().port}/docs/page.html`})).json(); expect(added.entries).toHaveLength(1);
+ const entry=added.entries[0]; const opened=await(await api({action:'open',id:entry.id})).json();
+ const response=await fetch(status.url+opened.url,{headers:{cookie:'private=secret',authorization:'Bearer private'}});
+ expect(response.status).toBe(200); expect(response.headers.get('content-security-policy')).toContain('sandbox allow-scripts;');expect(response.headers.get('content-security-policy')).not.toContain('allow-same-origin');
+ const html=await response.text(); expect(html).toContain('<base href="'+opened.url+'">'); expect(html).toContain(opened.url.replace('/docs/page.html','/site.css'));
+ expect(received.cookie).toBeUndefined();expect(received.authorization).toBeUndefined();
+ expect(await fetch(status.url+opened.url.replace('/docs/page.html','/site.css')).then(r=>r.text())).toContain('/hosting-preview/');
+ expect((await fetch(status.url+opened.url,{method:'POST'})).status).toBe(405);
+ expect((await fetch(status.url+'/api/hosting',{method:'POST',headers:{origin:'https://other.test','content-type':'application/json'},body:JSON.stringify({action:'remove',id:entry.id})})).status).toBe(403);
+ service.isDirectLocal=()=>false; expect((await api()).status).toBe(401);service.isDirectLocal=()=>true;
+ await api({action:'remove',id:entry.id}); expect((await fetch(status.url+opened.url)).status).toBe(410);
+});
+it('rejects non-loopback, credentialed and unsupported targets',()=>{
+ for(const value of ['https://example.com:443','http://192.168.0.1:80','http://localhost','file:///c:/x','http://a:b@127.0.0.1:4410']) expect(()=>hostingUrl(value)).toThrow();
+ expect(hostingUrl('http://127.0.0.1:4410/a').pathname).toBe('/a');
+});

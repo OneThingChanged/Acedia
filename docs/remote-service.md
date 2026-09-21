@@ -111,6 +111,28 @@ The client modules are individually allowlisted as JavaScript assets and include
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
 
+## Hosting (1.8.1.20 source, publication pending)
+
+Documents·Usage 옆 **Hosting**에서 이름과 개발 PC의 HTTP 로컬 URL을 등록한다.
+예: `http://127.0.0.1:4410/docs/ux-dnf-exporter/dnf-exporter-draft.html`.
+등록한 이름을 누르면 Remote 안에서 열고, 새 창으로 열기와 페이지 다시 열기도 제공한다.
+`127.0.0.1`, `localhost`, `::1` 및 명시된 포트만 지원한다. 원본 서버와 Acedia가
+실행 중이어야 한다. 등록 목록은 공통 로컬 데이터의 `remote-hosting.json`에 저장한다.
+
+Remote 로그인·승인을 통과한 사용자가 등록·목록·열기 API를 사용한다. 열린 페이지는
+30분 유효한 무작위 capability 링크로 제공한다. 링크를 가진 사람은 만료 전까지 볼 수
+있으므로 공개 공유용 링크로 취급하지 않는다. 등록 제거와 서비스 종료는 링크를 무효화한다.
+HTML·상대경로 이미지·CSS·JS를 중계하며 루트 경로를 보정한다. 원본에 Remote 쿠키나
+Authorization을 전달하지 않고, 외부 리다이렉트와 쓰기 요청은 막는다. 미리보기는
+opaque-origin sandbox로 Remote DOM·로그인 저장소에서 격리하며 API 연결을 허용하지 않는다.
+로그인·폼 제출·WebSocket·API 앱이나 LocalStorage 의존 페이지의 완전한 실행은 지원하지 않는다.
+
+구현: `app/electron/services/remote-hosting.mjs`, `app/electron/remote-pwa/hosting.js`.
+검증: `node app/scripts/electron-remote-hosting-smoke.mjs`는 1280px·390px에서 등록·열기,
+상대 이미지와 스크립트 실행, Remote DOM 접근 차단을 확인한다. 서비스 테스트는 인증,
+교차 출처 등록 차단과 제거 후 링크 만료를 확인한다. 2026-09-21 확인 시 위 예시의
+4410 서버는 연결 거부 상태였으므로 실제 DNF 페이지는 검증하지 못했다.
+
 ## Readability and display language
 
 Remote and Local Dashboard share a 16px base with 14–16px body/control text and

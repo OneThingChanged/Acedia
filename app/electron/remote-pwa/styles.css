@@ -1509,7 +1509,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
     bottom: calc(7px + var(--safe-area-bottom));
     left: 8px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     min-height: 52px;
     padding: 5px;
     border: 1px solid var(--line-strong);
@@ -1772,3 +1772,25 @@ html[data-native-app="true"] .android-download-button { display: none !important
   .usage-history-controls #usageCurrentPeriod { grid-column: 1 / -1; grid-row: 3; }
   .view-head { flex-wrap: wrap; gap: 10px; }
 }
+.hosting-view { padding: 20px; min-width: 0; overflow: auto; }
+.hosting-view[hidden], .hosting-toolbar[hidden], .hosting-frame[hidden] { display: none; }
+.hosting-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.hosting-form label { display: grid; gap: 6px; flex: 1 1 200px; }
+.hosting-form label:nth-child(2) { flex-grow: 3; }
+.hosting-view input, .hosting-view button, .hosting-toolbar a { min-height: 44px; font: inherit; padding: 10px; }
+.hosting-view input { width: 100%; min-width: 0; }
+.hosting-list { display: grid; gap: 8px; margin: 12px 0; }
+.hosting-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hosting-entry span { flex: 1 1 240px; overflow-wrap: anywhere; }
+.hosting-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0 8px; }
+.hosting-frame { width: 100%; height: 70vh; border: 1px solid var(--border, #30363d); background: white; }
+.hosting-status { min-height: 24px; overflow-wrap: anywhere; }
+.hosting-note { line-height: 1.5; }
+@media(max-width: 640px) { .hosting-view { padding: 12px; } .hosting-form label { flex-basis: 100%; } .hosting-entry span { order: 3; flex-basis: 100%; } }
+
+.hosting-view input, .hosting-view button, .hosting-toolbar a { border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-2); color: var(--text); }
+.hosting-view button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); }
+.hosting-view button:disabled { opacity: .6; cursor: wait; }
+.hosting-toolbar a { display: inline-flex; align-items: center; }
+.hosting-note { color: var(--muted); }
+@media(max-width: 640px) { .hosting-view { padding-bottom: calc(var(--mobile-nav-reserve) + 16px); } }

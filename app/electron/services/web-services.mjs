@@ -1,3 +1,4 @@
+import { RemoteHosting } from './remote-hosting.mjs';
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { sendJson } from "./remote-http.mjs";
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
@@ -115,6 +116,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-markup.js", { file: "chat-markup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -620,6 +622,7 @@ export class LocalDashboardService {
     this.title = title;
     this.defaultPort = defaultPort;
     this.baseDir = baseDir;
+    this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, configName);
     this.submissions = new RemoteSubmissions(path.join(baseDir, `${configName}.submissions.json`));
     this.stateProvider = stateProvider;
@@ -697,6 +700,7 @@ export class LocalDashboardService {
     this.server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url || "/", "http://127.0.0.1");
+        if (await this.hosting.preview(request, response, url)) return;
         if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/preview/")) {
           if (await sendRemoteHtmlPreview(request, response, this.htmlPreviews, url.pathname)) return;
         }
@@ -705,6 +709,7 @@ export class LocalDashboardService {
           return;
         }
         if (p) {
+          if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request) })) return;
           if (await serveUsageProfileVisibility(request, response, url, p.usageProfileVisibility, () => this.isLocalOrigin(request))) return;
           // Full Remote PWA on loopback (no login needed locally).
           if (await serveRemoteBrowserApi(request, response, url, {
@@ -884,6 +889,7 @@ export class LocalDashboardService {
     this.server = null;
     this.port = null;
     this.htmlPreviews.clear();
+    this.hosting.tickets.clear();
     if (server) {
       server.closeAllConnections?.();
       await new Promise((resolve) => server.close(resolve));
@@ -895,6 +901,7 @@ export class LocalDashboardService {
 export class RemoteDashboardService {
   constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
     this.baseDir = baseDir;
+    this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, "remote-config.json");
     this.accessPath = path.join(baseDir, "remote-access.json");
     this.submissions = new RemoteSubmissions(path.join(baseDir, "remote-submissions.json"));
@@ -1321,6 +1328,7 @@ export class RemoteDashboardService {
     this.server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url || "/", "http://127.0.0.1");
+        if (await this.hosting.preview(request, response, url)) return;
         if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/preview/")) {
           if (await sendRemoteHtmlPreview(request, response, this.htmlPreviews, url.pathname)) return;
         }
@@ -1411,6 +1419,7 @@ export class RemoteDashboardService {
           } else sendJson(response, 401, { error: "unauthorized", pending: Boolean(login) });
           return;
         }
+        if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isSameOrigin(request) })) return;
         if (await serveRemoteBrowserApi(request, response, url, {
           browserProvider: this.browserProvider,
           mutationAllowed: () => this.isSameOrigin(request),
@@ -1725,6 +1734,7 @@ export class RemoteDashboardService {
   async stop() {
     const server = this.server; this.server = null; this.port = null;
     this.htmlPreviews.clear();
+    this.hosting.tickets.clear();
     this.deviceMonitorService.close();
     if (server) {
       // Long-lived SSE terminal streams keep connections open; force them shut

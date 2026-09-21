@@ -2,6 +2,8 @@
 
 ## 2026-09-21
 
+* **Remote Hosting / 1.8.1.20 source**: Added saved local HTTP pages beside Documents and Usage, sandboxed HTML/assets preview, mobile navigation, expiring links and server-error feedback. Actual Electron 1280px/390px UI, relative assets and DOM isolation passed. The supplied DNF server on 4410 was offline during verification. See [source notes](release-1-8-1-20.md) and [Remote Hosting](remote-service.md#hosting-18120-source-publication-pending). EXE publication is pending.
+
 * **1.8.1.19 release preparation**: Desktop suite passed 766 tests; mobile typecheck and 24 tests passed. User requested a newly built Android APK alongside the EXE; Android versionCode increases to 19. See [release notes](release-1-8-1-19.md). Package validation and publication are tracked separately.
 
 * **Local HTML reopen refresh**: Reopening a document renews its preview and loads the latest file in the reused browser tab. Opening an already mounted document also triggers a fresh read. Electron preview smoke verified changed HTML and relative JavaScript, expired-token recovery and exclusion of external browser records. Source change only; installed EXE update is separate.

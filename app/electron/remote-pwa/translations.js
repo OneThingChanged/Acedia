@@ -1,6 +1,18 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["로컬 웹페이지 보기", "View local websites"],
+  ["로컬 URL", "Local URL"],
+  ["목록 새로고침", "Refresh list"],
+  ["페이지 다시 열기", "Reopen page"],
+  ["제거", "Remove"],
+  ["추가", "Add"],
+  ["이름", "Name"],
+  ["개발 PC에서 실행 중인 로컬 웹페이지를 여기에서 엽니다. 원본 서버와 Acedia가 켜져 있어야 합니다.", "Open websites running on your desktop PC. Keep the source server and Acedia running."],
+  ["HTML·이미지·CSS·JS 미리보기를 지원합니다. 로그인·폼 전송·API·WebSocket 앱은 지원하지 않습니다. 링크는 30분 후 다시 열어주세요.", "Supports HTML, images, CSS and JavaScript previews. Site login, form submission, APIs and WebSockets are not supported. Reopen links after 30 minutes."],
+  ["등록한 페이지가 없습니다. 이름과 로컬 URL을 추가하세요.", "No pages saved. Add a name and a local URL."],
+  ["페이지에 연결할 수 없습니다. 개발 PC의 서버와 URL을 확인하세요.", "Cannot load the page. Check the desktop server and URL."],
+
   ["메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈","Message · Enter sends · Ctrl+Enter inserts a line break","输入消息 · Enter 发送 · Ctrl+Enter 换行","輸入訊息 · Enter 傳送 · Ctrl+Enter 換行","メッセージ · Enter で送信 · Ctrl+Enter で改行","Mensaje · Enter envía · Ctrl+Enter inserta un salto de línea"],
   ["API 기준 환산액 (USD)","API baseline value (USD)"],
   ["표준·짧은 문맥 단가 기준. 실제 청구액·주간 한도가 아닙니다. Fast·긴 문맥·캐시 쓰기·도구 비용 제외. 환산 {0}건, 제외 {1}건. 단가 {2}.","Standard short-context baseline, not billed cost or weekly allowance. Excludes Fast, long-context, cache-write and tool charges. Priced: {0}; excluded: {1}. Rates: {2}."],

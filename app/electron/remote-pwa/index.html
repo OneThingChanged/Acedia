@@ -84,6 +84,8 @@
           <b id="usageProviderCount">0</b>
         </button>
 
+        <button class="overview-button" id="hostingButton" type="button"><span class="overview-icon" aria-hidden="true">▣</span><span><strong>Hosting</strong><small>로컬 웹페이지 보기</small></span></button>
+
         <label class="search-box">
           <span aria-hidden="true">⌕</span>
           <input id="searchInput" type="search" placeholder="Screen · 프로젝트 · 세션 검색" autocomplete="off">
@@ -198,6 +200,8 @@
             </section>
           </div>
         </section>
+
+        <section id="hostingView" class="hosting-view" hidden></section>
 
         <section class="usage-view" id="usageView" hidden>
           <div class="view-head">
@@ -473,6 +477,7 @@
       <button class="active" id="mobileMonitorButton" type="button" hidden><span>▦</span>모니터</button>
       <button id="mobileSessionsButton" type="button"><span>▥</span>세션</button>
       <button id="mobileDocumentsButton" type="button"><span>▤</span>문서</button>
+      <button id="mobileHostingButton" type="button"><span aria-hidden="true">▣</span>Hosting</button>
       <button id="mobileUsageButton" type="button"><span>◔</span>사용량</button>
     </nav>
 

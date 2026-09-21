@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.20 source changes](release-1-8-1-20.md) - Remote Hosting for local HTML sites; EXE publication pending.
+
 * [Acedia 1.8.1.19 EXE release](release-1-8-1-19.md) - Reload local HTML and relative assets when reopening an existing document tab.
 
 * [Acedia 1.8.1.18 EXE release](release-1-8-1-18.md) - Wrapped terminal file links and external codex-lb connection settings.
