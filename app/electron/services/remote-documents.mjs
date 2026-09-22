@@ -6,6 +6,8 @@ import { pipeline } from "node:stream/promises";
 import { sendJson } from "./remote-http.mjs";
 
 const REMOTE_DOCUMENT_EXTENSIONS = new Map([
+  [".mp4", "video"],
+  [".webm", "video"],
   [".md", "markdown"],
   [".markdown", "markdown"],
   [".html", "html"],
@@ -275,7 +277,7 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
     agentId,
   );
   const kind = REMOTE_DOCUMENT_EXTENSIONS.get(path.extname(resolved).toLowerCase());
-  if (!kind) throw new RemoteDocumentError(415, "Markdown과 HTML 파일만 열 수 있습니다.");
+  if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown과 HTML 파일만 열 수 있습니다.");
   if (stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
     throw new RemoteDocumentError(413, "2MB보다 큰 문서는 Remote에서 열 수 없습니다.");
   }
@@ -560,6 +562,7 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
     response.writeHead(415, { "cache-control": "no-store" }).end();
     return true;
   }
+  if (videoType(resolved)) { await sendVideo(request, response, resolved, stats, contentType); return true; }
   const limit = [".html", ".htm", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".csv", ".xml"]
     .includes(extension) ? MAX_REMOTE_DOCUMENT_BYTES : MAX_REMOTE_IMAGE_BYTES;
   if (stats.size > limit) {
@@ -592,11 +595,11 @@ function sendRemoteDocumentError(response, error) {
 }
 
 
-const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/preview", "/api/files/image", "/api/files/asset"]);
+const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/preview", "/api/files/image", "/api/files/asset", "/api/files/video"]);
 
 // Caller owns authentication. Capability URLs retain their separate token gate.
 export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews }) {
-  if (request.method !== "GET" || !DOCUMENT_ROUTES.has(url.pathname)) return false;
+  if (!DOCUMENT_ROUTES.has(url.pathname) || (request.method !== "GET" && !(request.method === "HEAD" && url.pathname === "/api/files/video"))) return false;
   try {
     const state = snapshot();
     const args = [state, url.searchParams.get("projectId"), url.searchParams.get("path"), url.searchParams.get("agentId")];
@@ -610,6 +613,13 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
         } else response.writeHead(302, { location, "cache-control": "no-store" }).end();
         break;
       }
+      case "/api/files/video": {
+        const { resolved, stats } = await resolveRemoteProjectFile(...args);
+        const type = videoType(resolved);
+        if (!type) throw new RemoteDocumentError(415, "Unsupported video format.");
+        await sendVideo(request, response, resolved, stats, type);
+        break;
+      }
       case "/api/files/image": await sendRemoteImage(response, ...args); break;
       case "/api/files/asset": await sendRemotePreviewAsset(response, ...args); break;
     }
@@ -621,3 +631,25 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
 }
 
 export { RemoteDocumentError, sendRemoteHtmlPreview };
+
+function videoType(file) { return ({ ".mp4": "video/mp4", ".webm": "video/webm" })[path.extname(file).toLowerCase()]; }
+async function sendVideo(request, response, file, stats, type) {
+  const size = stats.size;
+  let start = 0, end = size - 1, status = 200;
+  if (request.headers.range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range);
+    if (match && (match[1] || match[2])) {
+      start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+      end = match[1] && match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+    } else start = -1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= size) {
+      response.writeHead(416, { "content-range": `bytes */${size}`, "cache-control": "no-store" }).end(); return;
+    }
+    status = 206;
+  }
+  response.writeHead(status, { "content-type": type, "content-length": Math.max(0, end - start + 1),
+    "accept-ranges": "bytes", "cache-control": "no-store", "x-content-type-options": "nosniff",
+    ...(status === 206 ? { "content-range": `bytes ${start}-${end}/${size}` } : {}) });
+  if (request.method === "HEAD" || !size) response.end();
+  else await pipeline(fs.createReadStream(file, { start, end }), response);
+}

@@ -348,6 +348,28 @@ package the downloadable APK. It retains only the loopback Dashboard.[^runtime-v
 Operational Dashboard behavior is documented separately in
 [Local Dashboard](local-dashboard.md).
 
+## Remote video playback (1.8.1.21 source, publication pending)
+
+Remote chat recognizes local MP4 and WebM paths and opens a video preview with
+native playback, volume, seeking and fullscreen controls. Documents includes
+these files as VIDEO entries and plays the selected file in its preview panel.
+Closing the chat preview releases the video source; leaving Documents pauses playback.
+Unsupported codecs and inaccessible chat video files show an error.
+
+The authenticated `/api/files/video` endpoint resolves files within registered
+local project roots, including session-relative paths. It supports GET, HEAD,
+single byte ranges (206) and unsatisfiable-range responses (416). Videos stream
+from disk without the image endpoint's 25MB limit. Local HTML preview MP4/WebM
+assets use the same streaming path, retaining the preview capability check.
+This does not extend the separate local website hosting proxy.
+
+Verification: focused HTTP/link tests cover a 30MB file, range and suffix requests,
+invalid ranges and path traversal. `app/scripts/electron-remote-video-smoke.mjs`
+uses FFmpeg to generate a WebM fixture and checks real Electron chat playback,
+preview cleanup, Documents listing and seeking at mobile width. Actual Android
+WebView/device codec coverage and deployed tunnel playback remain unverified.
+
+
 [^web-services]: Dashboard and Remote server
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker

@@ -1,6 +1,10 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["Markdown · HTML · Video 보기", "View Markdown, HTML and video"],
+  ["PC의 로컬 프로젝트에 있는 Markdown·HTML·영상 파일을 안전하게 미리봅니다.", "Preview Markdown, HTML and video files from local projects."],
+  ["왼쪽 목록에서 Markdown·HTML·영상 파일을 선택하세요.", "Select a Markdown, HTML or video file from the list."],
+  ["영상을 재생할 수 없습니다. 파일 접근 권한과 브라우저 코덱 지원을 확인하세요.", "Cannot play video. Check file access and browser codec support."],
   ["로컬 웹페이지 보기", "View local websites"],
   ["로컬 URL", "Local URL"],
   ["목록 새로고침", "Refresh list"],

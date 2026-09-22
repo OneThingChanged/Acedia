@@ -78,6 +78,7 @@ const ui = {
   filePreviewMessage: $("#filePreviewMessage"),
   filePreviewMarkdown: $("#filePreviewMarkdown"),
   filePreviewImageWrap: $("#filePreviewImageWrap"),
+  filePreviewVideo: $("#filePreviewVideo"),
   filePreviewImage: $("#filePreviewImage"),
   sessionEditorOverlay: $("#sessionEditorOverlay"),
   sessionEditorForm: $("#sessionEditorForm"),
@@ -1493,7 +1494,7 @@ function appendDocumentTree(container, node, projectId, query, depth = 0) {
     button.setAttribute("aria-selected", String(file.path === selectedDocumentPath));
     button.classList.toggle("selected", file.path === selectedDocumentPath);
     button.title = file.path;
-    const icon = make("span", "document-row-icon", file.kind === "html" ? "HTML" : "MD");
+    const icon = make("span", "document-row-icon", file.kind === "video" ? "VIDEO" : file.kind === "html" ? "HTML" : "MD");
     const copy = make("span", "document-row-copy");
     copy.append(make("strong", "", file.name), make("small", "", file.path));
     button.append(icon, copy);
@@ -1562,9 +1563,9 @@ async function loadDocument(projectId, relativePath, { force = false } = {}) {
   documentContentError = "";
   if (force || documentContent?.path !== relativePath) documentContent = null;
   renderDocumentPreview();
-  if (/\.html?$/i.test(relativePath)) {
+  if (/\.(?:html?|mp4|webm)$/i.test(relativePath)) {
     documentContent = {
-      kind: "html",
+      kind: /\.(?:mp4|webm)$/i.test(relativePath) ? "video" : "html",
       name: relativePath.split("/").pop() || relativePath,
       path: relativePath,
     };
@@ -1596,6 +1597,10 @@ function renderDocumentPreview() {
   const key = relativePath && selection.type === "documents"
     ? documentKey(selection.id, relativePath)
     : "";
+  if (documentContent?.kind !== "video" || documentContentKey !== key) {
+    if (ui.documentMarkdown.querySelector("video")) delete ui.documentMarkdown.dataset.renderKey;
+    ui.documentMarkdown.querySelectorAll("video").forEach(video => { video.pause(); video.removeAttribute("src"); video.load(); video.remove(); });
+  }
   ui.documentMarkdown.hidden = true;
   ui.documentHtmlLaunch.hidden = true;
   ui.documentKind.hidden = true;
@@ -1604,7 +1609,7 @@ function renderDocumentPreview() {
     ui.documentName.textContent = t("문서를 선택하세요");
     ui.documentPath.textContent = "";
     ui.documentMessage.hidden = false;
-    ui.documentMessage.textContent = t("왼쪽 목록에서 Markdown 또는 HTML 파일을 선택하세요.");
+    ui.documentMessage.textContent = t("왼쪽 목록에서 Markdown·HTML·영상 파일을 선택하세요.");
     return;
   }
   ui.documentName.textContent = relativePath.split("/").pop() || relativePath;
@@ -1628,7 +1633,17 @@ function renderDocumentPreview() {
   ui.documentMessage.hidden = true;
   ui.documentKind.hidden = false;
   ui.documentKind.textContent = documentContent.kind === "html" ? "HTML · SANDBOX" : "MARKDOWN";
-  if (documentContent.kind === "html") {
+  if (documentContent.kind === "video") {
+    ui.documentKind.textContent = "VIDEO";
+    ui.documentMarkdown.hidden = false;
+    if (ui.documentMarkdown.dataset.renderKey !== key) {
+      ui.documentMarkdown.dataset.renderKey = key;
+      const video = make("video", "remote-video");
+      video.controls = true; video.playsInline = true; video.preload = "metadata";
+      video.src = `/api/files/video?${remoteFileQuery(selection.id, relativePath, "")}`;
+      ui.documentMarkdown.replaceChildren(video);
+    }
+  } else if (documentContent.kind === "html") {
     ui.documentHtmlLaunch.hidden = false;
   } else {
     const renderKey = `${key}\u0000${documentContent.modifiedAt || ""}\u0000${documentContent.size || 0}`;
@@ -1703,6 +1718,10 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
 }
 
 function resetFilePreviewContent() {
+  ui.filePreviewVideo.pause();
+  ui.filePreviewVideo.removeAttribute("src");
+  ui.filePreviewVideo.load();
+  ui.filePreviewVideo.hidden = true;
   if (filePreviewObjectUrl) {
     URL.revokeObjectURL(filePreviewObjectUrl);
     filePreviewObjectUrl = "";
@@ -1739,7 +1758,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
     return;
   }
   const path = cleanChatFilePath(rawPath);
-  if (!projectId || !path || !["markdown", "image"].includes(kind)) return;
+  if (!projectId || !path || !["markdown", "image", "video"].includes(kind)) return;
   const requestId = ++filePreviewRequest;
   if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
   resetFilePreviewContent();
@@ -1747,12 +1766,23 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   document.documentElement.classList.add("file-preview-open");
   ui.filePreviewTitle.textContent = path.split(/[\\/]/).pop() || path;
   ui.filePreviewPath.textContent = path;
-  ui.filePreviewKind.textContent = kind === "markdown" ? "MARKDOWN" : "IMAGE";
+  ui.filePreviewKind.textContent = kind === "video" ? "VIDEO" : kind === "markdown" ? "MARKDOWN" : "IMAGE";
   ui.filePreviewMessage.textContent = t("파일을 불러오는 중…");
   ui.filePreviewClose.focus();
 
   try {
     const query = remoteFileQuery(projectId, path, agentId);
+    if (kind === "video") {
+      ui.filePreviewVideo.src = `/api/files/video?${query}`;
+      ui.filePreviewVideo.hidden = false;
+      ui.filePreviewMessage.hidden = true;
+      ui.filePreviewVideo.onerror = () => {
+        if (requestId !== filePreviewRequest) return;
+        ui.filePreviewMessage.textContent = t("영상을 재생할 수 없습니다. 파일 접근 권한과 브라우저 코덱 지원을 확인하세요.");
+        ui.filePreviewMessage.hidden = false;
+      };
+      return;
+    }
     if (kind === "markdown") {
       const response = await fetch(`/api/docs/read?${query}`, { cache: "no-store", credentials: "same-origin" });
       if (!response.ok) throw new Error(await apiError(response));
@@ -2554,6 +2584,7 @@ function renderSelection() {
   ui.monitorView.hidden = selection.type !== "monitor";
   ui.screenView.hidden = selection.type !== "screen";
   ui.documentsView.hidden = selection.type !== "documents";
+  if (ui.documentsView.hidden) ui.documentMarkdown.querySelectorAll("video").forEach(video => video.pause());
   ui.usageView.hidden = selection.type !== "usage";
   ui.hostingView.hidden = selection.type !== "hosting";
   if (selection.type === "hosting" && !hostingLoaded) { hostingLoaded = true; void hosting.load(); }

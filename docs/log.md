@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-22
+
+* **Remote video playback (1.8.1.21 source only)**: Added MP4/WebM chat previews and Documents entries, disk streaming with HTTP Range/HEAD, and PWA cache v67. Focused tests and real Electron WebM playback/seek checks passed. See [Remote service](remote-service.md). Deployment and Android device verification are separate.
+
 ## 2026-09-21
 
 * **Remote Hosting / 1.8.1.20 source**: Added saved local HTTP pages beside Documents and Usage, sandboxed HTML/assets preview, mobile navigation, expiring links and server-error feedback. Actual Electron 1280px/390px UI, relative assets and DOM isolation passed. The supplied DNF server on 4410 was offline during verification. See [source notes](release-1-8-1-20.md) and [Remote Hosting](remote-service.md#hosting-18120-source-publication-pending). EXE publication is pending.
