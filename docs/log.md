@@ -2,6 +2,10 @@
 
 ## 2026-09-22
 
+* **1.8.1.22 EXE preparation**: Versioned the native account pool and included the pending Hosting/video source changes. Release builds use an isolated source checkout and reuse the verified 1.8.1.19 APK. Packaged checks enforce native account modules and reference-file exclusion. See [release scope](release-1-8-1-22.md).
+
+* **Acedia account pool (source only)**: Added owner-only account registration and usage in the existing Dashboard, device-code login, encrypted account storage, session affinity and native HTTP streaming. Replaced the external connection settings. Reference folders are excluded from Git and packaging. All 767 tests, frontend build, installed CLI mock streaming and real Electron desktop/mobile registration checks passed. Live account requests and release packaging remain unverified. See [account pool](account-pool.md).
+
 * **Remote video playback (1.8.1.21 source only)**: Added MP4/WebM chat previews and Documents entries, disk streaming with HTTP Range/HEAD, and PWA cache v67. Focused tests and real Electron WebM playback/seek checks passed. See [Remote service](remote-service.md). Deployment and Android device verification are separate.
 
 ## 2026-09-21
@@ -14,9 +18,9 @@
 
 ## 2026-09-19
 
-* **1.8.1.18 EXE preparation**: Combined wrapped terminal file links with the external codex-lb connection. Real xterm pointer clicks passed on both rows of hard/soft-wrapped image and Markdown paths. EXE packaging reuses the verified APK; publication and local installation are tracked separately. See [release notes](release-1-8-1-18.md).
+* **1.8.1.18 EXE preparation**: Combined wrapped terminal file links with the external provider connection. Real xterm pointer clicks passed on both rows of hard/soft-wrapped image and Markdown paths. EXE packaging reuses the verified APK; publication and local installation are tracked separately. See [release notes](release-1-8-1-18.md).
 
-* **External codex-lb connection (unreleased)**: Added opt-in server settings, Windows-encrypted API keys, model-catalog probes and invocation-local Codex provider overrides. The external server owns routing and accounts. Focused tests, real Electron UI/IPC/encryption smoke and an installed-CLI catalog request against a loopback fixture passed; live pool routing and deployment remain unverified. See [connection behavior](codex-lb-connection.md).
+* **External provider connection (unreleased)**: Added opt-in server settings, Windows-encrypted API keys, model-catalog probes and invocation-local Codex provider overrides. The external server owns routing and accounts. Focused tests, real Electron UI/IPC/encryption smoke and an installed-CLI catalog request against a loopback fixture passed; live pool routing and deployment remain unverified. See [connection behavior](account-pool.md).
 
 ## 2026-09-17
 

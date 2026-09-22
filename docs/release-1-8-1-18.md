@@ -1,14 +1,12 @@
 ---
 type: Release
 title: Acedia 1.8.1.18 EXE release
-description: Wrapped terminal file links and opt-in external codex-lb connections.
+description: Wrapped terminal file links and opt-in external provider connections.
 status: stable
 sources:
   - resource: ../app/src/lib/terminalWrappedPath.ts
   - resource: ../app/src/lib/terminal.ts
   - resource: ../app/scripts/electron-terminal-links-smoke.mjs
-  - resource: ../app/electron/services/codex-lb.mjs
-  - resource: codex-lb-connection.md
 ---
 
 # Acedia 1.8.1.18
@@ -16,11 +14,11 @@ sources:
 - 터미널 화면 끝에서 CLI가 직접 개행한 괄호 안 파일 경로를 복원합니다.
   앞줄과 뒷줄에서 전체 파일 경로를 열며, 기존 자동 줄바꿈도 유지합니다.
   일반 문장을 합치지 않도록 경로 형태·화면 끝 위치·탐색 행 수를 제한합니다.
-- **설정 → 에이전트 → Codex → codex-lb 계정 자동 분배**에서 외부 서버 주소,
+- **설정 → 에이전트 → Codex → provider 계정 자동 분배**에서 외부 서버 주소,
   암호화한 API 키와 WebSocket 사용 여부를 저장합니다. 연결 확인은 모델 목록만
   조회하며 실제 생성 요청을 보내지 않습니다.
 - 다음 로컬 Codex 실행부터 프록시 연결을 적용합니다. 실행 중인 세션과 SSH에는
-  적용하지 않습니다. 계정 등록·분배 전략·대화 고정은 외부 codex-lb 서버가
+  적용하지 않습니다. 계정 등록·분배 전략·대화 고정은 외부 provider 서버가
   담당하며, Acedia는 서버를 설치하거나 시작하지 않습니다.
 - 기존 대화 기록을 자동 변환하지 않습니다. 연결 방식을 바꿀 때는 새 대화를
   권장합니다. 로컬 계정 한도는 서버 계정 풀의 사용량과 다를 수 있습니다.

@@ -390,7 +390,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v67');
+    expect(workerBody).toContain('multiagent-remote-v68');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);

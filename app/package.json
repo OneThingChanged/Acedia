@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.21",
+  "multiAgentReleaseVersion": "1.8.1.22",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -15,8 +15,8 @@
     "electron:terminal-settings-smoke": "node scripts/electron-terminal-settings-smoke.mjs",
     "electron:terminal-links-smoke": "node scripts/electron-terminal-links-smoke.mjs",
     "electron:advanced-launch-smoke": "node scripts/electron-advanced-launch-smoke.mjs",
-    "electron:codex-lb-smoke": "node scripts/electron-codex-lb-smoke.mjs",
-    "codex:lb-cli-smoke": "node scripts/codex-lb-cli-smoke.mjs",
+    "electron:account-pool-smoke": "node scripts/electron-account-pool-smoke.mjs",
+    "account-pool:cli-smoke": "node scripts/account-pool-cli-smoke.mjs",
     "electron:account-onboarding-smoke": "node scripts/electron-account-onboarding-smoke.mjs",
     "electron:browser-profiles-smoke": "node scripts/electron-browser-profiles-smoke.mjs",
     "electron:settings-search-smoke": "node scripts/electron-settings-search-smoke.mjs",
@@ -100,6 +100,8 @@
       "electron/services/browser-mcp-server.mjs"
     ],
     "files": [
+      "!ref/**",
+      "!**/ref/**",
       "dist/**",
       "electron/**",
       "!electron/remote-pwa/downloads/**",
@@ -119,9 +121,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.21-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.22-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.21",
+      "uninstallDisplayName": "Acedia 1.8.1.22",
       "include": "electron/installer.nsh"
     },
     "publish": [

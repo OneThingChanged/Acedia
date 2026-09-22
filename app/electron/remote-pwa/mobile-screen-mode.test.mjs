@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const script = fs.readFileSync(
   fileURLToPath(new URL("./app.js", import.meta.url)),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 describe("Remote mobile Screen routing", () => {
   it("hides Screen navigation and uses a session-only search label on mobile", () => {

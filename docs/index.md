@@ -17,13 +17,15 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.22 EXE release](release-1-8-1-22.md) - Dashboard account routing, Remote Hosting and video playback; release preparation.
+
 * [Acedia 1.8.1.21 source changes](release-1-8-1-21.md) - Remote MP4/WebM playback and Documents video entries; publication pending.
 
 * [Acedia 1.8.1.20 source changes](release-1-8-1-20.md) - Remote Hosting for local HTML sites; EXE publication pending.
 
 * [Acedia 1.8.1.19 EXE release](release-1-8-1-19.md) - Reload local HTML and relative assets when reopening an existing document tab.
 
-* [Acedia 1.8.1.18 EXE release](release-1-8-1-18.md) - Wrapped terminal file links and external codex-lb connection settings.
+* [Acedia 1.8.1.18 EXE release](release-1-8-1-18.md) - Wrapped terminal file links and external provider connection settings.
 
 * [Acedia 1.8.1.17 EXE release](release-1-8-1-17.md) - Enter sends, Ctrl+Enter inserts a newline; includes the 1.8.1.16 source changes.
 
@@ -44,12 +46,14 @@ configuration that supports it.
 
 ## Sessions and integrations
 
+* [Acedia account pool](account-pool.md) - Dashboard account registration, session routing and usage.
+
+
 * [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, account quotas, personal-account migration and integration boundaries.
 
 * [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
 * [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, argument and environment editing, creation defaults, and per-session application rules.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
-* [External codex-lb connection](codex-lb-connection.md) - Opt-in server connection, encrypted API key, launch settings and server-owned account routing.
 * [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, document, usage surfaces and app-language synchronization.

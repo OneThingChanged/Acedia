@@ -1,4 +1,5 @@
 import { createHostingView } from './hosting.js';
+import { createAccountPoolView } from './account-pool.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make } from "./dom.js";
@@ -224,6 +225,7 @@ function selectionFromUrl(url) {
 }
 let selection = selectionFromUrl(initialUrl);
 const hosting = createHostingView(ui.hostingView);
+const accountPoolView = createAccountPoolView(document.querySelector('#accountPoolView'));
 let hostingLoaded = false;
 let selectedDocumentPath = initialUrl.searchParams.get("file") || null;
 let documentSidebarOpen = selection.type === "documents" && !selectedDocumentPath;
@@ -2576,6 +2578,7 @@ async function loadUsage(refresh = false) {
 
 function renderSelection() {
   hosting.translate();
+  accountPoolView.translate();
   ui.appShell.dataset.view = selection.type;
   document.documentElement.classList.toggle(
     "remote-workspace-locked",
@@ -2586,6 +2589,7 @@ function renderSelection() {
   ui.documentsView.hidden = selection.type !== "documents";
   if (ui.documentsView.hidden) ui.documentMarkdown.querySelectorAll("video").forEach(video => video.pause());
   ui.usageView.hidden = selection.type !== "usage";
+  if (selection.type !== "usage") accountPoolView.leave(); else accountPoolView.enter();
   ui.hostingView.hidden = selection.type !== "hosting";
   if (selection.type === "hosting" && !hostingLoaded) { hostingLoaded = true; void hosting.load(); }
   ui.sessionView.hidden = selection.type !== "session";

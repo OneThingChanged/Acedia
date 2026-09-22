@@ -50,7 +50,7 @@ import {
 } from "./services/miracontrol-integration.mjs";
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
-import { CodexLbConnection } from "./services/codex-lb.mjs";
+import { AccountPool } from "./services/account-pool.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
@@ -831,6 +831,7 @@ const remoteSessionActivationBroker = new RemoteSessionActivationBroker({
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  accountPoolApi: (...args) => accountPool.api(...args),
   usageProvider: browserUsageSummary,
   usageProfileVisibility: (key, hidden) => usageIndex.setProfileVisibility(key, hidden),
   browserProvider: (request) => handleRemoteBrowser(request),
@@ -2984,7 +2985,14 @@ async function testPasswordSshConnection(ssh, password) {
   });
 }
 
-const codexLbConnection = new CodexLbConnection(app.getPath("userData"), { safeStorage });
+const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-pool"), {
+  safeStorage,
+  command: () => {
+    const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
+    return native ? { file: native, args: ["app-server", "-c", "cli_auth_credentials_store=file"] }
+      : { file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", "codex.cmd app-server -c cli_auth_credentials_store=file"] };
+  },
+});
 const spawnPty = createTerminalLauncher({
   terminalSessions,
   hookService,
@@ -2995,7 +3003,7 @@ const spawnPty = createTerminalLauncher({
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
   },
   accountsForTool,
-  codexLbLaunch: () => codexLbConnection.launch(),
+  accountPoolLaunch: (id) => accountPool.launch(id),
   accountBindings,
   accountSwitches,
   defaultShell,
@@ -5433,9 +5441,6 @@ async function invokeCommand(event, command, rawArgs) {
       sendEventToAll("accounts:changed", result);
       return result;
     }
-    case "codex_lb_get": return codexLbConnection.get();
-    case "codex_lb_save": return codexLbConnection.save(args);
-    case "codex_lb_test": return codexLbConnection.test(args);
     case "codex_accounts_list": return codexAccounts.list();
     case "codex_accounts_create": return codexAccounts.create(args.label);
     case "codex_accounts_login":
@@ -5721,6 +5726,7 @@ app.on("before-quit", (event) => {
   }
   forceClosing = true;
   powerPolicy.dispose();
+  accountPool.close();
   if (tray && !tray.isDestroyed()) {
     tray.destroy();
     tray = null;

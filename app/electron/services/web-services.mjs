@@ -117,6 +117,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -709,6 +710,7 @@ export class LocalDashboardService {
           return;
         }
         if (p) {
+          if (await p.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request), admin: true })) return;
           if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request) })) return;
           if (await serveUsageProfileVisibility(request, response, url, p.usageProfileVisibility, () => this.isLocalOrigin(request))) return;
           // Full Remote PWA on loopback (no login needed locally).
@@ -899,7 +901,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
+    this.accountPoolApi = accountPoolApi;
     this.baseDir = baseDir;
     this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, "remote-config.json");
@@ -1419,6 +1422,8 @@ export class RemoteDashboardService {
           } else sendJson(response, 401, { error: "unauthorized", pending: Boolean(login) });
           return;
         }
+        if (await this.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isSameOrigin(request),
+          admin: this.isDirectLocal(request) || Boolean(login && login.toLowerCase() === String(this.config.owner).toLowerCase()) })) return;
         if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isSameOrigin(request) })) return;
         if (await serveRemoteBrowserApi(request, response, url, {
           browserProvider: this.browserProvider,

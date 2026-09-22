@@ -35,6 +35,9 @@ for (const entry of [
   "\\electron\\remote-pwa\\index.html",
   "\\electron\\remote-pwa\\app.js",
   "\\electron\\remote-pwa\\styles.css",
+  "\\electron\\remote-pwa\\account-pool.js",
+  "\\electron\\services\\account-pool.mjs",
+  "\\electron\\services\\account-pool-rpc.mjs",
   "\\electron\\remote-pwa\\vendor\\xterm.js",
 ]) {
   if (!asarEntries.has(entry)) {
@@ -52,6 +55,9 @@ for (const apkEntry of [
   }
 }
 const stagedApk = path.join(path.dirname(executable), "resources", "mobile", "Acedia-Mobile.apk");
+if ([...asarEntries].some(entry => /(?:^|\\)ref(?:\\|$)/i.test(entry))) {
+  throw new Error("Reference files must not be included in the application package.");
+}
 if ((company || store) && fs.existsSync(stagedApk)) {
   console.error(`${variant} package unexpectedly contains the verified Remote APK resource.`);
   process.exit(1);

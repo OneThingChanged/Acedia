@@ -82,7 +82,6 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("terminal.reset", "terminal", "터미널 기본값 복원", "Restore terminal defaults", "action", "초기화 reset"),
   entry("agents.common.usage", "agents", "작업표시줄 사용량 표시", "Show usage status bar", "app", "quota 한도 하단", { agentTab: "common" }),
   entry("agents.common.installation", "agents", "설치 상태", "Installation status", "action", "도구 감지 설치 경로 detected CLI", { agentTab: "common" }),
-  entry("agents.codex.loadBalancer", "agents", "codex-lb 계정 자동 분배", "codex-lb account routing", "nextLaunch", "프록시 서버 API 키 계정 풀 로드 밸런서 load balancer proxy routing endpoint", { agentTab: "codex" }),
   ...["codex", "claude", "agy", "qwen", "cline"].flatMap(tool => {
     const extra = { agentTab: tool };
     return [

@@ -5,16 +5,6 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
-  it("validates external codex-lb configuration without allowing arbitrary payloads", () => {
-    const args = { settings: { enabled: true, baseUrl: "http://127.0.0.1:2455", supportsWebsockets: true }, revision: 0 };
-    expect(contract.assertInvokeRequest("codex_lb_get", {})).toEqual({});
-    for (const command of ["codex_lb_save", "codex_lb_test"]) {
-      expect(contract.assertInvokeRequest(command, args)).toEqual(args);
-      for (const patch of [{ settings: null }, { apiKey: "secret\nheader" }, { revision: -1 }, { removeApiKey: "yes" }]) {
-        expect(() => contract.assertInvokeRequest(command, { ...args, ...patch })).toThrow();
-      }
-    }
-  });
   it("validates extension management requests", () => {
     expect(contract.assertInvokeRequest('browser_extensions_list', { profileId: 'multiagent-browser' })).toBeTruthy();
     expect(() => contract.assertInvokeRequest('browser_extensions_change', { profileId: 'multiagent-browser', action: 'unknown' })).toThrow();

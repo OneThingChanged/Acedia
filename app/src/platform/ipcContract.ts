@@ -9,7 +9,6 @@ export type RuntimeCommand =
   | "codex_accounts_switch"
   | "claude_accounts_switch"
   | "codex_accounts_list"
-  | "codex_lb_get" | "codex_lb_save" | "codex_lb_test"
   | "claude_accounts_list"
   | "codex_accounts_create"
   | "claude_accounts_create"

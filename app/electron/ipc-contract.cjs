@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "runtime_flags",
   "codex_accounts_switch",
   "claude_accounts_switch",
-  "codex_accounts_list", "codex_lb_get", "codex_lb_save", "codex_lb_test",
+  "codex_accounts_list",
   "claude_accounts_list",
   "codex_accounts_create",
   "claude_accounts_create",
@@ -250,16 +250,6 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
-    case "codex_lb_save":
-    case "codex_lb_test": {
-      const settings = assertObject(args.settings);
-      if (typeof settings.enabled !== "boolean" || typeof settings.supportsWebsockets !== "boolean") throw new TypeError("Invalid codex-lb options");
-      assertHttpUrl(settings.baseUrl, "codex-lb URL");
-      if (settings.baseUrl.length > 2048 || !Number.isSafeInteger(args.revision) || args.revision < 0) throw new TypeError("Invalid codex-lb settings");
-      if (args.apiKey !== undefined && (typeof args.apiKey !== "string" || args.apiKey.length > 4096 || /[^\x21-\x7e]/.test(args.apiKey))) throw new TypeError("Invalid codex-lb API key");
-      if (args.removeApiKey !== undefined && typeof args.removeApiKey !== "boolean") throw new TypeError("Invalid codex-lb key removal");
-      break;
-    }
     case "browser_extensions_list":
     case "browser_extensions_change":
       if (typeof args.profileId !== "string" || !args.profileId || args.profileId.length > 128) throw new TypeError("Invalid browser profile");

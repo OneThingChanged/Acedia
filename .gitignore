@@ -54,6 +54,7 @@ Thumbs.db
 
 # Local-only research and third-party comparison notes
 /local-research/
+/ref/
 /output/
 
 # root deps / tool caches

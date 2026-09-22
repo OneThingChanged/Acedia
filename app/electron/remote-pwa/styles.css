@@ -27,6 +27,25 @@
 }
 
 * { box-sizing: border-box; }
+.pool-tabs, .pool-toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+.pool-tabs button, .pool-toolbar button, .pool-login a { min-height:44px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:8px; background:var(--panel-2); color:var(--text); }
+.pool-tabs button[aria-pressed="true"] { border-color:var(--cyan); color:var(--cyan); }
+.pool-panel { padding:16px 0; }
+.pool-panel p, .pool-panel small { overflow-wrap:anywhere; }
+.pool-panel small { color:var(--muted); }
+.pool-toolbar label { display:flex; flex-direction:column; gap:6px; flex:1; min-width:180px; }
+.pool-toolbar input { min-height:44px; background:var(--panel); border:1px solid var(--line-strong); border-radius:8px; padding:8px 12px; }
+.pool-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.pool-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+.pool-card h3 { margin:0 0 8px; overflow-wrap:anywhere; }
+.pool-card label { display:block; }
+.pool-card meter { width:100%; height:18px; }
+.pool-login { padding:12px; border:1px solid var(--cyan); border-radius:8px; margin:12px 0; }
+.pool-login strong { display:block; font-size:24px; letter-spacing:2px; margin:8px 0 16px; }
+.pool-login a { display:inline-flex; align-items:center; }
+.pool-panel button:disabled { opacity:.55; cursor:wait; }
+.pool-records { border-top:1px solid var(--line); }
+.usage-view.pool-mode > .usage-section { display:none; }
 html { min-height: 100%; background: var(--bg); }
 html.file-preview-open { overflow: hidden; }
 body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--text); background: radial-gradient(circle at 50% -20%, #173147 0, var(--bg) 42%); }

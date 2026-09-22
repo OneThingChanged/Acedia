@@ -31,6 +31,9 @@ client.[^web-services]
 
 ## Data and control surface
 
+Usage also contains owner-managed [account registration and routing](account-pool.md).
+The same UI is shared with Remote; ordinary approved remote visitors cannot manage these accounts.
+
 The Dashboard exposes bounded endpoints for:
 
 * workspace, project, Screen, session, runtime, and hook state;

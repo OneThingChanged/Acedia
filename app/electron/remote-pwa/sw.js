@@ -1,10 +1,11 @@
-const CACHE_NAME = "multiagent-remote-v67";
+const CACHE_NAME = "multiagent-remote-v68";
 const STATIC_ASSETS = [
   "/",
   "/pwa/styles.css",
   "/pwa/terminal-touch.js",
   "/pwa/app.js",
   "/pwa/hosting.js",
+  "/pwa/account-pool.js",
   "/pwa/dom.js",
   "/pwa/i18n.js",
   "/pwa/translations.js",
@@ -55,6 +56,7 @@ self.addEventListener("fetch", (event) => {
   // Vendor/static assets (xterm, icons) stay cache-first for speed.
   const isAppShell =
     url.pathname === "/pwa/hosting.js" ||
+    url.pathname === "/pwa/account-pool.js" ||
     url.pathname === "/pwa/app.js" ||
     url.pathname === "/pwa/dom.js" ||
     url.pathname === "/pwa/i18n.js" ||

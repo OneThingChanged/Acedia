@@ -62,31 +62,31 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
-  it("applies external codex-lb only to a new local Codex launch, preserving home and resume", async () => {
+  it("applies Acedia account pool only to a new local Codex launch, preserving home and resume", async () => {
     vi.useFakeTimers();
     const f = fixture();
-    const codexLbLaunch = vi.fn(() => ({ env: { ACEDIA_CODEX_LB_API_KEY: "lb-secret" }, args: ["-c", 'model_provider="codex-lb"'] }));
-    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch });
+    const accountPoolLaunch = vi.fn(() => ({ env: { ACEDIA_ACCOUNT_POOL_KEY: "lb-secret" }, args: ["-c", 'model_provider="acedia_pool"'] }));
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
     await launch({ ...f.args, initCommand: "codex resume saved-id", initialPrompt: "continue work" });
     const env = f.dependencies.spawnProcess.mock.calls[0][2].env;
     expect(env.CODEX_HOME).toContain("account-a");
-    expect(env.ACEDIA_CODEX_LB_API_KEY).toBe("lb-secret");
+    expect(env.ACEDIA_ACCOUNT_POOL_KEY).toBe("lb-secret");
     await vi.advanceTimersByTimeAsync(600);
-    expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"codex-lb\"' 'continue work'\r");
+    expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"acedia_pool\"' 'continue work'\r");
     expect(f.processes[0].write.mock.calls[0][0]).not.toContain("lb-secret");
     await launch({ ...f.args });
-    expect(codexLbLaunch).toHaveBeenCalledOnce();
+    expect(accountPoolLaunch).toHaveBeenCalledOnce();
   });
-  it("does not apply codex-lb to SSH or another provider", async () => {
-    const f = fixture(); const codexLbLaunch = vi.fn(() => { throw new Error("must not run"); });
-    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch });
+  it("does not apply acedia_pool to SSH or another provider", async () => {
+    const f = fixture(); const accountPoolLaunch = vi.fn(() => { throw new Error("must not run"); });
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
     await launch({ ...f.args, aiToolId: "claude" });
     await launch({ ...f.args, id: "remote", ssh: { host: "example.test", user: "test" } });
-    expect(codexLbLaunch).not.toHaveBeenCalled();
+    expect(accountPoolLaunch).not.toHaveBeenCalled();
   });
   it("does not fall back to direct Codex when connection preparation fails", async () => {
     const f = fixture();
-    const launch = createTerminalLauncher({ ...f.dependencies, codexLbLaunch: () => { throw new Error("key unavailable"); } });
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch: () => { throw new Error("key unavailable"); } });
     await expect(launch({ ...f.args, initCommand: "codex" })).rejects.toThrow("key unavailable");
     expect(f.dependencies.spawnProcess).not.toHaveBeenCalled();
   });
