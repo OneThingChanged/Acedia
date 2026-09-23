@@ -9,6 +9,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
+  "prepare_worker_roles",
   "codex_accounts_switch",
   "claude_accounts_switch",
   "codex_accounts_list",

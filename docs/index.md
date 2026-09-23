@@ -17,7 +17,9 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.22 EXE release](release-1-8-1-22.md) - Dashboard account routing, Remote Hosting and video playback; release preparation.
+* [Acedia 1.8.1.23 EXE release](release-1-8-1-23.md) - Independent worker model and reasoning selection; full model dropdown and custom IDs.
+
+* [Acedia 1.8.1.22 EXE release](release-1-8-1-22.md) - Dashboard account routing, Remote Hosting and video playback; published on GitHub.
 
 * [Acedia 1.8.1.21 source changes](release-1-8-1-21.md) - Remote MP4/WebM playback and Documents video entries; publication pending.
 

@@ -50,9 +50,16 @@ export type AgentStatus =
 
 export type SessionWorkerPreset = "codex-luna-max" | "claude-opus";
 
+export type SessionWorkerConfig = {
+  provider: "codex" | "claude";
+  model: string;
+  effort: "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+};
+export type SessionWorkerSelection = SessionWorkerPreset | SessionWorkerConfig;
+
 export type SessionWorkerSettings = {
-  documents?: SessionWorkerPreset;
-  html?: SessionWorkerPreset;
+  documents?: SessionWorkerSelection;
+  html?: SessionWorkerSelection;
 };
 
 export type AccountHandoff = {

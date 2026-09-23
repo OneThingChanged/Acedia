@@ -15,20 +15,20 @@ function render(disabledTools: string[]) {
 describe("SessionWorkerFields", () => {
   it("shows both enabled providers", () => {
     const html = render([]);
-    expect(html).toContain("Codex · Luna Max");
-    expect(html).toContain("Claude · Opus");
+    expect(html).toContain(">Codex<");
+    expect(html).toContain(">Claude<");
   });
 
   it("hides the Claude option when Claude is disabled", () => {
     const html = render(["claude"]);
-    expect(html).toContain("Codex · Luna Max");
-    expect(html).not.toContain("Claude · Opus");
+    expect(html).toContain(">Codex<");
+    expect(html).not.toContain(">Claude<");
   });
 
   it("hides the Codex option when Codex is disabled", () => {
     const html = render(["codex"]);
-    expect(html).not.toContain("Codex · Luna Max");
-    expect(html).toContain("Claude · Opus");
+    expect(html).not.toContain(">Codex<");
+    expect(html).toContain(">Claude<");
   });
 
   it("hides the entire section when both tools are disabled", () => {

@@ -2503,9 +2503,23 @@ body,
 }
 
 .session-worker-field {
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--app-border);
   gap: 4px;
   margin-bottom: 9px;
 }
+
+.session-worker-model-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 110px);
+  gap: 4px 10px;
+}
+.session-worker-model-fields .field { min-width: 0; }
+.session-worker-model-fields input,
+.session-worker-model-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
+.session-worker-model-fields > .session-worker-hint { grid-column: 1 / -1; overflow-wrap: anywhere; }
 
 .session-worker-field:last-child {
   margin-bottom: 0;

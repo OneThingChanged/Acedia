@@ -9,6 +9,12 @@ tags:
 status: stable
 stale_after: 2026-11-30
 sources:
+  - id: session-workers
+    resource: ../app/src/lib/sessionWorkers.ts
+    title: "Worker models, reasoning effort and launch instructions"
+  - id: worker-role-config
+    resource: ../app/electron/services/worker-role-config.mjs
+    title: "Per-worker Codex configuration layers"
   - id: app-shell
     resource: ../app/src/App.tsx
     title: "Workspace shell and actions"
@@ -94,10 +100,17 @@ start their processes. Standby entries stay visible under the active-only
 sidebar filter. Returning from the tray reconnects sessions confirmed live by
 the host and keeps the others dormant.[^app-shell][^pane-slot][^sidebar]
 
-New Codex sessions default both the documentation/Markdown worker and the HTML
-worker to Codex Luna with max reasoning. The creation dialog keeps these
-choices editable, including explicitly disabling both workers; launch-only
-worker settings take effect when the PTY starts.[^app-shell]
+New Codex sessions and existing Luna presets resolve to `gpt-6-luna` with `max`
+reasoning. Settings > Codex, the creation dialog and session properties expose
+separate provider, model and reasoning-effort fields for documentation/Markdown
+and HTML. The model dropdown always shows the full suggestion list, including Luna, Sol
+and Astra; a separate custom option accepts a model ID. Known
+Codex models show their supported effort levels; custom model availability
+depends on the installed CLI and account. Both workers can be disabled.
+Changes apply on the next PTY launch, including resumed conversations.
+Local Codex workers receive independent, content-addressed TOML role layers;
+SSH launches instead request explicit model/effort spawn overrides and never
+reference local role-file paths.[^session-workers][^worker-role-config]
 
 Project, project-folder and session deletion use in-app confirmation instead
 of blocking native dialogs. Deletion-blocked notices also remain in the
@@ -254,6 +267,8 @@ The domain invariants behind these interactions are documented in
 [System architecture](system-architecture.md).
 
 [^app-shell]: Workspace shell and actions
+[^session-workers]: Worker models, reasoning effort and launch instructions
+[^worker-role-config]: Per-worker Codex configuration layers
 [^session-lifecycle-actions]: Session deletion and runtime lifecycle actions
 [^workspace-focus]: Active terminal focus recovery
 [^sidebar]: Project and session sidebar

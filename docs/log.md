@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-23
+
+* **1.8.1.23 worker settings**: Independent provider/model/effort selection for Markdown and HTML, `gpt-6-luna / max` legacy defaults, a full model dropdown and custom IDs. Local launches use immutable role layers. Electron interaction/reload/narrow-layout and installed CLI strict-config checks passed without live model requests. See [release scope](release-1-8-1-23.md).
+
 ## 2026-09-22
 
 * **1.8.1.22 EXE preparation**: Versioned the native account pool and included the pending Hosting/video source changes. Release builds use an isolated source checkout and reuse the verified 1.8.1.19 APK. Packaged checks enforce native account modules and reference-file exclusion. See [release scope](release-1-8-1-22.md).

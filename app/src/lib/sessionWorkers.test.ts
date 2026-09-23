@@ -6,7 +6,36 @@ import {
   normalizeSessionWorkerSettings,
   sessionWorkerDeveloperInstructions,
   updateSessionWorkerSetting,
+  resolveSessionWorker,
+  workerEfforts,
 } from "./sessionWorkers";
+
+describe("custom worker settings", () => {
+  it("keeps document and HTML models independent across serialization and launch", () => {
+    const settings = { documents: { provider: "codex", model: "gpt-6-sol", effort: "xhigh" }, html: { provider: "codex", model: "gpt-6-luna", effort: "max" } };
+    const normalized = normalizeSessionWorkerSettings(JSON.parse(JSON.stringify(settings)));
+    expect(normalized).toEqual(settings);
+    const cmd = addSessionWorkerArgs("codex", "codex", normalized, { documents: "C:/docs.toml", html: "C:/html.toml" });
+    expect(cmd).toContain('agents.multiagent_docs_writer.config_file="C:/docs.toml"');
+    expect(cmd).toContain('agents.multiagent_html_builder.config_file="C:/html.toml"');
+    expect(cmd).toContain("model=gpt-6-sol, reasoning_effort=xhigh");
+    expect(cmd).toContain("model=gpt-6-luna, reasoning_effort=max");
+    expect(cmd).not.toContain("default_subagent_model");
+  });
+  it("resolves legacy defaults and rejects unsafe model strings or invalid efforts", () => {
+    expect(resolveSessionWorker("codex-luna-max")).toEqual({ provider: "codex", model: "gpt-6-luna", effort: "max" });
+    for (const model of ["", "-option", "a;evil", "a\nmodel=evil", "$(evil)"]) {
+      expect(resolveSessionWorker({ provider: "codex", model, effort: "max" })).toBeUndefined();
+    }
+    expect(resolveSessionWorker({ provider: "codex", model: "gpt-6-luna", effort: "ultra" })).toBeUndefined();
+    expect(workerEfforts("codex", "gpt-5.5")).not.toContain("max");
+  });
+  it("routes a custom Claude model and effort without shell interpolation", () => {
+    const cmd = addSessionWorkerArgs("codex", "codex", { documents: { provider: "claude", model: "sonnet", effort: "high" } });
+    expect(cmd).toContain("claude -p --model sonnet --effort high");
+    expect(cmd).not.toContain("default_subagent_model");
+  });
+});
 
 describe("session worker availability", () => {
   it("defaults both Codex content workers to Luna max", () => {
@@ -71,7 +100,7 @@ describe("Codex session worker arguments", () => {
       "-c 'agents.max_concurrent_threads_per_session=2'"
     );
     expect(command).toContain(
-      "-c 'agents.default_subagent_model=\"gpt-5.6-luna\"'"
+      "-c 'agents.default_subagent_model=\"gpt-6-luna\"'"
     );
     expect(command).toContain(
       "-c 'agents.default_subagent_reasoning_effort=\"max\"'"

@@ -259,6 +259,7 @@ describe("buildSpawnArgs resume recovery", () => {
 
   it("applies worker settings when an existing Codex session is resumed", async () => {
     invokeMock.mockResolvedValueOnce("existing-session");
+    invokeMock.mockResolvedValueOnce({ documents: "C:/fixture/worker.toml" });
 
     const result = await buildSpawnArgs(
       {
@@ -277,9 +278,10 @@ describe("buildSpawnArgs resume recovery", () => {
       "codex resume existing-session --no-alt-screen"
     );
     expect(result.initCommand).toContain(
-      "agents.default_subagent_model=\"gpt-5.6-luna\""
+      "agents.default_subagent_model=\"gpt-6-luna\""
     );
     expect(result.initCommand).toContain("claude -p --model opus");
+    expect(result.initCommand).toContain('agents.multiagent_docs_writer.config_file="C:/fixture/worker.toml"');
   });
 
   it("passes a pending handoff only to a fresh target-account conversation", async () => {

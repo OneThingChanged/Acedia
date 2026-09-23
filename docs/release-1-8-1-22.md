@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.22 EXE release
 description: Dashboard account registration and native account routing, Remote Hosting and video playback.
-status: draft
+status: stable
 sources:
   - resource: account-pool.md
   - resource: remote-service.md
@@ -29,3 +29,6 @@ sources:
 로그인·상용 요청·실제 한도 소진은 별도 검증 대상이다. 이번 EXE 빌드는 별도의
 깨끗한 소스 체크아웃을 사용하며 작업 중이던 hook 변경 2개는 포함하지 않는다.
 GitHub 게시와 사용 중인 PC의 업데이트 설치는 별도 상태다.
+
+GitHub EXE 채널 게시 완료: https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.22
+공개 업데이트 감지와 설치 파일 다운로드·SHA-256 검증을 통과했다. 로컬 설치는 별도다.

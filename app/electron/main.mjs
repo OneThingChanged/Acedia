@@ -1,4 +1,5 @@
 import { listSubagents } from './services/subagent-monitor.mjs';
+import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
@@ -4718,6 +4719,8 @@ async function invokeCommand(event, command, rawArgs) {
     return result;
   }
   switch (command) {
+    case "prepare_worker_roles":
+      return prepareWorkerRoleFiles(hookBaseDir, args.roles);
     case "runtime_flags":
       return {
         ...(runtimeByWebContents.get(event.sender.id) ?? {

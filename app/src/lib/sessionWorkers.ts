@@ -1,150 +1,99 @@
-import type {
-  SessionWorkerPreset,
-  SessionWorkerSettings,
-} from "../types";
+import type { SessionWorkerConfig, SessionWorkerPreset, SessionWorkerSelection, SessionWorkerSettings } from "../types";
 
-export type SessionWorkerOption = {
-  id: SessionWorkerPreset;
-  label: string;
-  requiredToolId: "codex" | "claude";
-};
-
+export type SessionWorkerOption = { id: SessionWorkerPreset; label: string; requiredToolId: "codex" | "claude" };
 export const SESSION_WORKER_OPTIONS: readonly SessionWorkerOption[] = [
-  {
-    id: "codex-luna-max",
-    label: "Codex · Luna Max",
-    requiredToolId: "codex",
-  },
-  {
-    id: "claude-opus",
-    label: "Claude · Opus",
-    requiredToolId: "claude",
-  },
+  { id: "codex-luna-max", label: "Codex", requiredToolId: "codex" },
+  { id: "claude-opus", label: "Claude", requiredToolId: "claude" },
 ];
-
-export function defaultSessionWorkerSettings(
-  aiToolId: string
-): SessionWorkerSettings | undefined {
-  if (aiToolId !== "codex") return undefined;
-  return {
-    documents: "codex-luna-max",
-    html: "codex-luna-max",
-  };
+type Effort = SessionWorkerConfig["effort"];
+const STANDARD: Effort[] = ["low", "medium", "high", "xhigh", "max"];
+// Model IDs and effort sets verified against the CLI catalog on 2026-09-23.
+// Suggestions are not an account entitlement list; custom IDs remain available.
+export const WORKER_MODELS = {
+  codex: ["gpt-6-luna", "gpt-6-sol", "gpt-6-astra", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
+  claude: ["opus", "sonnet", "haiku"],
+};
+export function workerEfforts(provider: SessionWorkerConfig["provider"], model: string): Effort[] {
+  if (provider === "claude") return [...STANDARD];
+  if (["gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra"].includes(model)) return [...STANDARD, "ultra"];
+  if (["gpt-5.5", "gpt-5.4"].includes(model)) return ["low", "medium", "high", "xhigh"];
+  if (["gpt-6-luna", "gpt-5.6-luna"].includes(model)) return [...STANDARD];
+  return [...STANDARD, "ultra"];
 }
-
-const VALID_PRESETS = new Set<SessionWorkerPreset>(
-  SESSION_WORKER_OPTIONS.map((option) => option.id)
-);
-
-export function availableSessionWorkerOptions(
-  disabledTools: readonly string[]
-): readonly SessionWorkerOption[] {
-  return SESSION_WORKER_OPTIONS.filter(
-    (option) => !disabledTools.includes(option.requiredToolId)
-  );
-}
-
-export function normalizeSessionWorkerSettings(
-  value: unknown
-): SessionWorkerSettings | undefined {
+export function resolveSessionWorker(value: unknown): SessionWorkerConfig | undefined {
+  if (value === "codex-luna-max") return { provider: "codex", model: "gpt-6-luna", effort: "max" };
+  if (value === "claude-opus") return { provider: "claude", model: "opus", effort: "max" };
   if (!value || typeof value !== "object") return undefined;
   const raw = value as Record<string, unknown>;
-  const documents = VALID_PRESETS.has(raw.documents as SessionWorkerPreset)
-    ? (raw.documents as SessionWorkerPreset)
-    : undefined;
-  const html = VALID_PRESETS.has(raw.html as SessionWorkerPreset)
-    ? (raw.html as SessionWorkerPreset)
-    : undefined;
-  return documents || html ? { documents, html } : undefined;
+  if (raw.provider !== "codex" && raw.provider !== "claude") return undefined;
+  if (typeof raw.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(raw.model)) return undefined;
+  if (!workerEfforts(raw.provider, raw.model).includes(raw.effort as Effort)) return undefined;
+  return { provider: raw.provider, model: raw.model, effort: raw.effort as Effort };
 }
-
-export function updateSessionWorkerSetting(
-  current: SessionWorkerSettings | undefined,
-  kind: keyof SessionWorkerSettings,
-  preset: SessionWorkerPreset | undefined
-): SessionWorkerSettings | undefined {
-  const next = { ...current, [kind]: preset };
+export function defaultSessionWorkerSettings(aiToolId: string): SessionWorkerSettings | undefined {
+  return aiToolId === "codex" ? { documents: "codex-luna-max", html: "codex-luna-max" } : undefined;
+}
+export function availableSessionWorkerOptions(disabledTools: readonly string[]): readonly SessionWorkerOption[] {
+  return SESSION_WORKER_OPTIONS.filter(option => !disabledTools.includes(option.requiredToolId));
+}
+export function normalizeSessionWorkerSettings(value: unknown): SessionWorkerSettings | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const result: SessionWorkerSettings = {};
+  for (const kind of ["documents", "html"] as const) {
+    const config = resolveSessionWorker(raw[kind]);
+    if (config) result[kind] = typeof raw[kind] === "string" ? raw[kind] as SessionWorkerPreset : config;
+  }
+  return result.documents || result.html ? result : undefined;
+}
+export function updateSessionWorkerSetting(current: SessionWorkerSettings | undefined, kind: keyof SessionWorkerSettings, selection: SessionWorkerSelection | undefined): SessionWorkerSettings | undefined {
+  const next = { ...current, [kind]: selection };
   return next.documents || next.html ? next : undefined;
 }
-
-function tomlString(value: string): string {
-  // JSON strings are valid TOML basic strings. Encode apostrophes so the
-  // surrounding single-quoted shell argument is safe in PowerShell and POSIX.
-  return JSON.stringify(value).replace(/'/g, "\\u0027");
+export function workerRoles(settings: SessionWorkerSettings | undefined) {
+  const roles: Partial<Record<keyof SessionWorkerSettings, SessionWorkerConfig>> = {};
+  for (const kind of ["documents", "html"] as const) {
+    const config = resolveSessionWorker(settings?.[kind]);
+    if (config?.provider === "codex") roles[kind] = config;
+  }
+  return roles;
 }
-
-export function sessionWorkerDeveloperInstructions(
-  settings: SessionWorkerSettings
-): string {
+function tomlString(value: string): string { return JSON.stringify(value).replace(/'/g, "\\u0027"); }
+const ROLE_NAMES = { documents: "multiagent_docs_writer", html: "multiagent_html_builder" };
+export function sessionWorkerDeveloperInstructions(settings: SessionWorkerSettings): string {
   const lines = [
     "Acedia configured parallel content workers for this session.",
     "Delegate only bounded work that can run independently. Never let workers edit the same file concurrently. The primary agent owns integration and final verification.",
   ];
-
-  const addPolicy = (
-    label: string,
-    preset: SessionWorkerPreset | undefined
-  ) => {
-    if (preset === "codex-luna-max") {
-      lines.push(
-        `For ${label}, spawn the matching Acedia worker role. It runs with gpt-5.6-luna and max reasoning effort. Give it exact target files, constraints, and expected output.`
-      );
-    } else if (preset === "claude-opus") {
-      lines.push(
-        `For ${label}, spawn the matching Acedia worker role and have it invoke the installed Claude Code CLI using claude -p --model opus --effort max --no-session-persistence --safe-mode --tools Read,Write,Edit,Glob,Grep --permission-mode acceptEdits. Use claude.cmd on Windows only when the normal launcher is blocked. Pass the bounded prompt through stdin rather than a command-line argument. Include exact target files, constraints, and necessary project guidance, wait for its result, then verify all changes. Never add a dangerous permission flag. If Claude is unavailable or not authenticated, report that and continue safely with the primary agent.`
-      );
+  for (const kind of ["documents", "html"] as const) {
+    const config = resolveSessionWorker(settings[kind]);
+    if (!config) continue;
+    const label = kind === "documents" ? "documentation and Markdown work" : "HTML and related presentation work";
+    if (config.provider === "codex") {
+      lines.push(`For ${label}, spawn the ${ROLE_NAMES[kind]} role with model=${config.model}, reasoning_effort=${config.effort}, and fork_turns=none. Pass these explicit model and effort overrides when the spawn tool supports them; otherwise use the role configuration. Give it exact target files, constraints, and all necessary context. Do not silently substitute a different model or effort if unavailable; report the error.`);
+    } else {
+      lines.push(`For ${label}, spawn the ${ROLE_NAMES[kind]} role and have it invoke the installed Claude Code CLI using claude -p --model ${config.model} --effort ${config.effort} --no-session-persistence --safe-mode --tools Read,Write,Edit,Glob,Grep --permission-mode acceptEdits. Use claude.cmd on Windows only when the normal launcher is blocked. Pass the bounded prompt through stdin rather than a command-line argument. Include exact target files, constraints, and necessary project guidance, wait for its result, then verify all changes. Never add a dangerous permission flag. If Claude is unavailable or not authenticated, report that and continue safely with the primary agent.`);
     }
-  };
-
-  addPolicy("documentation and Markdown work", settings.documents);
-  addPolicy("HTML and related presentation work", settings.html);
+  }
   lines.push("Do not delegate trivial edits where coordination costs more than the work.");
   return lines.join("\n");
 }
-
-export function addSessionWorkerArgs(
-  aiToolId: string,
-  command: string,
-  value: SessionWorkerSettings | undefined
-): string {
+export function addSessionWorkerArgs(aiToolId: string, command: string, value: SessionWorkerSettings | undefined, roleFiles: Partial<Record<keyof SessionWorkerSettings, string>> = {}): string {
   if (aiToolId !== "codex") return command;
   const settings = normalizeSessionWorkerSettings(value);
   if (!settings) return command;
-
-  const overrides = [
-    "features.multi_agent=true",
-    "agents.enabled=true",
-    "agents.max_concurrent_threads_per_session=2",
-  ];
-  if (
-    settings.documents === "codex-luna-max" ||
-    settings.html === "codex-luna-max"
-  ) {
-    overrides.push(
-      `agents.default_subagent_model=${tomlString("gpt-5.6-luna")}`,
-      `agents.default_subagent_reasoning_effort=${tomlString("max")}`
-    );
+  const overrides = ["features.multi_agent=true", "agents.enabled=true", "agents.max_concurrent_threads_per_session=2"];
+  const configs = Object.values(workerRoles(settings));
+  if (configs.length && configs.every(config => config.model === configs[0].model && config.effort === configs[0].effort)) {
+    overrides.push(`agents.default_subagent_model=${tomlString(configs[0].model)}`, `agents.default_subagent_reasoning_effort=${tomlString(configs[0].effort)}`);
   }
-  if (settings.documents) {
-    const description = settings.documents === "codex-luna-max"
-      ? "Documentation and Markdown specialist using the configured Luna Max subagent defaults."
-      : "Documentation and Markdown specialist that delegates the bounded task to Claude Code Opus through stdin.";
-    overrides.push(
-      `agents.multiagent_docs_writer.description=${tomlString(description)}`
-    );
+  for (const kind of ["documents", "html"] as const) {
+    const config = resolveSessionWorker(settings[kind]);
+    if (!config) continue;
+    const description = `${kind === "documents" ? "Documentation and Markdown" : "HTML and presentation"} specialist using ${config.provider} ${config.model} / ${config.effort}.`;
+    overrides.push(`agents.${ROLE_NAMES[kind]}.description=${tomlString(description)}`);
+    if (config.provider === "codex" && roleFiles[kind]) overrides.push(`agents.${ROLE_NAMES[kind]}.config_file=${tomlString(roleFiles[kind]!)}`);
   }
-  if (settings.html) {
-    const description = settings.html === "codex-luna-max"
-      ? "HTML and presentation specialist using the configured Luna Max subagent defaults."
-      : "HTML and presentation specialist that delegates the bounded task to Claude Code Opus through stdin.";
-    overrides.push(
-      `agents.multiagent_html_builder.description=${tomlString(description)}`
-    );
-  }
-  overrides.push(
-    `developer_instructions=${tomlString(
-      sessionWorkerDeveloperInstructions(settings)
-    )}`
-  );
-  return `${command} ${overrides.map((item) => `-c '${item}'`).join(" ")}`;
+  overrides.push(`developer_instructions=${tomlString(sessionWorkerDeveloperInstructions(settings))}`);
+  return `${command} ${overrides.map(item => `-c '${item}'`).join(" ")}`;
 }
