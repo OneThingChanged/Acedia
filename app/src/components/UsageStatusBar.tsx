@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { loadStatusBar, subscribeStatusBar, updateStatusBar, canSelectStatusAccount, selectStatusAccount, displayUsagePercent, type StatusBarSettings } from '../lib/statusBarSettings';
+import { loadStatusBar, subscribeStatusBar, toggleStatusAccount, canSelectStatusAccount, selectStatusAccounts, displayUsagePercent, type StatusBarSettings } from '../lib/statusBarSettings';
 const DisplayContext = createContext<StatusBarSettings['display']>('used');
 import {
   useCallback,
@@ -122,8 +122,8 @@ function ProviderLimitDetails({
   );
 }
 
-function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChange, onClose, refreshing, refreshError, onRefresh }: {
-  summary: UsageRateLimitSummary | null; settings: StatusBarSettings; selectedKey: string | null;
+function UsageProfilesDialog({ summary, settings, selectedKeys, onSelect, onChange, onClose, refreshing, refreshError, onRefresh }: {
+  summary: UsageRateLimitSummary | null; settings: StatusBarSettings; selectedKeys: string[];
   onSelect: (key: string) => void; onChange: (key: string, hidden: boolean) => Promise<void>; onClose: () => void;
   refreshing: boolean; refreshError: boolean; onRefresh: () => void;
 }) {
@@ -137,15 +137,15 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
     const label = profile?.id === "default" ? `${group.label} · ${text("기본", "Default")}` : group.label;
     const selectable = canSelectStatusAccount(group, settings);
     const planType = group.limits.find(limit => limit.planType)?.planType;
-    return <article className={`property-card usage-account-card${group.key === selectedKey ? " usage-account-card-selected" : ""}`} key={group.key} data-profile-key={group.key}><div className="property-card-heading"><strong><span className="usage-provider-icon" style={{color:group.iconColor}}>{group.icon}</span> {label}{planType && <em className="usage-provider-plan">{planType}</em>}</strong>{profile && <button className="btn-secondary" disabled={busy || refreshing} onClick={async () => {
+    return <article className={`property-card usage-account-card${selectedKeys.includes(group.key) ? " usage-account-card-selected" : ""}`} key={group.key} data-profile-key={group.key}><div className="property-card-heading"><strong><span className="usage-provider-icon" style={{color:group.iconColor}}>{group.icon}</span> {label}{planType && <em className="usage-provider-plan">{planType}</em>}</strong>{profile && <button className="btn-secondary" disabled={busy || refreshing} onClick={async () => {
       setBusy(true); setError("");
       try { await onChange(profile.key, profile.visible); } catch { setError(text("표시 설정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save visibility. Please try again.")); } finally { setBusy(false); }
     }}>{profile.visible ? text("기본 표시에서 숨기기", "Hide from default view") : text("기본 화면에 표시", "Show in default view")}</button>}</div>
     {current(group) && <label className={`usage-account-choice${selectable ? "" : " usage-account-choice-disabled"}`}>
-      <input type="radio" name="usage-status-account" value={group.key} checked={group.key === selectedKey} disabled={busy || !selectable}
+      <input type="checkbox" value={group.key} checked={selectedKeys.includes(group.key)} disabled={busy || !selectable}
         aria-label={text(`${label} 하단바에 표시`, `Show ${label} in status bar`)}
         onChange={() => { try { onSelect(group.key); setError(""); } catch { setError(text("하단바 표시 계정을 저장하지 못했습니다. 다시 시도하세요.", "Could not save the status bar account. Please retry.")); } }}/>
-      {group.key === selectedKey ? text("하단바에 표시 중", "Shown in status bar") : text("하단바에 표시", "Show in status bar")}
+      {selectedKeys.includes(group.key) ? text("하단바에 표시 중", "Shown in status bar") : text("하단바에 표시", "Show in status bar")}
       {!selectable && profile?.registered !== false && <small>{text("상태 표시줄 설정에서 이 도구를 켜면 선택할 수 있습니다.", "Enable this tool in Status bar settings to select it.")}</small>}
     </label>}
     {profile && !profile.registered && <p className="property-note">{text("등록된 계정이 없는 저장된 한도입니다.", "Stored quota for an account no longer registered.")}</p>}
@@ -165,7 +165,7 @@ function UsageProfilesDialog({ summary, settings, selectedKey, onSelect, onChang
     </article>;
   })}</>;
   return <PropertiesDialog title={text("에이전트 사용량", "Agent usage")} subtitle={text("계정별 한도 · 하단바 표시 계정", "Account quotas · Status bar account")} activeTab={tab} onTabChange={setTab} onClose={onClose} busy={busy} tabs={[
-    { id: "current", label: text("현재 계정", "Current accounts"), content: <><h3>{text("현재 계정", "Current accounts")}</h3><p className="property-note">{text("모든 계정의 사용량을 여기서 확인하고, 하단바에 표시할 계정 하나를 선택하세요. 이 선택은 세션의 로그인 계정을 바꾸지 않습니다.", "Review all account quotas here and choose one account for the status bar. This does not change session logins.")}</p><p className="property-note">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>{render(groups.filter(current))}</> },
+    { id: "current", label: text("현재 계정", "Current accounts"), content: <><h3>{text("현재 계정", "Current accounts")}</h3><p className="property-note">{text("모든 계정의 사용량을 여기서 확인하고, 하단바에 표시할 계정을 여러 개 선택할 수 있습니다. 이 선택은 세션의 로그인 계정을 바꾸지 않습니다.", "Review all account quotas here and choose multiple accounts for the status bar. This does not change session logins.")}</p><p className="property-note">{text("계정 사용 한도 · 로컬 토큰 집계와 별도", "Account quota · separate from local token totals")}</p>{render(groups.filter(current))}</> },
     { id: "other", label: text("이전·기타 프로필", "Other profiles"), content: <><h3>{text("이전·기타 프로필", "Other profiles")}</h3><p className="property-note">{text("이전용 이름으로 보관된 프로필, 등록이 해제된 계정과 직접 숨긴 프로필입니다. 같은 이름이나 수치만으로 계정을 합치지 않습니다. 숨겨도 로그인·대화·사용량 기록은 유지됩니다.", "Archived profiles, accounts no longer registered and profiles hidden by you. Names and percentages do not merge accounts. Hiding preserves logins, conversations and usage history.")}</p>{render(groups.filter(group => !current(group)))}</> },
   ]} footer={<><span role="status">{error || (refreshError ? text("사용량을 갱신하지 못했습니다. 다시 시도하세요.", "Could not refresh usage. Please retry.") : text("새로고침하면 등록된 모든 계정의 사용 한도를 조회합니다.", "Refresh checks usage quotas for all registered accounts."))}</span><button className="btn-secondary usage-refresh-all" disabled={busy || refreshing} onClick={onRefresh}>{refreshing ? text("갱신 중…", "Refreshing…") : text("모든 계정 새로고침", "Refresh all accounts")}</button></>}/>;
 }
@@ -256,20 +256,22 @@ export function UsageStatusBar({
   }, [load]);
 
   const providers = useMemo(() => groupUsageProfiles(summary), [summary]);
-  const provider = selectStatusAccount(providers, settings);
+  const selectedProviders = selectStatusAccounts(providers, settings);
   const statusText = loading
     ? text("사용량 불러오는 중", "Loading usage")
     : error
       ? text("사용량 확인 실패", "Could not load usage")
-      : !provider
+      : !selectedProviders.length
         ? text("표시할 계정 한도 없음", "No visible account quotas")
         : null;
 
   return (
     <DisplayContext.Provider value={settings.display}><footer className="usage-status-bar">
       <div className="usage-status-accounts">
+        {(selectedProviders.length ? selectedProviders : [null]).map(provider => (
             <button
               type="button"
+              key={provider?.key ?? "empty"}
               className={`usage-status-provider${profilesOpen ? " usage-status-provider-open" : ""}`}
               onClick={() => { setProfilesOpen(true); void load(false); }}
               aria-label={text("에이전트 사용량", "Agent usage")}
@@ -311,6 +313,7 @@ export function UsageStatusBar({
               {statusText && <span className="usage-status-pending">{statusText}</span>}
               <span className="usage-status-chevron" aria-hidden="true">⌃</span>
             </button>
+        ))}
       </div>
       {settings.resources && <ResourceMonitor
         agents={agents}
@@ -331,9 +334,9 @@ export function UsageStatusBar({
       >
         {refreshing ? text("갱신 중", "Refreshing") : text("새로고침", "Refresh")}
       </button>
-      {profilesOpen && <UsageProfilesDialog summary={summary} settings={settings} selectedKey={provider?.key ?? null}
+      {profilesOpen && <UsageProfilesDialog summary={summary} settings={settings} selectedKeys={selectedProviders.map(provider => provider.key)}
         refreshing={refreshing} refreshError={Boolean(error)} onRefresh={() => void load(true)}
-        onSelect={key => setSettings(updateStatusBar({selectedAccount:key}))}
+        onSelect={key => setSettings(toggleStatusAccount(providers, key))}
         onClose={() => setProfilesOpen(false)} onChange={async (profileKey, hidden) => {
         visibilitySaving.current = true; ++requestSerial.current;
         try { setSummary(await invoke<UsageRateLimitSummary>("usage_profile_visibility_set", { profileKey, hidden })); }

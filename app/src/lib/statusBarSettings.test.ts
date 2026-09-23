@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { DEFAULT_STATUS_BAR, displayUsagePercent, loadStatusBar, normalizeStatusBar, selectStatusAccount, showUsageProvider, updateStatusBar } from './statusBarSettings';
+import { DEFAULT_STATUS_BAR, displayUsagePercent, loadStatusBar, normalizeStatusBar, selectStatusAccount, selectStatusAccounts, toggleStatusAccount, showUsageProvider, updateStatusBar } from './statusBarSettings';
 import type { UsageProviderGroup } from './usageRateLimits';
 afterEach(() => vi.unstubAllGlobals());
 it('filters all account groups of a provider and keeps quota colors independent of inversion', () => {
@@ -45,4 +45,20 @@ it('falls back to the same provider default after removal or hiding and respects
   expect(selectStatusAccount(groups,{...settings,codex:false,claude:false})).toBeNull();
   expect(selectStatusAccount([account('codex','pending')],DEFAULT_STATUS_BAR)?.key).toBe('codex:pending');
   expect(selectStatusAccount([],settings)).toBeNull();
+});
+
+it('migrates a legacy choice and preserves multiple accounts, explicit empty and hidden choices', () => {
+  const groups = [account('codex'), account('claude'), account('codex','work')];
+  let saved = JSON.stringify({selectedAccount:'claude'});
+  vi.stubGlobal('localStorage',{getItem:()=>saved,setItem:(_key:string,value:string)=>{saved=value;}});
+  vi.stubGlobal('window',{dispatchEvent:vi.fn()});
+  expect(loadStatusBar().selectedAccounts).toEqual(['claude']);
+  toggleStatusAccount(groups,'codex');
+  expect(selectStatusAccounts(groups,loadStatusBar()).map(group=>group.key)).toEqual(['claude','codex']);
+  expect(selectStatusAccounts(groups,{...loadStatusBar(),claude:false}).map(group=>group.key)).toEqual(['codex']);
+  expect(loadStatusBar().selectedAccounts).toEqual(['claude','codex']);
+  toggleStatusAccount(groups,'claude'); toggleStatusAccount(groups,'codex');
+  expect(loadStatusBar().selectedAccounts).toEqual([]);
+  expect(selectStatusAccounts(groups,loadStatusBar())).toEqual([]);
+  expect(normalizeStatusBar({selectedAccounts:['codex','codex',' ',23]}).selectedAccounts).toEqual(['codex']);
 });

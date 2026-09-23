@@ -387,8 +387,9 @@ body,
   scrollbar-width: none;
 }
 
-.usage-status-accounts { display: flex; flex: 1; min-width: 0; align-items: stretch; padding-left: 4px; }
-.usage-status-accounts > .usage-status-provider { flex: 0 1 auto; max-width: 100%; overflow: hidden; }
+.usage-status-accounts { display: flex; flex: 1; min-width: 0; align-items: stretch; padding-left: 4px; overflow-x: auto; scrollbar-width: none; }
+.usage-status-accounts::-webkit-scrollbar { display: none; }
+.usage-status-accounts > .usage-status-provider { flex: 0 0 auto; max-width: 100%; overflow: hidden; }
 .usage-status-chevron { color: var(--app-muted); flex-shrink: 0; }
 .usage-account-card .property-card-heading > strong { overflow-wrap: anywhere; min-width: 0; }
 .usage-account-card-selected { border-color: var(--app-accent, #58a6ff); }

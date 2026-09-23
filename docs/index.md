@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.24 EXE release](release-1-8-1-24.md) - Multiple status-bar accounts with persistent checkbox selections.
+
 * [Acedia 1.8.1.23 EXE release](release-1-8-1-23.md) - Independent worker model and reasoning selection; full model dropdown and custom IDs.
 
 * [Acedia 1.8.1.22 EXE release](release-1-8-1-22.md) - Dashboard account routing, Remote Hosting and video playback; published on GitHub.
@@ -36,7 +38,7 @@ configuration that supports it.
 * [Remote UI review — 1.8.1.6](remote-ui-review-2026-09-12.md) - Readability at normal zoom, desktop language synchronization and verification results.
 * [Acedia 1.8.1.5 release](release-1-8-1-5-2026-09-12.md) - Default account selection, live quotas, large HTML previews and startup reliability.
 * [Acedia 1.8.1.0 release](release-1-8-1-0-2026-09-12.md) - Account management, work handoff, quota selection, split browsers and release verification.
-* [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 하단바 단일 계정 선택.
+* [세션·프로젝트 속성과 계정 한도 표시](properties-and-usage.md) - 넓은 속성창, 실행 옵션 저장, 대화 기록 분리와 하단바 다중 계정 선택.
 * [Acedia 설정 확장 로드맵](settings-expansion-roadmap.md) - Completed stages, acceptance criteria and remaining verification boundaries.
 * [설정 확장 일괄 확인](settings-review-1-8-0-15.md) - Six implementation commits, verification results and the combined review sequence.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
