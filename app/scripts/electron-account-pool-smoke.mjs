@@ -23,10 +23,11 @@ if (!process.versions.electron) {
   try {
     pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, rpcFactory: (_env, home) => {
       const rpc = new EventEmitter(); rpc.initialize = async () => rpc; rpc.close = () => {};
-      rpc.call = async method => {
+      rpc.call = async (method, params) => {
         if (method === 'account/login/start') {
-          setTimeout(() => rpc.emit('notification', { method: 'account/login/completed', params: { success: true } }), 800);
-          return { type: 'chatgptDeviceCode', userCode: 'TEST-1234', verificationUrl: 'https://auth.openai.com/codex/device' };
+          setTimeout(() => rpc.emit('notification', { method: 'account/login/completed', params: { loginId:'ui-login', success: true } }), 800);
+          if (params.type === 'chatgpt') return {type:'chatgpt',loginId:'ui-login',authUrl:'https://auth.openai.com/oauth/authorize?redirect_uri=http://localhost:1455/auth/callback'};
+          return { type: 'chatgptDeviceCode', loginId:'ui-login', userCode: 'TEST-1234', verificationUrl: 'https://auth.openai.com/codex/device' };
         }
         if (method === 'account/rateLimits/read') return { rateLimits: { primary: { usedPercent: 32, resetsAt: Math.floor(Date.now()/1000)+3600 } } };
         const id = path.basename(home);
@@ -51,12 +52,14 @@ if (!process.versions.electron) {
         const form = document.querySelector('.pool-panel form'); form.querySelector('input').value = 'Fixture ${width}'; form.requestSubmit();
         const card = () => [...document.querySelectorAll('.pool-card')].find(c => c.querySelector('h3').textContent === 'Fixture ${width}');
         await wait(() => card() && !card().querySelector('button').disabled);
-        card().querySelector('button').click();
+        const action = name => [...card().querySelectorAll('button')].find(b=>b.textContent===name);
+        action('${width === 1280 ? '브라우저 로그인' : '기기 코드 로그인'}').click();
         await wait(() => card().querySelector('.pool-login'));
-        if (!card().querySelector('.pool-login').textContent.includes('TEST-1234')) throw new Error('Missing login code');
+        if (${width === 390} && !card().querySelector('.pool-login').textContent.includes('TEST-1234')) throw new Error('Missing login code');
+        if (${width === 1280} && (card().querySelector('.pool-login strong') || !card().querySelector('.pool-login a').href.startsWith('https://auth.openai.com/'))) throw new Error('Invalid browser UI');
         await wait(() => card().textContent.includes('fixture@example.invalid') && !card().querySelector('.pool-login'));
-        card().querySelectorAll('button')[1].click();
-        await wait(() => card().querySelectorAll('button')[1]?.textContent === '분산 제외' && !card().querySelectorAll('button')[1].disabled);
+        action('분산 참여').click();
+        await wait(() => action('분산 제외') && !action('분산 제외').disabled);
         if (!document.querySelector('.pool-toolbar button').getAttribute('aria-pressed').includes('true')) document.querySelector('.pool-toolbar button').click();
         await wait(() => document.querySelector('.pool-toolbar button').getAttribute('aria-pressed') === 'true');
         if (document.documentElement.scrollWidth > window.innerWidth+2) throw new Error('Horizontal overflow');

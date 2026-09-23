@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { accountLoginError, browserLoginUrl } from './account-login.mjs';
 import path from 'node:path';
 import http from 'node:http';
 import { randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
@@ -125,13 +126,15 @@ export class AccountPool {
     a.identity = identity; a.email = data.account.email || null; a.plan = data.account.planType || null;
     a.status = 'ready'; a.cooldownUntil = null;
   }
-  async beginLogin(id) {
+  async beginLogin(id, method = 'browser') {
+    if (!['browser', 'device'].includes(method)) throw fail('지원하지 않는 로그인 방식입니다.');
     const a = this.account(id);
     if (this.jobs.size || this.locks.has(id) || this.active.get(id)) throw fail('진행 중인 로그인·계정 요청을 먼저 완료하세요.', 409);
     const job = { public: null, rpc: null, timer: null, finished: false, oldAuth: a.auth }; this.jobs.set(id, job);
     a.status = 'login_required'; a.loginError = null; a.enabled = false; this.persist();
-    const finish = async success => {
+    const finish = async (success, error) => {
       if (job.finished) return; job.finished = true; clearTimeout(job.timer);
+      if (!success) a.loginError = error?.status ? error.message : accountLoginError(error);
       try {
         if (success) {
           this.identity(a, await job.rpc.call('account/read', { refreshToken: false }));
@@ -152,17 +155,34 @@ export class AccountPool {
     job.finish = finish;
     try {
       job.rpc = await this.connect(a);
-      job.rpc.on('notification', message => { if (message.method === 'account/login/completed') void finish(message.params?.success === true); });
+      job.rpc.on('notification', message => {
+        if (message.method !== 'account/login/completed') return;
+        if (!job.loginId) { job.completion = message.params; return; }
+        if (message.params?.loginId === job.loginId) void finish(message.params.success === true, message.params.error);
+      });
       job.rpc.on('closed', () => { if (!job.finished) void finish(false); });
-      const result = await job.rpc.call('account/login/start', { type: 'chatgptDeviceCode' });
+      const result = await job.rpc.call('account/login/start', { type: method === 'browser' ? 'chatgpt' : 'chatgptDeviceCode' });
       if (job.finished) throw fail('로그인이 종료되었습니다. 다시 시작하세요.');
-      if (result.type !== 'chatgptDeviceCode' || result.verificationUrl !== 'https://auth.openai.com/codex/device' || !/^[A-Z0-9-]{4,32}$/i.test(result.userCode)) throw fail('로그인 응답을 확인할 수 없습니다. Codex CLI를 업데이트하세요.');
-      job.public = { url: result.verificationUrl, code: result.userCode, expiresAt: this.now() + 10 * 60_000 };
-      job.timer = setTimeout(() => void finish(false), 10 * 60_000); job.timer.unref?.();
+      if (typeof result.loginId !== 'string' || !result.loginId) throw fail('로그인 응답을 확인할 수 없습니다. Codex CLI를 업데이트하세요.');
+      job.loginId = result.loginId;
+      if (method === 'browser') {
+        if (result.type !== 'chatgpt') throw fail('브라우저 로그인 응답을 확인할 수 없습니다.');
+        job.public = { method, url: browserLoginUrl(result.authUrl), expiresAt: this.now() + 10 * 60_000 };
+      } else {
+        if (result.type !== 'chatgptDeviceCode' || result.verificationUrl !== 'https://auth.openai.com/codex/device' || !/^[A-Z0-9-]{4,32}$/i.test(result.userCode)) throw fail('로그인 응답을 확인할 수 없습니다. Codex CLI를 업데이트하세요.');
+        job.public = { method, url: result.verificationUrl, code: result.userCode, expiresAt: this.now() + 10 * 60_000 };
+      }
+      job.timer = setTimeout(() => void finish(false, 'timeout'), 10 * 60_000); job.timer.unref?.();
+      if (job.completion?.loginId === job.loginId) await finish(job.completion.success === true, job.completion.error);
       return job.public;
-    } catch (error) { await finish(false); throw error; }
+    } catch (error) { await finish(false, error); throw error; }
   }
-  async cancelLogin(id) { this.account(id); await this.jobs.get(id)?.finish(false); }
+  async cancelLogin(id) {
+    this.account(id); const job = this.jobs.get(id);
+    if (!job) return;
+    try { if (job.loginId) await job.rpc.call('account/login/cancel', { loginId: job.loginId }, 5000); }
+    finally { await job.finish(false, 'cancelled'); }
+  }
   async credentials(id, force = false, limits = false) {
     return this.exclusive(id, async () => {
       const a = this.account(id);
@@ -325,18 +345,18 @@ export class AccountPool {
       }
     }
   }
-  async api(req, res, url, { readJson, allowed, admin = true }) {
+  async api(req, res, url, { readJson, allowed, admin = true, local = false }) {
     if (url.pathname !== '/api/account-pool') return false;
     try {
       if (!admin) { if (req.method !== 'GET') throw fail('계정 관리 권한이 필요합니다.', 403); json(res, 200, this.snapshot(false)); return true; }
-      if (req.method === 'GET') { json(res, 200, this.snapshot()); return true; }
+      if (req.method === 'GET') { json(res, 200, { ...this.snapshot(), defaultLoginMethod: local ? 'browser' : 'device' }); return true; }
       if (req.method !== 'POST') throw fail('지원하지 않는 요청입니다.', 405);
       if (!allowed()) throw fail('다른 사이트의 요청은 허용하지 않습니다.', 403);
       if (!String(req.headers['content-type']).startsWith('application/json')) throw fail('JSON 요청이 필요합니다.', 415);
       const b = await readJson(req);
       switch (b.action) {
         case 'create': this.create(b.label); break;
-        case 'login': await this.beginLogin(b.id); break;
+        case 'login': await this.beginLogin(b.id, b.method ?? (local ? 'browser' : 'device')); break;
         case 'cancel': await this.cancelLogin(b.id); break;
         case 'update': this.update(b.id, b.enabled, b.label); break;
         case 'remove': this.remove(b.id); break;
@@ -344,7 +364,7 @@ export class AccountPool {
         case 'configure': await this.setEnabled(b.enabled); break;
         default: throw fail('지원하지 않는 작업입니다.');
       }
-      json(res, 200, this.snapshot());
+      json(res, 200, { ...this.snapshot(), defaultLoginMethod: local ? 'browser' : 'device' });
     } catch (error) { if (!res.headersSent) json(res, error.status || 400, { error: error.status ? error.message : '계정 작업에 실패했습니다. Codex CLI와 저장 공간을 확인하세요.' }); }
     return true;
   }

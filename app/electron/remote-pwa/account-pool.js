@@ -82,12 +82,16 @@ export function createAccountPoolView(root) {
       card.append(el('small', account.limitsAt ? `${t('한도 조회')} ${new Date(account.limitsAt).toLocaleString()}` : '한도를 아직 조회하지 않았습니다.'));
       const actions = el('div', '', 'pool-toolbar');
       if (account.login) {
-        const login = el('div', '', 'pool-login'); const code = el('strong', account.login.code);
+        const login = el('div', '', 'pool-login');
         const link = el('a', '로그인 페이지 열기'); link.href = account.login.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-        login.append(el('p', '로그인 페이지에서 아래 코드를 입력하세요.'), code, link); card.append(login);
+        if (account.login.code) login.append(el('p', '로그인 페이지에서 아래 코드를 입력하세요.'), el('strong', account.login.code));
+        else login.append(el('p', 'Acedia가 실행 중인 PC의 브라우저에서 링크를 열고 로그인하세요. 휴대폰에서는 기기 코드 로그인을 사용하세요.'));
+        login.append(link); card.append(login);
         button('로그인 취소', () => api({ action: 'cancel', id: account.id }), actions);
       } else {
-        button(account.state === 'ready' ? '다시 로그인' : '로그인', () => api({ action: 'login', id: account.id }), actions, account.active > 0);
+        const methods = data.defaultLoginMethod === 'device' ? ['device', 'browser'] : ['browser', 'device'];
+        for (const method of methods) button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => api({ action: 'login', id: account.id, method }), actions, account.active > 0);
+        if (data.defaultLoginMethod === 'device') card.append(el('small', '다른 기기에서는 기기 코드 로그인을 사용하세요. ChatGPT 보안 설정에서 기기 코드 로그인을 활성화해야 합니다.'));
         button(account.enabled ? '분산 제외' : '분산 참여', () => api({ action: 'update', id: account.id, enabled: !account.enabled }), actions, account.state !== 'ready' && !account.enabled);
         button('한도 새로고침', () => api({ action: 'refresh', id: account.id }), actions, account.state !== 'ready');
         const rename = el('button', '이름 변경'); rename.type = 'button';

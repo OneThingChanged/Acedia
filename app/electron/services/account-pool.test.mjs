@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, it, expect } from 'vitest';
+import { browserLoginUrl, accountLoginError } from './account-login.mjs';
 import { AccountPool } from './account-pool.mjs';
 import { LocalDashboardService, RemoteDashboardService } from './web-services.mjs';
 
@@ -104,18 +105,23 @@ describe('Acedia account pool', () => {
     const launch = await pool.launch('one'); await pool.setEnabled(false);
     expect((await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/models`, { headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}` } })).status).toBe(503);
   });
-  it('starts device login, observes completion and clears the temporary credential file', async () => {
+  it.each(['browser','device'])('starts %s login, correlates completion and clears temporary credentials', async mode => {
     let rpc;
     const { pool } = fixture({ rpcFactory: (_env, home) => {
       rpc = new EventEmitter(); rpc.initialize = async () => rpc; rpc.close = () => {};
-      rpc.call = async method => {
-        if (method === 'account/login/start') return { type: 'chatgptDeviceCode', verificationUrl: 'https://auth.openai.com/codex/device', userCode: 'TEST-1234' };
+      rpc.call = async (method, params) => {
+        if (method === 'account/login/start') {
+          expect(params.type).toBe(mode === 'browser' ? 'chatgpt' : 'chatgptDeviceCode');
+          return mode === 'browser' ? {type:'chatgpt',loginId:'fixture-login',authUrl:'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback'} : { type: 'chatgptDeviceCode', loginId:'fixture-login', verificationUrl: 'https://auth.openai.com/codex/device', userCode: 'TEST-1234' };
+        }
         fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify(auth('identity')));
         return { account: { type: 'chatgpt', email: 'test@example.invalid', planType: 'plus' } };
       }; return rpc;
     } });
-    const id = pool.create('Test'); const login = await pool.beginLogin(id); expect(login.code).toBe('TEST-1234');
-    rpc.emit('notification', { method: 'account/login/completed', params: { success: true } });
+    const id = pool.create('Test'); const login = await pool.beginLogin(id, mode); expect(login.method).toBe(mode); expect(login.code).toBe(mode === 'device' ? 'TEST-1234' : undefined);
+    rpc.emit('notification', {method:'account/login/completed',params:{loginId:'other',success:true}});
+    expect(pool.jobs.has(id)).toBe(true);
+    rpc.emit('notification', { method: 'account/login/completed', params: { loginId:'fixture-login', success: true } });
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(pool.account(id).status).toBe('ready'); expect(pool.account(id).enabled).toBe(false);
     expect(fs.existsSync(path.join(pool.home(id), 'auth.json'))).toBe(false);
@@ -153,4 +159,34 @@ describe('Acedia account pool', () => {
     expect((await fetch(url + '/pwa/account-pool.js')).status).toBe(200);
     expect(await fetch(url + '/api/account-pool').then(r => r.json())).toMatchObject({ canManage: true, enabled: false });
   });
+});
+
+it('validates browser origins and loopback redirects and redacts raw errors', () => {
+  for (const url of ['https://evil.test/?redirect_uri=http://localhost:1455/auth/callback','https://auth.openai.com/?redirect_uri=https://evil.test/auth/callback','http://auth.openai.com/?redirect_uri=http://localhost:1455/auth/callback']) expect(()=>browserLoginUrl(url)).toThrow();
+  expect(accountLoginError('device code authentication is disabled SECRET')).toContain('비활성화');
+  expect(accountLoginError('EADDRINUSE SECRET')).toContain('콜백 포트');
+  expect(accountLoginError('unrecognized SECRET')).not.toContain('SECRET');
+});
+it('cancels the matching login and preserves previous encrypted credentials on failure', async () => {
+  const calls = [];
+  const rpc = new EventEmitter(); rpc.initialize=async()=>rpc; rpc.close=()=>{};
+  rpc.call=async(method,params)=>{calls.push({method,params});return {type:'chatgpt',loginId:'cancel-id',authUrl:'https://auth.openai.com/oauth/authorize?redirect_uri=http://localhost:1455/auth/callback'};};
+  const {pool}=fixture({rpcFactory:()=>rpc}); const id=add(pool,'Existing'); const original=pool.account(id).auth;
+  await pool.beginLogin(id); await pool.cancelLogin(id);
+  expect(calls).toContainEqual({method:'account/login/cancel',params:{loginId:'cancel-id'}});
+  expect(pool.account(id).auth).toEqual(original);
+  expect(pool.account(id).loginError).toContain('취소');
+  expect(pool.jobs.size).toBe(0);
+  expect(fs.existsSync(path.join(pool.home(id),'auth.json'))).toBe(false);
+});
+
+it('advertises and applies a server-selected default login method for each access context', async () => {
+  const {pool}=fixture(); const calls=[]; pool.beginLogin=async(...args)=>calls.push(args);
+  for(const local of [true,false]) {
+    const result={writeHead(){},end(body){this.body=JSON.parse(body);}};
+    await pool.api({method:'GET'},result,new URL('http://localhost/api/account-pool'),{local,admin:true});
+    expect(result.body.defaultLoginMethod).toBe(local?'browser':'device');
+    await pool.api({method:'POST',headers:{'content-type':'application/json'}},result,new URL('http://localhost/api/account-pool'),{local,admin:true,allowed:()=>true,readJson:async()=>({action:'login',id:'fixture'})});
+    expect(calls.at(-1)).toEqual(['fixture',local?'browser':'device']);
+  }
 });

@@ -1,3 +1,4 @@
+import { accountLoginError } from './account-login.mjs';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { terminateWindowsProcessTree } from './process-tree.mjs';
@@ -19,7 +20,7 @@ export class AccountPoolRpc extends EventEmitter {
         const pending = this.pending.get(message.id);
         if (pending && !message.method) {
           this.pending.delete(message.id); clearTimeout(pending.timer);
-          if (message.error) pending.reject(new Error('계정 인증 요청에 실패했습니다. 다시 로그인하거나 Codex CLI를 확인하세요.'));
+          if (message.error) pending.reject(Object.assign(new Error(accountLoginError(message.error)), { status: 400 }));
           else pending.resolve(message.result);
         } else if (message.method && message.id == null) this.emit('notification', message);
       }

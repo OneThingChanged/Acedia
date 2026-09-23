@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.25 EXE release](release-1-8-1-25.md) - Browser OAuth and device-code login for dedicated routing accounts.
+
 * [Acedia 1.8.1.24 EXE release](release-1-8-1-24.md) - Multiple status-bar accounts with persistent checkbox selections.
 
 * [Acedia 1.8.1.23 EXE release](release-1-8-1-23.md) - Independent worker model and reasoning selection; full model dropdown and custom IDs.

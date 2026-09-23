@@ -1,6 +1,11 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["브라우저 로그인", "Browser login"],
+  ["기기 코드 로그인", "Device code login"],
+  ["Acedia가 실행 중인 PC의 브라우저에서 링크를 열고 로그인하세요. 휴대폰에서는 기기 코드 로그인을 사용하세요.", "Open this link in a browser on the PC running Acedia. Use device code login on a phone."],
+  ["다른 기기에서는 기기 코드 로그인을 사용하세요. ChatGPT 보안 설정에서 기기 코드 로그인을 활성화해야 합니다.", "On another device, use device code login. Enable it in your ChatGPT security settings first."],
+
   ["이름 저장", "Save name"],
   ["사용량 보기", "Usage views"],
   ["계정 관리·분산", "Accounts & routing"],

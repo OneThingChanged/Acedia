@@ -710,7 +710,7 @@ export class LocalDashboardService {
           return;
         }
         if (p) {
-          if (await p.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request), admin: true })) return;
+          if (await p.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request), admin: true, local: true })) return;
           if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request) })) return;
           if (await serveUsageProfileVisibility(request, response, url, p.usageProfileVisibility, () => this.isLocalOrigin(request))) return;
           // Full Remote PWA on loopback (no login needed locally).
@@ -1423,7 +1423,7 @@ export class RemoteDashboardService {
           return;
         }
         if (await this.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isSameOrigin(request),
-          admin: this.isDirectLocal(request) || Boolean(login && login.toLowerCase() === String(this.config.owner).toLowerCase()) })) return;
+          local: this.isDirectLocal(request), admin: this.isDirectLocal(request) || Boolean(login && login.toLowerCase() === String(this.config.owner).toLowerCase()) })) return;
         if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isSameOrigin(request) })) return;
         if (await serveRemoteBrowserApi(request, response, url, {
           browserProvider: this.browserProvider,
