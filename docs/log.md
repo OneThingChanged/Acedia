@@ -2,6 +2,8 @@
 
 ## 2026-09-23
 
+* **1.8.1.26 account Dashboard**: Added a return link and automatic return from the login progress page after authentication, with responsive 3/2/1-column account cards. See [release scope](release-1-8-1-26.md).
+
 * **1.8.1.25 account login**: Added browser OAuth alongside device codes, context-specific defaults, correlated completion/cancellation and sanitized errors. Installed CLI browser start/cancel and mocked Electron desktop/mobile completion/encryption checks passed. See [release scope](release-1-8-1-25.md).
 
 * **1.8.1.24 status-bar accounts**: Replaced the account radio selector with independent checkboxes and multiple status-bar entries. Preserves legacy selections, explicit empty selections, cross-window synchronization and save-failure handling. Three-width Electron interaction checks and frontend build passed. See [release scope](release-1-8-1-24.md).

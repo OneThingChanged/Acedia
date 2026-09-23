@@ -30,12 +30,14 @@
 .pool-tabs, .pool-toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:12px 0; }
 .pool-tabs button, .pool-toolbar button, .pool-login a { min-height:44px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:8px; background:var(--panel-2); color:var(--text); }
 .pool-tabs button[aria-pressed="true"] { border-color:var(--cyan); color:var(--cyan); }
-.pool-panel { padding:16px 0; }
+.pool-panel { padding:16px 0; container-type:inline-size; container-name:account-pool; }
 .pool-panel p, .pool-panel small { overflow-wrap:anywhere; }
 .pool-panel small { color:var(--muted); }
 .pool-toolbar label { display:flex; flex-direction:column; gap:6px; flex:1; min-width:180px; }
 .pool-toolbar input { min-height:44px; background:var(--panel); border:1px solid var(--line-strong); border-radius:8px; padding:8px 12px; }
-.pool-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
+.pool-list { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+@container account-pool (min-width:656px) { .pool-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@container account-pool (min-width:992px) { .pool-list { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 .pool-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
 .pool-card h3 { margin:0 0 8px; overflow-wrap:anywhere; }
 .pool-card label { display:block; }

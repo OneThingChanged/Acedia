@@ -18,14 +18,15 @@ if (!process.versions.electron) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-pool-ui-'));
   app.setPath('userData', path.join(root, 'profile')); app.on('window-all-closed', () => {});
   const timer = setTimeout(() => { console.error('Account pool UI smoke timed out'); app.exit(2); }, 55000); const windows = [];
-  let pool, web;
+  let pool, web; let completeBrowser;
   void app.whenReady().then(async () => {
   try {
     pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, rpcFactory: (_env, home) => {
       const rpc = new EventEmitter(); rpc.initialize = async () => rpc; rpc.close = () => {};
       rpc.call = async (method, params) => {
         if (method === 'account/login/start') {
-          setTimeout(() => rpc.emit('notification', { method: 'account/login/completed', params: { loginId:'ui-login', success: true } }), 800);
+          const complete = () => rpc.emit('notification', { method: 'account/login/completed', params: { loginId:'ui-login', success: true } });
+          if (params.type === 'chatgpt') completeBrowser = complete; else setTimeout(complete, 800);
           if (params.type === 'chatgpt') return {type:'chatgpt',loginId:'ui-login',authUrl:'https://auth.openai.com/oauth/authorize?redirect_uri=http://localhost:1455/auth/callback'};
           return { type: 'chatgptDeviceCode', loginId:'ui-login', userCode: 'TEST-1234', verificationUrl: 'https://auth.openai.com/codex/device' };
         }
@@ -44,7 +45,7 @@ if (!process.versions.electron) {
       const errors = []; win.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
       await win.loadURL(url + '/?usage=1');
       console.log('Account pool shell loaded', width);
-      await win.webContents.executeJavaScript(`(async () => {
+      const progressUrl = await win.webContents.executeJavaScript(`(async () => {
         const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool UI timeout: '+document.body.innerText); };
         await wait(() => document.querySelector('.pool-tabs button'));
         document.querySelectorAll('.pool-tabs button')[1].click();
@@ -56,13 +57,38 @@ if (!process.versions.electron) {
         action('${width === 1280 ? '브라우저 로그인' : '기기 코드 로그인'}').click();
         await wait(() => card().querySelector('.pool-login'));
         if (${width === 390} && !card().querySelector('.pool-login').textContent.includes('TEST-1234')) throw new Error('Missing login code');
-        if (${width === 1280} && (card().querySelector('.pool-login strong') || !card().querySelector('.pool-login a').href.startsWith('https://auth.openai.com/'))) throw new Error('Invalid browser UI');
+        if (${width === 1280} && (card().querySelector('.pool-login strong') || !new URL(card().querySelector('.pool-login a').href).searchParams.has('poolLogin'))) throw new Error('Invalid browser UI');
+        return card().querySelector('.pool-login a').href;
+      })()`);
+      if (width === 1280) {
+        const progress = new BrowserWindow({ width, height: 900, show: false, webPreferences: { sandbox: true, backgroundThrottling: false } }); windows.push(progress);
+        await progress.loadURL(progressUrl);
+        await progress.webContents.executeJavaScript(`(async () => {
+          for (let i=0;i<150 && !document.querySelector('.pool-login a');i++) await new Promise(r=>setTimeout(r,50));
+          const back = new URL(document.querySelector('.pool-return').href);
+          if (back.origin !== location.origin || back.searchParams.get('accounts') !== '1' || back.searchParams.has('poolLogin')) throw new Error('Invalid Dashboard return link');
+          if (!document.querySelector('.pool-login a').href.startsWith('https://auth.openai.com/')) throw new Error('Missing OAuth link');
+        })()`);
+        completeBrowser();
+        for (let i=0;i<150 && new URL(progress.webContents.getURL()).searchParams.has('poolLogin');i++) await new Promise(r=>setTimeout(r,100));
+        assert.equal(new URL(progress.webContents.getURL()).searchParams.get('accounts'), '1');
+        assert.equal(new URL(progress.webContents.getURL()).searchParams.has('poolLogin'), false);
+        progress.destroy();
+      }
+      await win.webContents.executeJavaScript(`(async () => {
+        const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool completion timeout'); };
+        const card = () => [...document.querySelectorAll('.pool-card')].find(c => c.querySelector('h3').textContent === 'Fixture ${width}');
+        const action = name => [...card().querySelectorAll('button')].find(b=>b.textContent===name);
         await wait(() => card().textContent.includes('fixture@example.invalid') && !card().querySelector('.pool-login'));
         action('분산 참여').click();
         await wait(() => action('분산 제외') && !action('분산 제외').disabled);
         if (!document.querySelector('.pool-toolbar button').getAttribute('aria-pressed').includes('true')) document.querySelector('.pool-toolbar button').click();
         await wait(() => document.querySelector('.pool-toolbar button').getAttribute('aria-pressed') === 'true');
         if (document.documentElement.scrollWidth > window.innerWidth+2) throw new Error('Horizontal overflow');
+        const grid = document.querySelector('.pool-list');
+        const available = grid.getBoundingClientRect().width;
+        const expected = available >= 992 ? 3 : available >= 656 ? 2 : 1;
+        if (getComputedStyle(grid).gridTemplateColumns.split(' ').length !== expected) throw new Error('Incorrect account grid columns');
         const actions = [...card().querySelectorAll('button')];
         if (actions.some(b=>b.getBoundingClientRect().height < 44)) throw new Error('Small touch target');
       })()`);

@@ -1,6 +1,11 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["Dashboard로 돌아가기", "Back to Dashboard"],
+  ["인증 탭에서 로그인한 뒤 이 화면으로 돌아오세요. 완료되면 계정 관리 화면으로 자동 이동합니다.", "Sign in in the authentication tab, then return here. This page returns to account management when login completes."],
+  ["로그인 계정을 찾을 수 없습니다. Dashboard로 돌아가 다시 시작하세요.", "Login account not found. Return to the Dashboard and start again."],
+  ["로그인이 완료되었습니다. Dashboard로 이동합니다.", "Login complete. Returning to the Dashboard."],
+
   ["브라우저 로그인", "Browser login"],
   ["기기 코드 로그인", "Device code login"],
   ["Acedia가 실행 중인 PC의 브라우저에서 링크를 열고 로그인하세요. 휴대폰에서는 기기 코드 로그인을 사용하세요.", "Open this link in a browser on the PC running Acedia. Use device code login on a phone."],
