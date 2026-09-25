@@ -381,7 +381,9 @@ describe("Electron dashboard server", () => {
     expect(stylesBody).toContain("touch-action: none");
     expect(stylesBody).toContain(".nav-add-button");
     expect(stylesBody).toContain('[data-session-mode="chat"] .question-panel');
-    expect(stylesBody).toContain("touch-action: pinch-zoom");
+    expect(pageBody).toContain('maximum-scale=1, user-scalable=no');
+    expect(stylesBody).toContain('html { touch-action: pan-x pan-y; }');
+    expect(stylesBody).toContain('touch-action: pan-y;');
     expect(stylesBody).toContain("--visual-viewport-height: 100dvh");
     expect(stylesBody).toContain("html.keyboard-visible .mobile-nav");
     expect(appScriptBody).toContain("mobile streams only its selected pane");
@@ -390,7 +392,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v71');
+    expect(workerBody).toContain('multiagent-remote-v72');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);

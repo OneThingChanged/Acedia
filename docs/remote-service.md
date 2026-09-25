@@ -260,6 +260,12 @@ cursors. The browser keeps a rendering cache, but that cache is not the source
 of truth: reaching the top requests older stored pages, and an app/WebView
 reload can reconstruct the transcript from SQLite.[^electron-main][^remote-client]
 
+On mobile, Remote fixes the document viewport to the device width and disables
+page scaling. The terminal's touch area supports vertical scrolling without
+enabling pinch zoom. The Android client also disables WebView's built-in zoom
+controls, so an updated APK is needed for that native setting; the PWA change
+is delivered through service-worker cache v72.[^remote-styles][^mobile-remote-screen]
+
 ## Conversation UX prototype
 
 The interactive Remote prototype keeps the conversation as the primary surface

@@ -2,6 +2,8 @@
 
 ## 2026-09-25
 
+* **1.8.1.28 EXE and Android**: Disabled accidental Remote page pinch zoom in the PWA and Android WebView while retaining one-finger terminal scrolling. The Remote cache advances to v72 and the signed ARM64 APK advances to Android versionCode 20. See [release scope](release-1-8-1-28.md).
+
 * **1.8.1.27 EXE**: Remote full paths inside registered Unreal workspaces, JSON chat previews, direct account authentication links, restart routing for exhausted accounts, and Chrome opening for detected session servers. See [release scope](release-1-8-1-27.md).
 
 ## 2026-09-23

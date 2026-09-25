@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.28 EXE and Android release](release-1-8-1-28.md) - Prevent accidental Remote page zoom while retaining touch scrolling.
+
 * [Acedia 1.8.1.27 EXE release](release-1-8-1-27.md) - Remote full paths, account routing and login, and session server opening.
 
 * [Acedia 1.8.1.26 EXE release](release-1-8-1-26.md) - Dashboard return flow and three-column account cards.

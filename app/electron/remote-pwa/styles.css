@@ -27,6 +27,7 @@
 }
 
 * { box-sizing: border-box; }
+html { touch-action: pan-x pan-y; }
 .pool-tabs, .pool-toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:12px 0; }
 .pool-tabs button, .pool-toolbar button, .pool-login a { min-height:44px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:8px; background:var(--panel-2); color:var(--text); }
 .pool-tabs button[aria-pressed="true"] { border-color:var(--cyan); color:var(--cyan); }
@@ -1491,7 +1492,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
   }
   .terminal-mount .xterm,
   .screen-terminal-mount .xterm {
-    touch-action: pinch-zoom;
+    touch-action: pan-y;
   }
   .terminal-mount .xterm-viewport,
   .screen-terminal-mount .xterm-viewport {

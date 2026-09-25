@@ -300,6 +300,7 @@ export function RemoteScreen({
           thirdPartyCookiesEnabled={false}
           cacheEnabled
           pullToRefreshEnabled={Platform.OS === "android"}
+          setBuiltInZoomControls={false}
           setSupportMultipleWindows={false}
           allowsInlineMediaPlayback
           allowsBackForwardNavigationGestures
