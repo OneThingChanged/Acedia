@@ -1,4 +1,5 @@
 import { listSubagents } from './services/subagent-monitor.mjs';
+import { sessionWebServers, openServerChrome } from './services/session-web-servers.mjs';
 import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
@@ -5289,6 +5290,12 @@ async function invokeCommand(event, command, rawArgs) {
       return resourceUsage();
     case "list_ports":
       return listPorts(args.projects);
+    case "session_web_servers": {
+      const result = await listPorts(args.projects);
+      return sessionWebServers(result.ports, args.id, args.projectId);
+    }
+    case "open_server_chrome":
+      return openServerChrome(args.url);
     case "kill_port_process":
       return killPortProcess(args.pid, args.port);
     case "set_titlebar_overlay": {

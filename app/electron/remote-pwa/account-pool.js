@@ -101,15 +101,36 @@ export function createAccountPoolView(root) {
       if (account.login) {
         const login = el('div', '', 'pool-login');
         const link = el('a', '로그인 페이지 열기');
-        const progressUrl = new URL(dashboardUrl); progressUrl.searchParams.set('poolLogin', account.id);
-        link.href = account.login.method === 'browser' && !loginAccountId ? progressUrl.href : account.login.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.href = account.login.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
         if (account.login.code) login.append(el('p', '로그인 페이지에서 아래 코드를 입력하세요.'), el('strong', account.login.code));
         else login.append(el('p', 'Acedia가 실행 중인 PC의 브라우저에서 링크를 열고 로그인하세요. 휴대폰에서는 기기 코드 로그인을 사용하세요.'));
-        login.append(link); card.append(login);
+        const address = el('input'); address.type = 'text'; address.readOnly = true;
+        address.value = account.login.url; address.setAttribute('aria-label', t('로그인 페이지 열기'));
+        address.style.cssText = 'display:block;width:100%;min-width:0;box-sizing:border-box;margin-top:12px';
+        address.onclick = () => address.select();
+        login.append(link, address); card.append(login);
         button('로그인 취소', () => api({ action: 'cancel', id: account.id }), actions);
       } else if (!loginAccountId) {
         const methods = data.defaultLoginMethod === 'device' ? ['device', 'browser'] : ['browser', 'device'];
-        for (const method of methods) button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => api({ action: 'login', id: account.id, method }), actions, account.active > 0);
+        for (const method of methods) {
+          const start = button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => {}, actions, account.active > 0);
+          start.onclick = () => {
+            if (busy) return;
+            // Reserve the tab during the user gesture, before the asynchronous request.
+            const authTab = window.open('about:blank', '_blank');
+            if (authTab) authTab.opener = null;
+            void run(async () => {
+              try {
+                const result = await api({ action: 'login', id: account.id, method });
+                const url = result.accounts.find(item => item.id === account.id)?.login?.url;
+                if (authTab && !authTab.closed) {
+                  if (url) authTab.location.replace(url); else authTab.close();
+                }
+                return result;
+              } catch (error) { if (authTab && !authTab.closed) authTab.close(); throw error; }
+            });
+          };
+        }
         if (data.defaultLoginMethod === 'device') card.append(el('small', '다른 기기에서는 기기 코드 로그인을 사용하세요. ChatGPT 보안 설정에서 기기 코드 로그인을 활성화해야 합니다.'));
         button(account.enabled ? '분산 제외' : '분산 참여', () => api({ action: 'update', id: account.id, enabled: !account.enabled }), actions, account.state !== 'ready' && !account.enabled);
         button('한도 새로고침', () => api({ action: 'refresh', id: account.id }), actions, account.state !== 'ready');

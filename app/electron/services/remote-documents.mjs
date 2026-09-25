@@ -184,8 +184,25 @@ function documentProjectRootForAbsolutePath(snapshot, candidate) {
     if (!folder) continue;
     try {
       const root = fs.realpathSync(folder);
-      if (fs.statSync(root).isDirectory() && isInsideDocumentRoot(root, candidate)) {
+      if (!fs.statSync(root).isDirectory()) continue;
+      if (isInsideDocumentRoot(root, candidate)) {
         matches.push({ project, root, baseRoot: root });
+        continue;
+      }
+      let workspace = root;
+      // A registered Unreal plugin also belongs to its enclosing .uproject.
+      // This permits Saved reports without exposing the rest of the drive.
+      for (let dir = root; ; dir = path.dirname(dir)) {
+        let entries;
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { break; }
+        if (entries.some(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.uproject'))) {
+          workspace = dir;
+          break;
+        }
+        if (path.dirname(dir) === dir) break;
+      }
+      if (isInsideDocumentRoot(workspace, candidate)) {
+        matches.push({ project, root: workspace, baseRoot: workspace });
       }
     } catch {
       // A stale project must not prevent another registered project from
@@ -193,7 +210,7 @@ function documentProjectRootForAbsolutePath(snapshot, candidate) {
     }
   }
   if (!matches.length) {
-    throw new RemoteDocumentError(403, "등록된 프로젝트 밖의 파일은 열 수 없습니다.");
+    throw new RemoteDocumentError(403, "등록된 프로젝트나 Unreal 작업공간 밖의 파일은 열 수 없습니다.");
   }
   // Nested project roots are valid; the most specific registered root wins.
   matches.sort((left, right) => right.root.length - left.root.length);
@@ -276,8 +293,9 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
     requestedPath,
     agentId,
   );
-  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(path.extname(resolved).toLowerCase());
-  if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown과 HTML 파일만 열 수 있습니다.");
+  const extension = path.extname(resolved).toLowerCase();
+  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (extension === ".json" ? "text" : null);
+  if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown, HTML, JSON 파일만 열 수 있습니다.");
   if (stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
     throw new RemoteDocumentError(413, "2MB보다 큰 문서는 Remote에서 열 수 없습니다.");
   }

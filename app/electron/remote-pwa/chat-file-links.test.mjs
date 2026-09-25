@@ -37,6 +37,9 @@ describe("Remote chat file links", () => {
     expect(links.isAbsoluteChatFilePath("/G:/Project/docs/report.html")).toBe(true);
     expect(links.inlineMd("/G:/Project/docs/report.html", agent))
       .toContain('data-chat-file-path="G:/Project/docs/report.html"');
+    expect(links.inlineMd("(K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json)", agent))
+      .toContain('data-chat-file-path="K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json"');
+    expect(links.chatFileKind("K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json")).toBe("text");
   });
 
   it("keeps external image URLs external and does not link without a project", () => {

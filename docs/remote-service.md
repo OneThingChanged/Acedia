@@ -107,6 +107,11 @@ the extracted modules have these responsibilities:
 Both server variants call the document dispatcher **after their existing access
 checks**. Each server retains its own preview-token map. Capability preview URLs
 keep their separate token gate; extraction does not make workspace files public.
+Full paths in chat can open files under registered project roots. When a registered
+Unreal plugin has a `.uproject` ancestor, its enclosing Unreal workspace is also
+allowed, so `Saved` images and JSON reports can be previewed from Remote. Other
+absolute paths remain blocked. JSON files open from chat links without being
+added to the Documents index. Remote PWA cache v71 delivers the updated client.
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]

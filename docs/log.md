@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-25
+
+* **1.8.1.27 EXE**: Remote full paths inside registered Unreal workspaces, JSON chat previews, direct account authentication links, restart routing for exhausted accounts, and Chrome opening for detected session servers. See [release scope](release-1-8-1-27.md).
+
 ## 2026-09-23
 
 * **1.8.1.26 account Dashboard**: Added a return link and automatic return from the login progress page after authentication, with responsive 3/2/1-column account cards. See [release scope](release-1-8-1-26.md).

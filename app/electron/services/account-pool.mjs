@@ -200,10 +200,13 @@ export class AccountPool {
       return JSON.parse(this.unseal(a.auth)).tokens;
     });
   }
-  eligible(a) {
-    if (!a.enabled || a.status !== 'ready' || !a.auth || this.jobs.has(a.id) || (a.cooldownUntil || 0) > this.now()) return false;
+  quotaBlocked(a) {
     const bucket = a.limits?.rateLimitsByLimitId?.codex || a.limits?.rateLimits;
-    return ![bucket?.primary, bucket?.secondary].some(w => w?.usedPercent >= 100 && (!w.resetsAt || w.resetsAt * 1000 > this.now()));
+    return (a.cooldownUntil || 0) > this.now()
+      || [bucket?.primary, bucket?.secondary].some(w => w?.usedPercent >= 100 && (!w.resetsAt || w.resetsAt * 1000 > this.now()));
+  }
+  eligible(a) {
+    return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
   }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
@@ -253,6 +256,16 @@ export class AccountPool {
     if (typeof id !== 'string' || !id || id.length > 200 || ['__proto__', 'constructor', 'prototype'].includes(id)) throw fail('세션 식별자가 올바르지 않습니다.');
     await this.start();
     if (!Object.hasOwn(this.state.sessions, id)) this.state.sessions[id] = { accountId: null, lastUsed: this.now() };
+    const assigned = this.state.sessions[id].accountId;
+    if (assigned) {
+      const previous = this.state.accounts.find(a => a.id === assigned);
+      // Move exhausted assignments only at CLI restart, never mid-response.
+      // Paused, removed and login-required accounts retain their ownership.
+      if (previous && this.quotaBlocked(previous)) {
+        const replacement = this.state.accounts.find(a => a.id !== assigned && this.eligible(a));
+        if (replacement) this.state.sessions[id].accountId = replacement.id;
+      }
+    }
     this.persist();
     const config = { model_provider: 'acedia_pool', 'model_providers.acedia_pool.name': 'Acedia Accounts',
       'model_providers.acedia_pool.base_url': `http://127.0.0.1:${this.server.address().port}/provider`,

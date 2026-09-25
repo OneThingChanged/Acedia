@@ -3,7 +3,7 @@ import { text } from "./dom.js";
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
-const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:mp4|webm|md|markdown|html?|png|jpe?g|gif|webp|bmp|svg|ico)(?::\d+(?::\d+)?)?/gi;
+const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:mp4|webm|md|markdown|html?|json|png|jpe?g|gif|webp|bmp|svg|ico)(?::\d+(?::\d+)?)?/gi;
 
 function cleanChatFilePath(value) {
   let result = String(value ?? "").trim()
@@ -24,6 +24,7 @@ function chatFileKind(value) {
   const path = cleanChatFilePath(value);
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) return null;
   if (/\.(?:md|markdown)$/i.test(path)) return "markdown";
+  if (/\.json$/i.test(path)) return "text";
   if (/\.(?:html|htm)$/i.test(path)) return "html";
   if (/\.(?:png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(path)) return "image";
   if (/\.(?:mp4|webm)$/i.test(path)) return "video";

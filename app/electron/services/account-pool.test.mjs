@@ -80,6 +80,30 @@ describe('Acedia account pool', () => {
     expect(pool.account(id).stats.failures).toBe(1);
     await request(pool, 'two'); expect(pool.state.sessions.two.accountId).not.toBe(id);
   });
+  it('moves an exhausted conversation to another account when its CLI session restarts', async () => {
+    const calls = [];
+    const { pool } = fixture({ fetchImpl: async (_url, options) => {
+      calls.push(options.headers['chatgpt-account-id']);
+      return calls.at(-1) === 'A'
+        ? new Response('limited', { status: 429, headers: { 'retry-after': '120' } })
+        : new Response('data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    } });
+    const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);
+    expect((await request(pool, 'one')).response.status).toBe(429);
+    expect(pool.state.sessions.one.accountId).toBe(a);
+    await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(b);
+    expect((await request(pool, 'one')).response.status).toBe(200);
+    expect(calls).toEqual(['A', 'B']);
+  });
+  it('rotates a pinned account on restart when its recorded quota is full', async () => {
+    const { pool } = fixture(); const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);
+    await request(pool, 'one');
+    pool.account(a).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now()/1000)+3600 } } };
+    await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(b);
+    expect((await request(pool, 'one')).response.status).toBe(200);
+  });
   it('detects incomplete streams instead of reporting them as successful requests', async () => {
     const { pool } = fixture({ fetchImpl: async () => new Response('data: {"type":"response.created"}\n\n', { headers: { 'content-type': 'text/event-stream' } }) });
     const id = add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'one'); expect(pool.account(id).stats.failures).toBe(1);

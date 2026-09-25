@@ -1760,7 +1760,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
     return;
   }
   const path = cleanChatFilePath(rawPath);
-  if (!projectId || !path || !["markdown", "image", "video"].includes(kind)) return;
+  if (!projectId || !path || !["markdown", "text", "image", "video"].includes(kind)) return;
   const requestId = ++filePreviewRequest;
   if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
   resetFilePreviewContent();
@@ -1768,7 +1768,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   document.documentElement.classList.add("file-preview-open");
   ui.filePreviewTitle.textContent = path.split(/[\\/]/).pop() || path;
   ui.filePreviewPath.textContent = path;
-  ui.filePreviewKind.textContent = kind === "video" ? "VIDEO" : kind === "markdown" ? "MARKDOWN" : "IMAGE";
+  ui.filePreviewKind.textContent = kind === "video" ? "VIDEO" : kind === "markdown" ? "MARKDOWN" : kind === "text" ? "JSON" : "IMAGE";
   ui.filePreviewMessage.textContent = t("파일을 불러오는 중…");
   ui.filePreviewClose.focus();
 
@@ -1785,7 +1785,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
       };
       return;
     }
-    if (kind === "markdown") {
+    if (kind === "markdown" || kind === "text") {
       const response = await fetch(`/api/docs/read?${query}`, { cache: "no-store", credentials: "same-origin" });
       if (!response.ok) throw new Error(await apiError(response));
       const result = await response.json();
@@ -1798,12 +1798,15 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
         // their assets from that project root, not the originating session cwd.
         agentId: resolvedProjectId === projectId && !isAbsoluteChatFilePath(path) ? agentId : "",
         projectId: resolvedProjectId,
-        path: result.basePath || path,
+        path: isAbsoluteChatFilePath(path) ? path : (result.basePath || path),
         displayPath: result.path || path,
         kind: result.kind || kind,
       };
       filePreviewContext = context;
-      ui.filePreviewMarkdown.innerHTML = documentMarkdownToHtml(result.content || "");
+      if (kind === "text") {
+        const pre = document.createElement("pre"); pre.textContent = result.content || "";
+        ui.filePreviewMarkdown.replaceChildren(pre);
+      } else ui.filePreviewMarkdown.innerHTML = documentMarkdownToHtml(result.content || "");
       ui.filePreviewMessage.hidden = true;
       ui.filePreviewMarkdown.hidden = false;
       ui.filePreviewMarkdown.scrollTop = 0;

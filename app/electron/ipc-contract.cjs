@@ -91,6 +91,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "resource_usage",
   "set_titlebar_overlay",
   "list_ports",
+  "session_web_servers", "open_server_chrome",
   "kill_port_process",
   "create_file",
   "create_directory",
@@ -422,6 +423,7 @@ function assertInvokeRequest(command, rawArgs) {
         throw new TypeError("Electron document browser visibility flag must be boolean");
       }
       break;
+    case "open_server_chrome":
     case "open_external_url":
       assertHttpUrl(args.url, "external URL");
       break;
@@ -690,6 +692,9 @@ function assertInvokeRequest(command, rawArgs) {
       }
       assertPathString(args.relativePath, "relative path");
       break;
+    case "session_web_servers":
+      assertId(args);
+      // falls through
     case "list_ports":
       if (args.projects !== undefined) {
         if (

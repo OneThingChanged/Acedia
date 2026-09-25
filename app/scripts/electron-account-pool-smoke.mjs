@@ -46,6 +46,7 @@ if (!process.versions.electron) {
       await win.loadURL(url + '/?usage=1');
       console.log('Account pool shell loaded', width);
       const progressUrl = await win.webContents.executeJavaScript(`(async () => {
+        window.open = () => { window.authPopup = { opener: window, closed: false, location: { replace: url => { window.openedAuthUrl = url; } }, close: () => {} }; return window.authPopup; };
         const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool UI timeout: '+document.body.innerText); };
         await wait(() => document.querySelector('.pool-tabs button'));
         document.querySelectorAll('.pool-tabs button')[1].click();
@@ -57,8 +58,12 @@ if (!process.versions.electron) {
         action('${width === 1280 ? '브라우저 로그인' : '기기 코드 로그인'}').click();
         await wait(() => card().querySelector('.pool-login'));
         if (${width === 390} && !card().querySelector('.pool-login').textContent.includes('TEST-1234')) throw new Error('Missing login code');
-        if (${width === 1280} && (card().querySelector('.pool-login strong') || !new URL(card().querySelector('.pool-login a').href).searchParams.has('poolLogin'))) throw new Error('Invalid browser UI');
-        return card().querySelector('.pool-login a').href;
+        if (${width === 1280} && (card().querySelector('.pool-login strong') || !card().querySelector('.pool-login a').href.startsWith('https://auth.openai.com/'))) throw new Error('Invalid browser UI');
+        if (window.openedAuthUrl !== card().querySelector('.pool-login a').href || window.authPopup.opener !== null) throw new Error('Authentication tab not opened safely');
+        if (card().querySelector('.pool-login input').value !== window.openedAuthUrl) throw new Error('Missing selectable URL');
+        const snapshot = await fetch('/api/account-pool').then(r => r.json());
+        const id = snapshot.accounts.find(a => a.label === 'Fixture ${width}').id;
+        return location.origin + '/?usage=1&accounts=1&poolLogin=' + id;
       })()`);
       if (width === 1280) {
         const progress = new BrowserWindow({ width, height: 900, show: false, webPreferences: { sandbox: true, backgroundThrottling: false } }); windows.push(progress);

@@ -44,6 +44,7 @@ export type RuntimeCommand =
   | "resource_usage"
   | "set_titlebar_overlay"
   | "list_ports" | "kill_port_process"
+  | "session_web_servers" | "open_server_chrome"
   | "create_file" | "create_directory"
   | "rename_path" | "duplicate_path" | "delete_path"
   | "resolve_terminal_path"

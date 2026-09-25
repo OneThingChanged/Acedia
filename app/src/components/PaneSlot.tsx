@@ -28,6 +28,7 @@ import type {
 } from "../types";
 import type { AppThemeId } from "../lib/appTheme";
 import { activeAgentInLeaf, pathEq } from "../lib/layout";
+import { SessionServerButton } from "./SessionServerButton";
 import {
   docFileExtension,
   docTabBasename,
@@ -1022,6 +1023,7 @@ export function PaneSlot({
         </button>
       </div>
       {activeAgentId && <div className="pane-session-toolbar" role="toolbar" aria-label={text("세션 도구", "Session tools")}>
+        {activeAgent && isElectronRuntime() && <SessionServerButton agent={activeAgent} projects={ctx.projects} />}
         {activeAgentId && ctx.onRecoverSession && !activeAgent?.deferredStart && (
           <button className="pane-chat-toggle" onClick={() => {
             setRecoveryError(""); setRecoveryOpen(!recoveryOpen);
