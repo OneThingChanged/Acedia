@@ -99,7 +99,7 @@ export function createTerminalLauncher({
       }
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
-      const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id) : null;
+      const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id, args.codexPoolAccountId || null) : null;
       if (poolLaunch) {
         for (const key of Object.keys(launchEnvironment)) {
           if (["ACEDIA_ACCOUNT_POOL_KEY"].includes(key.toUpperCase())) delete launchEnvironment[key];

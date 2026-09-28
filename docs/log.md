@@ -2,6 +2,8 @@
 
 ## 2026-09-28
 
+* **1.8.1.30 source update (release pending)**: New Codex sessions reserve a dedicated routed account at launch and keep it through ordinary restarts and turns. Desktop and Remote creation default to automatic assignment, with a per-session choice to pin a specific account; an unavailable pinned account blocks launch rather than silently switching. Automatic sessions can move to another eligible account on restart after quota exhaustion. New records distinguish client cancellation from provider/request failure and missing usage from a measured zero. Recorded account assignment periods link Codex transcript token events to the responsible account without double-counting routed responses. Historical mixed failure totals remain visible; older account-specific tokens cannot be reconstructed reliably. All 793 desktop tests, the production build, and OKF validation passed. No installer, APK or release is included. See [account routing](account-pool.md).
+
 * **1.8.1.29 EXE**: Remote session selection preserves the desktop/tablet navigation pane; routed request history shows project and session names. Desktop sessions show their active routed account, quota readings distinguish fresh/stale/expired data, and Codex approval entries survive browser MCP config refresh. The Remote cache advances to v74. See [release scope](release-1-8-1-29.md).
 
 ## 2026-09-25

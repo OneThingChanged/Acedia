@@ -156,6 +156,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         aiToolId: c.aiToolId,
         aiLabel: toolForId(c.aiToolId).label,
         codexAccountId: c.codexAccountId,
+        codexPoolAccountId: c.codexPoolAccountId,
         claudeAccountId: c.claudeAccountId,
         codexAccountSessions: c.codexAccountSessions,
         claudeAccountSessions: c.claudeAccountSessions,

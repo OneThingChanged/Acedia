@@ -33,13 +33,46 @@ async function request(pool, id, overrides = {}) {
   return { response, text: await response.text() };
 }
 describe('Acedia account pool', () => {
+  it('assigns new sessions at launch and keeps the same account across restarts and turns', async () => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true);
+    await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(first);
+    expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
+    expect(pool.account(first).stats.requests).toBe(0);
+    await pool.launch('two');
+    expect(pool.state.sessions.two.accountId).toBe(second);
+    await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(first);
+    await request(pool, 'one'); await request(pool, 'one');
+    expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'A']);
+  });
+  it('pins a chosen account, rejects an unavailable pin, and rebalances when changed back to auto', async () => {
+    const { pool, root } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true);
+    expect(pool.choices().accounts).toMatchObject([{ id: first, available: true }, { id: second, available: true }]);
+    await pool.launch('manual', second);
+    expect(pool.state.sessions.manual).toMatchObject({ accountId: second, preferredAccountId: second });
+    const restored = new AccountPool(root, { safeStorage });
+    expect(restored.state.sessions.manual).toMatchObject({ accountId: second, preferredAccountId: second });
+    restored.close();
+    expect(pool.choose('manual').id).toBe(second);
+    await pool.launch('manual', second);
+    expect(pool.state.sessions.manual.accountId).toBe(second);
+    pool.account(second).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
+    await expect(pool.launch('manual', second)).rejects.toThrow(/선택한 분산 계정/);
+    expect(pool.state.sessions.manual.accountId).toBe(second);
+    await pool.launch('manual');
+    expect(pool.state.sessions.manual).toMatchObject({ accountId: first, preferredAccountId: null });
+  });
   it('distributes new sessions, preserves continuation ownership and counts actual response usage', async () => {
     const { pool, seen } = fixture(); const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);
     expect((await request(pool, 'one')).response.status).toBe(200);
     expect((await request(pool, 'two')).response.status).toBe(200);
     await request(pool, 'one');
     expect(seen.map(r => r.headers['chatgpt-account-id'])).toEqual(['A', 'B', 'A']);
-    expect(pool.snapshot().accounts.find(x => x.id === a).stats).toEqual({ requests: 2, failures: 0, inputTokens: 24, outputTokens: 6, cachedTokens: 8 });
+    expect(pool.snapshot().accounts.find(x => x.id === a).stats).toMatchObject({ version: 2, requests: 2, failures: 0, cancelled: 0,
+      measuredRequests: 2, unmeasuredRequests: 0, inputTokens: 24, outputTokens: 6, cachedTokens: 8 });
     expect(pool.state.sessions.two.accountId).toBe(b);
     expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
     expect(pool.sessionAssignment('not-launched')).toMatchObject({ label: null, assigned: false });
@@ -82,6 +115,69 @@ describe('Acedia account pool', () => {
     expect(pool.account(id).stats.failures).toBe(1);
     await request(pool, 'two'); expect(pool.state.sessions.two.accountId).not.toBe(id);
   });
+  it('preserves ambiguous old failures separately instead of presenting them as confirmed errors', () => {
+    const { pool, root } = fixture(); const id = add(pool, 'A');
+    pool.account(id).stats = { requests: 100, failures: 90, inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
+    pool.persist();
+    const restored = new AccountPool(root, { safeStorage });
+    expect(restored.snapshot().accounts[0].stats).toMatchObject({ version: 2, requests: 100, failures: 0,
+      cancelled: 0, legacyFailedOrCancelled: 90, inputTokens: 0, outputTokens: 0 });
+    restored.close();
+  });
+  it('counts a client-aborted successful HTTP stream as cancelled, not failed or zero measured tokens', async () => {
+    const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+        options.signal.addEventListener('abort', () => controller.error(new Error('client disconnected')), { once: true });
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    const accountId = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('interrupted');
+    const abort = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
+      method: 'POST', signal: abort.signal,
+      headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test', input: [] }),
+    });
+    await response.body.getReader().read(); abort.abort();
+    for (let attempt = 0; attempt < 50 && pool.state.recent.length === 0; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'cancelled', httpStatus: 200,
+      operation: 'generation', usageReported: false, inputTokens: 0, outputTokens: 0 });
+    expect(pool.account(accountId).stats).toMatchObject({ requests: 1, failures: 0, cancelled: 1,
+      measuredRequests: 0, unmeasuredRequests: 1 });
+  });
+  it('counts an internally aborted upstream stream as a failure', async () => {
+    const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+        options.signal.addEventListener('abort', () => controller.error(new Error('upstream timeout')), { once: true });
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    const accountId = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('timeout');
+    const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test', input: [] }),
+    });
+    await response.body.getReader().read();
+    for (const controller of pool.controllers) controller.abort();
+    for (let attempt = 0; attempt < 50 && pool.state.recent.length === 0; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'failed', httpStatus: 200 });
+    expect(pool.account(accountId).stats).toMatchObject({ requests: 1, failures: 1, cancelled: 0 });
+  });
+  it('ignores model-list responses in generation usage coverage', async () => {
+    const { pool } = fixture({ fetchImpl: async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }) });
+    const accountId = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('models-only');
+    const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/models`, {
+      headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}` },
+    });
+    expect(response.status).toBe(200); await response.text();
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', operation: 'models', usageReported: false });
+    expect(pool.account(accountId).stats).toMatchObject({ requests: 1, failures: 0, cancelled: 0,
+      measuredRequests: 0, unmeasuredRequests: 0 });
+  });
   it('moves an exhausted conversation to another account when its CLI session restarts', async () => {
     const calls = [];
     const { pool } = fixture({ fetchImpl: async (_url, options) => {
@@ -97,6 +193,23 @@ describe('Acedia account pool', () => {
     expect(pool.state.sessions.one.accountId).toBe(b);
     expect((await request(pool, 'one')).response.status).toBe(200);
     expect(calls).toEqual(['A', 'B']);
+  });
+  it('keeps separate transcript attribution periods when a session changes accounts', async () => {
+    let now = Date.now();
+    const { pool } = fixture({ now: () => now, transcriptUsageForPeriods: periods => (
+      periods.length ? { events: periods.length, inputTokens: 13, outputTokens: 6, cachedTokens: 3 } : null
+    ) });
+    const first = add(pool, 'A'), second = add(pool, 'B'); await pool.setEnabled(true);
+    await request(pool, 'one');
+    expect(pool.state.sessions.one.assignmentPeriods).toEqual([{ accountId: first, startedAt: now }]);
+    now += 10_000;
+    pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(now / 1000) + 3600 } } };
+    await pool.launch('one');
+    expect(pool.state.sessions.one.assignmentPeriods).toEqual([
+      { accountId: first, startedAt: now - 10_000, endedAt: now },
+      { accountId: second, startedAt: now },
+    ]);
+    expect(pool.snapshot().accounts.map(account => account.transcriptUsage?.events)).toEqual([1, 1]);
   });
   it('rotates a pinned account on restart when its recorded quota is full', async () => {
     const { pool } = fixture(); const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);

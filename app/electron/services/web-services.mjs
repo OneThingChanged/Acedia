@@ -505,11 +505,19 @@ function remoteCreateSessionPayload(snapshot, body) {
     error.statusCode = 400;
     throw error;
   }
+  const codexPoolAccountId = body?.codexPoolAccountId || undefined;
+  if (codexPoolAccountId && (aiToolId !== "codex" || typeof codexPoolAccountId !== "string"
+    || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(codexPoolAccountId))) {
+    const error = new Error("invalid routed account id");
+    error.statusCode = 400;
+    throw error;
+  }
   return {
     projectId,
     name: remoteSessionName(body?.name),
     aiToolId,
     dangerous: tool.supportsDangerous && body?.dangerous === true,
+    ...(codexPoolAccountId ? { codexPoolAccountId } : {}),
   };
 }
 

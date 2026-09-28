@@ -26,11 +26,14 @@ describe("Electron IPC contract", () => {
     expect(() => contract.assertInvokeRequest("claude_accounts_login", { accountId: "../outside" })).toThrow();
     expect(() => contract.assertInvokeRequest("claude_accounts_create", { label: " " })).toThrow();
     expect(() => contract.assertInvokeRequest("spawn_pty", { id: "session", cols: 80, rows: 24, claudeAccountId: "../outside" })).toThrow();
+    expect(() => contract.assertInvokeRequest("spawn_pty", { id: "session", cols: 80, rows: 24, codexPoolAccountId: "../outside" })).toThrow();
     expect(() => contract.assertInvokeRequest("resolve_cli_session", { aiToolId: "claude", folder: "project", claudeAccountId: "../outside" })).toThrow();
   });
 
   it("validates a session account lookup without accepting arbitrary providers or account paths", () => {
     expect(contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "codex", accountId: "default" })).toMatchObject({ id: "session" });
+    expect(contract.assertInvokeRequest("account_pool_choices", {})).toEqual({});
+    expect(() => contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "codex", accountId: "default", codexPoolAccountId: "../outside" })).toThrow();
     expect(() => contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "agy", accountId: "default" })).toThrow();
     expect(() => contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "codex", accountId: "../other" })).toThrow();
   });

@@ -1,6 +1,7 @@
 import { useAppLanguage } from "../lib/appLanguage";
 import { useState } from "react";
 import { AccountSelect } from "./ProviderAccounts";
+import { PoolAccountSelect } from "./PoolAccountSelect";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { AI_TOOLS, toolForId } from "../types";
 import type { NewAgentPayload, Project } from "../types";
@@ -37,6 +38,7 @@ export function NewAgentModal({
   );
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
   const [dangerous, setDangerous] = useState(() => loadAgentDefaults(aiToolId).dangerous);
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState<
@@ -56,6 +58,7 @@ export function NewAgentModal({
       aiToolId,
       launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
       codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
+      codexPoolAccountId: !project?.sshHostId && aiToolId === "codex" ? codexPoolAccountId || undefined : undefined,
       claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
       dangerous: dangerous && supportsDangerous,
       useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
@@ -115,6 +118,7 @@ export function NewAgentModal({
         </label>
 
         {aiToolId === "codex" && !project?.sshHostId && <AccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "codex" && !project?.sshHostId && <PoolAccountSelect value={codexPoolAccountId} onChange={setCodexPoolAccountId} />}
         {aiToolId === "claude" && !project?.sshHostId && <AccountSelect provider="claude" value={claudeAccountId} onChange={setClaudeAccountId} />}
 
         {supportsDangerous && (

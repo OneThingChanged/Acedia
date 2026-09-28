@@ -2989,6 +2989,7 @@ async function testPasswordSshConnection(ssh, password) {
 
 const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-pool"), {
   safeStorage,
+  transcriptUsageForPeriods: (periods) => usageIndex.poolTranscriptUsage(periods),
   command: () => {
     const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
     return native ? { file: native, args: ["app-server", "-c", "cli_auth_credentials_store=file"] }
@@ -3005,7 +3006,7 @@ const spawnPty = createTerminalLauncher({
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
   },
   accountsForTool,
-  accountPoolLaunch: (id) => accountPool.launch(id),
+  accountPoolLaunch: (id, preferredAccountId) => accountPool.launch(id, preferredAccountId),
   accountBindings,
   accountSwitches,
   defaultShell,
@@ -5452,10 +5453,19 @@ async function invokeCommand(event, command, rawArgs) {
       return result;
     }
     case "codex_accounts_list": return codexAccounts.list();
+    case "account_pool_choices": return accountPool.choices();
     case "account_session_status": {
       const live = ptys.get(args.id);
       if (live?.poolRouted && live.aiToolId === "codex") {
         return { mode: "pool", ...accountPool.sessionAssignment(args.id) };
+      }
+      if (!live && args.aiToolId === "codex" && accountPool.state.enabled) {
+        const choices = accountPool.choices().accounts;
+        if (args.codexPoolAccountId) return {
+          mode: "pool_next", preferred: true,
+          label: choices.find(account => account.id === args.codexPoolAccountId)?.label ?? null,
+        };
+        return { mode: "pool_next", preferred: false, ...accountPool.sessionAssignment(args.id) };
       }
       const provider = live?.aiToolId || args.aiToolId;
       const accountId = (provider === "codex" ? live?.codexAccountId : live?.claudeAccountId) || args.accountId;

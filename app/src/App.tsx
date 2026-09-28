@@ -304,6 +304,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     tabColor: agent.tabColor || undefined,
     createdAt: agent.createdAt,
     codexAccountId: agent.codexAccountId,
+    codexPoolAccountId: agent.codexPoolAccountId,
     claudeAccountId: agent.claudeAccountId,
     codexAccountSessions: agent.codexAccountSessions,
     claudeAccountSessions: agent.claudeAccountSessions,
@@ -429,6 +430,7 @@ function agentFromStored(
     aiToolId,
     aiLabel: toolForId(aiToolId).label,
     codexAccountId: stored.codexAccountId,
+    codexPoolAccountId: stored.codexPoolAccountId,
     claudeAccountId: stored.claudeAccountId,
     codexAccountSessions: stored.codexAccountSessions,
     claudeAccountSessions: stored.claudeAccountSessions,
@@ -1197,6 +1199,7 @@ function App() {
         folder: a.folder,
         aiToolId: a.aiToolId,
         codexAccountId: a.codexAccountId,
+        codexPoolAccountId: a.codexPoolAccountId,
         claudeAccountId: a.claudeAccountId,
         sshHostId: a.sshHostId,
         lastSessionId: a.lastSessionId ?? null,
@@ -2743,6 +2746,7 @@ function App() {
             aiLabel: tool.label,
             shellCommand: tool.id === "none" ? payload.shellCommand : undefined,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
+            codexPoolAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexPoolAccountId : undefined,
             claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
             launchOptions: !project.sshHostId && tool.command ? normalizeLaunchOptions(
@@ -3524,6 +3528,7 @@ function App() {
             initialPrompt,
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
+            codexPoolAccountId: agent.codexPoolAccountId,
             claudeAccountId: agent.claudeAccountId,
             ssh,
             cols: 120,
@@ -3619,6 +3624,7 @@ function App() {
       name: string;
       aiToolId: string;
       dangerous: boolean;
+      codexPoolAccountId?: string;
     }>("remote:create-session", (event) => {
       if (cancelled) return;
       const payload = event.payload;
@@ -3665,6 +3671,7 @@ function App() {
           name,
           aiToolId: payload.aiToolId,
           dangerous: Boolean(payload.dangerous),
+          codexPoolAccountId: payload.codexPoolAccountId,
         },
         { projectId: payload.projectId, agentId: payload.id }
       ).then((result) => complete(result.created

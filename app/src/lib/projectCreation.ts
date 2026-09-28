@@ -53,6 +53,7 @@ export function buildNewProjectWithFirstAgent(
         ? payload.launchOptions : loadAgentDefaults(tool.id).launchOptions
     ) : undefined,
     codexAccountId: !sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
+    codexPoolAccountId: !sshHostId && tool.id === "codex" ? payload.codexPoolAccountId : undefined,
     claudeAccountId: !sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
     dangerous: payload.dangerous && !!tool.dangerousFlag,
     useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,

@@ -15,6 +15,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "codex_accounts_list",
   "claude_accounts_list",
   "account_session_status",
+  "account_pool_choices",
   "codex_accounts_create",
   "claude_accounts_create",
   "codex_accounts_login",
@@ -257,6 +258,7 @@ function assertInvokeRequest(command, rawArgs) {
       assertId(args);
       if (!["codex", "claude"].includes(args.aiToolId)) throw new TypeError("Invalid account provider");
       if (typeof args.accountId !== "string" || (args.accountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.accountId))) throw new TypeError("Invalid account id");
+      if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolAccountId))) throw new TypeError("Invalid routed account id");
       break;
     case "browser_extensions_list":
     case "browser_extensions_change":
@@ -303,6 +305,7 @@ function assertInvokeRequest(command, rawArgs) {
       assertId(args);
       if (args.initialPrompt != null && (typeof args.initialPrompt !== "string" || !args.initialPrompt.trim() || args.initialPrompt.length > 4096 || args.initialPrompt.includes("\0"))) throw new TypeError("Invalid initial handoff prompt");
       if (args.codexAccountId != null && (typeof args.codexAccountId !== "string" || (args.codexAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.codexAccountId)))) throw new TypeError("Invalid Codex account id");
+      if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolAccountId))) throw new TypeError("Invalid routed account id");
       if (args.claudeAccountId != null && (typeof args.claudeAccountId !== "string" || (args.claudeAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.claudeAccountId)))) throw new TypeError("Invalid Claude account id");
       assertPositiveInteger(args.cols, "terminal cols");
       assertPositiveInteger(args.rows, "terminal rows");

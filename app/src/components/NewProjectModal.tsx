@@ -4,6 +4,7 @@ import { SessionWorkerFields } from "./SessionWorkerFields";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { LaunchOptions } from "../lib/launchOptions";
 import { AccountSelect } from "./ProviderAccounts";
+import { PoolAccountSelect } from "./PoolAccountSelect";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { openDialog } from "../platform/plugins";
 import {
@@ -39,6 +40,7 @@ export function NewProjectModal({
   const [aiToolId, setAiToolId] = useState("");
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
   const [dangerous, setDangerous] = useState(false);
@@ -98,6 +100,7 @@ export function NewProjectModal({
         launchOptions: selectedTool.command ? launchOptions : undefined,
         aiToolId,
         codexAccountId: aiToolId === "codex" ? codexAccountId : undefined,
+        codexPoolAccountId: aiToolId === "codex" ? codexPoolAccountId || undefined : undefined,
         claudeAccountId: aiToolId === "claude" ? claudeAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
@@ -158,6 +161,7 @@ export function NewProjectModal({
         </label>
 
         {aiToolId === "codex" && !remote && <AccountSelect value={codexAccountId} onChange={setCodexAccountId} />}
+        {aiToolId === "codex" && !remote && <PoolAccountSelect value={codexPoolAccountId} onChange={setCodexPoolAccountId} />}
         {aiToolId === "claude" && !remote && <AccountSelect provider="claude" value={claudeAccountId} onChange={setClaudeAccountId} />}
 
         {aiToolId === "codex" && <>

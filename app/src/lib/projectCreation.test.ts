@@ -22,6 +22,7 @@ describe("buildNewProjectWithFirstAgent", () => {
         name: "  Project A  ",
         folder: "  K:\\AI\\ProjectA  ",
         aiToolId: "codex",
+        codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",
         dangerous: true,
         projectFolderId: "folder-work",
       },
@@ -47,6 +48,7 @@ describe("buildNewProjectWithFirstAgent", () => {
       name: "Session 1",
       folder: "K:\\AI\\ProjectA",
       aiToolId: "codex",
+      codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",
       aiLabel: "Codex",
       dangerous: true,
       workerSettings: {

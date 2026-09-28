@@ -973,6 +973,26 @@ export class UsageService {
     return this.tokenTotals();
   }
 
+  poolTranscriptUsage(periods) {
+    if (!Array.isArray(periods) || periods.length === 0) return null;
+    const query = this.db().prepare(`SELECT COUNT(*) events,
+      COALESCE(SUM(input_tokens + cache_read_tokens), 0) inputTokens,
+      COALESCE(SUM(output_tokens + reasoning_output_tokens), 0) outputTokens,
+      COALESCE(SUM(cache_read_tokens), 0) cachedTokens
+      FROM usage_events WHERE tool='codex' AND raw_kind='codex_token_count_v2'
+      AND agent_id=? AND ts>=? AND ts<?`);
+    const result = { events: 0, inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
+    for (const period of periods) {
+      if (typeof period?.agentId !== 'string' || !Number.isFinite(period.startedAt)) continue;
+      const start = Math.ceil(period.startedAt / 1000);
+      const end = period.endedAt == null ? Math.floor(Date.now() / 1000) + 1 : Math.ceil(period.endedAt / 1000);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end <= start) continue;
+      const row = query.get(period.agentId, start, end);
+      for (const key of Object.keys(result)) result[key] += Number(row[key]) || 0;
+    }
+    return result.events > 0 ? result : null;
+  }
+
   costBuckets(startAt = null, endAt = null, bucket = "day") {
     const clauses = [], params = [];
     if (startAt != null) { clauses.push("ts >= ?"); params.push(startAt / 1000); }

@@ -152,9 +152,11 @@ describe("normalizeStoredGroups", () => {
 describe("Codex account persistence", () => {
   it("restores account binding and per-account conversations on cold start", () => {
     const restored = loadStoredAgents([{ id: "a", projectId: "p", name: "A", folder: "project", aiToolId: "codex", createdAt: 0,
-      codexAccountId: "work", codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" }],
+      codexAccountId: "work", codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",
+      codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" }],
       [{ id: "p", name: "P", folder: "project", createdAt: 0 }]);
-    expect(restored[0]).toMatchObject({ codexAccountId: "work", codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" });
+    expect(restored[0]).toMatchObject({ codexAccountId: "work", codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",
+      codexAccountSessions: { default: "old", work: "new" }, lastSessionId: "new" });
   });
   it("restores a pending first-message handoff until the target session starts", () => {
     const pendingAccountHandoff = { id: "h", fromAccountId: "default", toAccountId: "work", createdAt: 1, prompt: "continue" };

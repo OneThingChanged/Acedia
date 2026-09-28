@@ -3,6 +3,7 @@ import type { Agent, Project } from "../types";
 import { toolForId } from "../types";
 import { findSshHost, sshHostSummary } from "../lib/sshHosts";
 import { AccountLabel, AccountSelect } from "./ProviderAccounts";
+import { PoolAccountSelect } from "./PoolAccountSelect";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { loadAgentDefaults } from "../lib/agentDefaults";
@@ -11,7 +12,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { PropertiesDialog, PropertyFacts, PropertyPath, nextPropertiesTabIndex } from "./PropertiesDialog";
 
 export const nextSessionPropertiesTabIndex = nextPropertiesTabIndex;
-type Options = Pick<Agent, "dangerous" | "useAltScreen" | "workerSettings" | "launchOptions">;
+type Options = Pick<Agent, "dangerous" | "useAltScreen" | "workerSettings" | "launchOptions" | "codexPoolAccountId">;
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const accountId = (agent: Agent) => (agent.aiToolId === "claude" ? agent.claudeAccountId : agent.codexAccountId) || "default";
 const accountEditable = (agent: Agent) => agent.deferredStart || agent.status === "idle" || agent.status === "exited";
@@ -93,6 +94,7 @@ export function SessionPropertiesModal({ agent, project, onUpdateAgent, onAccoun
   const options = <><h3>{text("실행 옵션", "Launch options")}</h3><p className="property-note">{text("변경 저장 후 세션을 비활성화하고 다시 열면 적용됩니다. 실행 중인 프로세스는 그대로 유지됩니다.", "Saved changes apply after deactivating and reopening the session. The running process stays as it is.")}</p>
     <fieldset disabled={saving}><div className="property-columns"><div className="property-card"><h4>{text("계정 및 실행", "Account and launch")}</h4>
       {["codex", "claude"].includes(agent.aiToolId) && !sshHostId && onAccountChange && <><AccountSelect provider={agent.aiToolId === "claude" ? "claude" : "codex"} value={selectedAccount?.value ?? accountId(agent)} disabled={!accountEditable(agent)} onChange={value => { setSelectedAccount(value === accountId(agent) ? null : { value, base: selectedAccount?.base ?? accountId(agent) }); setSaved(false); }}/><p className="property-note">{text("비활성화한 세션에서만 계정을 변경할 수 있습니다. 해당 계정에 저장된 대화가 있으면 복원하고, 처음 사용하는 계정이면 새 대화를 시작합니다.", "Account changes require an inactive session. A saved conversation for that account is restored; a first-time account starts a new conversation.")}</p>{selectedAccount && !(agent.aiToolId === "claude" ? agent.claudeAccountSessions : agent.codexAccountSessions)?.[selectedAccount.value] && <label className="session-props-toggle"><input type="checkbox" checked={includeAccountHandoff} onChange={event => { setIncludeAccountHandoff(event.target.checked); setSaved(false); }}/><span className="session-props-toggle-body"><span className="session-props-toggle-title">{text("현재 작업을 새 계정에 인계", "Hand off current work to the new account")}</span><span className="session-props-toggle-desc">{text("최근 사용자 요청과 응답을 로컬에서 정리해 새 대화의 첫 메시지로 전달합니다. 기존 대화가 발견되면 인계문 없이 그 대화를 복원합니다.", "Build a local handoff from recent requests and responses and send it as the first message. If an existing conversation is found, it is restored without a handoff.")}</span></span></label>}</>}
+      {agent.aiToolId === "codex" && !sshHostId && <PoolAccountSelect value={draft.codexPoolAccountId} disabled={!accountEditable(agent)} onChange={value => edit("codexPoolAccountId", value || undefined)} />}
       {tool.dangerousFlag && <label className="session-props-toggle"><input type="checkbox" checked={draft.dangerous} onChange={e => edit("dangerous", e.target.checked)}/><span className="session-props-toggle-body"><span className="session-props-toggle-title">{text("권한 확인 생략", "Skip permission prompts")}</span><span className="session-props-toggle-desc">{tool.dangerousFlag}</span></span></label>}
       {agent.aiToolId === "codex" && <label className="session-props-toggle"><input type="checkbox" checked={draft.useAltScreen === true} onChange={e => edit("useAltScreen", e.target.checked || undefined)}/><span className="session-props-toggle-body"><span className="session-props-toggle-title">{text("Alt-screen 모드", "Alt-screen mode")}</span><span className="session-props-toggle-desc">{text("터미널 스크롤백 검색·드래그 복사를 사용하려면 끈 상태로 두세요.", "Keep disabled for terminal scrollback search and drag-to-copy.")}</span></span></label>}
     </div>{agent.aiToolId === "codex" && <div className="property-card"><h4>{text("보조 작업자", "Workers")}</h4><SessionWorkerFields settings={draft.workerSettings} disabledTools={disabledTools} onChange={value => edit("workerSettings", value)} className="session-worker-fields session-worker-fields-props"/></div>}</div>

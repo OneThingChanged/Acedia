@@ -8,6 +8,14 @@ export function quotaPresentation(window, limitsAt, now = Date.now()) {
   return { state: 'current', remaining };
 }
 
+export function recordedTokens(record) {
+  const input = Number(record?.inputTokens) || 0;
+  const output = Number(record?.outputTokens) || 0;
+  const known = record?.usageReported === true
+    || (record?.usageReported !== false && input + output > 0);
+  return known ? input + output : null;
+}
+
 export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) {
   const pageUrl = new URL(location.href);
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
@@ -91,8 +99,20 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
       const card = el('article', '', 'pool-card'); const title = el('h3'); title.textContent = account.label;
       const state = el('p', `${account.email || ''} ${account.plan || ''} · ${t(names[account.state] || '확인 필요')} · ${t(account.enabled ? '분산 참여' : '분산 제외')}`);
       if (account.cooldownUntil > Date.now()) state.append(el('span', ' · ' + t('한도 대기')));
-      const numbers = el('p', `${t('요청')} ${account.stats.requests.toLocaleString()} · ${t('실패')} ${account.stats.failures.toLocaleString()} · ${t('입력 토큰')} ${account.stats.inputTokens.toLocaleString()} · ${t('출력 토큰')} ${account.stats.outputTokens.toLocaleString()}`);
-      card.append(title, state, numbers);
+      const statistics = account.stats;
+      const legacy = Number(statistics.legacyFailedOrCancelled) || 0;
+      const numbers = el('p', `${t('요청')} ${statistics.requests.toLocaleString()} · ${t(legacy ? '새 집계 실패' : '실패')} ${statistics.failures.toLocaleString()} · ${t('취소됨')} ${(statistics.cancelled || 0).toLocaleString()}`);
+      const measured = Number(statistics.measuredRequests) > 0 || statistics.inputTokens + statistics.outputTokens > 0;
+      const transcript = account.transcriptUsage;
+      const usage = el('p', transcript?.events > 0
+        ? `${t('대화 기록 입력 토큰')} ${transcript.inputTokens.toLocaleString()} · ${t('대화 기록 출력 토큰')} ${transcript.outputTokens.toLocaleString()}`
+        : measured
+          ? `${t('확인된 입력 토큰')} ${statistics.inputTokens.toLocaleString()} · ${t('확인된 출력 토큰')} ${statistics.outputTokens.toLocaleString()}`
+          : t('토큰 사용량 미집계'));
+      card.append(title, state, numbers, usage);
+      if (transcript?.events > 0) card.append(el('small', '기록된 계정 배정 기간의 Codex 대화 토큰입니다.'));
+      if (legacy) card.append(el('small', t('기존 실패·취소 혼합 {0}건은 분리할 수 없습니다.', [legacy.toLocaleString()])));
+      if (statistics.unmeasuredRequests > 0) card.append(el('small', t('사용량 미집계 생성 요청 {0}건', [statistics.unmeasuredRequests.toLocaleString()])));
       if (account.error) card.append(el('p', account.error));
       const bucket = account.limits?.rateLimitsByLimitId?.codex || account.limits?.rateLimits;
       for (const [name, w] of [[t('기본 한도'), bucket?.primary], [t('추가 한도'), bucket?.secondary]]) {
@@ -159,8 +179,11 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     if (!data.recent.length) records.append(el('p', '분산으로 처리한 요청이 없습니다. 분산을 켜고 새 Codex 세션을 시작하세요.'));
     for (const item of data.recent.slice(0, 20)) {
       const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
-      const state = { completed: '완료', failed: '실패', cancelled: '취소' }[item.status] || '처리 중…';
-      records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${item.inputTokens + item.outputTokens} ${t('토큰')} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
+      const state = { completed: '완료', failed: '실패', cancelled: '취소됨' }[item.status] || '처리 중…';
+      const total = recordedTokens(item);
+      const tokens = item.operation === 'models' ? t('사용량 대상 아님')
+        : total == null ? t('토큰 미집계') : `${total.toLocaleString()} ${t('토큰')}`;
+      records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${tokens} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
     }
   }
   function select(value) {

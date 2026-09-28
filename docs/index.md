@@ -60,7 +60,7 @@ configuration that supports it.
 
 ## Sessions and integrations
 
-* [Acedia account pool](account-pool.md) - Dashboard account registration, session routing and usage.
+* [Acedia account pool](account-pool.md) - Dashboard and Remote account registration, launch-time routing, per-session account choice and usage.
 
 
 * [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, account quotas, personal-account migration and integration boundaries.

@@ -67,11 +67,13 @@ describe("terminal launch lifecycle", () => {
     const f = fixture();
     const accountPoolLaunch = vi.fn(() => ({ env: { ACEDIA_ACCOUNT_POOL_KEY: "lb-secret" }, args: ["-c", 'model_provider="acedia_pool"'] }));
     const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
-    await launch({ ...f.args, initCommand: "codex resume saved-id", initialPrompt: "continue work" });
+    const routedAccountId = "12345678-1234-1234-1234-123456789abc";
+    await launch({ ...f.args, codexPoolAccountId: routedAccountId, initCommand: "codex resume saved-id", initialPrompt: "continue work" });
     const env = f.dependencies.spawnProcess.mock.calls[0][2].env;
     expect(f.sessions.get(f.args.id).poolRouted).toBe(true);
     expect(env.CODEX_HOME).toContain("account-a");
     expect(env.ACEDIA_ACCOUNT_POOL_KEY).toBe("lb-secret");
+    expect(accountPoolLaunch).toHaveBeenCalledWith(f.args.id, routedAccountId);
     await vi.advanceTimersByTimeAsync(600);
     expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"acedia_pool\"' 'continue work'\r");
     expect(f.processes[0].write.mock.calls[0][0]).not.toContain("lb-secret");

@@ -4,9 +4,10 @@ import { invoke } from "../platform/runtime";
 import { useAppLanguage } from "../lib/appLanguage";
 
 type SessionAccountStatus = {
-  mode: "pool" | "direct" | "inactive";
+  mode: "pool" | "pool_next" | "direct" | "inactive";
   label: string | null;
   assigned?: boolean;
+  preferred?: boolean;
 };
 
 export function SessionAccountIndicator({ agent }: { agent: Agent }) {
@@ -25,6 +26,7 @@ export function SessionAccountIndicator({ agent }: { agent: Agent }) {
           id: agent.id,
           aiToolId: agent.aiToolId,
           accountId: accountId || "default",
+          codexPoolAccountId: agent.codexPoolAccountId,
         });
         if (!cancelled) { setStatus(next); setFailed(false); }
       } catch {
@@ -34,13 +36,15 @@ export function SessionAccountIndicator({ agent }: { agent: Agent }) {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 3_000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [agent.id, agent.aiToolId, accountId]);
+  }, [agent.id, agent.aiToolId, accountId, agent.codexPoolAccountId]);
 
   const provider = agent.aiToolId === "claude" ? "Claude" : "Codex";
   const label = failed ? text("계정 확인 실패", "Account unavailable")
     : !status ? text("계정 확인 중", "Checking account")
     : status.mode === "pool" && !status.assigned ? text("분산 · 배정 대기", "Routing · awaiting assignment")
     : status.mode === "pool" ? text(`분산 · ${status.label || "계정 확인 필요"}`, `Routing · ${status.label || "Account unavailable"}`)
+    : status.mode === "pool_next" && status.preferred ? text(`다음 시작 · ${status.label || "계정 확인 필요"}`, `Next launch · ${status.label || "Account unavailable"}`)
+    : status.mode === "pool_next" ? text("다음 시작 · 자동 배정", "Next launch · Automatic")
     : status.mode === "inactive" ? text(`선택 · ${status.label || "계정 확인 필요"}`, `Selected · ${status.label || "Account unavailable"}`)
     : status.label || text("계정 확인 필요", "Account unavailable");
 

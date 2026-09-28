@@ -57,8 +57,17 @@ void app.whenReady().then(async () => {
       accountPoolApi: async (_request, response, url) => {
         if (url.pathname !== '/api/account-pool') return false;
         response.writeHead(200, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ canManage: true, enabled: false, accounts: [], sessions: [], recent: [
-          { at: Date.now(), accountId: 'removed', sessionId: 'agent-1', status: 'completed', inputTokens: 12, outputTokens: 3 },
+        response.end(JSON.stringify({ canManage: true, enabled: true, accounts: [{
+          id: '11111111-1111-4111-8111-111111111111', label: 'Fixture account', email: null, plan: null, enabled: true, state: 'ready', available: true, active: 0,
+          stats: { requests: 2000, failures: 0, cancelled: 1, legacyFailedOrCancelled: 1800,
+            measuredRequests: 0, unmeasuredRequests: 1, inputTokens: 0, outputTokens: 0, cachedTokens: 0 },
+        }, {
+          id: 'fixture-measured', label: 'Measured account', email: null, plan: null, enabled: true, state: 'ready', active: 0,
+          stats: { requests: 1, failures: 0, cancelled: 0, legacyFailedOrCancelled: 0,
+            measuredRequests: 0, unmeasuredRequests: 1, inputTokens: 0, outputTokens: 0, cachedTokens: 0 },
+          transcriptUsage: { events: 1, inputTokens: 13, outputTokens: 6, cachedTokens: 3 },
+        }], sessions: [], recent: [
+          { at: Date.now(), accountId: '11111111-1111-4111-8111-111111111111', sessionId: 'agent-1', status: 'cancelled', usageReported: false, inputTokens: 0, outputTokens: 0 },
         ] }));
         return true;
       },
@@ -210,9 +219,33 @@ void app.whenReady().then(async () => {
       }
       if(process.env.ACEDIA_PROPERTIES_SCREENSHOTS) { await new Promise(resolve=>setTimeout(resolve,250)); fs.mkdirSync(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,{recursive:true}); fs.writeFileSync(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`remote-usage-${width}.png`),(await win.webContents.capturePage()).toPNG()); }
       if (width === 1024) {
+        await win.webContents.executeJavaScript("document.querySelector('#newSessionButton').click();document.querySelector('#sessionEditorTool').value='codex';document.querySelector('#sessionEditorTool').dispatchEvent(new Event('change'))");
+        await waitFor(win, "!document.querySelector('#sessionEditorPoolField').hidden && document.querySelector('#sessionEditorPool option[value=\"11111111-1111-4111-8111-111111111111\"]')");
+        const routedChoice = await win.webContents.executeJavaScript(`(async () => {
+          const originalFetch = window.fetch;
+          let requestBody = null;
+          window.fetch = (url, options) => {
+            if (url === '/api/session/create') {
+              requestBody = JSON.parse(options.body);
+              return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 201, headers: { 'content-type': 'application/json' } }));
+            }
+            return originalFetch(url, options);
+          };
+          try {
+            const select = document.querySelector('#sessionEditorPool');
+            const automatic = select.value === '' && select.options[0].textContent.includes('Automatic');
+            select.value = '11111111-1111-4111-8111-111111111111';
+            document.querySelector('#sessionEditorForm').requestSubmit();
+            await new Promise(resolve => setTimeout(resolve, 80));
+            return { automatic, requestBody };
+          } finally { window.fetch = originalFetch; }
+        })()`);
+        assert(routedChoice.automatic && routedChoice.requestBody?.codexPoolAccountId === '11111111-1111-4111-8111-111111111111', "Remote session creation lost the routed account choice");
         await win.webContents.executeJavaScript("document.querySelector('#accountPoolView .pool-tabs button:nth-child(2)').click()");
         await waitFor(win, "document.querySelector('#accountPoolView .pool-records p')?.textContent.includes('Fixture project · Fixture session')");
         assert(await win.webContents.executeJavaScript("!document.querySelector('#accountPoolView .pool-records p').textContent.includes('agent-1')"), "Routed request exposed the session ID instead of its project and name");
+        assert(await win.webContents.executeJavaScript("document.querySelector('#accountPoolView').textContent.includes('Token usage unavailable') && document.querySelector('#accountPoolView').textContent.includes('1,800 historical failed/cancelled') && document.querySelector('#accountPoolView .pool-records p').textContent.includes('tokens unavailable')"), "Routed request presented missing tokens as measured zero or mixed legacy failures as current errors");
+        assert(await win.webContents.executeJavaScript("document.querySelector('#accountPoolView').textContent.includes('Transcript input tokens 13') && document.querySelector('#accountPoolView').textContent.includes('Transcript output tokens 6')"), "Recorded assignment transcript tokens were not shown");
       }
       assert(errors.length === 0, `Renderer errors: ${errors.join("; ")}`);
       if (width === 1920) {

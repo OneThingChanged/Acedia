@@ -12,6 +12,7 @@ export type RuntimeCommand =
   | "codex_accounts_list"
   | "claude_accounts_list"
   | "account_session_status"
+  | "account_pool_choices"
   | "codex_accounts_create"
   | "claude_accounts_create"
   | "codex_accounts_login"
@@ -116,6 +117,7 @@ export type SpawnTerminalArgs = {
   launchOptions?: import("../lib/launchOptions").LaunchOptions;
   initialPrompt?: string;
   codexAccountId?: string;
+  codexPoolAccountId?: string;
   claudeAccountId?: string;
   id: string;
   shell: string | null;

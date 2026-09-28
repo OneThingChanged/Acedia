@@ -8,6 +8,22 @@ const roots = [];
 afterEach(() => roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
 
 describe("Electron usage index", () => {
+  it("attributes only Codex transcript events inside recorded account assignment periods", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-pool-usage-")); roots.push(root);
+    const service = new UsageService(path.join(root, "usage.db"), { scan: async () => [] });
+    const insert = service.db().prepare(`INSERT INTO usage_events
+      (source_key,ts,agent_id,tool,input_tokens,cache_read_tokens,output_tokens,reasoning_output_tokens,total_tokens,raw_kind)
+      VALUES (?,?,?,'codex',?,?,?,?,?,'codex_token_count_v2')`);
+    const base = Math.floor(Date.now() / 1000) - 100;
+    insert.run('before', base + 10, 'agent-1', 5, 1, 2, 0, 8);
+    insert.run('inside', base + 20, 'agent-1', 10, 3, 4, 2, 19);
+    insert.run('other-agent', base + 20, 'agent-2', 100, 0, 100, 0, 200);
+    insert.run('after', base + 40, 'agent-1', 7, 1, 3, 0, 11);
+    expect(service.poolTranscriptUsage([{ agentId: 'agent-1', startedAt: (base + 15) * 1000,
+      endedAt: (base + 30) * 1000 }])).toEqual({ events: 1, inputTokens: 13, outputTokens: 6, cachedTokens: 3 });
+    expect(service.poolTranscriptUsage([{ agentId: 'agent-1', startedAt: (base + 50) * 1000 }])).toBeNull();
+    service.close();
+  });
   it("incrementally indexes Codex token events without duplicates", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-usage-")); roots.push(root);
     const transcript = path.join(root, "session.jsonl");

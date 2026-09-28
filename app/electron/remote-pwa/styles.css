@@ -518,7 +518,8 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .session-editor-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .session-editor-dialog h2 { margin: 3px 0 0; font-size: 20px; }
 .session-editor-field { display: grid; gap: 6px; color: #a9bfcd; font-size: var(--font-small); font-weight: 700; }
-.session-editor-field input, .session-editor-field select { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--text); background: #050d14; font: inherit; font-size: var(--font-small); }
+.session-editor-field input, .session-editor-field select { width: 100%; min-height: 44px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--text); background: #050d14; font: inherit; font-size: var(--font-small); }
+.session-editor-field small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
 .session-editor-field input:focus, .session-editor-field select:focus { border-color: #3e7192; }
 .session-editor-check { display: flex; align-items: flex-start; gap: 9px; padding: 11px; border: 1px solid rgba(255, 201, 99, 0.22); border-radius: 9px; color: #d9e5ec; background: rgba(255, 201, 99, 0.05); }
 .session-editor-check input { margin-top: 2px; accent-color: var(--amber); }

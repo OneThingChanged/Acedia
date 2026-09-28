@@ -90,6 +90,8 @@ const ui = {
   sessionEditorName: $("#sessionEditorName"),
   sessionEditorToolField: $("#sessionEditorToolField"),
   sessionEditorTool: $("#sessionEditorTool"),
+  sessionEditorPoolField: $("#sessionEditorPoolField"),
+  sessionEditorPool: $("#sessionEditorPool"),
   sessionEditorDangerousField: $("#sessionEditorDangerousField"),
   sessionEditorDangerous: $("#sessionEditorDangerous"),
   sessionEditorMessage: $("#sessionEditorMessage"),
@@ -290,6 +292,8 @@ let filePreviewPreviousFocus = null;
 let filePreviewContext = null;
 let sessionEditorMode = null;
 let sessionEditorAgentId = null;
+let sessionEditorPoolChoices = [];
+let sessionEditorPoolEnabled = false;
 let sessionEditorPreviousFocus = null;
 let usageSummary = null;
 let usageLoading = false;
@@ -2704,6 +2708,12 @@ function syncSessionEditorDangerous() {
   if (!supported) ui.sessionEditorDangerous.checked = false;
 }
 
+function syncSessionEditorPool() {
+  const project = remoteState.view?.projects?.find(item => item.id === ui.sessionEditorProject.value);
+  ui.sessionEditorPoolField.hidden = sessionEditorMode !== "create" || ui.sessionEditorTool.value !== "codex"
+    || Boolean(project?.sshHostId) || !sessionEditorPoolEnabled || sessionEditorPoolChoices.length === 0;
+}
+
 function setSessionEditorBusy(busy) {
   for (const control of ui.sessionEditorForm.elements) control.disabled = busy;
   ui.sessionEditorSubmit.textContent = busy
@@ -2762,6 +2772,22 @@ function openCreateSessionEditor() {
     return option;
   }));
   ui.sessionEditorTool.value = tools[0].id;
+  sessionEditorPoolChoices = [];
+  sessionEditorPoolEnabled = false;
+  ui.sessionEditorPool.value = "";
+  syncSessionEditorPool();
+  void requestJson("/api/account-pool", { cache: "no-store", credentials: "same-origin" }).then(({ response, data }) => {
+    if (!response.ok || sessionEditorMode !== "create" || ui.sessionEditorOverlay.hidden) return;
+    sessionEditorPoolChoices = Array.isArray(data?.accounts) ? data.accounts : [];
+    sessionEditorPoolEnabled = data?.enabled === true;
+    const automatic = make("option", "", t("자동 배정")); automatic.value = "";
+    ui.sessionEditorPool.replaceChildren(automatic, ...sessionEditorPoolChoices.map(account => {
+      const option = make("option", "", account.label + (account.available ? "" : ` · ${t("사용 불가")}`));
+      option.value = account.id; option.disabled = !account.available;
+      return option;
+    }));
+    syncSessionEditorPool();
+  }).catch(() => {});
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
   ui.sessionEditorDangerous.checked = false;
   syncSessionEditorDangerous();
@@ -2779,6 +2805,7 @@ function openRenameSessionEditor() {
   ui.sessionEditorTitle.textContent = t("세션 이름 변경");
   ui.sessionEditorProjectField.hidden = true;
   ui.sessionEditorToolField.hidden = true;
+  ui.sessionEditorPoolField.hidden = true;
   ui.sessionEditorDangerousField.hidden = true;
   ui.sessionEditorSubmit.textContent = t("저장");
   ui.sessionEditorMessage.hidden = true;
@@ -2818,6 +2845,7 @@ async function submitSessionEditor() {
           projectId: ui.sessionEditorProject.value,
           name,
           aiToolId: ui.sessionEditorTool.value,
+          codexPoolAccountId: ui.sessionEditorPoolField.hidden ? undefined : ui.sessionEditorPool.value || undefined,
           dangerous: ui.sessionEditorDangerous.checked,
         }
       : { id: sessionEditorAgentId, name };
@@ -5088,8 +5116,9 @@ ui.newSessionButton.addEventListener("click", openCreateSessionEditor);
 ui.renameSessionButton.addEventListener("click", openRenameSessionEditor);
 ui.sessionEditorProject.addEventListener("change", () => {
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
+  syncSessionEditorPool();
 });
-ui.sessionEditorTool.addEventListener("change", syncSessionEditorDangerous);
+ui.sessionEditorTool.addEventListener("change", () => { syncSessionEditorDangerous(); syncSessionEditorPool(); });
 ui.sessionEditorForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void submitSessionEditor();

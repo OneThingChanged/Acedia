@@ -176,6 +176,7 @@ export type Agent = {
   shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
+  codexPoolAccountId?: string;
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
   claudeAccountSessions?: Record<string, string>;
@@ -215,6 +216,7 @@ export type StoredAgent = {
   shellCommand?: string;
   launchOptions?: LaunchOptions;
   codexAccountId?: string;
+  codexPoolAccountId?: string;
   claudeAccountId?: string;
   codexAccountSessions?: Record<string, string>;
   claudeAccountSessions?: Record<string, string>;
@@ -286,6 +288,7 @@ export type NewAgentPayload = {
   launchOptions?: LaunchOptions;
   useAltScreen?: boolean;
   codexAccountId?: string;
+  codexPoolAccountId?: string;
   claudeAccountId?: string;
   name: string;
   aiToolId: string;
@@ -298,6 +301,7 @@ export type NewProjectPayload = {
   useAltScreen?: boolean;
   workerSettings?: SessionWorkerSettings;
   codexAccountId?: string;
+  codexPoolAccountId?: string;
   claudeAccountId?: string;
   name: string;
   folder: string;

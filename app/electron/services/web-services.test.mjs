@@ -392,7 +392,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v74');
+    expect(workerBody).toContain('multiagent-remote-v76');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "requests.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
@@ -849,6 +849,7 @@ describe("Electron dashboard server", () => {
         name: "Remote Codex",
         aiToolId: "codex",
         dangerous: true,
+        codexPoolAccountId: "11111111-1111-4111-8111-111111111111",
       }),
     });
     const agyCreated = await fetch(`${status.url}/api/session/create`, {
@@ -857,6 +858,12 @@ describe("Electron dashboard server", () => {
       body: JSON.stringify({ projectId: "project-a", name: "Remote Antigravity", aiToolId: "agy", dangerous: false }),
     });
     expect(agyCreated.status).toBe(201);
+    const invalidRoutedAccount = await fetch(`${status.url}/api/session/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: status.url },
+      body: JSON.stringify({ projectId: "project-a", name: "Invalid routing", aiToolId: "codex", codexPoolAccountId: "../outside" }),
+    });
+    expect(invalidRoutedAccount.status).toBe(400);
     const unavailableTool = await fetch(`${status.url}/api/session/create`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: status.url },
@@ -901,6 +908,7 @@ describe("Electron dashboard server", () => {
       name: "Remote Codex",
       aiToolId: "codex",
       dangerous: true,
+      codexPoolAccountId: "11111111-1111-4111-8111-111111111111",
     }, { projectId: "project-a", name: "Remote Antigravity", aiToolId: "agy", dangerous: false }]);
     expect(unavailableTool.status).toBe(400);
     expect(renamed.status).toBe(202);
