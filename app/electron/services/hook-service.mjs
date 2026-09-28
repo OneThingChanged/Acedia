@@ -369,7 +369,15 @@ function removeManagedCodexMcpBlock(existing) {
   const start = existing.indexOf(CODEX_MCP_BEGIN);
   const end = existing.indexOf(CODEX_MCP_END);
   if (start < 0 || end < start) return existing;
-  return `${existing.slice(0, start)}${existing.slice(end + CODEX_MCP_END.length)}`.trimEnd();
+  // Codex's TOML editor can insert project trust, hook approvals and Windows
+  // sandbox settings before our trailing comment. Comments are not ownership
+  // boundaries: remove only the managed MCP table and retain other tables.
+  const body = existing.slice(start + CODEX_MCP_BEGIN.length, end);
+  const retained = body
+    .split(/(?=^[ \t]*\[)/m)
+    .filter(section => !/^[ \t]*\[mcp_servers\.multiagent_browser(?:\.[^\]]+)?\][ \t]*(?:#.*)?(?:\r?\n|$)/.test(section))
+    .join("");
+  return `${existing.slice(0, start)}${retained.trim() ? retained : ""}${existing.slice(end + CODEX_MCP_END.length)}`.trimEnd();
 }
 
 function codexMcpBlockLines() {

@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-28
+
+* **1.8.1.29 EXE**: Remote session selection preserves the desktop/tablet navigation pane; routed request history shows project and session names. Desktop sessions show their active routed account, quota readings distinguish fresh/stale/expired data, and Codex approval entries survive browser MCP config refresh. The Remote cache advances to v74. See [release scope](release-1-8-1-29.md).
+
 ## 2026-09-25
 
 * **1.8.1.28 EXE and Android**: Disabled accidental Remote page pinch zoom in the PWA and Android WebView while retaining one-finger terminal scrolling. The Remote cache advances to v72 and the signed ARM64 APK advances to Android versionCode 20. See [release scope](release-1-8-1-28.md).

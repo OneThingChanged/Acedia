@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.29 EXE release](release-1-8-1-29.md) - Keep Remote session navigation open and name routed requests by project/session; show actual session account assignments and clarify stale quota readings.
+
 * [Acedia 1.8.1.28 EXE and Android release](release-1-8-1-28.md) - Prevent accidental Remote page zoom while retaining touch scrolling.
 
 * [Acedia 1.8.1.27 EXE release](release-1-8-1-27.md) - Remote full paths, account routing and login, and session server opening.

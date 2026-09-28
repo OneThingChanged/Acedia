@@ -69,6 +69,7 @@ describe("terminal launch lifecycle", () => {
     const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
     await launch({ ...f.args, initCommand: "codex resume saved-id", initialPrompt: "continue work" });
     const env = f.dependencies.spawnProcess.mock.calls[0][2].env;
+    expect(f.sessions.get(f.args.id).poolRouted).toBe(true);
     expect(env.CODEX_HOME).toContain("account-a");
     expect(env.ACEDIA_ACCOUNT_POOL_KEY).toBe("lb-secret");
     await vi.advanceTimersByTimeAsync(600);
@@ -81,6 +82,7 @@ describe("terminal launch lifecycle", () => {
     const f = fixture(); const accountPoolLaunch = vi.fn(() => { throw new Error("must not run"); });
     const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
     await launch({ ...f.args, aiToolId: "claude" });
+    expect(f.sessions.get(f.args.id).poolRouted).toBe(false);
     await launch({ ...f.args, id: "remote", ssh: { host: "example.test", user: "test" } });
     expect(accountPoolLaunch).not.toHaveBeenCalled();
   });

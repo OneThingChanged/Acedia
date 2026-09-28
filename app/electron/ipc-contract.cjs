@@ -14,6 +14,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "claude_accounts_switch",
   "codex_accounts_list",
   "claude_accounts_list",
+  "account_session_status",
   "codex_accounts_create",
   "claude_accounts_create",
   "codex_accounts_login",
@@ -252,6 +253,11 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "account_session_status":
+      assertId(args);
+      if (!["codex", "claude"].includes(args.aiToolId)) throw new TypeError("Invalid account provider");
+      if (typeof args.accountId !== "string" || (args.accountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.accountId))) throw new TypeError("Invalid account id");
+      break;
     case "browser_extensions_list":
     case "browser_extensions_change":
       if (typeof args.profileId !== "string" || !args.profileId || args.profileId.length > 128) throw new TypeError("Invalid browser profile");

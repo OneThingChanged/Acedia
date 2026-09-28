@@ -11,6 +11,7 @@ export type RuntimeCommand =
   | "claude_accounts_switch"
   | "codex_accounts_list"
   | "claude_accounts_list"
+  | "account_session_status"
   | "codex_accounts_create"
   | "claude_accounts_create"
   | "codex_accounts_login"

@@ -41,6 +41,8 @@ describe('Acedia account pool', () => {
     expect(seen.map(r => r.headers['chatgpt-account-id'])).toEqual(['A', 'B', 'A']);
     expect(pool.snapshot().accounts.find(x => x.id === a).stats).toEqual({ requests: 2, failures: 0, inputTokens: 24, outputTokens: 6, cachedTokens: 8 });
     expect(pool.state.sessions.two.accountId).toBe(b);
+    expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
+    expect(pool.sessionAssignment('not-launched')).toMatchObject({ label: null, assigned: false });
   });
   it('never silently migrates a paused or deleted conversation account', async () => {
     const { pool, seen } = fixture(); const id = add(pool, 'A'); add(pool, 'B'); await pool.setEnabled(true);

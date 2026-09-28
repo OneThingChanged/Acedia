@@ -54,12 +54,20 @@ void app.whenReady().then(async () => {
         { sequence: 1, role: "user", kind: "text", text: "Read guide.md · 사용량 · 문서" },
         { sequence: 2, role: "assistant", kind: "text", text: "**Module rendering works**\n\n" + "Scroll fixture paragraph.\n\n".repeat(60) },
       ] }),
+      accountPoolApi: async (_request, response, url) => {
+        if (url.pathname !== '/api/account-pool') return false;
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ canManage: true, enabled: false, accounts: [], sessions: [], recent: [
+          { at: Date.now(), accountId: 'removed', sessionId: 'agent-1', status: 'completed', inputTokens: 12, outputTokens: 3 },
+        ] }));
+        return true;
+      },
     });
     service.config.server_port = 0;
     service.syncAgents([{ id: "agent-1", name: "Fixture session", projectId: "p1", aiToolId: "codex", status: "running" }]);
     service.syncView({ language: "ko", projects: [{ id: "p1", name: "Fixture project", folder: project }], agents: [{ id: "agent-1", projectId: "p1", aiToolId: "codex" }] });
     const status = await service.start();
-    for (const width of [1920, 1280, 390]) {
+    for (const width of [1920, 1024, 390]) {
       service.syncView({ ...service.view, language: "ko" });
       quota = quotaFixture();
       profiles = [];
@@ -69,6 +77,15 @@ void app.whenReady().then(async () => {
       win.webContents.on("console-message", event => { if (event.level === "error") { errors.push(event.message); console.error(event.message); } });
       await win.loadURL(`${status.url}/?agent=agent-1`);
       await waitFor(win, "document.querySelector('#detailName')?.textContent.includes('Fixture session')");
+      if (width === 1024) {
+        const navigationOpen = await win.webContents.executeJavaScript(`(() => {
+          const row = document.querySelector('.session-row[data-agent-id="agent-1"]');
+          row.click();
+          return !document.querySelector('.app-shell').classList.contains('nav-collapsed')
+            && getComputedStyle(document.querySelector('#navigationPane')).display !== 'none';
+        })()`);
+        assert(navigationOpen, "Selecting a session collapsed the Remote navigation");
+      }
       await win.webContents.executeJavaScript("document.querySelector('#sessionMode [data-mode=chat]').click()");
       await waitFor(win, "document.querySelector('#chatView')?.textContent.includes('Module rendering works')");
       assert(await win.webContents.executeJavaScript("!!document.querySelector('#chatView .chat-file-link[data-chat-file-path=\"guide.md\"]')"), "Chat file links did not render");
@@ -192,6 +209,11 @@ void app.whenReady().then(async () => {
         await waitFor(win, "document.documentElement.lang==='en'");
       }
       if(process.env.ACEDIA_PROPERTIES_SCREENSHOTS) { await new Promise(resolve=>setTimeout(resolve,250)); fs.mkdirSync(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,{recursive:true}); fs.writeFileSync(path.join(process.env.ACEDIA_PROPERTIES_SCREENSHOTS,`remote-usage-${width}.png`),(await win.webContents.capturePage()).toPNG()); }
+      if (width === 1024) {
+        await win.webContents.executeJavaScript("document.querySelector('#accountPoolView .pool-tabs button:nth-child(2)').click()");
+        await waitFor(win, "document.querySelector('#accountPoolView .pool-records p')?.textContent.includes('Fixture project · Fixture session')");
+        assert(await win.webContents.executeJavaScript("!document.querySelector('#accountPoolView .pool-records p').textContent.includes('agent-1')"), "Routed request exposed the session ID instead of its project and name");
+      }
       assert(errors.length === 0, `Renderer errors: ${errors.join("; ")}`);
       if (width === 1920) {
         await win.loadURL(`${status.url}/login`);

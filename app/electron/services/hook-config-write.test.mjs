@@ -68,3 +68,29 @@ it("serializes overlapping writes to the same Codex home without losing hooks or
   expect(file.match(/\[mcp_servers.multiagent_browser\]/g)).toHaveLength(1);
   expect(file).toContain("enabled = false");
 });
+
+it("preserves Codex approvals inserted before the managed MCP end comment across resumes", async () => {
+  const { root, service } = fixture();
+  await service.setupCodexHome(root);
+  const file = path.join(root, "config.toml");
+  const approvals = `[projects.'g:\\unityproject\\projects']
+trust_level = "trusted"
+
+[hooks.state.'project-config:pre_tool_use:0:0']
+trusted_hash = "sha256:existing-approval"
+
+[windows]
+sandbox = "elevated"
+`;
+  const before = fs.readFileSync(file, "utf8").replace(
+    "# <<< multiagent browser mcp <<<", approvals + "# <<< multiagent browser mcp <<<",
+  );
+  fs.writeFileSync(file, before);
+  await service.setupCodexHome(root);
+  const after = fs.readFileSync(file, "utf8");
+  expect(after).toContain(approvals.trim());
+  expect(after.match(/\[mcp_servers\.multiagent_browser\]/g)).toHaveLength(1);
+  expect(after.indexOf("[windows]")).toBeLessThan(after.indexOf("# >>> multiagent browser mcp >>>"));
+  await expect(service.setupCodexHome(root)).resolves.toBe(false);
+  expect(fs.readFileSync(file, "utf8")).toBe(after);
+});

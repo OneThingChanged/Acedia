@@ -5452,6 +5452,16 @@ async function invokeCommand(event, command, rawArgs) {
       return result;
     }
     case "codex_accounts_list": return codexAccounts.list();
+    case "account_session_status": {
+      const live = ptys.get(args.id);
+      if (live?.poolRouted && live.aiToolId === "codex") {
+        return { mode: "pool", ...accountPool.sessionAssignment(args.id) };
+      }
+      const provider = live?.aiToolId || args.aiToolId;
+      const accountId = (provider === "codex" ? live?.codexAccountId : live?.claudeAccountId) || args.accountId;
+      const account = accountsForTool(provider)?.list().find(item => item.id === accountId);
+      return { mode: live ? "direct" : "inactive", label: account?.label ?? null };
+    }
     case "codex_accounts_create": return codexAccounts.create(args.label);
     case "codex_accounts_login":
       if ([...ptys.values()].some((entry) => entry.codexAccountId === args.accountId)) {

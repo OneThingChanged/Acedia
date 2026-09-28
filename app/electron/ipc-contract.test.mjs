@@ -29,6 +29,12 @@ describe("Electron IPC contract", () => {
     expect(() => contract.assertInvokeRequest("resolve_cli_session", { aiToolId: "claude", folder: "project", claudeAccountId: "../outside" })).toThrow();
   });
 
+  it("validates a session account lookup without accepting arbitrary providers or account paths", () => {
+    expect(contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "codex", accountId: "default" })).toMatchObject({ id: "session" });
+    expect(() => contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "agy", accountId: "default" })).toThrow();
+    expect(() => contract.assertInvokeRequest("account_session_status", { id: "session", aiToolId: "codex", accountId: "../other" })).toThrow();
+  });
+
   it("shares the terminal command allowlist with preload and main", () => {
     expect(contract.INVOKE_COMMANDS).toContain("attach_terminal");
     expect(contract.INVOKE_COMMANDS).toContain("detach_terminal");

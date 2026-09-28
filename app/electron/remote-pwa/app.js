@@ -225,7 +225,12 @@ function selectionFromUrl(url) {
 }
 let selection = selectionFromUrl(initialUrl);
 const hosting = createHostingView(ui.hostingView);
-const accountPoolView = createAccountPoolView(document.querySelector('#accountPoolView'));
+const accountPoolView = createAccountPoolView(document.querySelector('#accountPoolView'), {
+  sessionLabel: (id) => {
+    const agent = agentMap().get(id);
+    return agent ? `${projectName(agent)} · ${text(agent.name || agent.id)}` : id;
+  },
+});
 let hostingLoaded = false;
 let selectedDocumentPath = initialUrl.searchParams.get("file") || null;
 let documentSidebarOpen = selection.type === "documents" && !selectedDocumentPath;
@@ -2857,11 +2862,10 @@ function selectSession(id, fromScreenId = null) {
   if (!agentMap().has(id)) return;
   selection = { type: "session", id };
   returnScreenId = isMobile() ? null : fromScreenId;
-  if (!isMobile() && compactWorkspaceMedia.matches) applyNavCollapsed(true);
   updateUrl({ push: true });
   renderNavigation();
   renderSelection();
-  closeSidebar();
+  if (isMobile()) closeSidebar();
 }
 
 function selectDocuments(projectId = null) {
@@ -5443,7 +5447,6 @@ addEventListener("multiagent:native-visibility", (event) => {
 // Collapsible sidebar (tablet/desktop) — persisted across sessions.
 const NAV_COLLAPSE_KEY = "multiagent.remote.navCollapsed";
 const appShell = document.querySelector(".app-shell");
-const compactWorkspaceMedia = window.matchMedia("(max-width: 1180px)");
 function updateSidebarToggleState() {
   const expanded = isMobile()
     ? ui.navigationPane.classList.contains("open")
@@ -5502,10 +5505,7 @@ if (
     ? t("휴대폰 모니터링 상태 확인 중")
     : t("알림 켜짐");
 }
-applyNavCollapsed(
-  localStorage.getItem(NAV_COLLAPSE_KEY) === "1"
-  || (selection.type === "session" && compactWorkspaceMedia.matches),
-);
+applyNavCollapsed(localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
 syncVisualViewport();
 resizeComposerInput();
 applyScreenAvailability();

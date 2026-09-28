@@ -210,7 +210,10 @@ stale projects, disabled tools, ownership failures, and timeouts remain visible
 in the editor as errors.[^web-services][^session-create-broker]
 Composer text and scheduled messages are isolated by agent ID for the lifetime
 of the page, so changing the selected session does not move a draft or discard
-an accepted queue. Normal chat submission uses one same-origin HTTP operation;
+an accepted queue. Selecting a session keeps the desktop/tablet navigation pane open. The pane
+collapses only when the user uses its toggle; the mobile drawer still closes
+after selection so the conversation is visible.
+Normal chat submission uses one same-origin HTTP operation;
 the desktop then writes the text and the discrete Enter key to the same verified
 PTY. Multiline input, including image-tagged messages, is normalized and enclosed
 as a terminal bracketed paste. Before the separate Enter, the backend waits at

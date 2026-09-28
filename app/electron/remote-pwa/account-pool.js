@@ -1,7 +1,14 @@
 import { requestJson } from './requests.js';
 import { t, getLanguage } from './i18n.js';
 
-export function createAccountPoolView(root) {
+export function quotaPresentation(window, limitsAt, now = Date.now()) {
+  const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent));
+  if (Number.isFinite(window.resetsAt) && window.resetsAt * 1000 <= now) return { state: 'expired', remaining };
+  if (!Number.isFinite(limitsAt) || now - limitsAt > 60 * 60_000) return { state: 'stale', remaining };
+  return { state: 'current', remaining };
+}
+
+export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) {
   const pageUrl = new URL(location.href);
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
   const dashboardUrl = new URL(location.pathname, location.origin); dashboardUrl.searchParams.set('usage', '1'); dashboardUrl.searchParams.set('accounts', '1');
@@ -60,7 +67,7 @@ export function createAccountPoolView(root) {
     const node = el('button', text); node.type = 'button'; node.disabled = disabled;
     node.onclick = () => void run(action); row.append(node); return node;
   }
-  const names = { ready: '사용 가능', login_required: '로그인 필요', login_pending: '로그인 대기', login_failed: '로그인 실패' };
+  const names = { ready: '인증 완료', login_required: '로그인 필요', login_pending: '로그인 대기', login_failed: '로그인 실패' };
   function render() {
     const admin = data?.canManage === true;
     form.hidden = toolbar.hidden = !admin || Boolean(loginAccountId);
@@ -90,10 +97,15 @@ export function createAccountPoolView(root) {
       const bucket = account.limits?.rateLimitsByLimitId?.codex || account.limits?.rateLimits;
       for (const [name, w] of [[t('기본 한도'), bucket?.primary], [t('추가 한도'), bucket?.secondary]]) {
         if (typeof w?.usedPercent !== 'number') continue;
-        const remaining = Math.max(0, Math.min(100, 100 - w.usedPercent));
-        const row = el('label', `${name} · ${t('남음')} ${remaining.toFixed(0)}%`);
-        const meter = el('meter'); meter.min = 0; meter.max = 100; meter.value = remaining; meter.setAttribute('aria-label', name); row.append(meter);
-        if (w.resetsAt) row.append(el('span', ' · ' + t('초기화') + ' ' + new Date(w.resetsAt * 1000).toLocaleString()));
+        const quota = quotaPresentation(w, account.limitsAt);
+        const description = quota.state === 'expired' ? t('한도 갱신 필요')
+          : quota.state === 'stale' ? `${t('마지막 조회 당시 남음')} ${quota.remaining.toFixed(0)}%`
+          : `${t('남음')} ${quota.remaining.toFixed(0)}%`;
+        const row = el('label', `${name} · ${description}`);
+        if (quota.state !== 'expired') {
+          const meter = el('meter'); meter.min = 0; meter.max = 100; meter.value = quota.remaining; meter.setAttribute('aria-label', name); row.append(meter);
+        }
+        if (w.resetsAt) row.append(el('span', ' · ' + t(quota.state === 'expired' ? '지난 초기화' : '초기화') + ' ' + new Date(w.resetsAt * 1000).toLocaleString()));
         card.append(row);
       }
       card.append(el('small', account.limitsAt ? `${t('한도 조회')} ${new Date(account.limitsAt).toLocaleString()}` : '한도를 아직 조회하지 않았습니다.'));
@@ -148,7 +160,7 @@ export function createAccountPoolView(root) {
     for (const item of data.recent.slice(0, 20)) {
       const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
       const state = { completed: '완료', failed: '실패', cancelled: '취소' }[item.status] || '처리 중…';
-      records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${item.inputTokens + item.outputTokens} ${t('토큰')} · ${t('세션')} ${item.sessionId}`));
+      records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${item.inputTokens + item.outputTokens} ${t('토큰')} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
     }
   }
   function select(value) {

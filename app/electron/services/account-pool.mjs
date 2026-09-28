@@ -205,6 +205,12 @@ export class AccountPool {
     return (a.cooldownUntil || 0) > this.now()
       || [bucket?.primary, bucket?.secondary].some(w => w?.usedPercent >= 100 && (!w.resetsAt || w.resetsAt * 1000 > this.now()));
   }
+  sessionAssignment(id) {
+    this.guard();
+    const session = Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : null;
+    const account = session?.accountId ? this.state.accounts.find(a => a.id === session.accountId) : null;
+    return { label: account?.label ?? null, assigned: Boolean(session?.accountId), lastUsed: session?.lastUsed ?? null };
+  }
   eligible(a) {
     return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
   }

@@ -7007,3 +7007,7 @@ body.app-tab-dragging, body.app-tab-dragging * {
   overflow-x:auto; user-select:none;
 }
 .pane-session-toolbar .pane-chat-toggle { margin:0; flex-shrink:0; height:24px; }
+.pane-session-account {
+  margin-right:auto; flex:0 0 auto; white-space:nowrap;
+  color:var(--app-muted); font-size:11px; line-height:24px;
+}

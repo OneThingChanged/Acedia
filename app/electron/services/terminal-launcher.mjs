@@ -114,7 +114,7 @@ export function createTerminalLauncher({
       const ptyRows = asPositiveInt(args.rows, 30);
       return {
         ssh, executable, shellArgs, reversePort, cwd, accountId,
-        ptyCols, ptyRows, launchEnvironment, launchCommand, release,
+        ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted: Boolean(poolLaunch), release,
       };
     } catch (error) {
       release();
@@ -143,7 +143,7 @@ export function createTerminalLauncher({
     if (cancelled()) return { reattached: false, cancelled: true };
     const {
       ssh, executable, shellArgs, reversePort, cwd, accountId,
-      ptyCols, ptyRows, launchEnvironment, launchCommand, release,
+      ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted, release,
     } = await prepareLaunch(args, id, aiToolId);
     if (cancelled()) {
       release();
@@ -185,6 +185,7 @@ export function createTerminalLauncher({
       process: processHandle,
       codexAccountId: !ssh && aiToolId === "codex" ? accountId : null,
       claudeAccountId: !ssh && aiToolId === "claude" ? accountId : null,
+      poolRouted,
       initTimer: null,
       aiToolId,
       cwd,
