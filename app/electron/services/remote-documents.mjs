@@ -3,6 +3,10 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { sendJson } from "./remote-http.mjs";
 
 const REMOTE_DOCUMENT_EXTENSIONS = new Map([
@@ -55,6 +59,8 @@ const REMOTE_HTML_PREVIEW_EXTENSIONS = new Map([
   ...REMOTE_IMAGE_EXTENSIONS,
   [".html", "text/html; charset=utf-8"],
   [".htm", "text/html; charset=utf-8"],
+  [".md", "text/html; charset=utf-8"],
+  [".markdown", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
@@ -87,6 +93,18 @@ const REMOTE_HTML_PREVIEW_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "worker-src 'self' blob:",
   "sandbox allow-scripts allow-downloads",
+].join("; ");
+const REMOTE_MARKDOWN_PREVIEW_CSP = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "font-src 'self'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data:",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'unsafe-inline'",
+  "sandbox allow-downloads",
 ].join("; ");
 class RemoteDocumentError extends Error {
   constructor(status, message) {
@@ -475,6 +493,16 @@ function rewriteRemotePreviewRootUrls(source, token) {
   return rewritten;
 }
 
+function renderRemoteMarkdownPreview(token, resolved, source) {
+  const title = escapeRemotePreviewHtml(path.basename(resolved));
+  const body = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, source));
+  return rewriteRemotePreviewRootUrls(`<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title><style>
+:root{color-scheme:dark;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#0b1420;color:#e1eaf2}*{box-sizing:border-box}body{margin:0;line-height:1.65}header{padding:16px clamp(18px,4vw,48px);border-bottom:1px solid #304358;background:#111e2d;overflow-wrap:anywhere}header small{display:block;color:#9fb6cb;font-size:12px;letter-spacing:.08em}header strong{font-size:16px}main{max-width:960px;margin:auto;padding:28px clamp(18px,4vw,48px) 80px;font-size:16px;overflow-wrap:anywhere}main>:first-child{margin-top:0}h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.5em 0 .5em}h1,h2{padding-bottom:.3em;border-bottom:1px solid #304358}a{color:#80caff;text-decoration:underline;text-underline-offset:3px}a:hover{color:#b5e2ff}a:focus-visible{outline:2px solid #80caff;outline-offset:3px}pre{overflow:auto;padding:16px;border-radius:8px;background:#07101a}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em}p code,li code,td code{padding:2px 5px;border-radius:4px;background:#1a2b3d}blockquote{margin:1em 0;padding:.1em 1em;border-left:3px solid #557b9a;color:#b7cadb}img{max-width:100%;height:auto}table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse}th,td{padding:8px 12px;border:1px solid #385069;text-align:left}th{background:#17283a}hr{border:0;border-top:1px solid #304358}input[type=checkbox]{accent-color:#80caff}
+</style></head><body><header><small>MARKDOWN</small><strong>${title}</strong></header><main>${body}</main></body></html>`, token);
+}
+
 async function prepareRemoteHtmlPreview(entry, token, resolved) {
   const source = await fsPromises.readFile(resolved, "utf8");
   const unrealReport = /<title>\s*Automation Test Results\s*<\/title>/i.test(source)
@@ -581,20 +609,24 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
     return true;
   }
   if (videoType(resolved)) { await sendVideo(request, response, resolved, stats, contentType); return true; }
-  const limit = [".html", ".htm", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".csv", ".xml"]
+  const limit = [".html", ".htm", ".md", ".markdown", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".csv", ".xml"]
     .includes(extension) ? MAX_REMOTE_DOCUMENT_BYTES : MAX_REMOTE_IMAGE_BYTES;
   if (stats.size > limit) {
     response.writeHead(413, { "cache-control": "no-store" }).end();
     return true;
   }
   const html = extension === ".html" || extension === ".htm";
-  const htmlBody = html ? Buffer.from(await prepareRemoteHtmlPreview(entry, parsed.token, resolved)) : null;
+  const markdown = extension === ".md" || extension === ".markdown";
+  const htmlBody = html
+    ? Buffer.from(await prepareRemoteHtmlPreview(entry, parsed.token, resolved))
+    : markdown ? Buffer.from(renderRemoteMarkdownPreview(parsed.token, resolved, await fsPromises.readFile(resolved, "utf8"))) : null;
   response.writeHead(200, {
     "content-type": contentType,
     "content-length": htmlBody?.length ?? stats.size,
     "access-control-allow-origin": "null",
     "cache-control": "no-store",
-    "content-security-policy": html ? REMOTE_HTML_PREVIEW_CSP : "default-src 'none'; sandbox",
+    "content-security-policy": html ? REMOTE_HTML_PREVIEW_CSP
+      : markdown ? REMOTE_MARKDOWN_PREVIEW_CSP : "default-src 'none'; sandbox",
     "cross-origin-opener-policy": "same-origin",
     "cross-origin-resource-policy": "cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",

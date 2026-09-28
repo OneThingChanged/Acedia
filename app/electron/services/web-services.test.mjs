@@ -496,8 +496,9 @@ describe("Electron dashboard server", () => {
     fs.mkdirSync(path.join(projectRoot, "node_modules"), { recursive: true });
     fs.mkdirSync(path.join(projectRoot, ".build-tools", "android-sdk"), { recursive: true });
     fs.mkdirSync(path.join(projectRoot, ".codex"), { recursive: true });
-    fs.writeFileSync(path.join(projectRoot, "docs", "README.md"), "# Remote 문서\n");
-    fs.writeFileSync(path.join(projectRoot, "docs", "preview.html"), '<link rel="stylesheet" href="preview.css"><link rel="stylesheet" href="/assets/root.css"><h1>Preview</h1><script src="preview.js"></script>');
+    const markdownSource = "# Remote 문서\n\n[다음](../docs/README.md)\n\n![이미지](/docs/preview.png)\n\n<script>alert(1)</script>\n";
+    fs.writeFileSync(path.join(projectRoot, "docs", "README.md"), markdownSource);
+    fs.writeFileSync(path.join(projectRoot, "docs", "preview.html"), '<link rel="stylesheet" href="preview.css"><link rel="stylesheet" href="/assets/root.css"><h1>Preview</h1><a href="/docs/README.md">Markdown</a><script src="preview.js"></script>');
     fs.writeFileSync(path.join(otherProjectRoot, "other.html"), "<h1>Other project</h1>");
     fs.writeFileSync(path.join(projectRoot, "docs", "preview.css"), "body { background: url(preview.png); }");
     fs.writeFileSync(path.join(projectRoot, "docs", "preview.js"), "document.body.dataset.preview = 'ready';");
@@ -530,6 +531,7 @@ describe("Electron dashboard server", () => {
     fs.writeFileSync(path.join(projectRoot, "docs", "large.png"), "");
     fs.truncateSync(path.join(projectRoot, "docs", "large.png"), 25 * 1024 * 1024 + 1);
     fs.writeFileSync(path.join(projectRoot, "notes.txt"), "not allowed");
+    fs.writeFileSync(path.join(projectRoot, "docs", "blocked.bin"), "not allowed");
     fs.writeFileSync(path.join(projectRoot, "node_modules", "hidden.md"), "# hidden");
     fs.writeFileSync(path.join(projectRoot, ".build-tools", "android-sdk", "cmake.org.html"), "<h1>Build tool</h1>");
     fs.writeFileSync(path.join(projectRoot, ".codex", "instructions.md"), "# internal");
@@ -650,7 +652,11 @@ describe("Electron dashboard server", () => {
     const previewScript = await fetch(new URL("preview.js", previewUrl));
     const previewImage = await fetch(new URL("preview.png", previewUrl));
     const previewRootCss = await fetch(`${status.url}/preview/${previewToken}/assets/root.css`);
-    const previewUnsupported = await fetch(new URL("README.md", previewUrl));
+    const previewMarkdown = await fetch(new URL("README.md", previewUrl));
+    const previewMarkdownBody = await previewMarkdown.text();
+    const previewMarkdownHead = await fetch(new URL("README.md", previewUrl), { method: "HEAD" });
+    const previewUnsupported = await fetch(new URL("blocked.bin", previewUrl));
+    const previewOversized = await fetch(new URL("large.md", previewUrl));
     const automationIssue = await fetch(`${status.url}/api/docs/preview?${new URLSearchParams({
       projectId: "local",
       path: "automation/index.html",
@@ -672,7 +678,7 @@ describe("Electron dashboard server", () => {
     expect(list.documents.some((document) => document.path.includes("node_modules"))).toBe(false);
     expect(list.documents.some((document) => document.path.includes(".build-tools"))).toBe(false);
     expect(list.documents.some((document) => document.path.includes(".codex"))).toBe(false);
-    expect(markdown).toMatchObject({ kind: "markdown", path: "docs/README.md", content: "# Remote 문서\n" });
+    expect(markdown).toMatchObject({ kind: "markdown", path: "docs/README.md", content: markdownSource });
     expect(html.kind).toBe("html");
     expect(html.content).toContain("<script");
     expect(absoluteMarkdown.status).toBe(200);
@@ -717,6 +723,7 @@ describe("Electron dashboard server", () => {
     expect(previewHtml.headers.get("access-control-allow-origin")).toBe("null");
     expect(previewHtmlBody).toContain('href="preview.css"');
     expect(previewHtmlBody).toContain(`href="/preview/${previewToken}/assets/root.css"`);
+    expect(previewHtmlBody).toContain(`href="/preview/${previewToken}/docs/README.md"`);
     expect(previewCss.status).toBe(200);
     expect(await previewCss.text()).toContain("url(preview.png)");
     expect(previewScript.status).toBe(200);
@@ -724,7 +731,19 @@ describe("Electron dashboard server", () => {
     expect(previewImage.status).toBe(200);
     expect(previewRootCss.status).toBe(200);
     expect(await previewRootCss.text()).toContain("color: cyan");
+    expect(previewMarkdown.status).toBe(200);
+    expect(previewMarkdown.headers.get("content-type")).toContain("text/html");
+    expect(previewMarkdown.headers.get("content-security-policy")).toContain("script-src 'none'");
+    expect(previewMarkdown.headers.get("content-security-policy")).not.toContain("allow-scripts");
+    expect(previewMarkdownBody).toContain("<h1>Remote 문서</h1>");
+    expect(previewMarkdownBody).toContain('href="../docs/README.md"');
+    expect(previewMarkdownBody).toContain(`src="/preview/${previewToken}/docs/preview.png"`);
+    expect(previewMarkdownBody).not.toContain("<script>alert(1)</script>");
+    expect(previewMarkdownHead.status).toBe(200);
+    expect(await previewMarkdownHead.text()).toBe("");
+    expect(Number(previewMarkdownHead.headers.get("content-length"))).toBe(Buffer.byteLength(previewMarkdownBody));
     expect(previewUnsupported.status).toBe(415);
+    expect(previewOversized.status).toBe(413);
     expect(unauthorizedPreviewIssue.status).toBe(401);
     expect(automationIssue.status).toBe(302);
     expect(automationPreview.status).toBe(200);

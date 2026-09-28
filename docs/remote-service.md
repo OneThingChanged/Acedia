@@ -293,7 +293,10 @@ filesystem paths. A chat or Markdown hyperlink to HTML opens its short-lived
 preview capability directly instead of first navigating through Documents and
 requiring a second launch action. Root-relative HTML asset
 URLs are rebound to the same capability token so they cannot escape into the
-Remote application root. Unreal Automation reports that only export
+Remote application root. An HTML preview link to `.md` or `.markdown` now opens
+a readable Markdown page under that same token. Relative links and images stay
+within the registered project root; Markdown source cannot run scripts and keeps
+the existing 2 MB document limit. Unreal Automation reports that only export
 `index.html` and `index.json` are rendered by a dependency-free compatibility
 view; missing Bower packages therefore do not leave the public preview blank.
 The compatibility view escapes report text and keeps artifact resolution inside
