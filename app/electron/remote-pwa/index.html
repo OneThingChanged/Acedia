@@ -480,6 +480,25 @@
       </form>
     </div>
 
+    <div class="document-context-menu" id="documentContextMenu" role="menu" aria-label="문서 작업" hidden>
+      <button type="button" role="menuitem" data-document-action="path">경로 보기</button>
+      <button type="button" role="menuitem" data-document-action="copy-relative">상대 경로 복사</button>
+      <hr>
+      <button type="button" role="menuitem" class="danger" data-document-action="delete">삭제 (휴지통)</button>
+    </div>
+    <dialog class="document-path-dialog" id="documentPathDialog" aria-labelledby="documentPathTitle">
+      <div class="document-path-head">
+        <strong id="documentPathTitle">문서 경로</strong>
+        <button class="icon-button" id="documentPathClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <label>프로젝트 상대 경로<code id="documentRelativePath"></code></label>
+      <label>PC 절대 경로<code id="documentAbsolutePath"></code></label>
+      <div class="document-path-actions">
+        <button class="small-button" id="documentCopyRelative" type="button">상대 경로 복사</button>
+        <button class="small-button" id="documentCopyAbsolute" type="button">절대 경로 복사</button>
+      </div>
+    </dialog>
+
     <nav class="mobile-nav" aria-label="모바일 메뉴">
       <button class="active" id="mobileMonitorButton" type="button" hidden><span>▦</span>모니터</button>
       <button id="mobileSessionsButton" type="button"><span>▥</span>세션</button>

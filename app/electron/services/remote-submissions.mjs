@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 
 const MAX_AGE = 7 * 24 * 60 * 60_000;
 const failure = (status, error) => ({ status, body: { error } });
+const unknownOutcome = () => ({ status: 409, body: {
+  error: "submission outcome unknown; check conversation before sending again",
+  outcome: "unknown",
+} });
 
 // Persist intent before touching a PTY. An interrupted submission must never
 // execute again just because the browser did not receive the HTTP response.
@@ -42,7 +46,7 @@ export class RemoteSubmissions {
     const old = this.entries.get(requestId);
     if (old) {
       if (old.fingerprint !== fingerprint) return failure(409, "request ID reused with different content");
-      return this.pending.get(requestId) || old.result || failure(409, "submission outcome unknown; check conversation before sending again");
+      return this.pending.get(requestId) || old.result || unknownOutcome();
     }
     for (const [key, entry] of this.entries) {
       if (entry.createdAt < Date.now() - MAX_AGE && !this.pending.has(key)) this.entries.delete(key);
@@ -61,7 +65,7 @@ export class RemoteSubmissions {
         notSent = await execute() === false;
         result = notSent ? failure(409, "session is not active") : { status: 200, body: { ok: true } };
       } catch {
-        result = failure(409, "submission outcome unknown; check conversation before sending again");
+        result = unknownOutcome();
       }
       entry.result = result;
       // A definitive rejection before submission is safe to retry after activation.

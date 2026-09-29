@@ -31,8 +31,8 @@ it("coalesces simultaneous requests and remembers success after restart without 
 it("does not replay uncertain outcomes or accept changed content under the same ID", async () => {
   const { file, ledger, id } = fixture();
   const execute = vi.fn(() => { throw new Error("response lost after PTY write"); });
-  expect((await ledger.submit(id, "a", "hello", execute)).status).toBe(409);
-  expect((await new RemoteSubmissions(file).submit(id, "a", "hello", execute)).status).toBe(409);
+  expect((await ledger.submit(id, "a", "hello", execute)).body.outcome).toBe("unknown");
+  expect((await new RemoteSubmissions(file).submit(id, "a", "hello", execute)).body.outcome).toBe("unknown");
   expect((await ledger.submit(id, "a", "different", execute)).status).toBe(409);
   expect(execute).toHaveBeenCalledTimes(1);
 });

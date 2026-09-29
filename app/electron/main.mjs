@@ -70,7 +70,8 @@ import {
 import { resolveTerminalPath } from "./services/terminal-path-service.mjs";
 import { sanitizeTerminalOutput } from "./services/terminal-sanitize.mjs";
 import { parseChatTranscript, deriveTurnLifecycle } from "./services/chat-transcript.mjs";
-import { normalizeTranscriptPath } from "./services/transcript-path.mjs";
+import { normalizeTranscriptPath, isTranscriptInsideRoot } from "./services/transcript-path.mjs";
+import { CodexTurnCompletion } from "./services/codex-turn-completion.mjs";
 import {
   LocalDashboardService,
   RemoteDashboardService,
@@ -295,6 +296,7 @@ const agentSessionIds = new Map();
 /** agentId -> epoch ms until which transcript resolution is known to fail
  *  (avoids rescanning the session dir every poll for sessions with no file). */
 const transcriptMissUntil = new Map();
+const codexTurnCompletion = new CodexTurnCompletion();
 
 app.setName(runtimeVariant.displayName);
 const userDataOverride = process.env.MULTIAGENT_ELECTRON_USER_DATA?.trim();
@@ -440,7 +442,7 @@ const idlePolicy = new IdleSessionPolicy({
     const root = accountTranscriptRoot(entry.aiToolId, entry.aiToolId === 'codex' ? entry.codexAccountId : entry.claudeAccountId);
     const transcript = agentTranscripts.get(entry.id);
     if (!root || !transcript) return null;
-    try { if (!isInside(root, fs.realpathSync(transcript)) || !fs.statSync(transcript).isFile() || fs.statSync(transcript).size === 0) return null; } catch { return null; }
+    try { if (!isTranscriptInsideRoot(root, transcript) || !fs.statSync(transcript).isFile() || fs.statSync(transcript).size === 0) return null; } catch { return null; }
     return sessionService.resolveExact({aiToolId:entry.aiToolId, folder:entry.cwd, preferredSessionId:sessionId, transcriptRoot:root, allowFolderFallback:false});
   },
   suspend: id => terminalSessions.action(id, 'sleep'),
@@ -475,7 +477,7 @@ function publishAgentHookEvent(eventName, payload) {
   if (eventName === "agent:hook-event" && payload?.id) {
     const binding = accountBindings.get(payload.id);
     const hookTranscript = normalizeTranscriptPath(payload.transcript_path);
-    if (binding && hookTranscript && !isInside(
+    if (binding && hookTranscript && !isTranscriptInsideRoot(
       accountTranscriptRoot(binding.toolId, binding.accountId),
       hookTranscript,
     )) return;
@@ -640,13 +642,25 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
     // inactive — surface it as "offline" (비활성) rather than idle (대기), which
     // is reserved for a running-but-waiting terminal.
     const live = ptys.has(agent.id);
+    const hook = live ? monitorHooks.get(agent.id) ?? null : null;
+    const hookEvent = hook?.event;
+    const workingHook = ["working", "tool-start", "tool-end"].includes(hookEvent);
+    const sessionId = agentSessionIds.get(agent.id) || hook?.session_id;
+    const accountId = ptys.get(agent.id)?.codexAccountId || selectedAccountId(agent);
+    const completedWithoutHook = live && agent.aiToolId === "codex" && workingHook &&
+      codexTurnCompletion.isComplete({
+        root: accountTranscriptRoot("codex", accountId),
+        transcriptPath: agentTranscripts.get(agent.id),
+        sessionId,
+        lastHookAt: hook.lastTs,
+      });
     return {
       ...agent,
-      status: live ? agent.status : "offline",
+      status: live ? completedWithoutHook ? "done" : agent.status : "offline",
       output: sanitizeTerminalOutput(
         ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? ""
       ),
-      hook: live ? monitorHooks.get(agent.id) ?? null : null,
+      hook: completedWithoutHook ? { ...hook, event: "done", hook_event_name: "TranscriptComplete" } : hook,
     };
   });
 }
@@ -933,6 +947,7 @@ monitorService = new LocalDashboardService({
   configName: "monitor-config.json",
   stateProvider: dashboardPwaState,
   providers: sessionProviders,
+  trashDocument: (file) => shell.trashItem(file),
 });
 let usageDashboard;
 usageDashboard = new LocalDashboardService({
@@ -957,6 +972,7 @@ remoteService = new RemoteDashboardService({
   stateProvider: () => ({ agents: liveOutputForAgents(remoteService.agents, 4_000) }),
   ...sessionProviders,
   mobileApkPath: remoteMobileApkPath,
+  trashDocument: (file) => shell.trashItem(file),
   requestAccess(login) {
     sendEventToAll("remote:access-request", { login });
   },
@@ -3245,7 +3261,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
 
   let transcriptPath = normalizeTranscriptPath(agentTranscripts.get(id));
   let tool = agentTranscriptTool.get(id) || declaredTool;
-  if (transcriptPath && binding && !isInside(accountTranscriptRoot(binding.toolId, binding.accountId), transcriptPath)) {
+  if (transcriptPath && binding && !isTranscriptInsideRoot(accountTranscriptRoot(binding.toolId, binding.accountId), transcriptPath)) {
     transcriptPath = null;
   }
   // Drop a cached path that doesn't belong to the current session id (a resumed

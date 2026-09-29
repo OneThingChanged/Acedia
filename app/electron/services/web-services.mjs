@@ -627,7 +627,7 @@ async function listen(server, desiredPort, host = "127.0.0.1") {
 }
 
 export class LocalDashboardService {
-  constructor({ title, defaultPort, baseDir, configName, stateProvider, providers = null }) {
+  constructor({ title, defaultPort, baseDir, configName, stateProvider, providers = null, trashDocument = null }) {
     this.title = title;
     this.defaultPort = defaultPort;
     this.baseDir = baseDir;
@@ -638,6 +638,7 @@ export class LocalDashboardService {
     // When provided, the dashboard serves the full Remote PWA (chat/terminal/
     // input) on loopback instead of the minimal card grid.
     this.providers = providers;
+    this.trashDocument = trashDocument;
     this.state = {};
     this.server = null;
     this.port = null;
@@ -872,6 +873,7 @@ export class LocalDashboardService {
           }
           if (await serveRemoteDocumentApi(request, response, url, {
             snapshot: () => this.snapshot(), previews: this.htmlPreviews,
+            mutationAllowed: () => this.isLocalOrigin(request), trashDocument: this.trashDocument,
           })) return;
           // The PWA shell + assets (index at "/", app.js, xterm, styles, sw…).
           if (request.method === "GET" && sendRemoteAsset(response, url.pathname)) return;
@@ -909,8 +911,9 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
     this.accountPoolApi = accountPoolApi;
+    this.trashDocument = trashDocument;
     this.baseDir = baseDir;
     this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, "remote-config.json");
@@ -1731,6 +1734,7 @@ export class RemoteDashboardService {
         }
         if (await serveRemoteDocumentApi(request, response, url, {
           snapshot: () => ({ agents: this.agents, view: this.view }), previews: this.htmlPreviews,
+          mutationAllowed: () => this.isSameOrigin(request), trashDocument: this.trashDocument,
         })) return;
         if (request.method === "GET" && sendRemoteAsset(response, url.pathname)) return;
         response.writeHead(404).end();

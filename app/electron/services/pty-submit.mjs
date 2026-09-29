@@ -24,6 +24,7 @@ export async function submitPtyMessage({
 }) {
   const value = String(message ?? "");
   if (!ptyProcess || !value.trim() || !isCurrent() || pending.has(ptyProcess)) return false;
+  const bracketedPaste = /[\r\n]/.test(value);
   pending.add(ptyProcess);
   let subscription;
   try {
@@ -36,11 +37,14 @@ export async function submitPtyMessage({
     ptyProcess.write(preparePtySubmission(value));
     const started = now();
     await wait(PTY_SUBMIT_DELAY_MS);
-    while ((observesOutput && !sawOutput) || now() - lastOutput < PTY_SUBMIT_QUIET_MS) {
+    // A single-line prompt can be held by the TUI without repainting until
+    // Enter. Only bracketed multiline paste needs a visible settled render.
+    while ((bracketedPaste && observesOutput && !sawOutput) || now() - lastOutput < PTY_SUBMIT_QUIET_MS) {
       if (!isCurrent() || now() - started >= PTY_SUBMIT_TIMEOUT_MS) {
         throw new Error("Terminal changed or paste did not settle; submission outcome unknown.");
       }
-      const quietRemaining = observesOutput && !sawOutput ? PTY_SUBMIT_QUIET_MS : PTY_SUBMIT_QUIET_MS - (now() - lastOutput);
+      const quietRemaining = bracketedPaste && observesOutput && !sawOutput
+        ? PTY_SUBMIT_QUIET_MS : PTY_SUBMIT_QUIET_MS - (now() - lastOutput);
       await wait(Math.min(quietRemaining, PTY_SUBMIT_TIMEOUT_MS - (now() - started)));
     }
     if (!isCurrent()) throw new Error("Terminal changed after paste; submission outcome unknown.");

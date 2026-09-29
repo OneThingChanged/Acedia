@@ -493,6 +493,42 @@ function rewriteRemotePreviewRootUrls(source, token) {
   return rewritten;
 }
 
+// Mutations and path disclosure only accept a project-relative document from
+// the tree. The read/preview endpoints intentionally accept broader paths.
+async function resolveListedRemoteDocument(snapshot, projectId, requestedPath) {
+  const raw = String(requestedPath || "").replaceAll("\\", "/");
+  const parts = raw.split("/");
+  if (!raw || path.posix.isAbsolute(raw) || path.win32.isAbsolute(raw) || /^[A-Za-z]:/.test(raw) ||
+      parts.some((part) => !part || part === "." || part === ".." || part.includes("\0"))) {
+    throw new RemoteDocumentError(400, "프로젝트 상대 문서 경로가 필요합니다.");
+  }
+  const { root } = documentProjectRoot(snapshot, projectId);
+  let candidate = root;
+  for (const [index, part] of parts.entries()) {
+    if (REMOTE_DOCUMENT_SKIPPED_DIRS.has(part.toLowerCase()) && index < parts.length - 1) {
+      throw new RemoteDocumentError(403, "목록에 없는 문서입니다.");
+    }
+    candidate = path.join(candidate, part);
+    let entry;
+    try { entry = await fsPromises.lstat(candidate); }
+    catch { throw new RemoteDocumentError(404, "문서 파일을 찾을 수 없습니다."); }
+    if (entry.isSymbolicLink() || (index < parts.length - 1 && !entry.isDirectory())) {
+      throw new RemoteDocumentError(403, "링크를 통한 문서 접근은 허용하지 않습니다.");
+    }
+    if (index === parts.length - 1 && !entry.isFile()) {
+      throw new RemoteDocumentError(404, "문서 파일을 찾을 수 없습니다.");
+    }
+  }
+  if (!REMOTE_DOCUMENT_EXTENSIONS.has(path.extname(candidate).toLowerCase())) {
+    throw new RemoteDocumentError(415, "목록에 없는 문서 형식입니다.");
+  }
+  const resolved = fs.realpathSync(candidate);
+  if (!isInsideDocumentRoot(root, resolved)) {
+    throw new RemoteDocumentError(403, "프로젝트 밖의 파일은 열 수 없습니다.");
+  }
+  return { path: candidate, relativePath: parts.join("/") };
+}
+
 function renderRemoteMarkdownPreview(token, resolved, source) {
   const title = escapeRemotePreviewHtml(path.basename(resolved));
   const body = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, source));
@@ -645,16 +681,32 @@ function sendRemoteDocumentError(response, error) {
 }
 
 
-const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/preview", "/api/files/image", "/api/files/asset", "/api/files/video"]);
+const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/preview", "/api/docs/path", "/api/docs/file", "/api/files/image", "/api/files/asset", "/api/files/video"]);
 
 // Caller owns authentication. Capability URLs retain their separate token gate.
-export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews }) {
-  if (!DOCUMENT_ROUTES.has(url.pathname) || (request.method !== "GET" && !(request.method === "HEAD" && url.pathname === "/api/files/video"))) return false;
+export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews, mutationAllowed, trashDocument }) {
+  if (!DOCUMENT_ROUTES.has(url.pathname) ||
+      (url.pathname === "/api/docs/file" && request.method !== "DELETE") ||
+      (request.method !== "GET" && !(request.method === "HEAD" && url.pathname === "/api/files/video") &&
+       !(request.method === "DELETE" && url.pathname === "/api/docs/file"))) return false;
   try {
+    if (request.method === "DELETE") {
+      if (!mutationAllowed?.()) throw new RemoteDocumentError(403, "요청 출처가 허용되지 않습니다.");
+      if (!trashDocument) throw new RemoteDocumentError(501, "휴지통 삭제를 사용할 수 없습니다.");
+      const file = await resolveListedRemoteDocument(snapshot(), url.searchParams.get("projectId"), url.searchParams.get("path"));
+      await trashDocument(file.path);
+      sendJson(response, 200, { ok: true, path: file.relativePath }, { "cache-control": "no-store" });
+      return true;
+    }
     const state = snapshot();
     const args = [state, url.searchParams.get("projectId"), url.searchParams.get("path"), url.searchParams.get("agentId")];
     switch (url.pathname) {
       case "/api/docs": sendJson(response, 200, await listRemoteDocuments(state, args[1])); break;
+      case "/api/docs/path": {
+        const file = await resolveListedRemoteDocument(state, args[1], args[2]);
+        sendJson(response, 200, { path: file.path, relativePath: file.relativePath }, { "cache-control": "no-store" });
+        break;
+      }
       case "/api/docs/read": sendJson(response, 200, await readRemoteDocument(...args)); break;
       case "/api/docs/preview": {
         const location = await issueRemoteHtmlPreview(previews, ...args);

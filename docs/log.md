@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-29
+
+* **1.8.1.32 EXE**: Fixed Remote conversation drift when Windows links expose the same Codex transcript under different paths, and released queued messages after a missed completion hook when the transcript proves the turn ended. Added safe handling of uncertain submissions, launch-time routed account selection, Remote document path/trash actions, and explicit dismissal of the new-session dialog. Remote cache v77; signed Android APK reused; Store unchanged. See [release scope](release-1-8-1-32.md) and [Remote service](remote-service.md).
+
 ## 2026-09-28
 
 * **1.8.1.31 Remote Markdown preview repair (EXE preparation)**: HTML preview links to `.md` and `.markdown` now open a readable, script-blocked Markdown page within the same expiring project preview capability. Root-relative images and links retain the token; unsupported files and oversized documents remain blocked. See [Remote service](remote-service.md). The signed 1.8.1.28 Android APK is reused; Store submission is unchanged.

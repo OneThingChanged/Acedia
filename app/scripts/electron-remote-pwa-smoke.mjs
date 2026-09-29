@@ -35,6 +35,7 @@ void app.whenReady().then(async () => {
   try {
     const project = path.join(root, "project"); fs.mkdirSync(project);
     fs.writeFileSync(path.join(project, "guide.md"), "# Remote document fixture");
+    fs.writeFileSync(path.join(project, "remove.md"), "# Move to trash fixture");
     usage = new UsageService(path.join(root, "usage.db"), { scan: async () => [] });
     const now = new Date();
     const event = usage.db().prepare("INSERT INTO usage_events (source_key, ts, tool, input_tokens, output_tokens, total_tokens, raw_kind, model) VALUES (?, ?, 'codex', ?, ?, ?, 'codex_token_count_v2', 'gpt-6-astra')");
@@ -44,6 +45,7 @@ void app.whenReady().then(async () => {
     }
     service = new RemoteDashboardService({
       baseDir: path.join(root, "service"),
+      trashDocument: async (file) => fs.renameSync(file, path.join(root, "trashed-document.md")),
       usageProvider: (_refresh, selection) => ({updatedAt:Date.now(),limits:quota,profiles,tokens:usage.tokenTotals(),history:usage.usageHistory(selection)}),
       usageProfileVisibility: (key,hidden) => {
         quota = quota.map(limit => limit.profile.key===key?{...limit,profile:{...limit.profile,hidden,visible:!hidden}}:limit);
@@ -147,6 +149,47 @@ void app.whenReady().then(async () => {
       assert(composerCheck.sends === 1 && composerCheck.locked, "Concurrent submission was not blocked");
       assert(composerCheck.draft === "next draft", "Pending response erased the newer draft");
       assert(!composerCheck.queue.includes("first message"), "Duplicate submission entered the queue");
+      if (width === 1920) {
+        const uncertainCheck = await win.webContents.executeJavaScript(`(async () => {
+          await new Promise(resolve => setTimeout(resolve, 1250));
+          const originalFetch = window.fetch, originalConfirm = window.confirm;
+          const requests = [];
+          window.fetch = (url, options) => {
+            if (url === '/api/session/submit') {
+              requests.push(JSON.parse(options.body).requestId);
+              return Promise.resolve(new Response(JSON.stringify(requests.length === 1
+                ? {error:'submission outcome unknown; check conversation before sending again', outcome:'unknown'}
+                : {ok:true}), {status:requests.length === 1 ? 409 : 200}));
+            }
+            return originalFetch(url, options);
+          };
+          const input = document.querySelector('#messageInput');
+          const form = input.closest('form');
+          const submit = () => form.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));
+          try {
+            input.value = 'silent prompt fixture';
+            input.dispatchEvent(new Event('input', {bubbles:true}));
+            submit();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 1250));
+            window.confirm = () => false;
+            submit();
+            await new Promise(resolve => setTimeout(resolve, 30));
+            const blocked = requests.length === 1;
+            window.confirm = () => true;
+            submit();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return {blocked, requests, cleared: input.value === ''};
+          } finally {
+            window.fetch = originalFetch; window.confirm = originalConfirm;
+            input.value = 'next draft';
+            input.dispatchEvent(new Event('input', {bubbles:true}));
+          }
+        })()`);
+        assert(uncertainCheck.blocked && uncertainCheck.requests.length === 2
+          && uncertainCheck.requests[0] !== uncertainCheck.requests[1] && uncertainCheck.cleared,
+        "Unknown submission retried without confirmation or reused its rejected request ID");
+      }
       // Change the source setting through the service; do not directly set the
       // browser language. The ordinary state poll must update this open page.
       service.syncView({ ...service.view, language: "en" });
@@ -158,7 +201,30 @@ void app.whenReady().then(async () => {
       service.syncView({ ...service.view, language: "ko" });
       await waitFor(win, "document.documentElement.lang==='ko'");
       assert(await win.webContents.executeJavaScript("Math.abs(document.querySelector('#chatView').scrollTop-200)<3"), "Chat rerender moved history reader");
-      await win.webContents.executeJavaScript("document.querySelector('#filePreviewClose').click();document.querySelector('#usageButton').click()");
+      await win.webContents.executeJavaScript(`document.querySelector('#filePreviewClose').click();document.querySelector('${width < 800 ? '#mobileDocumentsButton' : '#documentsButton'}').click()`);
+      await waitFor(win, "document.querySelector('.document-tree-file[title=\"guide.md\"]')");
+      await win.webContents.executeJavaScript(`(() => {
+        const row = document.querySelector('.document-tree-file[title="guide.md"]');
+        ${width < 800
+          ? "row.nextElementSibling.click();"
+          : "row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 90, clientY: 90 }));"}
+      })()`);
+      assert(await win.webContents.executeJavaScript("!document.querySelector('#documentContextMenu').hidden"), "Document context menu did not open");
+      await win.webContents.executeJavaScript("document.querySelector('[data-document-action=path]').click()");
+      await waitFor(win, "document.querySelector('#documentPathDialog').open");
+      assert(await win.webContents.executeJavaScript("document.querySelector('#documentRelativePath').textContent==='guide.md' && document.querySelector('#documentAbsolutePath').textContent.endsWith('guide.md')"), "Document path dialog did not show both paths");
+      await win.webContents.executeJavaScript("document.querySelector('#documentPathClose').click()");
+      if (width === 1920) {
+        await win.webContents.executeJavaScript(`(() => {
+          window.confirm = () => true;
+          document.querySelector('.document-tree-file[title="remove.md"]').dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 90, clientY: 90 }));
+          document.querySelector('[data-document-action=delete]').click();
+        })()`);
+        await waitFor(win, "!document.querySelector('.document-tree-file[title=\"remove.md\"]')");
+        assert(fs.readFileSync(path.join(root, "trashed-document.md"), "utf8").includes("Move to trash"), "Document was not sent to trash");
+      }
+      await win.webContents.executeJavaScript("document.querySelector('#usageButton').click()");
       await waitFor(win, "document.querySelector('#filePreviewOverlay').hidden && document.querySelector('#usageProviderGrid').getClientRects().length>0");
       await waitFor(win, "document.querySelector('#usageProviderGrid > .usage-provider-card') && document.querySelector('.usage-profile-review')");
       assert(await win.webContents.executeJavaScript("document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===1 && !document.querySelector('.usage-profile-review').open"), "Unused quota profile was not collapsed");

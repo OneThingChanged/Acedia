@@ -172,6 +172,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TerminalArea } from "./components/TerminalArea";
 import { NewAgentModal } from "./components/NewAgentModal";
+import { SessionLaunchAccountModal, type LaunchPoolAccount } from "./components/SessionLaunchAccountModal";
 import { NewProjectModal } from "./components/NewProjectModal";
 import { useRendererConfirmation } from "./hooks/useRendererConfirmation";
 import { DeleteSessionModal } from "./components/DeleteSessionModal";
@@ -231,6 +232,13 @@ type RuntimeFlags = {
 type AgentWindowUsage = {
   in_use_agent_ids: string[];
   owned_agent_ids: string[];
+};
+
+type PendingSessionAccountLaunch = {
+  agentId: string;
+  sessionName: string;
+  accounts: LaunchPoolAccount[];
+  initialAccountId?: string;
 };
 
 function readLocalStorageValue(key: string) {
@@ -627,6 +635,7 @@ function App() {
 
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [pendingSessionAccountLaunch, setPendingSessionAccountLaunch] = useState<PendingSessionAccountLaunch | null>(null);
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(loadFilesOpen);
@@ -741,6 +750,7 @@ function App() {
 
   const termsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const agentsRef = useRef<Agent[]>([]);
+  const sessionAccountLaunchResolveRef = useRef<{ agentId: string; resolve: (start: boolean) => void } | null>(null);
   const catalogAgentIdsRef = useRef<Set<string>>(
     new Set(boot.agents.map((agent) => agent.id))
   );
@@ -2193,6 +2203,55 @@ function App() {
     return agent;
   }, []);
 
+  const chooseSessionAccountBeforeLaunch = useCallback(async (agentId: string, force = false) => {
+    const agent = agentsRef.current.find(candidate => candidate.id === agentId);
+    if (!agent || !isElectronRuntime() || agent.aiToolId !== "codex" || agent.sshHostId
+      || (!force && !agent.deferredStart && agent.status !== "idle" && agent.status !== "exited")) return true;
+    if (sessionAccountLaunchResolveRef.current) return false;
+    let choices: { enabled: boolean; accounts: LaunchPoolAccount[] };
+    try {
+      choices = await invoke("account_pool_choices", {});
+    } catch (error) {
+      pushToast(agentId, agent.name, text(`분산 계정을 확인할 수 없습니다: ${String(error)}`, `Could not check routed accounts: ${String(error)}`));
+      return false;
+    }
+    if (!choices.enabled) return true;
+    if (sessionAccountLaunchResolveRef.current) return false;
+    return new Promise<boolean>(resolve => {
+      sessionAccountLaunchResolveRef.current = { agentId, resolve };
+      setPendingSessionAccountLaunch({
+        agentId,
+        sessionName: agent.name,
+        accounts: choices.accounts,
+        initialAccountId: agent.codexPoolAccountId,
+      });
+    });
+  }, [pushToast, text]);
+
+  const finishSessionAccountLaunch = useCallback((accountId: string | null) => {
+    const pending = sessionAccountLaunchResolveRef.current;
+    sessionAccountLaunchResolveRef.current = null;
+    setPendingSessionAccountLaunch(null);
+    if (!pending) return;
+    if (!agentsRef.current.some(agent => agent.id === pending.agentId)) {
+      pending.resolve(false);
+      return;
+    }
+    if (accountId !== null) {
+      const next = agentsRef.current.map(agent => agent.id === pending.agentId
+        ? { ...agent, codexPoolAccountId: accountId || undefined }
+        : agent);
+      agentsRef.current = next;
+      setAgents(next);
+    }
+    pending.resolve(accountId !== null);
+  }, []);
+
+  const recoverSessionWithAccountChoice = useCallback(async (agentId: string) => {
+    if (!await chooseSessionAccountBeforeLaunch(agentId, true)) return;
+    await recoverExitedAgent(agentId);
+  }, [chooseSessionAccountBeforeLaunch, recoverExitedAgent]);
+
   const activateDeferredAgent = useCallback((agentId: string) => {
     const next = agentsRef.current.map((agent) =>
       agent.id === agentId && agent.deferredStart
@@ -2230,12 +2289,13 @@ function App() {
   );
 
   const requestSelectAgent = useCallback(
-    (agentId: string) => {
+    async (agentId: string) => {
+      if (!await chooseSessionAccountBeforeLaunch(agentId)) return;
       if (!isElectronRuntime()) {
         selectAgent(agentId);
         return;
       }
-      void invoke<{ claimed: boolean }>("claim_agent_for_window", { agentId })
+      await invoke<{ claimed: boolean }>("claim_agent_for_window", { agentId })
         .then(({ claimed }) => {
           if (!claimed) {
             setInUseAgentIds((current) => new Set(current).add(agentId));
@@ -2272,12 +2332,13 @@ function App() {
           );
         });
     },
-    [pushToast, selectAgent, text]
+    [chooseSessionAccountBeforeLaunch, pushToast, selectAgent, text]
   );
 
   const selectScreen = useCallback(
-    (groupId: string, agentId: string) => {
+    async (groupId: string, agentId: string) => {
       if (detachedAgentIdsRef.current.has(agentId)) return;
+      if (!await chooseSessionAccountBeforeLaunch(agentId)) return;
       activateDeferredAgent(agentId);
       activateAgentProject(agentId);
       applyGroupOp((state) =>
@@ -2286,7 +2347,7 @@ function App() {
       const current = agentsRef.current.find((agent) => agent.id === agentId);
       if (current?.status === "exited") void recoverExitedAgent(agentId).catch((error) => console.error("Session recovery failed", error));
     },
-    [activateAgentProject, activateDeferredAgent, applyGroupOp, recoverExitedAgent]
+    [activateAgentProject, activateDeferredAgent, applyGroupOp, chooseSessionAccountBeforeLaunch, recoverExitedAgent]
   );
 
   useEffect(() => {
@@ -2319,8 +2380,10 @@ function App() {
 
 
   const openAsTab = useCallback(
-    (agentId: string) => {
+    async (agentId: string) => {
       if (detachedAgentIdsRef.current.has(agentId)) return;
+      if (!agentsRef.current.find(agent => agent.id === agentId)?.deferredStart
+        && !await chooseSessionAccountBeforeLaunch(agentId)) return;
       const agent = activateAgentProject(agentId);
       applyGroupOp((s) =>
         groupOps.openAsTab(
@@ -2330,12 +2393,14 @@ function App() {
         )
       );
     },
-    [activateAgentProject, applyGroupOp]
+    [activateAgentProject, applyGroupOp, chooseSessionAccountBeforeLaunch]
   );
 
   const splitWith = useCallback(
-    (agentId: string, direction: "h" | "v") => {
+    async (agentId: string, direction: "h" | "v") => {
       if (detachedAgentIdsRef.current.has(agentId)) return;
+      if (!agentsRef.current.find(agent => agent.id === agentId)?.deferredStart
+        && !await chooseSessionAccountBeforeLaunch(agentId)) return;
       const agent = activateAgentProject(agentId);
       applyGroupOp((s) =>
         groupOps.splitWith(
@@ -2346,7 +2411,7 @@ function App() {
         )
       );
     },
-    [activateAgentProject, applyGroupOp]
+    [activateAgentProject, applyGroupOp, chooseSessionAccountBeforeLaunch]
   );
 
   const closeTab = useCallback((path: Path, agentId: string) => {
@@ -2453,7 +2518,7 @@ function App() {
     []
   );
 
-  const reopenClosedTab = useCallback(() => {
+  const reopenClosedTab = useCallback(async () => {
     while (recentlyClosedTabsRef.current.length > 0) {
       const closed = recentlyClosedTabsRef.current.pop()!;
       if (!agentsRef.current.some((agent) => agent.id === closed.agentId)) {
@@ -2468,11 +2533,16 @@ function App() {
         closed
       );
       if (!result.restored) continue;
+      if (!agentsRef.current.find(agent => agent.id === closed.agentId)?.deferredStart
+        && !await chooseSessionAccountBeforeLaunch(closed.agentId)) {
+        recentlyClosedTabsRef.current.push(closed);
+        return;
+      }
       commitGroupState(result.state);
       activateAgentProject(closed.agentId);
       return;
     }
-  }, [activateAgentProject, commitGroupState]);
+  }, [activateAgentProject, chooseSessionAccountBeforeLaunch, commitGroupState]);
 
   useEffect(() => {
     closeTabRef.current = closeTab;
@@ -2485,23 +2555,26 @@ function App() {
   );
 
   const setActiveTabInPane = useCallback(
-    (path: Path, agentId: string) => {
+    async (path: Path, agentId: string) => {
+      if (!await chooseSessionAccountBeforeLaunch(agentId)) return;
       activateDeferredAgent(agentId);
       acknowledgeAgentCompletion(agentId);
       activateAgentProject(agentId);
       applyGroupOp((s) => groupOps.setActiveTabInPane(s, path, agentId));
     },
-    [acknowledgeAgentCompletion, activateAgentProject, activateDeferredAgent, applyGroupOp]
+    [acknowledgeAgentCompletion, activateAgentProject, activateDeferredAgent, applyGroupOp, chooseSessionAccountBeforeLaunch]
   );
 
   const performDrop = useCallback(
-    (fromAgentId: string, targetLeafId: string, zone: DropZone) => {
+    async (fromAgentId: string, targetLeafId: string, zone: DropZone) => {
+      if (!agentsRef.current.find(agent => agent.id === fromAgentId)?.deferredStart
+        && !await chooseSessionAccountBeforeLaunch(fromAgentId)) return;
       activateAgentProject(fromAgentId);
       applyGroupOp((s) =>
         groupOps.performDrop(s, fromAgentId, targetLeafId, zone)
       );
     },
-    [activateAgentProject, applyGroupOp]
+    [activateAgentProject, applyGroupOp, chooseSessionAccountBeforeLaunch]
   );
 
   // ---- Agent CRUD (side effects + layout via groupOps)
@@ -3720,12 +3793,11 @@ function App() {
       const agentId =
         leaf && leaf.type === "leaf" ? activeAgentInLeaf(leaf) : null;
       if (agentId) {
-        activateDeferredAgent(agentId);
         activateAgentProject(agentId);
       }
       setActivePath(path);
     },
-    [activateAgentProject, activateDeferredAgent, groups]
+    [activateAgentProject, groups]
   );
 
   const executeCommand = useCallback((commandId: CommandId) => {
@@ -4130,7 +4202,7 @@ function App() {
           onTabContextMenu={onPaneTabContextMenu}
           chatModeAgents={chatModeAgents}
           onToggleChat={toggleChatMode}
-          onRecoverSession={recoverExitedAgent}
+          onRecoverSession={recoverSessionWithAccountChoice}
           getDocumentOwner={getDocumentOwner}
           onOpenBrowser={openBrowserTab}
           onOpenMarkdownPath={handleOpenMarkdownPath}
@@ -4255,6 +4327,16 @@ function App() {
             setShowModal(false);
             createAgent(payload);
           }}
+        />
+      )}
+      {pendingSessionAccountLaunch && (
+        <SessionLaunchAccountModal
+          key={pendingSessionAccountLaunch.agentId}
+          sessionName={pendingSessionAccountLaunch.sessionName}
+          accounts={pendingSessionAccountLaunch.accounts}
+          initialAccountId={pendingSessionAccountLaunch.initialAccountId}
+          onStart={accountId => finishSessionAccountLaunch(accountId)}
+          onCancel={() => finishSessionAccountLaunch(null)}
         />
       )}
       {renameSession && (

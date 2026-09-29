@@ -55,6 +55,34 @@ describe("Electron hook configuration", () => {
     expect(first).toContain("[[hooks.PermissionRequest]]");
   });
 
+  it("repairs reordered and repeated Codex markers without dropping user tables", () => {
+    const stale = `model = "gpt"
+# <<< multiagent electron hooks <<<
+[projects.'k:\\ai']
+trust_level = "trusted"
+
+# >>> multiagent electron hooks >>>
+
+# >>> multiagent electron hooks >>>
+[[hooks.Stop]]
+matcher = ""
+__source = "multiagent"
+[[hooks.Stop.hooks]]
+type = "command"
+command = "old-helper"
+
+[windows]
+sandbox = "elevated"
+`;
+    const merged = hookInternals.mergeCodex(stale, "C:\\helper\\notify.ps1");
+    expect(merged).toContain("[projects.'k:\\ai']");
+    expect(merged).toContain('sandbox = "elevated"');
+    expect(merged).not.toContain("old-helper");
+    expect(merged.match(/# >>> multiagent electron hooks >>>/g)).toHaveLength(1);
+    expect(merged.match(/# <<< multiagent electron hooks <<</g)).toHaveLength(1);
+    expect(hookInternals.mergeCodex(merged, "C:\\helper\\notify.ps1")).toBe(merged);
+  });
+
   it("registers the shared browser MCP without replacing user servers", () => {
     const existing = JSON.stringify({
       mcpServers: { custom: { type: "stdio", command: "custom-tool" } },

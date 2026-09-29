@@ -63,6 +63,13 @@ const ui = {
   documentListTitle: $("#documentListTitle"),
   documentListCount: $("#documentListCount"),
   documentList: $("#documentList"),
+  documentContextMenu: $("#documentContextMenu"),
+  documentPathDialog: $("#documentPathDialog"),
+  documentPathClose: $("#documentPathClose"),
+  documentRelativePath: $("#documentRelativePath"),
+  documentAbsolutePath: $("#documentAbsolutePath"),
+  documentCopyRelative: $("#documentCopyRelative"),
+  documentCopyAbsolute: $("#documentCopyAbsolute"),
   documentEmptyState: $("#documentEmptyState"),
   documentName: $("#documentName"),
   documentPath: $("#documentPath"),
@@ -259,6 +266,7 @@ const sessionDrafts = new Map();
 const composerRevisions = new Map();
 const sendingAgents = new Set();
 const pendingSubmissions = new Map();
+const uncertainSubmissions = new Set();
 const sessionQueues = new Map();
 const sessionLastSendAt = new Map();
 const sessionQueueErrors = new Map();
@@ -286,6 +294,10 @@ let documentContentLoading = false;
 let documentContentError = "";
 let documentProjectsRenderKey = "";
 let documentListRenderKey = "";
+let documentMenuFile = null;
+let documentMenuTrigger = null;
+let documentPathTrigger = null;
+const deletingDocuments = new Set();
 let filePreviewRequest = 0;
 let filePreviewObjectUrl = "";
 let filePreviewPreviousFocus = null;
@@ -1463,6 +1475,74 @@ function sortedDocumentFiles(node) {
   );
 }
 
+function closeDocumentMenu({ restoreFocus = false } = {}) {
+  ui.documentContextMenu.hidden = true;
+  documentMenuFile = null;
+  if (restoreFocus && documentMenuTrigger?.isConnected) documentMenuTrigger.focus({ preventScroll: true });
+  documentMenuTrigger = null;
+}
+
+function openDocumentMenu(projectId, file, trigger, x, y) {
+  closeDocumentMenu();
+  documentMenuFile = { projectId, path: file.path, name: file.name };
+  documentMenuTrigger = trigger;
+  ui.documentContextMenu.hidden = false;
+  const width = ui.documentContextMenu.offsetWidth;
+  const height = ui.documentContextMenu.offsetHeight;
+  ui.documentContextMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - width - 8))}px`;
+  ui.documentContextMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - height - 8))}px`;
+  ui.documentContextMenu.querySelector("button")?.focus({ preventScroll: true });
+}
+
+async function copyDocumentPath(value) {
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(t("경로를 복사했습니다."));
+  } catch {
+    showToast(t("경로를 복사하지 못했습니다."));
+  }
+}
+
+async function showDocumentPath(file, trigger) {
+  try {
+    const query = new URLSearchParams({ projectId: file.projectId, path: file.path });
+    const response = await fetch(`/api/docs/path?${query}`, { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) throw new Error(await apiError(response));
+    const result = await response.json();
+    ui.documentRelativePath.textContent = result.relativePath;
+    ui.documentAbsolutePath.textContent = result.path;
+    documentPathTrigger = trigger;
+    ui.documentPathDialog.showModal();
+    ui.documentPathClose.focus();
+  } catch (error) {
+    showToast(error.message || t("문서 경로를 불러오지 못했습니다."));
+  }
+}
+
+async function deleteRemoteDocument(file) {
+  const key = `${file.projectId}:${file.path}`;
+  if (deletingDocuments.has(key) || !window.confirm(t("{0} 파일을 휴지통으로 이동할까요?", [file.name]))) return;
+  deletingDocuments.add(key);
+  try {
+    const query = new URLSearchParams({ projectId: file.projectId, path: file.path });
+    const response = await fetch(`/api/docs/file?${query}`, { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) throw new Error(await apiError(response));
+    if (selection.type === "documents" && selection.id === file.projectId && selectedDocumentPath === file.path) {
+      selectedDocumentPath = null;
+      documentContent = null;
+      documentContentKey = "";
+      documentContentLoading = false;
+      documentContentError = "";
+    }
+    await loadDocumentList(file.projectId, { force: true });
+    showToast(t("파일을 휴지통으로 이동했습니다."));
+  } catch (error) {
+    showToast(error.message || t("파일을 삭제하지 못했습니다."));
+  } finally {
+    deletingDocuments.delete(key);
+  }
+}
+
 function appendDocumentTree(container, node, projectId, query, depth = 0) {
   const expanded = expandedDocumentFolders(projectId);
   for (const folder of sortedDocumentFolders(node)) {
@@ -1497,6 +1577,7 @@ function appendDocumentTree(container, node, projectId, query, depth = 0) {
   }
 
   for (const file of sortedDocumentFiles(node)) {
+    const entry = make("div", "document-file-entry");
     const button = make("button", "document-row document-tree-file");
     button.type = "button";
     button.dataset.kind = file.kind;
@@ -1520,7 +1601,26 @@ function appendDocumentTree(container, node, projectId, query, depth = 0) {
       void loadDocument(projectId, file.path);
       if (isMobile()) setDocumentSidebarOpen(false);
     });
-    container.appendChild(button);
+    const actions = make("button", "document-file-actions", "⋮");
+    actions.type = "button";
+    actions.setAttribute("aria-label", t("{0} 문서 작업", [file.name]));
+    actions.title = t("문서 작업");
+    actions.addEventListener("click", () => {
+      const rect = actions.getBoundingClientRect();
+      openDocumentMenu(projectId, file, actions, rect.right, rect.bottom);
+    });
+    entry.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      openDocumentMenu(projectId, file, button, event.clientX, event.clientY);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+      event.preventDefault();
+      const rect = button.getBoundingClientRect();
+      openDocumentMenu(projectId, file, button, rect.left + 16, rect.top + 16);
+    });
+    entry.append(button, actions);
+    container.appendChild(entry);
   }
 }
 
@@ -2948,13 +3048,22 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: agentId, message: text, requestId }),
     });
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 409 && (result.outcome === "unknown" ||
+          String(result.error || "").includes("submission outcome unknown"))) {
+        uncertainSubmissions.add(requestId);
+      }
+      throw new Error(result.error || `HTTP ${response.status}`);
+    }
+    uncertainSubmissions.delete(requestId);
     if (text === "/clear") clearRemoteChatHistory(agentId);
     setTimeout(() => fetchState({ quiet: true }), 250);
     if (!quiet) showToast(t("전송했습니다."));
     return true;
   } catch (error) {
-    if (!quiet) showToast(t("전송 실패: {0}", [error.message]));
+    if (!quiet) showToast(uncertainSubmissions.has(requestId)
+      ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
+      : t("전송 실패: {0}", [error.message]));
     return false;
   }
 }
@@ -3331,14 +3440,22 @@ function renderComposerQueue() {
   const queue = queueForAgent(agent?.id, { create: false });
   if (!agent || !queue.length) { el.hidden = true; restoreChatScroll(chatScroll); return; }
   el.hidden = false;
-  const head = make("div", "composer-queue-head", t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   const error = sessionQueueErrors.get(agent.id);
+  const head = make("div", "composer-queue-head", error === "outcome-unknown"
+    ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
+    : t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   if (error) {
-    const retry = make("button", "composer-queue-retry", error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
+    const retry = make("button", "composer-queue-retry", error === "outcome-unknown"
+      ? t("대화 확인 후 다시 보내기") : error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
     retry.type = "button";
     retry.addEventListener("click", () => {
+      if (error === "outcome-unknown") {
+        if (!window.confirm(t("대화 기록에 이 메시지가 없고 터미널 입력란이 비어 있는지 확인했나요? 새 요청으로 다시 보내면 중복될 수 있습니다."))) return;
+        uncertainSubmissions.delete(queue[0].requestId);
+        queue[0].requestId = submissionId();
+      }
       sessionQueueErrors.delete(agent.id);
-      if (error === "send-failed") void drainQueues();
+      if (error === "send-failed" || error === "outcome-unknown") void drainQueues();
       else void requestSessionActivation(agent.id, { queuedMessage: true });
     });
     head.append(" · ", retry);
@@ -3351,6 +3468,7 @@ function renderComposerQueue() {
     cancel.type = "button";
     cancel.title = t("예약 취소");
     cancel.addEventListener("click", () => {
+      uncertainSubmissions.delete(message.requestId);
       queue.splice(index, 1);
       if (!queue.length) {
         sessionQueues.delete(agent.id);
@@ -3386,7 +3504,7 @@ async function drainQueues() {
       const head = queue[0];
       const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId });
       if (!sent) {
-        sessionQueueErrors.set(agentId, "send-failed");
+        sessionQueueErrors.set(agentId, uncertainSubmissions.has(head.requestId) ? "outcome-unknown" : "send-failed");
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
@@ -3457,7 +3575,13 @@ async function sendSelectedMessage() {
   if (!outgoing) return;
   const snapshot = { revision: composerRevisions.get(agent.id) || 0, draft: ui.messageInput.value, attachments: attachments.slice() };
   const previous = pendingSubmissions.get(agent.id);
-  const entry = previous?.text === outgoing ? previous : { text: outgoing, requestId: submissionId() };
+  if (previous?.text === outgoing && uncertainSubmissions.has(previous.requestId)) {
+    if (!window.confirm(t("대화 기록에 이 메시지가 없고 터미널 입력란이 비어 있는지 확인했나요? 새 요청으로 다시 보내면 중복될 수 있습니다."))) return;
+    uncertainSubmissions.delete(previous.requestId);
+    pendingSubmissions.delete(agent.id);
+  }
+  const entry = pendingSubmissions.get(agent.id)?.text === outgoing
+    ? pendingSubmissions.get(agent.id) : { text: outgoing, requestId: submissionId() };
   pendingSubmissions.set(agent.id, entry);
   sendingAgents.add(agent.id);
   updateComposerSendState();
@@ -4444,6 +4568,7 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     const sessionChanged = Boolean(
       data?.sessionId && cached?.sessionId && data.sessionId !== cached.sessionId
     );
+    if (sessionChanged) chatHistoryStore.delete(agentId);
     const previous = sessionChanged ? [] : (cached?.data?.blocks || []);
     const blocks = data?.unsupported || data?.error
       ? incoming
@@ -4466,7 +4591,7 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     }
     const last = blocks[blocks.length - 1];
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
-    const key = `${agentId}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
+    const key = `${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
     if (key === lastChatKey) return;
     lastChatKey = key;
     renderChat(data);
@@ -5000,6 +5125,36 @@ ui.documentProjectSelect.addEventListener("change", () => selectDocuments(ui.doc
 ui.documentSearchInput.addEventListener("input", () => {
   if (selection.type === "documents") renderDocuments();
 });
+ui.documentContextMenu.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-document-action]")?.dataset.documentAction;
+  const file = documentMenuFile;
+  const trigger = documentMenuTrigger;
+  if (!action || !file) return;
+  closeDocumentMenu({ restoreFocus: true });
+  if (action === "path") void showDocumentPath(file, trigger);
+  if (action === "copy-relative") void copyDocumentPath(file.path);
+  if (action === "delete") void deleteRemoteDocument(file);
+});
+ui.documentContextMenu.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  const items = [...ui.documentContextMenu.querySelectorAll("button")];
+  const index = items.indexOf(document.activeElement);
+  items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!ui.documentContextMenu.hidden && !ui.documentContextMenu.contains(event.target) &&
+      !event.target.closest(".document-file-actions")) closeDocumentMenu();
+}, true);
+window.addEventListener("scroll", () => { if (!ui.documentContextMenu.hidden) closeDocumentMenu(); }, true);
+window.addEventListener("resize", () => { if (!ui.documentContextMenu.hidden) closeDocumentMenu(); });
+ui.documentPathClose.addEventListener("click", () => ui.documentPathDialog.close());
+ui.documentPathDialog.addEventListener("close", () => {
+  if (documentPathTrigger?.isConnected) documentPathTrigger.focus({ preventScroll: true });
+  documentPathTrigger = null;
+});
+ui.documentCopyRelative.addEventListener("click", () => { void copyDocumentPath(ui.documentRelativePath.textContent); });
+ui.documentCopyAbsolute.addEventListener("click", () => { void copyDocumentPath(ui.documentAbsolutePath.textContent); });
 ui.refreshDocumentsButton.addEventListener("click", async () => {
   if (selection.type !== "documents") return;
   const projectId = selection.id;
@@ -5125,11 +5280,15 @@ ui.sessionEditorForm.addEventListener("submit", (event) => {
 });
 ui.sessionEditorClose.addEventListener("click", closeSessionEditor);
 ui.sessionEditorCancel.addEventListener("click", closeSessionEditor);
-ui.sessionEditorOverlay.addEventListener("click", (event) => {
-  if (event.target === ui.sessionEditorOverlay) closeSessionEditor();
-});
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if (!ui.documentContextMenu.hidden) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeDocumentMenu({ restoreFocus: true });
+    return;
+  }
+  if (ui.documentPathDialog.open) return;
   if (!ui.sessionEditorOverlay.hidden) {
     event.preventDefault();
     event.stopPropagation();

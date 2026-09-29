@@ -452,6 +452,22 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .document-row-copy strong, .document-row-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .document-row-copy strong { font-size: var(--font-small); }
 .document-row-copy small { margin-top: 3px; color: var(--muted); font-size: var(--font-caption); }
+.document-file-entry { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; }
+.document-file-entry .document-row { min-width: 0; }
+.document-file-actions { display: grid; place-items: center; width: 44px; min-height: 44px; padding: 0; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: transparent; font-size: 20px; line-height: 1; }
+.document-file-actions:hover, .document-file-actions:focus-visible { border-color: var(--line-strong); color: var(--text); background: var(--panel-3); }
+.document-context-menu { position: fixed; z-index: 120; width: 190px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel-2); box-shadow: var(--shadow); }
+.document-context-menu button { display: block; width: 100%; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 6px; color: var(--text); text-align: left; background: transparent; font-size: var(--font-small); }
+.document-context-menu button:hover, .document-context-menu button:focus-visible { background: var(--panel-3); }
+.document-context-menu button.danger { color: var(--red); }
+.document-context-menu hr { margin: 4px 5px; border: 0; border-top: 1px solid var(--line); }
+.document-path-dialog { width: min(520px, calc(100vw - 28px)); padding: 18px; border: 1px solid var(--line-strong); border-radius: 12px; color: var(--text); background: var(--panel-2); box-shadow: var(--shadow); }
+.document-path-dialog::backdrop { background: rgba(0, 0, 0, 0.68); }
+.document-path-head, .document-path-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.document-path-head strong { font-size: var(--font-body); }
+.document-path-dialog label { display: grid; gap: 5px; margin-top: 15px; color: var(--muted); font-size: var(--font-small); }
+.document-path-dialog code { display: block; padding: 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); overflow-wrap: anywhere; user-select: all; font-size: var(--font-small); }
+.document-path-actions { justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
 .document-preview {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

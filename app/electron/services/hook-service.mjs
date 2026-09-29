@@ -351,18 +351,41 @@ function mergeQwen(existing, helperPath) {
 }
 
 function removeManagedCodexBlock(existing) {
-  const start = existing.indexOf(CODEX_BEGIN);
-  const end = existing.indexOf(CODEX_END);
-  if (start < 0 || end < start) return existing;
-  return `${existing.slice(0, start)}${existing.slice(end + CODEX_END.length)}`.trimEnd();
+  // Codex can move TOML tables while saving config, leaving an end marker
+  // above the managed block. Strip marker lines individually; the owned hook
+  // tables are removed separately so unrelated user tables remain intact.
+  const lines = existing.split(/\r?\n/);
+  const retained = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index].trim() === CODEX_BEGIN || lines[index].trim() === CODEX_END) {
+      if (lines[index + 1]?.trim() === "") index++;
+      continue;
+    }
+    retained.push(lines[index]);
+  }
+  return retained.join("\n").trimEnd();
 }
 
 function removeLegacyManagedCodexEntries(existing) {
-  return existing
-    .split(/(?=^\[\[hooks\.[^\].]+\]\]\s*$)/gm)
-    .filter((block) => !/__source\s*=\s*["']multiagent["']/.test(block))
-    .join("")
-    .trimEnd();
+  const lines = existing.split(/\r?\n/);
+  const retained = [];
+  for (let index = 0; index < lines.length;) {
+    const hook = lines[index].match(/^\s*\[\[hooks\.([^\].]+)\]\]\s*$/);
+    if (!hook) { retained.push(lines[index++]); continue; }
+    let end = index + 1;
+    while (end < lines.length) {
+      const header = lines[end].trim();
+      if (header === CODEX_MCP_BEGIN) break;
+      if (/^\[/.test(header) && !header.startsWith(`[[hooks.${hook[1]}.`)) break;
+      end++;
+    }
+    const section = lines.slice(index, end);
+    if (!section.some(line => /^\s*__source\s*=\s*["']multiagent["']\s*$/.test(line))) {
+      retained.push(...section);
+    }
+    index = end;
+  }
+  return retained.join("\n").trimEnd();
 }
 
 function removeManagedCodexMcpBlock(existing) {

@@ -47,6 +47,25 @@ describe("PTY message submission", () => {
     ]);
   });
 
+  it("submits a silent single-line prompt after the safe delay", async () => {
+    let clock = 0;
+    const writes = [];
+    const accepted = await submitPtyMessage({
+      ptyProcess: {
+        write: (value) => writes.push({ value, at: clock }),
+        onData: () => ({ dispose() {} }),
+      },
+      message: "docs 폴더 읽어볼래?",
+      wait: async (ms) => { clock += ms; },
+      now: () => clock,
+    });
+    expect(accepted).toBe(true);
+    expect(writes).toEqual([
+      { value: "docs 폴더 읽어볼래?", at: 0 },
+      { value: "\r", at: PTY_SUBMIT_DELAY_MS },
+    ]);
+  });
+
   it("rejects a stale target before writing anything", async () => {
     const write = vi.fn();
     const accepted = await submitPtyMessage({

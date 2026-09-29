@@ -55,6 +55,9 @@ sources:
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Desktop browser ownership and Remote frame provider"
+  - id: codex-turn-completion
+    resource: ../app/electron/services/codex-turn-completion.mjs
+    title: "Codex transcript completion fallback for missed hooks"
   - id: pty-submit
     resource: ../app/electron/services/pty-submit.mjs
     title: "Paste settling, discrete Enter and per-PTY submission exclusion"
@@ -111,7 +114,7 @@ Full paths in chat can open files under registered project roots. When a registe
 Unreal plugin has a `.uproject` ancestor, its enclosing Unreal workspace is also
 allowed, so `Saved` images and JSON reports can be previewed from Remote. Other
 absolute paths remain blocked. JSON files open from chat links without being
-added to the Documents index. Remote PWA cache v71 delivers the updated client.
+added to the Documents index. Remote PWA cache v77 delivers the updated client.
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
@@ -252,6 +255,13 @@ message text. Matching retries reuse the outcome, while an interrupted/unknown
 outcome is rejected for manual conversation inspection. Older clients without a
 request ID retain their previous submission behavior.[^remote-submissions]
 
+When the backend cannot determine whether a submission reached the PTY, the
+composer and queued-message UI keep the message and request ID, show an
+uncertain-outcome warning, and require explicit confirmation before a new
+request ID can be used. This avoids an automatic duplicate send. The Remote
+new-session dialog closes with Cancel or Esc; clicking outside leaves the
+draft and chosen account in place.[^remote-client]
+
 State and submission requests have a 12-second deadline including body reads.
 Only the latest state request may update the screen or connection indicator;
 late successes and failures are ignored. The polling loop resumes after timeout.
@@ -262,6 +272,16 @@ Remote chat reads from the desktop conversation store with bounded sequence
 cursors. The browser keeps a rendering cache, but that cache is not the source
 of truth: reaching the top requests older stored pages, and an app/WebView
 reload can reconstruct the transcript from SQLite.[^electron-main][^remote-client]
+
+The desktop canonicalizes Codex transcript paths before checking the selected
+account root, so a Windows junction and its physical target refer to the same
+conversation without admitting a different account's file. A newly reported
+hook session ID replaces the previous transcript, and Remote drops the old
+rendering cache when the response changes session ID. If a completion hook is
+missed, the desktop checks the bounded tail of that session's Codex rollout:
+only a completion marker written after the latest working hook may release a
+stale Working status and its queued messages. Missing or inconclusive evidence
+keeps the session busy.[^electron-main][^codex-turn-completion][^remote-client]
 
 On mobile, Remote fixes the document viewport to the device width and disables
 page scaling. The terminal's touch area supports vertical scrolling without
@@ -301,6 +321,12 @@ the existing 2 MB document limit. Unreal Automation reports that only export
 view; missing Bower packages therefore do not leave the public preview blank.
 The compatibility view escapes report text and keeps artifact resolution inside
 the canonical project root.[^web-services][^web-tests]
+
+In Documents, right-click a file or use its action button to view and copy
+project-relative and absolute paths. Deletion asks for confirmation and moves
+the file to the desktop recycle bin. These actions keep the same registered
+project-root checks and authenticated, same-origin request boundary as the
+other document routes.[^remote-documents][^remote-client]
 
 ## Shared browser relay
 
@@ -400,6 +426,7 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^remote-language]: Remote display language and locale formatting
 [^remote-styles]: Remote typography and responsive layout
 [^electron-main]: Desktop browser ownership and Remote frame provider
+[^codex-turn-completion]: Codex transcript completion fallback for missed hooks
 [^pty-submit]: PTY message formatting and ordered submission
 [^device-monitor]: Android foreground-monitor token service
 [^runtime-variant]: Runtime variant restrictions
