@@ -9,6 +9,8 @@ export type AgentDefaults = {
   dangerous: boolean;
   useAltScreen: boolean;
   codexAccountId: string;
+  codexSessionAccountMode: "automatic" | "manual";
+  codexPoolAccountId: string;
   claudeAccountId: string;
   workerSettings?: SessionWorkerSettings;
 };
@@ -19,6 +21,9 @@ export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefau
     launchOptions: toolForId(toolId).command ? normalizeLaunchOptions(value.launchOptions) : undefined,
     dangerous: !!toolForId(toolId).dangerousFlag && value.dangerous === true,
     useAltScreen: codex && value.useAltScreen === true,
+    codexSessionAccountMode: codex && value.codexSessionAccountMode !== "manual" ? "automatic" : "manual",
+    codexPoolAccountId: codex && typeof value.codexPoolAccountId === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.codexPoolAccountId)
+      ? value.codexPoolAccountId : "",
     codexAccountId: codex && typeof value.codexAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.codexAccountId)
       ? availableAccountId("codex", value.codexAccountId) : "default",
     claudeAccountId: toolId === "claude" && typeof value.claudeAccountId === "string" && /^(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(value.claudeAccountId)

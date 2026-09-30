@@ -97,6 +97,8 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
     ];
   }),
   entry("agents.codex.altScreen", "agents", "Alt-screen 모드", "Alt-screen mode", "newSession", "대체 화면 alternate screen", { agentTab: "codex" }),
+  entry("agents.codex.sessionAccountMode", "agents", "계정 선택 방식", "Account selection mode", "nextLaunch", "세션 시작 재시작 계정 선택 자동 수동 묻기 질문 창 분산 pool automatic manual prompt", { agentTab: "codex" }),
+  entry("agents.codex.automaticPoolAccount", "agents", "자동 시작 기본 계정", "Default account for automatic start", "nextLaunch", "세션 시작 분산 기본 계정 자동 배정 routing pool default account", { agentTab: "codex" }),
   entry("agents.codex.workers.documents", "agents", "문서·Markdown 작업자", "Documents and Markdown worker", "newSession", "병렬 작업자 프리셋 parallel workers", { agentTab: "codex", requiresWorkers: true }),
   entry("agents.codex.workers.html", "agents", "HTML 작업자", "HTML worker", "newSession", "병렬 작업자 프리셋 parallel workers", { agentTab: "codex", requiresWorkers: true }),
   entry("agents.qwen.region", "agents", "Qwen 리전 (나라)", "Qwen region", "nextLaunch", "나라 국가 country ModelStudio", { agentTab: "qwen" }),

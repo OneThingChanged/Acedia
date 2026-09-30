@@ -8,6 +8,7 @@ import type { NewAgentPayload, Project } from "../types";
 import { folderTail } from "../lib/path";
 import { defaultAiToolId } from "../lib/projectCreation";
 import { loadAgentDefaults } from "../lib/agentDefaults";
+import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { SessionWorkerSettings } from "../types";
@@ -38,7 +39,7 @@ export function NewAgentModal({
   );
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
-  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
   const [dangerous, setDangerous] = useState(() => loadAgentDefaults(aiToolId).dangerous);
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState<
@@ -58,7 +59,7 @@ export function NewAgentModal({
       aiToolId,
       launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
       codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
-      codexPoolAccountId: !project?.sshHostId && aiToolId === "codex" ? codexPoolAccountId || undefined : undefined,
+      codexPoolAccountId: !project?.sshHostId && aiToolId === "codex" ? codexPoolAccountId : undefined,
       claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
       dangerous: dangerous && supportsDangerous,
       useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,

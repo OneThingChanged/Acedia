@@ -48,7 +48,7 @@ async function exercise() {
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
   const allowed = new Set(["idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
-    "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status"]);
+    "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status", "account_pool_choices"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
   await query("환경 변수");
   check(document.querySelectorAll("[data-setting-result]").length === 4, "Expected four provider environment results");
@@ -145,6 +145,36 @@ async function exercisePolicies() {
   return 'NOTIFICATION_AND_IDLE_POLICY_EDITORS_UI_OK';
 }
 
+async function exerciseAccountLaunchDefaults() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 100));
+  for (let attempt = 0; attempt < 40 && !document.querySelector('.app-settings-search input'); attempt++) await wait();
+  const search = document.querySelector('.app-settings-search input');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, '계정 선택 방식');
+  search.dispatchEvent(new Event('input', { bubbles: true })); await wait();
+  document.querySelector('[data-setting-result="agents.codex.sessionAccountMode"]').click(); await wait();
+  const mode = document.querySelector('[data-setting-id="agents.codex.sessionAccountMode"] select');
+  const account = document.querySelector('[data-setting-id="agents.codex.automaticPoolAccount"] select');
+  if (mode.value !== 'automatic' || account.disabled || account.value !== '') throw Error('Account launch policy did not use automatic distribution by default');
+  mode.value = 'manual'; mode.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  if (!account.disabled) throw Error('Manual mode did not disable the automatic default account picker');
+  mode.value = 'automatic'; mode.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  if (account.disabled) throw Error('Automatic mode did not enable the default account picker');
+  const unavailable = account.querySelector('[value="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]');
+  if (!unavailable?.disabled) throw Error('Unavailable default account can be selected');
+  account.value = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; account.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  const saved = JSON.parse(localStorage.getItem('multiagent.agentDefaults.v1')).codex;
+  if (saved.codexSessionAccountMode !== 'automatic' || saved.codexPoolAccountId !== account.value) throw Error('Automatic account default was not persisted');
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  tabs.find(tab => tab.textContent.includes('Claude')).click(); await wait();
+  tabs.find(tab => tab.textContent.includes('Codex')).click(); await wait();
+  const restored = document.querySelector('[data-setting-id="agents.codex.automaticPoolAccount"] select');
+  if (restored.value !== saved.codexPoolAccountId || restored.disabled) throw Error('Automatic account settings did not survive tab remount');
+  const restoredMode = document.querySelector('[data-setting-id="agents.codex.sessionAccountMode"] select');
+  restoredMode.value = 'manual'; restoredMode.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  if (!restored.disabled || restored.value !== saved.codexPoolAccountId) throw Error('Manual mode did not preserve the automatic account preference');
+  return 'SESSION_ACCOUNT_LAUNCH_SETTINGS_UI_OK';
+}
+
 async function exerciseStatusBar() {
   const wait = () => new Promise(resolve => setTimeout(resolve,100));
   localStorage.setItem('multiagent.statusBar.v1',JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')||'{}'),selectedAccount:'codex:fixture'}));
@@ -176,6 +206,19 @@ if (process.versions.electron) {
   app.whenReady().then(async () => { try {
     const win = new BrowserWindow({ show: false, width: 800, height: 640, webPreferences: { offscreen: true, backgroundThrottling: false } });
     await win.loadFile(path.join(directory, "index.html"));
+    if (process.argv.includes('--account-launch-only')) {
+      console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
+      for (const [width, height] of [[800, 640], [1202, 801]]) {
+        win.setContentSize(width, height); await new Promise(resolve => setTimeout(resolve, 150));
+        console.log(await win.webContents.executeJavaScript("(() => { const body=document.querySelector('.app-settings-body');if(body.scrollWidth>body.clientWidth+1)throw Error('Account launch settings overflow');return 'SESSION_ACCOUNT_LAUNCH_SETTINGS_LAYOUT_OK'; })()"));
+      }
+      if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+      const peer = new BrowserWindow({ show: false, width: 800, height: 640, webPreferences: { offscreen: true, backgroundThrottling: false } });
+      await peer.loadFile(path.join(directory, 'index.html'));
+      await new Promise(resolve => setTimeout(resolve, 250));
+      console.log(await peer.webContents.executeJavaScript("(() => { const settings=JSON.parse(localStorage.getItem('multiagent.agentDefaults.v1')).codex;if(settings.codexSessionAccountMode!=='manual'||settings.codexPoolAccountId!=='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')throw Error('Launch settings were not restored in a new window');return 'SESSION_ACCOUNT_LAUNCH_SETTINGS_RESTORE_OK'; })()"));
+      app.exit(0); return;
+    }
     console.log(await win.webContents.executeJavaScript("(" + exercise.toString() + ")()"));
     for (const [width, height] of [[800, 640], [1202, 801], [1920, 1080]]) {
       win.setContentSize(width, height); await new Promise(resolve => setTimeout(resolve, 150));
@@ -188,6 +231,7 @@ if (process.versions.electron) {
     if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
     console.log(await win.webContents.executeJavaScript("(" + exerciseSavedCommands.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exercisePolicies.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
     const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});
     await peer.loadFile(path.join(directory,"index.html"));
@@ -207,7 +251,7 @@ if (process.versions.electron) {
       define: { "import.meta.env": "{}", __MULTIAGENT_APP_VERSION__: JSON.stringify("0.0.0.0") }, jsx: "automatic", outfile: path.join(directory, "renderer.js") });
     await fs.writeFile(path.join(directory, "index.html"), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><style>.app-topbar{position:fixed;inset:0 0 auto;height:36px;display:flex;align-items:center;gap:12px;padding:0 14px;font-size:12px;background:var(--app-panel)}.app-topbar button{color:var(--app-text);background:var(--app-button-bg);border:1px solid var(--app-border);border-radius:4px}.terminal-area{position:absolute;inset:36px 0 0}</style><div id="root" class="app app-theme-soft"></div><script src="renderer.js"></script>');
     const env = { ...process.env, ACEDIA_SMOKE_DIRECTORY: directory }; delete env.ELECTRON_RUN_AS_NODE;
-    const child = spawn(require("electron"), [fileURLToPath(import.meta.url)], { env, stdio: "inherit", windowsHide: true });
+    const child = spawn(require("electron"), [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { env, stdio: "inherit", windowsHide: true });
     const timer = setTimeout(() => child.kill(), 55000);
     const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); }).finally(() => clearTimeout(timer));
     if (code !== 0) throw new Error("Settings search smoke failed: " + code);

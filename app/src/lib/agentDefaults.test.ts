@@ -10,6 +10,32 @@ function storage() {
   return data;
 }
 describe("per-tool new session defaults", () => {
+  it("defaults to automatic account selection and preserves explicitly saved modes", () => {
+    storage();
+    const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    expect(loadAgentDefaults("codex")).toMatchObject({ codexSessionAccountMode: "automatic", codexPoolAccountId: "" });
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), codexSessionAccountMode: "automatic", codexPoolAccountId: accountId });
+    expect(loadAgentDefaults("codex")).toMatchObject({ codexSessionAccountMode: "automatic", codexPoolAccountId: accountId });
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), codexSessionAccountMode: "manual" });
+    expect(loadAgentDefaults("codex")).toMatchObject({ codexSessionAccountMode: "manual", codexPoolAccountId: accountId });
+    expect(loadAgentDefaults("claude")).toMatchObject({ codexSessionAccountMode: "manual", codexPoolAccountId: "" });
+    expect(normalizeAgentDefaults("codex", { codexSessionAccountMode: "bad", codexPoolAccountId: "../bad" }))
+      .toMatchObject({ codexSessionAccountMode: "automatic", codexPoolAccountId: "" });
+    expect(normalizeAgentDefaults("codex", { dangerous: true }).codexSessionAccountMode).toBe("automatic");
+  });
+  it("snapshots the automatic pool default on creation, keeps overrides, and excludes SSH", () => {
+    storage();
+    const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), codexSessionAccountMode: "automatic", codexPoolAccountId: accountId });
+    const payload = { name: "P", folder: "project", aiToolId: "codex", dangerous: false };
+    const { project, agent } = buildNewProjectWithFirstAgent(payload);
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), codexPoolAccountId: "" });
+    expect(loadStoredAgents([JSON.parse(JSON.stringify(agent))], [project])[0].codexPoolAccountId).toBe(accountId);
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), codexPoolAccountId: accountId });
+    expect(buildNewProjectWithFirstAgent({ ...payload, codexPoolAccountId: "" }).agent.codexPoolAccountId).toBeUndefined();
+    expect(buildNewProjectWithFirstAgent({ ...payload, sshHostId: "remote" }).agent.codexPoolAccountId).toBeUndefined();
+    expect(buildNewProjectWithFirstAgent({ ...payload, aiToolId: "claude" }).agent.codexPoolAccountId).toBeUndefined();
+  });
   it("persists Antigravity launch defaults and keeps unsupported integrations disabled", () => {
     storage();
     expect(loadAgentDefaults("agy").dangerous).toBe(false);

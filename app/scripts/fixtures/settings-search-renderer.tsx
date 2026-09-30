@@ -26,6 +26,10 @@ window.multiAgentElectron = {
     if (command === "saved_commands_set") { window.fixtureCommandConfig = { ...window.fixtureCommandConfig, ...args.patch, revision: window.fixtureCommandConfig.revision + 1 }; return structuredClone(window.fixtureCommandConfig); }
     if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
     if (command === "check_tools") return Object.fromEntries(["codex", "claude", "qwen", "cline"].map(id => [id, { available: true, path: "C:/fixture/" + id + ".exe" }]));
+    if (command === "account_pool_choices") return { enabled: true, accounts: [
+      { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", label: "Work pool", available: true },
+      { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", label: "Exhausted pool", available: false },
+    ] };
     if (command.endsWith("_accounts_list")) return [
       { id: "default", label: "Existing login", state: "default" },
       ...(window.fixtureAccountState ? [{ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", label: "Fixture", state: window.fixtureAccountState }] : []),

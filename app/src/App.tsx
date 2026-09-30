@@ -172,7 +172,8 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TerminalArea } from "./components/TerminalArea";
 import { NewAgentModal } from "./components/NewAgentModal";
-import { SessionLaunchAccountModal, type LaunchPoolAccount } from "./components/SessionLaunchAccountModal";
+import { SessionLaunchAccountModal } from "./components/SessionLaunchAccountModal";
+import { newSessionPoolAccountId, sessionLaunchAccountDecision, type LaunchPoolAccount, type LaunchPoolChoices } from "./lib/sessionLaunchAccount";
 import { NewProjectModal } from "./components/NewProjectModal";
 import { useRendererConfirmation } from "./hooks/useRendererConfirmation";
 import { DeleteSessionModal } from "./components/DeleteSessionModal";
@@ -2208,7 +2209,7 @@ function App() {
     if (!agent || !isElectronRuntime() || agent.aiToolId !== "codex" || agent.sshHostId
       || (!force && !agent.deferredStart && agent.status !== "idle" && agent.status !== "exited")) return true;
     if (sessionAccountLaunchResolveRef.current) return false;
-    let choices: { enabled: boolean; accounts: LaunchPoolAccount[] };
+    let choices: LaunchPoolChoices;
     try {
       choices = await invoke("account_pool_choices", {});
     } catch (error) {
@@ -2216,6 +2217,19 @@ function App() {
       return false;
     }
     if (!choices.enabled) return true;
+    const decision = sessionLaunchAccountDecision(choices, loadAgentDefaults("codex"), agent.codexPoolAccountId);
+    if (decision.action === "blocked") {
+      pushToast(agentId, agent.name, text("자동 시작에 사용할 분산 계정이 없습니다. 설정 → 에이전트 → Codex에서 기본 계정을 바꾸거나 수동을 선택하세요. Usage에서 계정 상태도 확인할 수 있습니다.", "No routed account is available for automatic start. Change the default account or choose Manual in Settings → Agents → Codex. Check account status in Usage."));
+      return false;
+    }
+    if (decision.action === "start") {
+      const next = agentsRef.current.map(candidate => candidate.id === agentId
+        ? { ...candidate, codexPoolAccountId: decision.accountId || undefined }
+        : candidate);
+      agentsRef.current = next;
+      setAgents(next);
+      return true;
+    }
     if (sessionAccountLaunchResolveRef.current) return false;
     return new Promise<boolean>(resolve => {
       sessionAccountLaunchResolveRef.current = { agentId, resolve };
@@ -2819,7 +2833,7 @@ function App() {
             aiLabel: tool.label,
             shellCommand: tool.id === "none" ? payload.shellCommand : undefined,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
-            codexPoolAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexPoolAccountId : undefined,
+            codexPoolAccountId: !project.sshHostId && tool.id === "codex" ? newSessionPoolAccountId(payload.codexPoolAccountId, loadAgentDefaults("codex")) : undefined,
             claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
             launchOptions: !project.sshHostId && tool.command ? normalizeLaunchOptions(

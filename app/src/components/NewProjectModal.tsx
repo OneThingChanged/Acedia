@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { loadAgentDefaults } from "../lib/agentDefaults";
+import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { LaunchOptions } from "../lib/launchOptions";
@@ -40,7 +41,7 @@ export function NewProjectModal({
   const [aiToolId, setAiToolId] = useState("");
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
-  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
   const [dangerous, setDangerous] = useState(false);
@@ -100,7 +101,7 @@ export function NewProjectModal({
         launchOptions: selectedTool.command ? launchOptions : undefined,
         aiToolId,
         codexAccountId: aiToolId === "codex" ? codexAccountId : undefined,
-        codexPoolAccountId: aiToolId === "codex" ? codexPoolAccountId || undefined : undefined,
+        codexPoolAccountId: aiToolId === "codex" ? codexPoolAccountId : undefined,
         claudeAccountId: aiToolId === "claude" ? claudeAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,

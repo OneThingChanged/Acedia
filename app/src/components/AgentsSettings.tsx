@@ -8,6 +8,7 @@ import { AGENT_DEFAULTS_KEY, loadAgentDefaults, saveAgentDefaults, type AgentDef
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
+import { PoolAccountSelect } from "./PoolAccountSelect";
 
 type QwenRegionInfo = {
   available: boolean;
@@ -120,6 +121,25 @@ export function AgentsSettings({
       {(tab === "codex" || tab === "claude") && <AccountsPanel key={tab} provider={tab} settingId={prefix + ".accounts"}
         defaultAccountId={tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId}
         onMakeDefault={accountId => updateDefaults(tab === "codex" ? { codexAccountId: accountId } : { claudeAccountId: accountId })} />}
+      {tab === "codex" && <>
+        <div className="agent-settings-sectionhead"><h4>{text("세션 시작 계정 선택", "Session start account selection")}</h4></div>
+        <div className="agent-settings-card agent-defaults">
+          <div className="agent-settings-row" {...settingTarget("agents.codex.sessionAccountMode")}>
+            <label className="field"><span className="field-label">{text("계정 선택 방식", "Account selection mode")}<SettingScope id="agents.codex.sessionAccountMode" /></span>
+              <select value={defaults.codexSessionAccountMode} onChange={event => updateDefaults({ codexSessionAccountMode: event.target.value as AgentDefaults["codexSessionAccountMode"] })}>
+                <option value="automatic">{text("자동", "Automatic")}</option><option value="manual">{text("수동", "Manual")}</option>
+              </select>
+              <span className="check-hint">{text("자동은 선택 창 없이 시작합니다. 수동은 세션을 시작하거나 재시작할 때 계정을 묻습니다.", "Automatic starts without a selection dialog. Manual asks for an account when starting or restarting a session.")}</span>
+            </label>
+          </div>
+          <div className="agent-settings-row" {...settingTarget("agents.codex.automaticPoolAccount")}>
+            <PoolAccountSelect alwaysShow value={defaults.codexPoolAccountId} disabled={defaults.codexSessionAccountMode !== "automatic"}
+              onChange={codexPoolAccountId => updateDefaults({ codexPoolAccountId })}
+              label={<>{text("자동 시작 기본 계정", "Default account for automatic start")}<SettingScope id="agents.codex.automaticPoolAccount" /></>}
+              hint={text("자동 모드에서 사용합니다. 세션에 지정한 계정이 우선이며, 지정하지 않은 세션에는 이 기본값을 적용합니다. 사용 불가 계정으로는 시작하지 않습니다.", "Used in Automatic mode. A session's selected account takes priority; sessions without one use this default. Unavailable accounts prevent launch.")} />
+          </div>
+        </div>
+      </>}
       {tab === "agy" && <div className="agent-settings-card"><div className="agent-settings-row"><div>
         <div className="agent-row-title">{text("Google 로그인", "Google sign-in")}</div>
         <div className="agent-row-sub">{text("Antigravity CLI를 설치한 뒤 새 세션에서 선택하세요. agy를 실행하면 기존 로그인을 사용하거나 브라우저 로그인으로 안내합니다.", "Install Antigravity CLI and select it in a new session. Running agy uses an existing login or opens browser sign-in.")}</div>

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { useAppLanguage } from "../lib/appLanguage";
+import type { LaunchPoolAccount } from "../lib/sessionLaunchAccount";
 
-export type LaunchPoolAccount = { id: string; label: string; available: boolean };
 
 export function SessionLaunchAccountModal({ sessionName, accounts, initialAccountId, onStart, onCancel }: {
   sessionName: string;

@@ -10,6 +10,8 @@ describe("settings search catalog", () => {
     expect(ids("환경 변수")).toEqual(ids("환경변수"));
     expect(ids(" CLAUDE   environment ")).toEqual(["agents.claude.env"]);
     expect(ids("codex 기본 계정")[0]).toBe("agents.codex.defaultAccount");
+    expect(ids("수동")).toContain("agents.codex.sessionAccountMode");
+    expect(ids("자동 시작 기본 계정")[0]).toBe("agents.codex.automaticPoolAccount");
     expect(ids("커서")).toEqual(["terminal.cursorStyle", "terminal.cursorBlink"]);
     expect(ids("")).toEqual([]);
     expect(ids("   ")).toEqual([]);
