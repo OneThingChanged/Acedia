@@ -41,12 +41,13 @@ function WorkerModelInput({ config, onChange }: { config: SessionWorkerConfig; o
   </div>;
 }
 
-export function SessionWorkerFields({ settings, settingsPrefix, disabledTools, onChange, className = "session-worker-fields" }: {
+export function SessionWorkerFields({ settings, settingsPrefix, disabledTools, onChange, className = "session-worker-fields", compact = false }: {
   settings: SessionWorkerSettings | undefined;
   settingsPrefix?: string;
   disabledTools: readonly string[];
   onChange: (settings: SessionWorkerSettings | undefined) => void;
   className?: string;
+  compact?: boolean;
 }) {
   const { text } = useAppLanguage();
   const options = availableSessionWorkerOptions(disabledTools);
@@ -56,8 +57,12 @@ export function SessionWorkerFields({ settings, settingsPrefix, disabledTools, o
     const enabled = config && options.some(option => option.requiredToolId === config.provider);
     const value = enabled ? config.provider === "codex" ? "codex-luna-max" : "claude-opus" : "";
     const update = (selection: SessionWorkerSelection | undefined) => onChange(updateSessionWorkerSetting(settings, kind, selection));
-    return <fieldset className="session-worker-field" key={kind} {...settingTarget(settingsPrefix && `${settingsPrefix}.${kind}`)}>
-      <legend className="field-label">{label}<SettingScope id={settingsPrefix && `${settingsPrefix}.${kind}`} /></legend>
+    return <fieldset className="session-worker-field" key={kind} data-worker-kind={kind} data-enabled={!!enabled} {...settingTarget(settingsPrefix && `${settingsPrefix}.${kind}`)}>
+      <legend className="field-label">
+        {compact && <svg className="new-session-worker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={kind === "documents" ? "M14 3H5v18h14V8zM14 3v5h5M8 12h8M8 16h6" : "m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16"} /></svg>}
+        {label}<SettingScope id={settingsPrefix && `${settingsPrefix}.${kind}`} />
+        {compact && <span className="new-session-worker-state">{enabled ? text("사용 중", "Enabled") : text("꺼짐", "Disabled")}</span>}
+      </legend>
       <label className="field">
         <span className="field-label">{text("실행 도구", "Provider")}</span>
         <select value={value} onChange={event => update((event.target.value || undefined) as SessionWorkerPreset | undefined)}>
@@ -78,7 +83,7 @@ export function SessionWorkerFields({ settings, settingsPrefix, disabledTools, o
     </fieldset>;
   };
   return <div className={className} data-testid="session-worker-settings">
-    <div className="session-worker-heading">{text("문서·HTML 병렬 작업자", "Document and HTML parallel workers")}</div>
+    <div className="session-worker-heading">{compact && <svg className="new-session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5" /></svg>}{text("문서·HTML 병렬 작업자", "Document and HTML parallel workers")}</div>
     <div className="session-worker-description">{text("문서와 HTML에 사용할 모델·추론 강도를 각각 설정합니다. 변경은 세션을 다시 실행하면 적용됩니다.", "Choose a model and effort for each worker. Changes apply when the session restarts.")}</div>
     {renderWorker(text("문서·Markdown", "Documents and Markdown"), "documents")}
     {renderWorker("HTML", "html")}

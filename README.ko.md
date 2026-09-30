@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.1.1-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.1.36-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -16,6 +16,7 @@
 
 ### 세션 & 레이아웃
 - **프로젝트 우선 워크플로** — 프로젝트 폴더를 등록하고, 접이식 사이드바 트리 아래에 별명 세션 생성
+- **넓은 새 세션 창** — 세션·계정 설정과 문서·HTML 작업자를 두 열로 배치하고, 취소·만들기 버튼은 고정. 작은 화면은 한 열로 전환합니다. [새 세션 사용법](docs/session-creation.md)을 참고하세요.
 - **탭 & 중첩 분할** — 가로/세로 패널, 5존 드래그 앤 드롭(가운데=탭 합치기, 가장자리=분할), 크기 조절 스플리터
 - **Screen** — 한 세션은 전역에서 정확히 한 그룹에만 소속. 사이드바의 `Screen 1 (A+B+C)` 요약으로 정확한 레이아웃으로 바로 전환
 - **세션 관리** — 재시작, 비활성화(PTY만 종료하고 세션 유지), 별명 변경, 디스크 최신 세션으로 재등록, 그룹을 특정 세션 ID로 고정(PIN)

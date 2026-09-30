@@ -119,6 +119,11 @@ across two Electron processes. Native saved-command, power and idle-session
 checks run inside `electron:bridge-smoke`. The [combined settings review](settings-review-1-8-0-15.md)
 records the complete command list, results for 1.8.0.15 and manual follow-up.
 
+`electron:new-session-smoke` verifies the [desktop session creation dialog](session-creation.md):
+account/worker/launch payloads, keyboard focus and cancellation, fixed header/footer,
+and desktop/narrow/landscape layouts across Korean/English and dark/light themes.
+It uses an isolated Electron profile and fixture account responses.
+
 ## Desktop packaging
 
 ```powershell

@@ -60,6 +60,10 @@ spawned.[^lifecycle]
 
 ## Start and provider resume
 
+Configure new desktop sessions in the [wide session creation dialog](session-creation.md).
+Account and worker choices become session launch settings; the dialog's layout
+does not change the provider's start or resume lifecycle.
+
 On a cold desktop start, saved sessions and the previous Screen layout return
 without allocating xterm instances or PTYs. Restored sessions show a steady
 blue standby marker only when previously activated or already in standby.

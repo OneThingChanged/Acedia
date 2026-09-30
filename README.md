@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-[![Version](https://img.shields.io/badge/version-1.8.1.1-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.1.36-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -16,6 +16,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 
 ### Sessions & Layout
 - **Project-first workflow** — register a project folder, then create aliased sessions under it in the collapsible sidebar tree
+- **Wide session creation** — session/account options and document/HTML workers appear side by side, with fixed Create/Cancel buttons and a single column on smaller screens. See [session creation](docs/session-creation.md).
 - **Tabs & nested splits** — horizontal/vertical panes, 5-zone drag-and-drop (center = merge as tab, edges = split), resizable splitters
 - **Screens** — every session belongs to exactly one split group; sidebar summaries like `Screen 1 (A+B+C)` jump straight to that layout
 - **Session management** — restart, deactivate (kill the PTY but keep the session), rename, relink to the latest on-disk session, pin a group to specific session IDs
