@@ -12,6 +12,7 @@
 
 import { toolSummary, diffFromToolCall, diffFromText } from "./chat-tool-format.mjs";
 import { isNoiseUserText } from "./chat-noise.mjs";
+import { isQuestionTool } from "../shared/chat-prompt.mjs";
 
 const MAX_TOOL_OUTPUT = 4000;
 const MAX_TEXT = 20000;
@@ -186,6 +187,40 @@ export function deriveTurnLifecycle(text, tool) {
     return "working";
   }
   return "idle";
+}
+
+// A native Codex question can be logged without a PermissionRequest hook.
+// Track its call identity, not the position of the next unrelated tool output.
+// Async questions don't pause the CLI and aren't native answer forms.
+export function derivePendingQuestion(text, tool) {
+  const pending = new Map();
+  const add = (id, name, input) => {
+    if (!id || !isQuestionTool(name)) return;
+    pending.set(id, { id, toolName: name, question: typeof input === "string" ? input : JSON.stringify(input ?? {}) });
+  };
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    if (tool === "codex") {
+      const p = obj?.payload;
+      if (!p) continue;
+      if (["task_started", "task_complete", "turn_aborted"].includes(p.type)) pending.clear();
+      if (obj.type !== "response_item") continue;
+      if (p.type === "message" && p.role === "user" && !isNoiseUserText(contentToText(p.content))) pending.clear();
+      if (["function_call", "custom_tool_call"].includes(p.type)) add(p.call_id, p.name || p.tool_name, p.arguments ?? p.input);
+      if (["function_call_output", "custom_tool_call_output"].includes(p.type)) pending.delete(p.call_id);
+    } else if (tool === "claude") {
+      const content = obj.message?.content;
+      if (obj.type === "user" && typeof content === "string" && !isNoiseUserText(content)) pending.clear();
+      for (const part of Array.isArray(content) ? content : []) {
+        if (obj.type === "assistant" && part.type === "tool_use") add(part.id, part.name, part.input);
+        if (obj.type === "user" && part.type === "tool_result") pending.delete(part.tool_use_id);
+      }
+      const stop = obj.message?.stop_reason;
+      if (obj.type === "assistant" && stop && stop !== "tool_use") pending.clear();
+    }
+  }
+  return [...pending.values()].pop() ?? null;
 }
 
 // Parse a full transcript body into chat blocks. `tool` is "codex" | "claude".

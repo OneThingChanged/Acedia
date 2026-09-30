@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { parseChatTranscript, deriveTurnLifecycle } from "./chat-transcript.mjs";
+import { parseChatTranscript, deriveTurnLifecycle, derivePendingQuestion } from "./chat-transcript.mjs";
+
+describe("pending native questions", () => {
+  const serialize = records => records.map(payload => JSON.stringify({ type: "response_item", payload })).join("\n");
+  const question = { type: "function_call", call_id: "question-1", name: "functions.request_user_input", arguments: '{"questions":[{"question":"Choose"}]}' };
+  it("finds a question even without hooks and ignores unrelated tool output", () => {
+    const text = serialize([question, { type: "function_call_output", call_id: "other-tool", output: "done" }]);
+    expect(derivePendingQuestion(text, "codex")).toEqual({ id: "question-1", toolName: question.name, question: question.arguments });
+    expect(derivePendingQuestion(text + "\n" + serialize([{ type: "function_call_output", call_id: "question-1", output: "A" }]), "codex")).toBeNull();
+  });
+  it.each(["task_started", "task_complete", "turn_aborted"])("clears the question on %s", type => {
+    expect(derivePendingQuestion(serialize([question]) + "\n" + JSON.stringify({ type: "event_msg", payload: { type } }), "codex")).toBeNull();
+  });
+  it("doesn't resurrect an old question after a new user message or an async question", () => {
+    expect(derivePendingQuestion(serialize([question, { type: "message", role: "user", content: [{ text: "continue" }] }]), "codex")).toBeNull();
+    expect(derivePendingQuestion(serialize([{ ...question, name: "functions.request_user_input_async" }]), "codex")).toBeNull();
+  });
+  it("correlates Claude answers by tool_use_id", () => {
+    const input = { questions: [{ question: "Choose" }] };
+    const call = { type: "assistant", message: { stop_reason: "tool_use", content: [{ type: "tool_use", id: "q1", name: "AskUserQuestion", input }] } };
+    expect(derivePendingQuestion(JSON.stringify(call), "claude")).toMatchObject({ id: "q1", question: JSON.stringify(input) });
+    const result = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q1", content: "A" }] } };
+    expect(derivePendingQuestion([call, result].map(JSON.stringify).join("\n"), "claude")).toBeNull();
+  });
+});
 
 describe("deriveTurnLifecycle", () => {
   it("codex: task_complete → idle; lone task_started → working", () => {

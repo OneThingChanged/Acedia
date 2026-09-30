@@ -545,6 +545,12 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .session-editor-message { margin: 0; padding: 8px 10px; border: 1px solid rgba(255, 125, 125, 0.3); border-radius: 8px; color: #ffaaaa; background: rgba(255, 125, 125, 0.07); font-size: var(--font-small); }
 .session-editor-dialog > footer { display: flex; justify-content: flex-end; gap: 7px; }
 .session-editor-dialog > footer .send-button { height: 36px; min-height: 36px; }
+.session-model-summary { display: grid; gap: 6px; color: var(--muted); font-size: var(--font-small); overflow-wrap: anywhere; }
+.session-model-note { margin: 0; color: var(--muted); font-size: var(--font-small); line-height: 1.6; }
+#sessionModelTarget { overflow-wrap: anywhere; }
+#sessionModelForm > footer { flex-wrap: wrap; }
+#sessionModelForm > footer button { min-height: 44px; }
+#sessionContextMenu button { min-height: 44px; }
 @media (max-width: 680px) {
   .file-preview-overlay { padding: 6px; }
   .file-preview-dialog { width: 100%; height: calc(var(--visual-viewport-height, 100dvh) - 12px); border-radius: 11px; }
@@ -1011,6 +1017,17 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .chat-prompt-option { padding: 7px 14px; border: 1px solid rgba(80, 223, 208, 0.5); border-radius: 8px; background: transparent; color: var(--text); font-size: var(--font-body); cursor: pointer; }
 .chat-prompt-option:active { background: rgba(80, 223, 208, 0.16); }
 .chat-prompt.permission .chat-prompt-option { border-color: rgba(240, 97, 109, 0.6); }
+.chat-prompt-heading { flex: 0 0 auto; color: var(--yellow, #f0c66a); font-size: var(--font-body); }
+.chat-prompt-hint { flex: 0 0 auto; color: var(--muted); font-size: var(--font-small); }
+.chat-prompt-error { color: var(--red); font-size: var(--font-small); }
+.chat-prompt-host { flex: 0 0 auto; min-height: 0; max-height: 35dvh; overflow: hidden; }
+.chat-prompt-host[hidden] { display: none; }
+.chat-prompt-host .chat-prompt { margin: 0; max-height: 35dvh; overflow: hidden; }
+.chat-prompt-host .chat-prompt-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.chat-prompt-host .chat-prompt-options { flex: 0 0 auto; }
+.chat-prompt-option { min-height: 44px; }
+.chat-prompt-option:disabled { opacity: 0.55; cursor: default; }
+.chat-prompt-option:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .chat-thinking { display: flex; align-items: center; gap: 8px; padding: 4px 2px; color: var(--muted); font-size: var(--font-body); }
 .chat-stop { margin-left: 6px; padding: 2px 9px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--muted); font-size: var(--font-small); cursor: pointer; }
 .chat-stop:hover { color: #eaf3fa; border-color: #f0616d; }
@@ -1401,12 +1418,18 @@ html[data-native-app="true"] .android-download-button { display: none !important
   }
   .app-shell[data-view="session"] .session-head {
     flex: 0 0 auto;
+    grid-template-columns: auto minmax(0, 1fr);
     min-height: 40px;
     margin: 0;
     padding: 5px 8px;
     border-bottom: 1px solid var(--line);
     background: rgba(9, 21, 32, 0.96);
   }
+  .app-shell[data-view="session"] .session-head-actions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+  .app-shell[data-view="session"] .session-title .status-chip { white-space: nowrap; }
   .app-shell[data-view="session"] .session-title {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

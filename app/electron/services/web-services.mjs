@@ -116,7 +116,9 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-markup.js", { file: "chat-markup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/chat-prompt.js", { file: "../shared/chat-prompt.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -532,6 +534,25 @@ function remoteRenameSessionPayload(snapshot, body) {
   return { id, name: remoteSessionName(body?.name) };
 }
 
+async function respondToSessionModel(request, response, url, service, sameOrigin) {
+  if (url.pathname !== "/api/session/model") return false;
+  if (!service) { sendJson(response, 501, { error: "session model settings unavailable" }); return true; }
+  if (request.method !== "GET" && request.method !== "POST") { sendJson(response, 405, { error: "method not allowed" }); return true; }
+  if (request.method === "POST") {
+    if (!sameOrigin) { sendJson(response, 403, { error: "cross-origin request blocked" }); return true; }
+    if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+      sendJson(response, 415, { error: "application/json required" }); return true;
+    }
+  }
+  try {
+    const result = request.method === "GET" ? await service.read(url.searchParams.get("id")) : await service.save(await readJson(request));
+    sendJson(response, 200, { ok: true, ...result });
+  } catch (error) {
+    sendJson(response, error?.statusCode || error?.status || 500, { error: error?.message || "session model request failed" });
+  }
+  return true;
+}
+
 async function saveRemoteAttachment(request, baseDir) {
   let body;
   try {
@@ -816,6 +837,7 @@ export class LocalDashboardService {
             sendJson(response, 200, { ok: true, status: "idle" });
             return;
           }
+          if (await respondToSessionModel(request, response, url, p.sessionModels, this.isLocalOrigin(request))) return;
           if (request.method === "POST" && url.pathname === "/api/session/create") {
             if (!this.isLocalOrigin(request)) { sendJson(response, 403, { error: "blocked" }); return; }
             if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
@@ -911,7 +933,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    this.sessionModels = sessionModels;
     this.accountPoolApi = accountPoolApi;
     this.trashDocument = trashDocument;
     this.baseDir = baseDir;
@@ -1668,6 +1691,7 @@ export class RemoteDashboardService {
           sendJson(response, 200, { ok: true, status: "idle" });
           return;
         }
+        if (await respondToSessionModel(request, response, url, this.sessionModels, this.isSameOrigin(request))) return;
         if (request.method === "POST" && url.pathname === "/api/session/create") {
           if (!this.isSameOrigin(request)) {
             sendJson(response, 403, { error: "cross-origin request blocked" });

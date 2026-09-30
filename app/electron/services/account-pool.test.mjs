@@ -33,6 +33,38 @@ async function request(pool, id, overrides = {}) {
   return { response, text: await response.text() };
 }
 describe('Acedia account pool', () => {
+  it('discovers models through the session owner and removes temporary credentials on success and failure', async () => {
+    let rpcHome, closes = 0, failed = false;
+    const { pool } = fixture({ rpcFactory: (_env, home) => {
+      rpcHome = home;
+      return { initialize: async () => {}, close: () => { closes++; }, call: async method => {
+        expect(method).toBe('model/list');
+        if (failed) throw new Error('catalog unavailable');
+        return { data: [{ id: 'owner-model', model: 'owner-model', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }] };
+      } };
+    } });
+    const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true); await pool.launch('models', second);
+    const result = await pool.sessionModels('models', first);
+    expect(result.accountLabel).toBe('B'); expect(result.models[0].model).toBe('owner-model');
+    expect(rpcHome).toBe(pool.home(second)); expect(fs.existsSync(path.join(rpcHome, 'auth.json'))).toBe(false);
+    failed = true;
+    await expect(pool.sessionModels('models', first)).rejects.toThrow('catalog unavailable');
+    expect(fs.existsSync(path.join(rpcHome, 'auth.json'))).toBe(false);
+    expect(pool.locks.size).toBe(0); expect(closes).toBe(2);
+  });
+  it('keeps the routed owner for a model restart without turning Auto into an account pin', async () => {
+    const { pool } = fixture(); const first = add(pool, 'A'); add(pool, 'B');
+    await pool.setEnabled(true); await pool.launch('model-session');
+    await pool.launch('model-session', null, first);
+    expect(pool.state.sessions['model-session'].accountId).toBe(first);
+    expect(pool.state.sessions['model-session'].preferredAccountId).toBeUndefined();
+    pool.account(first).cooldownUntil = Date.now() + 60000;
+    await expect(pool.launch('model-session', null, first)).rejects.toMatchObject({ status: 409 });
+    expect(pool.state.sessions['model-session'].accountId).toBe(first);
+    await pool.setEnabled(false);
+    await expect(pool.launch('model-session', null, first)).rejects.toMatchObject({ status: 409 });
+  });
   it('assigns new sessions at launch and keeps the same account across restarts and turns', async () => {
     const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
     await pool.setEnabled(true);

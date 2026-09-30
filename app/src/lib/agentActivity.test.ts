@@ -24,6 +24,28 @@ function agent(status: Agent["status"] = "running"): Agent {
 }
 
 describe("agent activity state v2", () => {
+  it("captures a namespaced Codex question and clears it when the tool completes", () => {
+    const question = JSON.stringify({ questions: [{ question: "질문".repeat(1100), options: [{ label: "A" }, { label: "B" }] }] });
+    const waiting = applyAgentHookEvent(agent(), { id: "agent-1", event: "tool-start", hook_event_name: "PreToolUse", tool_name: "functions.request_user_input", tool_input: question }, 100);
+    expect(waiting.status).toBe("waiting");
+    expect(waiting.activity?.interactiveQuestion).toBe(question);
+    const resumed = applyAgentHookEvent(waiting, { id: "agent-1", event: "tool-end", hook_event_name: "PostToolUse", tool_name: "functions.request_user_input", tool_input: question }, 200);
+    expect(resumed.status).toBe("working");
+    expect(resumed.activity?.interactiveQuestion).toBeUndefined();
+  });
+  it("doesn't reuse question details or an assistant answer from an earlier turn", () => {
+    const done = applyAgentHookEvent(agent(), { id: "agent-1", event: "done", assistant_message: "Earlier answer" }, 100);
+    const waiting = applyAgentHookEvent(done, { id: "agent-1", event: "waiting" }, 200);
+    expect(waiting.activity?.lastAssistantMessage).toBeUndefined();
+    const first = applyAgentHookEvent(waiting, { id: "agent-1", event: "waiting", interactive_question: "first" }, 300);
+    const working = applyAgentHookEvent(first, { id: "agent-1", event: "working" }, 400);
+    const next = applyAgentHookEvent(working, { id: "agent-1", event: "waiting" }, 500);
+    expect(next.activity?.interactiveQuestion).toBeUndefined();
+    expect(next.activity?.stateStartedAt).toBe(500);
+  });
+  it("doesn't pause the session for asynchronous input requests", () => {
+    expect(applyAgentHookEvent(agent(), { id: "agent-1", event: "tool-start", tool_name: "functions.request_user_input_async" }, 100).status).toBe("working");
+  });
   it("treats deferred sessions as inactive until explicitly started", () => {
     const deferred = { ...agent("idle"), deferredStart: true };
     expect(isAgentRuntimeActive(deferred)).toBe(false);

@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { prepareLaunchCommand, mergeLaunchEnvironment } from "./agent-launch.mjs";
 import { selectedAccountId } from "./provider-accounts.mjs";
+import { normalizeSessionModel, sessionModelArgs } from "../shared/session-model.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
 import { buildInteractiveSshArgs, findWindowsExecutable } from "./ssh-service.mjs";
 import { CodexScrollbackFilter, PassThroughTerminalFilter } from "./terminal-stream.mjs";
@@ -99,7 +100,9 @@ export function createTerminalLauncher({
       }
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
-      const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id, args.codexPoolAccountId || null) : null;
+      const poolLaunch = !ssh && aiToolId === "codex" ? await (args.poolResumeOwnerId
+        ? accountPoolLaunch(id, args.codexPoolAccountId || null, args.poolResumeOwnerId)
+        : accountPoolLaunch(id, args.codexPoolAccountId || null)) : null;
       if (poolLaunch) {
         for (const key of Object.keys(launchEnvironment)) {
           if (["ACEDIA_ACCOUNT_POOL_KEY"].includes(key.toUpperCase())) delete launchEnvironment[key];
@@ -109,7 +112,7 @@ export function createTerminalLauncher({
       const initialPrompt = asString(args.initialPrompt);
       const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
         shell: executable, toolId: aiToolId, env: launchEnvironment, platform,
-        extraArgs: [...(poolLaunch?.args ?? []), ...(initialPrompt ? [initialPrompt] : [])],
+        extraArgs: [...(poolLaunch?.args ?? []), ...(["codex", "claude"].includes(aiToolId) ? sessionModelArgs(args.modelSettings, args.launchOptions, aiToolId) : []), ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
       return {
@@ -186,6 +189,7 @@ export function createTerminalLauncher({
       codexAccountId: !ssh && aiToolId === "codex" ? accountId : null,
       claudeAccountId: !ssh && aiToolId === "claude" ? accountId : null,
       poolRouted,
+      modelSettings: normalizeSessionModel(args.modelSettings),
       initTimer: null,
       aiToolId,
       cwd,

@@ -62,6 +62,20 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it.each(["codex", "claude"])("passes session model/effort to the resumed %s CLI without changing its account", async aiToolId => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch: () => null });
+    const modelSettings = { model: aiToolId === "codex" ? "account-model" : "opus", effort: "high" };
+    await launch({ ...f.args, aiToolId, claudeAccountId: "account-a", modelSettings,
+      initCommand: aiToolId === "codex" ? "codex resume saved-id" : "claude --resume saved-id" });
+    await vi.advanceTimersByTimeAsync(600);
+    const command = f.processes[0].write.mock.calls[0][0];
+    expect(command).toContain("saved-id"); expect(command).toContain(`'--model' '${modelSettings.model}'`);
+    expect(command).toContain(aiToolId === "claude" ? "'--effort' 'high'" : "'model_reasoning_effort=\"high\"'");
+    expect(f.sessions.get(f.args.id).modelSettings).toEqual(modelSettings);
+    expect(f.providers[aiToolId].environment).toHaveBeenCalledWith("account-a");
+  });
   it("applies Acedia account pool only to a new local Codex launch, preserving home and resume", async () => {
     vi.useFakeTimers();
     const f = fixture();

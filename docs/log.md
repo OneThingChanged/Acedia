@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-09-30
+
+* **1.8.1.34 EXE preparation**: Added account-aware Codex and installed-CLI Claude model/effort editing from Remote and Dashboard, with next-start saving and guarded same-conversation restart. Desktop and Remote chat now keep blocking questions visible, including missing-detail and loading states, with native-terminal answering and transcript recovery. Remote cache v79 and mobile two-row header preserve readable controls. All 858 tests, production build, desktop/mobile UI smoke, packaged bridge/Dashboard and lifecycle checks passed; installer version, size, SHA-256 and packaged source equality were verified. The signed 1.8.1.28 APK is reused. GitHub publication and public updater validation are separate deployment steps. See [release scope and verification](release-1-8-1-34.md), [launch settings](agent-launch-options.md) and [Remote service](remote-service.md).
+
 ## 2026-09-29
 
 * **1.8.1.32 EXE**: Fixed Remote conversation drift when Windows links expose the same Codex transcript under different paths, and released queued messages after a missed completion hook when the transcript proves the turn ended. Added safe handling of uncertain submissions, launch-time routed account selection, Remote document path/trash actions, and explicit dismissal of the new-session dialog. Remote cache v77; signed Android APK reused; Store unchanged. See [release scope](release-1-8-1-32.md) and [Remote service](remote-service.md).

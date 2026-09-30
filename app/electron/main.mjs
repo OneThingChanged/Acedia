@@ -59,6 +59,10 @@ import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage } from "./services/pty-submit.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
+import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
+import { SessionModelService, lastTurnModel, modelRestartAllowed, verifyModelSessionStart } from "./services/session-model-service.mjs";
+import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
+import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
 import { TerminalSessionService } from "./services/terminal-session-service.mjs";
 import {
   findWindowsExecutable,
@@ -69,7 +73,7 @@ import {
 } from "./services/ssh-service.mjs";
 import { resolveTerminalPath } from "./services/terminal-path-service.mjs";
 import { sanitizeTerminalOutput } from "./services/terminal-sanitize.mjs";
-import { parseChatTranscript, deriveTurnLifecycle } from "./services/chat-transcript.mjs";
+import { parseChatTranscript, deriveTurnLifecycle, derivePendingQuestion } from "./services/chat-transcript.mjs";
 import { normalizeTranscriptPath, isTranscriptInsideRoot } from "./services/transcript-path.mjs";
 import { CodexTurnCompletion } from "./services/codex-turn-completion.mjs";
 import {
@@ -201,6 +205,8 @@ const COMPANY_DISABLED_COMMANDS = new Set([
   "remote_access_revoke",
   "complete_remote_session_create",
   "complete_remote_session_activation",
+  "complete_remote_session_model",
+  "restart_session_model",
 ]);
 const preloadContractArguments = [
   `--multiagent-invoke-commands=${ipcContract.INVOKE_COMMANDS.join(",")}`,
@@ -844,9 +850,83 @@ const remoteSessionActivationBroker = new RemoteSessionActivationBroker({
   isActive: (id) => ptys.has(id),
 });
 
+const remoteSessionModelBroker = new RemoteSessionModelBroker({
+  dispatch: payload => {
+    if (coordinatorWebContentsId === null) return false;
+    const runtime = runtimeByWebContents.get(coordinatorWebContentsId);
+    const coordinator = workspaceWindows.get(coordinatorWebContentsId);
+    if (!runtime?.workspace_window || !runtime.coordinator || !runtime.ready || !coordinator) return false;
+    sendEvent(coordinator, "remote:session-model", payload);
+    return true;
+  },
+});
+const sessionModelCatalogCache = new Map();
+function sessionModelAgent(id) {
+  const agent = monitorService?.state?.agents?.find(item => item.id === id);
+  return agent ? liveOutputForAgents([agent], 0)[0] : null;
+}
+async function sessionModelCatalog(agent) {
+  const live = ptys.get(agent.id);
+  const provider = agent.aiToolId;
+  const accountId = (provider === "claude" ? live?.claudeAccountId : live?.codexAccountId) || selectedAccountId(agent);
+  const routed = provider === "codex" && (live ? live.poolRouted : accountPool.state.enabled);
+  const owner = accountPool.state.sessions[agent.id]?.accountId || agent.codexPoolAccountId || "auto";
+  const key = routed ? `pool:${agent.id}:${owner}` : `${provider}:${accountId}`;
+  let cached = sessionModelCatalogCache.get(key);
+  if (!cached || cached.until < Date.now()) {
+    const promise = (async () => {
+      if (provider === "claude") {
+        const native = process.platform === "win32" ? findExecutableOnPath("claude.exe") : "claude";
+        const command = native ? { file: native, args: ["--help"] } : {
+          file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", "claude.cmd --help"],
+        };
+        const help = await new Promise((resolve, reject) => execFile(command.file, command.args,
+          { env: claudeAccounts.environment(accountId), windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 512 * 1024 },
+          (error, stdout) => error ? reject(new Error("Claude CLI 옵션을 확인하지 못했습니다. CLI 설치를 확인하세요.")) : resolve(stdout)));
+        return { models: claudeModelCatalog(help), accountLabel: claudeAccounts.list().find(a => a.id === accountId)?.label || "Claude", capabilitiesSource: "cli-help" };
+      }
+      if (routed) return accountPool.sessionModels(agent.id, agent.codexPoolAccountId);
+      const args = ["app-server", ...(accountId === "default" ? [] : ["-c", "cli_auth_credentials_store=file"])];
+      const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
+      const command = native ? { file: native, args } : {
+        file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", `codex.cmd ${args.join(" ")}`],
+      };
+      const rpc = new AccountPoolRpc(command, codexAccounts.environment(accountId), codexAccounts.home(accountId));
+      try {
+        await rpc.initialize();
+        return { models: await readCodexModels(rpc), accountLabel: codexAccounts.list().find(a => a.id === accountId)?.label || "Codex" };
+      } finally { rpc.close(); }
+    })();
+    cached = { promise, until: Date.now() + 30000 };
+    sessionModelCatalogCache.set(key, cached);
+    promise.catch(() => { if (sessionModelCatalogCache.get(key) === cached) sessionModelCatalogCache.delete(key); });
+    if (sessionModelCatalogCache.size > 100) sessionModelCatalogCache.delete(sessionModelCatalogCache.keys().next().value);
+  }
+  const result = await cached.promise;
+  const sessionId = agentSessionIds.get(agent.id) || agent.lastSessionId;
+  const transcript = agentTranscripts.get(agent.id) || resolveChatTranscriptBySession(provider, sessionId,
+    { toolId: provider, accountId })?.path;
+  const current = await lastTurnModel(transcript, provider);
+  // Include a model actually used by this Claude session (full IDs, 3P models)
+  // in addition to the installed CLI's documented aliases.
+  const models = provider === "claude" ? [...result.models] : result.models;
+  if (provider === "claude") for (const setting of [current, agent.modelSettings]) {
+    const known = normalizeSessionModel(setting);
+    if (known && !models.some(item => item.model === known.model)) models.push({ ...result.models[0], model: known.model, label: known.model });
+  }
+  return { models, accountLabel: result.accountLabel, capabilitiesSource: result.capabilitiesSource || "account",
+    current: current || normalizeSessionModel(live?.modelSettings) || null,
+    currentSource: current ? "last-turn" : live?.modelSettings ? "launch" : "unknown" };
+}
+const sessionModels = new SessionModelService({
+  agentFor: sessionModelAgent, active: id => ptys.has(id), catalog: sessionModelCatalog,
+  update: payload => remoteSessionModelBroker.update(payload),
+});
+
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  sessionModels,
   accountPoolApi: (...args) => accountPool.api(...args),
   usageProvider: browserUsageSummary,
   usageProfileVisibility: (key, hidden) => usageIndex.setProfileVisibility(key, hidden),
@@ -3022,7 +3102,7 @@ const spawnPty = createTerminalLauncher({
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
   },
   accountsForTool,
-  accountPoolLaunch: (id, preferredAccountId) => accountPool.launch(id, preferredAccountId),
+  accountPoolLaunch: (id, preferredAccountId, preserveOwnerId) => accountPool.launch(id, preferredAccountId, preserveOwnerId),
   accountBindings,
   accountSwitches,
   defaultShell,
@@ -3161,13 +3241,13 @@ async function readChatTranscript(tool, transcriptPath) {
       let text = buffer.toString("utf8");
       const newline = text.indexOf("\n"); // drop the partial first line
       if (newline >= 0) text = text.slice(newline + 1);
-      result = { blocks: parseChatTranscript(text, toolId), truncated: true, missing: false, lifecycle: deriveTurnLifecycle(text, toolId) };
+      result = { blocks: parseChatTranscript(text, toolId), truncated: true, missing: false, lifecycle: deriveTurnLifecycle(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
     } finally {
       await handle.close();
     }
   } else {
     const text = await fsPromises.readFile(resolved, "utf8");
-    result = { blocks: parseChatTranscript(text, toolId), truncated: false, missing: false, lifecycle: deriveTurnLifecycle(text, toolId) };
+    result = { blocks: parseChatTranscript(text, toolId), truncated: false, missing: false, lifecycle: deriveTurnLifecycle(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
   }
   if (result.blocks.length > MAX_CHAT_BLOCKS) {
     result = { ...result, blocks: result.blocks.slice(-MAX_CHAT_BLOCKS), truncated: true };
@@ -3358,6 +3438,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
         truncated: stored.hasOlder,
         missing: false,
         lifecycle: result.lifecycle,
+        pendingQuestion: result.pendingQuestion,
         tool,
         sessionId,
       };
@@ -5581,6 +5662,47 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return remoteSessionActivationBroker.complete(args);
     }
+    case "complete_remote_session_model": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) {
+        throw new Error("세션 설정 결과는 coordinator 창에서만 전달할 수 있습니다.");
+      }
+      const pending = remoteSessionModelBroker.pending.get(args.requestId);
+      if (args.ok && pending?.id === args.id && pending.restart) {
+        try {
+          if (!args.restarted) throw new Error("새 CLI를 시작하지 못했습니다.");
+          await verifyModelSessionStart({ id: args.id, settings: pending.settings,
+            entryFor: id => ptys.get(id), hookFor: id => monitorHooks.get(id) });
+        } catch (error) {
+          return remoteSessionModelBroker.complete({ ...args, ok: false, error: error.message, statusCode: 409 });
+        }
+      }
+      return remoteSessionModelBroker.complete(args);
+    }
+    case "restart_session_model": {
+      const id = asString(args.id);
+      if (event.sender.id !== coordinatorWebContentsId || !claimAgentForWindow(id, event.sender.id)) throw new Error("다른 작업창에서 사용 중인 세션입니다.");
+      const agent = sessionModels.agent(id), live = ptys.get(id);
+      if (!modelRestartAllowed(agent, Boolean(live))) throw new Error("작업이 끝난 뒤 재시작하세요.");
+      const sessionId = agentSessionIds.get(id) || agent.lastSessionId || null;
+      if (args.expectedSessionId && args.expectedSessionId !== sessionId) throw new Error("고정된 대화와 현재 세션이 다릅니다. 세션 고정을 확인하세요.");
+      if (live && !sessionId) throw new Error("대화 ID를 아직 확인하지 못했습니다. 첫 대화 완료 후 재시작하세요.");
+      if (sessionId) {
+        const resolved = await sessionService.resolveExact({ aiToolId: agent.aiToolId, folder: agent.folder,
+          agentId: id, preferredSessionId: sessionId,
+          transcriptRoot: accountTranscriptRoot(agent.aiToolId, selectedAccountId(live || agent)), allowFolderFallback: false });
+        if (resolved !== sessionId) throw new Error("기존 대화를 찾을 수 없어 재시작하지 않았습니다.");
+      }
+      const current = sessionModels.agent(id);
+      if (ptys.get(id) !== live || !modelRestartAllowed(current, Boolean(live))) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
+      if ((agentSessionIds.get(id) || current.lastSessionId || null) !== sessionId) throw new Error("현재 대화가 바뀌었습니다. 다시 확인하세요.");
+      if (selectedAccountId(current) !== selectedAccountId(agent)
+        || (live && selectedAccountId(live) !== selectedAccountId(current))) throw new Error("세션 계정이 바뀌었습니다. 다시 확인하세요.");
+      const poolResumeOwnerId = agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
+      if (poolResumeOwnerId && !accountPool.eligible(accountPool.account(poolResumeOwnerId))) throw new Error("현재 분산 계정을 사용할 수 없습니다. 설정을 저장하고 계정 상태를 확인하세요.");
+      terminalSessions.action(id, "restart");
+      return { sessionId, poolResumeOwnerId };
+    }
     case "repair_active_hooks":
       return repairActiveHooks();
     case "export_diagnostics": {
@@ -5789,6 +5911,7 @@ app.on("before-quit", (event) => {
   terminalSessions.closeAll("app-quit");
   remoteSessionCreateBroker.close();
   remoteSessionActivationBroker.close();
+  remoteSessionModelBroker.close();
   void hookService.stop();
   void monitorService.stop();
   void usageDashboard.stop();

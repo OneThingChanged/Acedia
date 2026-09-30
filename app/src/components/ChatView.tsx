@@ -5,7 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import { invoke, listen } from "../platform/runtime";
 import { electronBridge } from "../platform/electronBridge";
 import { extractDroppedFilePaths, formatDroppedPathForTerminal, hasExternalFiles } from "../lib/fileDrop";
-import { parseChatPrompt, type ChatPromptOption } from "../lib/chatPrompt";
+import { parseChatPrompt, promptSignature, type ChatPromptOption } from "../lib/chatPrompt";
 import {
   applyAutocomplete,
   detectAutocomplete,
@@ -319,6 +319,9 @@ export function ChatView({
   question,
   assistantMessage,
   folder,
+  provider,
+  questionToken,
+  onOpenTerminal,
 }: {
   agentId: string;
   active: boolean;
@@ -328,6 +331,9 @@ export function ChatView({
   question?: string | null;
   assistantMessage?: string | null;
   folder?: string;
+  provider?: string;
+  questionToken?: number;
+  onOpenTerminal: () => void;
 }) {
   const { text } = useAppLanguage();
   const storeKey = `${agentId}:${sessionId || "unbound"}`;
@@ -341,14 +347,19 @@ export function ChatView({
   const [tool, setTool] = useState<string | undefined>(undefined);
   // Turn lifecycle from the transcript — overrides a stale hook "working".
   const [lifecycle, setLifecycle] = useState<"working" | "idle" | undefined>(undefined);
+  const [pendingQuestion, setPendingQuestion] = useState<ChatBlocksResult["pendingQuestion"]>(null);
   // Transcript signature + the value at the moment the user hit 중단/Esc, so an
   // interrupt immediately unsticks a stuck "working" until genuinely new content
   // arrives (msgKey changes).
   const [msgKey, setMsgKey] = useState("");
   const msgKeyRef = useRef("");
   const [stoppedKey, setStoppedKey] = useState<string | null>(null);
-  // Signature of the prompt the user just answered (hides its card).
+  // Block duplicate answers while keeping the wait visible until work resumes.
   const [answeredPromptSig, setAnsweredPromptSig] = useState("");
+  const [respondingPromptSig, setRespondingPromptSig] = useState("");
+  const [promptError, setPromptError] = useState("");
+  const promptSigRef = useRef("");
+  const respondingRef = useRef(false);
   const [visible, setVisible] = useState(CHAT_PAGE);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   // Reserved (queued) messages waiting to be sent while the agent is working.
@@ -388,6 +399,8 @@ export function ChatView({
     setPending([]);
     setQueue(queueStore.get(storeKey) ?? []); // restore this exact conversation's reservations
     setAnsweredPromptSig("");
+    setPendingQuestion(null);
+    setPromptError("");
     setStoppedKey(null);
     firstLoadRef.current = true;
     clearedSigRef.current = null;
@@ -404,6 +417,7 @@ export function ChatView({
         });
         if (cancelled) return;
         if (result.unsupported) {
+          setPendingQuestion(null);
           setStatus("unsupported");
           return;
         }
@@ -419,6 +433,7 @@ export function ChatView({
         if (result.artifacts) setArtifacts(result.artifacts);
         if (result.tool) setTool(result.tool);
         setLifecycle(result.lifecycle);
+        setPendingQuestion(result.pendingQuestion ?? null);
         // Drop optimistic echoes now present in the transcript (exact match on
         // a user text block) so we don't show them twice.
         const userTexts = new Set(
@@ -622,10 +637,15 @@ export function ChatView({
   // composer sends in the queue.
   const stoppedHere = stoppedKey !== null && stoppedKey === msgKey;
   const initializing = agentStatus === "starting" || agentStatus === "recovering";
-  const busy = initializing || (
-    BUSY_STATUSES.includes(agentStatus) && lifecycle !== "idle" && !stoppedHere
-  );
   const alive = !DEAD_STATUSES.includes(agentStatus);
+  const nativeQuestion = alive && !initializing && agentStatus !== "idle" && !stoppedHere ? pendingQuestion : null;
+  const prompt = parseChatPrompt(nativeQuestion ? "waiting" : agentStatus, nativeQuestion?.question || question, assistantMessage, provider || tool);
+  const promptSig = prompt ? `${storeKey}|${nativeQuestion?.id || questionToken || ""}|${promptSignature(prompt)}` : "";
+  promptSigRef.current = promptSig;
+  useEffect(() => { setAnsweredPromptSig(""); setPromptError(""); }, [promptSig]);
+  const busy = initializing || (
+    BUSY_STATUSES.includes(agentStatus) && lifecycle !== "idle" && !stoppedHere && !prompt
+  );
 
   // Cancel the in-progress turn by sending Esc to the PTY — same as pressing
   // Esc in the Codex/Claude TUI. Re-poll so the transcript updates promptly.
@@ -638,34 +658,29 @@ export function ChatView({
     window.setTimeout(() => fetchRef.current(), 500);
   }, [agentId]);
 
-  // Inline prompt (question options / permission Allow-Deny) parsed from the
-  // agent's waiting-status text; answered by writing the choice to the PTY.
-  const prompt = parseChatPrompt(agentStatus, question, assistantMessage);
-  const promptSig = prompt
-    ? `${prompt.kind}|${prompt.text}|${prompt.options.map((o) => o.label).join("|")}`
-    : "";
-  // Hide the card once answered so repeated clicks don't pile up keystrokes;
-  // a genuinely different prompt (new signature) shows again.
-  const showPrompt = Boolean(prompt) && promptSig !== answeredPromptSig;
-
-  // Write a paced key sequence to the PTY (arrow/enter groups a beat apart so
-  // the TUI registers each keystroke), then re-poll.
-  const writeKeys = (keys: string[]) => {
-    keys.forEach((key, idx) => {
-      window.setTimeout(() => {
-        void invoke("write_pty", { id: agentId, data: key }).catch(() => {});
-      }, idx * 60);
-    });
-    window.setTimeout(() => fetchRef.current(), keys.length * 60 + 400);
-  };
-  const respondPrompt = (option: ChatPromptOption) => {
-    setAnsweredPromptSig(promptSig);
-    if (prompt?.answerStyle === "arrow") {
-      // Claude's selector: move down to option i (1-based send), then Enter.
-      const steps = Math.max(0, Number(option.send) - 1);
-      writeKeys([...Array(steps).fill("\x1b[B"), "\r"]);
-    } else {
-      writeKeys([option.send, "\r"]);
+  // Keep waiting visible until the CLI resumes. Failed writes must not hide
+  // the question or send the remaining keys into a different prompt.
+  const respondPrompt = async (option: ChatPromptOption) => {
+    if (!prompt || respondingRef.current || answeredPromptSig === promptSig) return;
+    respondingRef.current = true;
+    setRespondingPromptSig(promptSig);
+    setPromptError("");
+    const keys = prompt.answerStyle === "arrow"
+      ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
+      : [option.send, "\r"];
+    try {
+      for (const key of keys) {
+        if (promptSigRef.current !== promptSig) return;
+        await invoke("write_pty", { id: agentId, data: key });
+        await new Promise(resolve => window.setTimeout(resolve, 60));
+      }
+      if (promptSigRef.current === promptSig) setAnsweredPromptSig(promptSig);
+      window.setTimeout(() => fetchRef.current(), 400);
+    } catch {
+      if (promptSigRef.current === promptSig) setPromptError(text("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요.", "Could not send the answer. Check the question in the terminal."));
+    } finally {
+      respondingRef.current = false;
+      setRespondingPromptSig("");
     }
   };
 
@@ -749,14 +764,14 @@ export function ChatView({
 
   // Drain the queue one message per cooldown while the agent is ready.
   useEffect(() => {
-    if (busy || !alive || queue.length === 0) return;
+    if (busy || prompt || !alive || queue.length === 0) return;
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
       dispatch(queue[0]);
       mutateQueue((q) => q.slice(1));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [busy, alive, queue, dispatch, mutateQueue]);
+  }, [busy, promptSig, alive, queue, dispatch, mutateQueue]);
 
   const cancelQueued = (index: number) =>
     mutateQueue((q) => q.filter((_, i) => i !== index));
@@ -822,23 +837,30 @@ export function ChatView({
           ↓ {text("최신 대화로 이동", "Jump to latest")}
         </button>
       )}
-      {showPrompt && prompt && (
-        <div className={`chat-prompt ${prompt.kind}`}>
+      {prompt && (
+        <div className={`chat-prompt ${prompt.kind}`} role="status" aria-live="polite">
+          <strong className="chat-prompt-heading">{text("답변 대기 중", "Answer needed")}</strong>
           <div className="chat-prompt-text">
             {prompt.kind === "permission" ? "🔒 " : "❓ "}
-            {prompt.text}
+            {prompt.text || text("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.", "The agent is waiting for a question or approval. Open the terminal to review and answer it.")}
           </div>
+          <div className="chat-prompt-hint">{answeredPromptSig === promptSig
+            ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
+            : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
+          {promptError && <div className="chat-prompt-error" role="alert">{promptError}</div>}
           <div className="chat-prompt-options">
             {prompt.options.map((option, i) => (
               <button
                 key={i}
                 type="button"
                 className="chat-prompt-option"
-                onClick={() => respondPrompt(option)}
+                disabled={respondingPromptSig === promptSig || answeredPromptSig === promptSig || Boolean(promptError)}
+                onClick={() => { void respondPrompt(option); }}
               >
                 {option.label}
               </button>
             ))}
+            <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{text("터미널에서 답변", "Answer in terminal")}</button>
           </div>
         </div>
       )}

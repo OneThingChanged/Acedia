@@ -172,6 +172,8 @@ export type SshHost = {
 };
 
 export type Agent = {
+  terminalEpoch?: number;
+  modelSettings?: import("../electron/shared/session-model.mjs").SessionModel;
   idleResumeSessionId?: string;
   shellCommand?: string;
   launchOptions?: LaunchOptions;
@@ -212,6 +214,7 @@ export type Agent = {
 };
 
 export type StoredAgent = {
+  modelSettings?: import("../electron/shared/session-model.mjs").SessionModel;
   idleResumeSessionId?: string;
   shellCommand?: string;
   launchOptions?: LaunchOptions;

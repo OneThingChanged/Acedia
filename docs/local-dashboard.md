@@ -57,6 +57,12 @@ Chat stays at the bottom when sending from the bottom, including composer
 resizing and subsequent chat rerenders. Reading older messages preserves the
 current scroll offset. This behavior is shared with Remote.[^remote-client]
 
+Questions and approvals show a persistent **답변 대기 중 / Answer needed** card
+above the composer, even without question details or while history loads. It
+shows available questions and choices and opens the session terminal for native
+answers. The card clears when work resumes, and scheduled messages wait until
+the question is answered. See [Remote question behavior](remote-service.md#session-and-content-surface).
+
 Initial terminal state is delivered as a snapshot; later output arrives as SSE
 deltas. Hook and workspace changes refresh the projected state. Periodic client
 refresh remains a recovery mechanism, not the authoritative activity source.[^remote-client]

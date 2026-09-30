@@ -43,6 +43,15 @@ sources:
   - id: chat-history
     resource: ../app/electron/remote-pwa/chat-history.js
     title: "Chat page merging and sequence ordering"
+  - id: chat-questions
+    resource: ../app/electron/shared/chat-prompt.mjs
+    title: "Shared question and permission card parsing"
+  - id: chat-transcript
+    resource: ../app/electron/services/chat-transcript.mjs
+    title: "Transcript decoding and pending native questions"
+  - id: question-ui-smoke
+    resource: ../app/scripts/electron-chat-question-smoke.mjs
+    title: "Desktop and Remote question visibility smoke"
   - id: remote-ui-smoke
     resource: ../app/scripts/electron-remote-pwa-smoke.mjs
     title: "Desktop and mobile Remote PWA runtime smoke"
@@ -114,7 +123,7 @@ Full paths in chat can open files under registered project roots. When a registe
 Unreal plugin has a `.uproject` ancestor, its enclosing Unreal workspace is also
 allowed, so `Saved` images and JSON reports can be previewed from Remote. Other
 absolute paths remain blocked. JSON files open from chat links without being
-added to the Documents index. Remote PWA cache v77 delivers the updated client.
+added to the Documents index. Remote PWA cache v79 delivers the updated client.
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
@@ -192,6 +201,28 @@ under local application data. Credentials, signing keys, and OAuth secrets must
 not be committed to the repository.
 
 ## Session and content surface
+
+Desktop Chat, Dashboard and Remote show an **Answer needed / 답변 대기 중**
+card whenever a live session waits for a question or approval, including
+free-text questions and waits without a question payload. The session chat card
+stays above the composer while earlier messages are being read, and offers
+**Answer in terminal / 터미널에서 답변**. It is also visible while chat history
+loads or is unsupported. Work resuming clears the card; merely writing an answer
+does not hide a session that is still waiting.[^remote-client][^chat-questions]
+
+Native Codex `request_user_input` calls are recovered from the bounded live
+transcript tail when their hook omitted the question. Tool call IDs identify
+answers, so an unrelated tool result cannot clear the question. New turns,
+completion and cancellation clear pending questions. All question text, choices
+and descriptions remain visible; multi-question forms and Codex structured forms
+are answered in the terminal. Existing single-choice Claude and explicit
+numbered menus keep their buttons. Failed writes stop the remaining key sequence
+and leave the terminal action available. Scheduled messages pause while an
+answer is needed. Async input tools are not treated as blocking native forms.
+`npm --prefix app run electron:chat-question-smoke` verifies the actual desktop
+Chat component and Remote client at 1024px and 390px using an isolated profile,
+including fallback visibility, scrolling, terminal navigation, stale-state
+clearing and failed answer writes. It does not call a live model.[^chat-transcript][^question-ui-smoke]
 
 From 1.8.1.17, desktop chat and the Remote composer use Enter to send (or queue
 while working) and Ctrl+Enter to insert a newline at the selection. Cmd+Enter is
@@ -422,6 +453,9 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^chat-markup]: Chat markup escaping and project file links
 [^chat-render]: Chat turn and tool DOM rendering
 [^chat-history]: Chat page merging and sequence ordering
+[^chat-questions]: Shared question and permission card parsing
+[^chat-transcript]: Transcript decoding and pending native questions
+[^question-ui-smoke]: Desktop and Remote question visibility smoke
 [^remote-ui-smoke]: Desktop and mobile Remote PWA runtime smoke
 [^remote-language]: Remote display language and locale formatting
 [^remote-styles]: Remote typography and responsive layout

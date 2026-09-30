@@ -296,6 +296,7 @@ export function PaneSlot({
             cwd,
             initCommand,
             launchOptions,
+            modelSettings: cur.modelSettings,
             initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
@@ -399,6 +400,7 @@ export function PaneSlot({
             cwd,
             initCommand,
             launchOptions,
+            modelSettings: cur.modelSettings,
             initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
@@ -601,6 +603,7 @@ export function PaneSlot({
   }, [
     activeAgent?.id,
     activeAgent?.deferredStart,
+    activeAgent?.terminalEpoch,
     activeAgent?.status === "idle",
     termsRef,
     setAgentStatus,
@@ -1147,6 +1150,9 @@ export function PaneSlot({
           }
           question={activeAgent?.activity?.interactiveQuestion ?? null}
           assistantMessage={activeAgent?.activity?.lastAssistantMessage ?? null}
+          provider={activeAgent?.aiToolId}
+          questionToken={activeAgent?.activity?.stateStartedAt}
+          onOpenTerminal={() => { ctx.setActivePath(path); ctx.onToggleChat(activeAgentId); }}
         />
       )}
       </div>

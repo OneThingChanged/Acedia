@@ -150,6 +150,14 @@ describe("normalizeStoredGroups", () => {
 
 
 describe("Codex account persistence", () => {
+  it.each(["codex", "claude"])("restores per-session %s model settings without changing account or conversation", aiToolId => {
+    const restored = loadStoredAgents([{ id: "a", projectId: "p", name: "A", folder: "project", aiToolId, createdAt: 0,
+      codexAccountId: "codex-work", claudeAccountId: "claude-work", lastSessionId: "conversation",
+      modelSettings: { model: aiToolId === "codex" ? "account-model" : "opus", effort: "high" } }],
+      [{ id: "p", name: "P", folder: "project", createdAt: 0 }]);
+    expect(restored[0]).toMatchObject({ codexAccountId: "codex-work", claudeAccountId: "claude-work", lastSessionId: "conversation",
+      modelSettings: { model: aiToolId === "codex" ? "account-model" : "opus", effort: "high" } });
+  });
   it("restores account binding and per-account conversations on cold start", () => {
     const restored = loadStoredAgents([{ id: "a", projectId: "p", name: "A", folder: "project", aiToolId: "codex", createdAt: 0,
       codexAccountId: "work", codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",

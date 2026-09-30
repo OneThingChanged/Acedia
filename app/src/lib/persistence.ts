@@ -32,6 +32,7 @@ import {
 } from "./layout";
 import { normalizeSessionWorkerSettings } from "./sessionWorkers";
 import { normalizeLaunchOptions } from "./launchOptions";
+import { normalizeSessionModel } from "../../electron/shared/session-model.mjs";
 
 function projectNameFromFolder(folder: string) {
   const normalized = folder.replace(/\\/g, "/").replace(/\/$/, "");
@@ -167,6 +168,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         idleResumeSessionId: typeof c.idleResumeSessionId === "string" ? c.idleResumeSessionId : undefined,
         shellCommand: c.aiToolId === "none" && typeof c.shellCommand === "string" ? c.shellCommand : undefined,
         launchOptions: normalizeLaunchOptions(c.launchOptions),
+        modelSettings: normalizeSessionModel(c.modelSettings),
         pinned: c.pinned || undefined,
         tabColor: c.tabColor || undefined,
         createdAt: c.createdAt,

@@ -1,4 +1,5 @@
 import { createHostingView } from './hosting.js';
+import { createSessionModelEditor } from './session-model.js';
 import { createAccountPoolView } from './account-pool.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
@@ -6,6 +7,7 @@ import { text, make } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
+import { parseChatPrompt, promptSignature } from "./chat-prompt.js";
 
 bindShellTranslations(document);
 
@@ -154,6 +156,7 @@ const ui = {
   renameSessionButton: $("#renameSessionButton"),
   sessionNavButton: $("#sessionNavButton"),
   backToScreenButton: $("#backToScreenButton"),
+  chatPrompt: $("#chatPrompt"),
   questionPanel: $("#questionPanel"),
   questionText: $("#questionText"),
   questionOptions: $("#questionOptions"),
@@ -324,92 +327,110 @@ let usageRequestSerial = 0;
 let usageQuickRenderKey = "";
 let usageRefreshPollTimer = 0;
 
-function questionDetails(agent) {
-  const raw = text(agent?.hook?.interactive_question);
-  if (!raw) return { text: "", options: [] };
-  try {
-    const parsed = JSON.parse(raw);
-    const questions = Array.isArray(parsed?.questions) ? parsed.questions : [];
-    if (questions.length > 0) {
-      const options = [];
-      const blocks = questions.map((question) => {
-        const title = text(question.question || question.header);
-        const choices = Array.isArray(question.options)
-          ? question.options.map((option) => text(option.label || option)).filter(Boolean)
-          : [];
-        options.push(...choices);
-        return choices.length > 0
-          ? `${title}\n${choices.map((choice) => `• ${choice}`).join("\n")}`
-          : title;
-      }).filter(Boolean);
-      return { text: blocks.join("\n\n"), options: [...new Set(options)] };
-    }
-  } catch {}
-  return { text: raw, options: [] };
+function pendingQuestionFor(agent, data) {
+  if (!agent || ["idle", "exited", "unreachable", "offline", "starting", "recovering"].includes(agent.status)
+    || ["cancelled", "canceled", "interrupted", "aborted"].includes(agent.hook?.event)) return null;
+  data ||= chatAgent === agent.id ? lastChatData : screenChatCache.get(agent.id)?.data;
+  if (data?.sessionId && agent.hook?.session_id && data.sessionId !== agent.hook.session_id) return null;
+  return data?.pendingQuestion ?? null;
 }
 
-function questionOf(agent) {
-  return questionDetails(agent).text;
-}
-
-const PERMISSION_HINTS = ["allow", "permission", "approve", "grant", "proceed?", "do you want", "y/n", "yes/no", "허용", "권한", "승인", "진행할까요", "계속할까요"];
-function promptFirstLine(t) {
-  const line = String(t || "").split(/\r?\n/).find((l) => l.trim()) || "";
-  return line.replace(/^[\s>❯•*-]+/, "").trim().slice(0, 200);
-}
-function promptOptionLines(t) {
-  const options = [];
-  for (const raw of String(t || "").split(/\r?\n/)) {
-    const line = raw.replace(/^[\s>❯•]+/, "").trim();
-    const m = line.match(/^(\d{1,2})[.)]\s+(.+)$/) || line.match(/^\[?([a-zA-Z])\]?[.)]\s+(.+)$/);
-    if (m && m[2]) options.push({ label: m[2].replace(/\s+/g, " ").slice(0, 80), send: m[1] });
-    if (options.length >= 12) break;
-  }
-  return options;
-}
-// Inline prompt (question options / permission) for the chat card.
-function promptFor(agent) {
+function promptFor(agent, data) {
   if (!agent) return null;
-  // Only while the agent is actually waiting for input (avoids a stale card).
-  if (statusOf(agent) !== "attention") return null;
-  const details = questionDetails(agent);
-  if (details.options && details.options.length) {
-    return {
-      kind: "question",
-      answerStyle: agent.aiToolId === "codex" ? "digit" : "arrow",
-      text: promptFirstLine(details.text),
-      options: details.options.map((label, i) => ({ label: String(label).slice(0, 80), send: String(i + 1) })),
-    };
-  }
-  const src = details.text || "";
-  if (!src) return null;
-  const numbered = promptOptionLines(src);
-  const lower = src.toLowerCase();
-  const isPerm = PERMISSION_HINTS.some((h) => lower.includes(h));
-  if (numbered.length >= 2) return { kind: isPerm ? "permission" : "question", answerStyle: "digit", text: promptFirstLine(src), options: numbered };
-  if (isPerm) {
-    const options = [{ label: t("예 (Yes)"), send: "y" }, { label: t("아니오 (No)"), send: "n" }];
-    if (lower.includes("always") || lower.includes("항상")) options.push({ label: t("항상 허용"), send: "a" });
-    return { kind: "permission", answerStyle: "digit", text: promptFirstLine(src), options };
-  }
-  return null;
+  const pending = pendingQuestionFor(agent, data);
+  return parseChatPrompt(pending ? "attention" : statusOf(agent), pending?.question || agent.hook?.interactive_question, agent.hook?.assistant_message, agent.aiToolId);
 }
-function promptSignature(prompt) {
-  return prompt ? `${prompt.kind}|${prompt.text}|${prompt.options.map((o) => o.label).join("|")}` : "";
+
+function questionDetails(agent) {
+  const prompt = promptFor(agent);
+  return { text: prompt?.text || "", options: prompt?.options.map(option => option.label) || [] };
 }
-let answeredPromptSig = "";
-async function respondPrompt(agentId, prompt, option) {
-  answeredPromptSig = promptSignature(prompt); // hide the card; block spam clicks
-  if (lastChatData) renderChat(lastChatData);
-  const keys =
-    prompt.answerStyle === "arrow"
-      ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
-      : [option.send, "\r"];
-  for (const key of keys) {
-    await sendRaw(agentId, key);
-    await new Promise((r) => setTimeout(r, 60));
+function questionOf(agent) { return questionDetails(agent).text; }
+
+const promptResponses = new Map();
+function promptKey(agent, prompt, data) {
+  return prompt ? `${agent.id}|${pendingQuestionFor(agent, data)?.id || agent.hook?.received_at || agent.hook?.lastTs || ""}|${promptSignature(prompt)}` : "";
+}
+function refreshPromptViews(agentId) {
+  if (selectedAgent()?.id === agentId) renderWaitingPrompt(selectedAgent(), lastChatData);
+  const agent = agentMap().get(agentId);
+  const cached = screenChatCache.get(agentId);
+  if (agent && cached) {
+    for (const container of document.querySelectorAll('[data-screen-chat]')) {
+      if (container.dataset.screenChat === agentId) renderScreenChat(container, cached.data, agent);
+    }
   }
-  lastChatFetch = { id: null, at: 0 };
+}
+async function respondPrompt(agentId, prompt, option, key) {
+  const previous = promptResponses.get(agentId);
+  if (previous?.key === key && (previous.sending || previous.sent)) return;
+  const state = { key, sending: true, sent: false, error: false };
+  promptResponses.set(agentId, state);
+  refreshPromptViews(agentId);
+  const keys = prompt.answerStyle === "arrow"
+    ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
+    : [option.send, "\r"];
+  try {
+    for (const input of keys) {
+      const current = agentMap().get(agentId);
+      if (!current || promptKey(current, promptFor(current)) !== key) return;
+      if (!(await sendRaw(agentId, input))) throw new Error("answer write failed");
+      await new Promise(resolve => setTimeout(resolve, 60));
+    }
+    state.sent = true;
+    lastChatFetch = { id: null, at: 0 };
+  } catch { state.error = true; }
+  finally { state.sending = false; refreshPromptViews(agentId); }
+}
+
+function promptCard(agent, prompt, data, openTerminal) {
+  const key = promptKey(agent, prompt, data);
+  const state = promptResponses.get(agent.id)?.key === key ? promptResponses.get(agent.id) : null;
+  const card = make("div", `chat-prompt ${prompt.kind}`);
+  card.setAttribute("role", "status");
+  card.appendChild(make("strong", "chat-prompt-heading", t("답변 대기 중")));
+  card.appendChild(make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.")));
+  card.appendChild(make("div", "chat-prompt-hint", state?.sent
+    ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
+    : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
+  if (state?.error) {
+    const error = make("div", "chat-prompt-error", t("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요."));
+    error.setAttribute("role", "alert");
+    card.appendChild(error);
+  }
+  const options = make("div", "chat-prompt-options");
+  for (const option of prompt.options) {
+    const button = make("button", "chat-prompt-option", option.label);
+    button.type = "button";
+    button.disabled = Boolean(state?.sending || state?.sent || state?.error);
+    button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option, key); });
+    options.appendChild(button);
+  }
+  const terminal = make("button", "chat-prompt-option", t("터미널에서 답변"));
+  terminal.type = "button";
+  terminal.addEventListener("click", openTerminal);
+  options.appendChild(terminal);
+  card.appendChild(options);
+  return card;
+}
+
+function renderWaitingPrompt(agent, data) {
+  if (!ui.chatPrompt) return;
+  const prompt = agent ? promptFor(agent, data) : null;
+  ui.chatPrompt.hidden = sessionViewMode !== "chat" || !prompt;
+  if (!prompt) {
+    if (agent) promptResponses.delete(agent.id);
+    ui.chatPrompt.replaceChildren();
+    ui.chatPrompt.dataset.renderKey = "";
+    return;
+  }
+  const key = `${getLanguage()}|${promptKey(agent, prompt, data)}|${JSON.stringify(promptResponses.get(agent.id) || {})}`;
+  if (key !== ui.chatPrompt.dataset.renderKey) {
+    const position = captureChatScroll();
+    ui.chatPrompt.dataset.renderKey = key;
+    ui.chatPrompt.replaceChildren(promptCard(agent, prompt, data, () => setSessionViewMode("term")));
+    restoreChatScroll(position);
+  }
 }
 
 function statusOf(agent) {
@@ -419,8 +440,8 @@ function statusOf(agent) {
   if (["cancelled", "canceled", "interrupted", "aborted"].includes(hookEvent)) return "idle";
   if (rawStatus === "recovering") return "recovering";
   if (rawStatus === "starting") return "starting";
-  if (questionOf(agent) || ["waiting", "blocked", "permission-request"].includes(rawStatus)
-    || ["waiting", "blocked", "permission-request"].includes(hookEvent)) return "attention";
+  if (["waiting", "question", "blocked", "permission-request"].includes(rawStatus)
+    || ["waiting", "question", "blocked", "permission-request"].includes(hookEvent)) return "attention";
   if (rawStatus === "working"
     || ["working", "tool-start", "tool-end"].includes(hookEvent)) return "working";
   if (hookEvent === "done" || rawStatus === "done") return "done";
@@ -659,7 +680,15 @@ function renderSummary() {
   }
 }
 
+const sessionModelEditor = createSessionModelEditor({
+  getAgent: id => agentMap().get(id),
+  selectedId: () => selection.type === "session" ? selection.id : null,
+  projectName, statusOf, showToast,
+  refresh: async () => { await fetchState(); },
+});
+
 function renderNavigation() {
+  sessionModelEditor.update();
   const query = ui.searchInput.value.trim().toLowerCase();
   const screens = screenGroups().filter((screen) => {
     if (!query) return true;
@@ -974,7 +1003,7 @@ function renderLayoutNode(node, screen) {
 function screenChatRenderKey(data, agent) {
   const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
   const last = blocks[blocks.length - 1];
-  const prompt = promptFor(agent);
+  const prompt = promptFor(agent, data);
   return JSON.stringify([
     getLanguage(),
     agent?.id,
@@ -984,7 +1013,9 @@ function screenChatRenderKey(data, agent) {
     data?.missing ? 1 : 0,
     data?.error ? 1 : 0,
     statusOf(agent),
-    prompt ? `${prompt.kind}:${prompt.text}:${prompt.options.length}` : "",
+    promptKey(agent, prompt, data),
+    data?.lifecycle,
+    promptResponses.get(agent?.id),
   ]);
 }
 
@@ -1048,7 +1079,7 @@ function renderScreenChat(container, data, agent) {
   }
 
   const chatStatus = statusOf(agent);
-  if (!data?.unsupported && chatStatus === "working" && data?.lifecycle !== "idle") {
+  if (!data?.unsupported && chatStatus === "working" && data?.lifecycle !== "idle" && !promptFor(agent, data)) {
     const thinking = make("div", "chat-thinking");
     const dots = make("span", "chat-thinking-dots");
     dots.append(make("i", ""), make("i", ""), make("i", ""));
@@ -1068,20 +1099,10 @@ function renderScreenChat(container, data, agent) {
     );
     fragment.appendChild(thinking);
   }
-  const prompt = promptFor(agent);
-  if (prompt && promptSignature(prompt) !== answeredPromptSig) {
-    const card = make("div", `chat-prompt ${prompt.kind}`);
-    card.appendChild(make("div", "chat-prompt-text", `${prompt.kind === "permission" ? "🔒 " : "❓ "}${prompt.text}`));
-    const options = make("div", "chat-prompt-options");
-    for (const option of prompt.options) {
-      const button = make("button", "chat-prompt-option", option.label);
-      button.type = "button";
-      button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option); });
-      options.appendChild(button);
-    }
-    card.appendChild(options);
-    fragment.appendChild(card);
-  }
+  const prompt = promptFor(agent, data);
+  if (prompt) {
+    fragment.appendChild(promptCard(agent, prompt, data, () => { selectSession(agent.id); setSessionViewMode("term"); }));
+  } else promptResponses.delete(agent.id);
 
   container.replaceChildren(fragment);
   if (nearBottom) requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
@@ -3355,21 +3376,21 @@ async function cancelSession(agentId) {
     // the transcript idle so the composer queue is usable before the next
     // state/chat refresh reaches this client.
     if (selection.type === "session" && selection.id === agentId && lastChatData) {
-      lastChatData = { ...lastChatData, lifecycle: "idle" };
+      lastChatData = { ...lastChatData, lifecycle: "idle", pendingQuestion: null };
       renderChat(lastChatData);
     }
     const storedChat = chatHistoryStore.get(agentId);
     if (storedChat?.data) {
       chatHistoryStore.set(agentId, {
         ...storedChat,
-        data: { ...storedChat.data, lifecycle: "idle" },
+        data: { ...storedChat.data, lifecycle: "idle", pendingQuestion: null },
       });
     }
     const cached = screenChatCache.get(agentId);
     if (cached) {
       screenChatCache.set(agentId, {
         ...cached,
-        data: { ...cached.data, lifecycle: "idle" },
+        data: { ...cached.data, lifecycle: "idle", pendingQuestion: null },
       });
     }
     showToast(t("작업을 취소하고 대기 상태로 전환했습니다."));
@@ -3497,7 +3518,7 @@ async function drainQueues() {
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
-      if (statusOf(agent) === "offline" || agentInitializing(agent) || agentBusy(agent) || !agentReady(agent)) continue;
+      if (statusOf(agent) === "offline" || agentInitializing(agent) || agentBusy(agent) || promptFor(agent) || !agentReady(agent)) continue;
       const lastSendAt = sessionLastSendAt.get(agentId) || 0;
       if (Date.now() - lastSendAt < QUEUE_COOLDOWN_MS) continue;
       sessionLastSendAt.set(agentId, Date.now());
@@ -4485,7 +4506,7 @@ function renderChat(data) {
   if (!data?.unsupported) {
     const agent = selectedAgent();
     const chatStatus = agent ? statusOf(agent) : "offline";
-    if (agent && chatStatus === "working" && data?.lifecycle !== "idle") {
+    if (agent && chatStatus === "working" && data?.lifecycle !== "idle" && !promptFor(agent, data)) {
       const think = make("div", "chat-thinking");
       const dots = make("span", "chat-thinking-dots");
       dots.append(make("i", ""), make("i", ""), make("i", ""));
@@ -4506,24 +4527,11 @@ function renderChat(data) {
       );
       frag.appendChild(think);
     }
-    // Inline prompt card (question / permission) — hidden once answered.
-    const prompt = agent ? promptFor(agent) : null;
-    if (prompt && promptSignature(prompt) !== answeredPromptSig) {
-      const card = make("div", `chat-prompt ${prompt.kind}`);
-      card.appendChild(make("div", "chat-prompt-text", `${prompt.kind === "permission" ? "🔒 " : "❓ "}${prompt.text}`));
-      const opts = make("div", "chat-prompt-options");
-      for (const option of prompt.options) {
-        const button = make("button", "chat-prompt-option", option.label);
-        button.type = "button";
-        button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option); });
-        opts.appendChild(button);
-      }
-      card.appendChild(opts);
-      frag.appendChild(card);
-    }
   }
+
   el.replaceChildren(frag);
   restoreChatScroll(chatScroll);
+  renderWaitingPrompt(selectedAgent(), data);
 }
 
 let lastChatKey = "";
@@ -4587,11 +4595,11 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
         : { ...data, blocks, missing: false };
       chatHistoryStore.set(agentId, { sessionId: data.sessionId || cached?.sessionId, data });
     } else if (data?.missing && previous.length) {
-      data = { ...cached.data, lifecycle: data.lifecycle ?? cached.data.lifecycle };
+      data = { ...cached.data, lifecycle: data.lifecycle ?? cached.data.lifecycle, pendingQuestion: data.pendingQuestion ?? null };
     }
     const last = blocks[blocks.length - 1];
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
-    const key = `${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
+    const key = `${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
     if (key === lastChatKey) return;
     lastChatKey = key;
     renderChat(data);
@@ -4643,12 +4651,13 @@ function syncSessionView() {
     // Re-render promptly when the busy state or the inline prompt changes, even
     // if the transcript itself didn't change this poll.
     const prompt = promptFor(agent);
-    const sig = `${getLanguage()}|${statusOf(agent)}|${prompt ? `${prompt.kind}:${prompt.options.length}:${prompt.text}` : ""}`;
+    const sig = `${getLanguage()}|${agent.id}|${statusOf(agent)}|${promptKey(agent, prompt)}`;
     if (sig !== lastChatStatusSig) {
       lastChatStatusSig = sig;
       if (lastChatData) renderChat(lastChatData);
     }
   }
+  renderWaitingPrompt(agent, chatAgent === agent?.id ? lastChatData : null);
   if (browser && agent) startRemoteBrowser(agent);
   else stopRemoteBrowser();
 }

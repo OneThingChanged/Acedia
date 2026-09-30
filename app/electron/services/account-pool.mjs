@@ -5,6 +5,7 @@ import http from 'node:http';
 import { randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { AccountPoolRpc } from './account-pool-rpc.mjs';
+import { readCodexModels } from '../shared/session-model.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -258,6 +259,19 @@ export class AccountPool {
   eligible(a) {
     return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
   }
+  async sessionModels(id, preferredAccountId = null) {
+    this.guard();
+    const owner = this.state.sessions[id]?.accountId;
+    const accountId = owner || preferredAccountId || this.state.accounts.find(a => this.eligible(a))?.id;
+    if (!accountId) throw fail('모델 목록을 확인할 분산 계정이 없습니다.', 503);
+    return this.exclusive(accountId, async () => {
+      const a = this.account(accountId);
+      if (!a.auth) throw fail('계정 로그인이 필요합니다.', 401);
+      const rpc = await this.connect(a);
+      try { return { models: await readCodexModels(rpc), accountLabel: a.label, accountKey: accountId }; }
+      finally { rpc.close(); this.capture(a); this.persist(); }
+    });
+  }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
     if (session.accountId) {
@@ -302,10 +316,11 @@ export class AccountPool {
     if (enabled) { if (!this.state.accounts.some(a => this.eligible(a))) throw fail('로그인 후 분산에 참여할 계정을 활성화하세요.'); await this.start(); }
     this.state.enabled = enabled; this.persist();
   }
-  async launch(id, preferredAccountId = null) {
+  async launch(id, preferredAccountId = null, preserveOwnerId = null) {
     this.guard();
     if (preferredAccountId != null && !validId(preferredAccountId)) throw fail('선택한 분산 계정이 올바르지 않습니다.');
     if (!this.state.enabled) {
+      if (preserveOwnerId) throw fail('분산 상태가 바뀌었습니다. 기존 계정으로 모델을 변경하지 못했습니다.', 409);
       if (this.recordAssignment(id, null)) this.persist();
       return null;
     }
@@ -313,7 +328,9 @@ export class AccountPool {
     await this.start();
     if (!Object.hasOwn(this.state.sessions, id)) this.state.sessions[id] = { accountId: null, lastUsed: this.now() };
     const session = this.state.sessions[id];
-    if (preferredAccountId) {
+    if (preserveOwnerId) {
+      if (session.accountId !== preserveOwnerId || !this.eligible(this.account(preserveOwnerId))) throw fail('모델 변경 중 세션 계정이 바뀌었습니다. 계정 상태를 확인하세요.', 409);
+    } else if (preferredAccountId) {
       const selected = this.account(preferredAccountId);
       if (!this.eligible(selected)) throw fail('선택한 분산 계정을 사용할 수 없습니다. 로그인·참여·한도를 확인하세요.', 503);
       session.accountId = selected.id;
@@ -326,7 +343,7 @@ export class AccountPool {
       this.recordAssignment(id, null);
     }
     const assigned = session.accountId;
-    if (assigned && !preferredAccountId) {
+    if (assigned && !preferredAccountId && !preserveOwnerId) {
       const previous = this.state.accounts.find(a => a.id === assigned);
       // Move exhausted assignments only at CLI restart, never mid-response.
       // Paused, removed and login-required accounts retain their ownership.

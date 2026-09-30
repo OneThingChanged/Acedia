@@ -5,6 +5,7 @@ import type {
   AgentStatus,
   AgentWorkStatus,
 } from "../types";
+import { isQuestionTool } from "./chatPrompt";
 
 export const AGENT_ACTIVITY_STALE_AFTER_MS = 30 * 60 * 1000;
 
@@ -111,7 +112,7 @@ function workStatusForHook(event: AgentHookEvent): AgentWorkStatus | null {
   if (
     eventName === "waiting" ||
     hookName === "permissionrequest" ||
-    toolName === "askuserquestion"
+    (isQuestionTool(toolName) && (eventName === "tool-start" || hookName === "pretooluse"))
   ) {
     return "waiting";
   }
@@ -168,7 +169,8 @@ export function applyAgentHookEvent(
     const toolInput = clean(event.tool_input, 4_000);
     const question = clean(
       event.interactive_question ||
-        (toolName?.toLowerCase() === "askuserquestion" ? toolInput : undefined)
+        (isQuestionTool(toolName) ? event.tool_input : undefined),
+      8_000
     );
     activity = {
       workStatus,
@@ -181,9 +183,11 @@ export function applyAgentHookEvent(
       lastPrompt: prompt || previous?.lastPrompt,
       toolName: toolName || previous?.toolName,
       toolInput: toolInput || previous?.toolInput,
-      interactiveQuestion: question || previous?.interactiveQuestion,
+      interactiveQuestion: workStatus === "waiting"
+        ? question || (previous?.workStatus === "waiting" ? previous.interactiveQuestion : undefined)
+        : undefined,
       lastAssistantMessage:
-        clean(event.assistant_message, 4_000) || previous?.lastAssistantMessage,
+        clean(event.assistant_message, 4_000) || (workStatus === "waiting" && previous?.workStatus !== "waiting" ? undefined : previous?.lastAssistantMessage),
     };
   } else if (providerSessionId || event.hook_event_name) {
     activity = {

@@ -161,15 +161,16 @@ try {
     if ($payload.hook_event_name) { $HookEventName = [string]$payload.hook_event_name }
     if ($payload.tool_name) { $toolName = [string]$payload.tool_name }
     if ($payload.tool_input) { $toolInput = ConvertTo-CompactText $payload.tool_input 4000 }
-    if ($payload.interactive_question) { $interactiveQuestion = ConvertTo-CompactText $payload.interactive_question 2000 }
-    elseif ($toolName -eq "AskUserQuestion" -and $toolInput) { $interactiveQuestion = $toolInput }
+    if ($payload.interactive_question) { $interactiveQuestion = ConvertTo-CompactText $payload.interactive_question 8000 }
+    elseif ($toolName -match '(?i)(^|[.:/])(AskUserQuestion|request_user_input)$' -and $payload.tool_input) { $interactiveQuestion = ConvertTo-CompactText $payload.tool_input 8000 }
     if ($payload.last_assistant_message) { $assistantMessage = ConvertTo-CompactText $payload.last_assistant_message 4000 }
     elseif ($payload.assistant_message) { $assistantMessage = ConvertTo-CompactText $payload.assistant_message 4000 }
     elseif ($payload.response) { $assistantMessage = ConvertTo-CompactText $payload.response 4000 }
   }
 } catch {}
 $effectiveEvent = $Event
-if ($toolName -eq "AskUserQuestion") { $effectiveEvent = "waiting" }
+if ($toolName -match '(?i)(^|[.:/])(AskUserQuestion|request_user_input)$' -and ($Event -eq "tool-start" -or $HookEventName -eq "PreToolUse")) { $effectiveEvent = "waiting" }
+if ($effectiveEvent -ne "waiting") { $interactiveQuestion = $null }
 $port = $env:MULTIAGENT_PORT
 $token = $env:MULTIAGENT_TOKEN
 if (-not $port -or -not $token) {
@@ -232,7 +233,8 @@ const hookEventName=process.argv[3]||input.hook_event_name||"";
 const toolName=input.tool_name?String(input.tool_name):"";
 const compact=(value,max)=>{if(value==null)return "";const text=typeof value==="string"?value:JSON.stringify(value);return text.slice(0,max)};
 const toolInput=compact(input.tool_input,4000);
-if(toolName.toLowerCase()==="askuserquestion")event="waiting";
+const questionTool=/(^|[.:/])(askuserquestion|request_user_input)$/i.test(toolName);
+if(questionTool&&(event==="tool-start"||hookEventName.toLowerCase()==="pretooluse"))event="waiting";
 const payload={id:process.env.MULTIAGENT_AGENT_ID||"",event,token:process.env.MULTIAGENT_TOKEN||""};
 if(input.session_id)payload.session_id=String(input.session_id);
 if(input.transcript_path)payload.transcript_path=String(input.transcript_path);
@@ -242,7 +244,7 @@ if(prompt)payload.prompt=String(prompt).slice(0,500);
 if(hookEventName)payload.hook_event_name=String(hookEventName).slice(0,200);
 if(toolName)payload.tool_name=toolName.slice(0,200);
 if(toolInput)payload.tool_input=toolInput;
-const question=compact(input.interactive_question,2000)||(toolName.toLowerCase()==="askuserquestion"?toolInput:"");
+const question=event==="waiting"?(compact(input.interactive_question,8000)||(questionTool?compact(input.tool_input,8000):"")):"";
 if(question)payload.interactive_question=question;
 const assistant=compact(input.last_assistant_message??input.assistant_message??input.response,4000);
 if(assistant)payload.assistant_message=assistant;
@@ -695,7 +697,7 @@ export class HookService {
         prompt: limitedString(payload.prompt, 500),
         tool_name: limitedString(payload.tool_name, 200),
         tool_input: limitedString(payload.tool_input, 4_000),
-        interactive_question: limitedString(payload.interactive_question, 2_000),
+        interactive_question: limitedString(payload.interactive_question, 8_000),
         assistant_message: limitedString(payload.assistant_message, 4_000),
       };
       if (event.id && event.event) {

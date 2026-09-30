@@ -347,6 +347,7 @@
             </div>
             <div class="session-head-actions">
               <button class="small-button session-rename-button" id="renameSessionButton" type="button">이름 변경</button>
+              <button class="small-button" id="sessionModelButton" type="button" hidden>모델 / effort</button>
               <div class="session-mode" id="sessionMode" role="tablist">
                 <button class="on" data-mode="chat" type="button" role="tab" aria-controls="chatView" aria-selected="true">💬 채팅</button>
                 <button data-mode="term" type="button" role="tab" aria-controls="outputPanel" aria-selected="false">⌗ 터미널</button>
@@ -404,6 +405,8 @@
                 <button class="browser-text-send" type="submit">입력</button>
               </form>
             </section>
+
+            <section id="chatPrompt" class="chat-prompt-host" role="status" aria-live="polite" hidden></section>
 
             <form class="composer" id="composerForm">
               <div class="composer-queue" id="composerQueue" hidden></div>
@@ -480,6 +483,30 @@
       </form>
     </div>
 
+    <div class="document-context-menu" id="sessionContextMenu" role="menu" aria-label="세션 설정" hidden>
+      <button type="button" role="menuitem">모델 / effort 변경</button>
+    </div>
+    <div class="session-editor-overlay" id="sessionModelOverlay" role="dialog" aria-modal="true" aria-labelledby="sessionModelTitle" hidden>
+      <form class="session-editor-dialog" id="sessionModelForm">
+        <header>
+          <div><span class="panel-kicker" id="sessionModelProvider">CODEX</span><h2 id="sessionModelTitle">모델 / effort 변경</h2></div>
+          <button class="icon-button" id="sessionModelClose" type="button" aria-label="닫기">×</button>
+        </header>
+        <strong id="sessionModelTarget"></strong>
+        <div class="session-model-summary"><span id="sessionModelCurrent"></span><span id="sessionModelSaved"></span></div>
+        <p class="session-model-note" id="sessionModelCatalogNote" hidden>Claude 목록은 설치된 CLI의 모델 별칭입니다. 계정 접근 권한과 모델별 effort 지원은 실행 시 Claude CLI가 확인합니다.</p>
+        <label class="session-editor-field"><span>모델</span><select id="sessionModelSelect" disabled></select></label>
+        <label class="session-editor-field"><span>Reasoning effort</span><select id="sessionEffortSelect" disabled></select><small id="sessionEffortHint"></small></label>
+        <p class="session-model-note">설정은 이 세션에만 저장합니다. 재시작하면 같은 대화를 이어갑니다. 작업 중에는 다음 시작에 적용할 설정을 저장하세요.</p>
+        <p class="session-editor-message" id="sessionModelMessage" role="status" hidden></p>
+        <button class="small-button" id="sessionModelRetry" type="button" hidden>다시 불러오기</button>
+        <footer>
+          <button class="small-button" id="sessionModelCancel" type="button">취소</button>
+          <button class="small-button" id="sessionModelSave" type="submit" disabled>저장 (다음 시작)</button>
+          <button class="send-button" id="sessionModelRestart" type="button" disabled>저장 후 재시작</button>
+        </footer>
+      </form>
+    </div>
     <div class="document-context-menu" id="documentContextMenu" role="menu" aria-label="문서 작업" hidden>
       <button type="button" role="menuitem" data-document-action="path">경로 보기</button>
       <button type="button" role="menuitem" data-document-action="copy-relative">상대 경로 복사</button>

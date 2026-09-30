@@ -152,6 +152,14 @@ describe("buildSpawnArgs resume recovery", () => {
     status: "idle",
     createdAt: 1,
   } as Agent;
+  it.each(["codex", "claude"])("requires the exact existing %s conversation for a model restart", async aiToolId => {
+    invokeMock.mockResolvedValue("saved");
+    const result = await buildSpawnArgs({ ...agent, aiToolId }, null, vi.fn(), { resumeSessionId: "saved" });
+    expect(result.initCommand).toContain(aiToolId === "claude" ? "--resume saved" : "resume saved");
+    expect(invokeMock).toHaveBeenLastCalledWith("resolve_cli_session", expect.objectContaining({ strictExact: true, preferredSessionId: "saved" }));
+    invokeMock.mockResolvedValue(null);
+    await expect(buildSpawnArgs({ ...agent, aiToolId }, null, vi.fn(), { resumeSessionId: "saved" })).rejects.toThrow("conversation is unavailable");
+  });
   it("requires the exact suspended conversation even for the existing login", async () => {
     const suspended = {...agent,idleResumeSessionId:"saved",lastSessionId:"saved"};
     invokeMock.mockResolvedValue("saved");

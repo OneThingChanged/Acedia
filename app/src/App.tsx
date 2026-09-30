@@ -2,6 +2,7 @@ import { markIdleSuspended } from './lib/idleSessions';
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
+import { normalizeSessionModel, sessionModelArgs, type SessionModel } from "../electron/shared/session-model.mjs";
 import { switchProviderAccount } from "./lib/codexAccounts";
 import { makeAccountHandoff } from "./lib/accountHandoff";
 import { accountBindingChanged, applyRemovedAccounts, clearAccountPins, removedAccounts, resetRemovedAccount, type RemovedAccounts } from "./lib/removedAccounts";
@@ -309,6 +310,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     idleResumeSessionId: agent.idleResumeSessionId,
     shellCommand: agent.aiToolId === "none" ? agent.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(agent.launchOptions),
+    modelSettings: normalizeSessionModel(agent.modelSettings),
     pinned: agent.pinned || undefined,
     tabColor: agent.tabColor || undefined,
     createdAt: agent.createdAt,
@@ -450,6 +452,7 @@ function agentFromStored(
     idleResumeSessionId: stored.idleResumeSessionId,
     shellCommand: aiToolId === "none" ? stored.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(stored.launchOptions),
+    modelSettings: normalizeSessionModel(stored.modelSettings),
     pinned: stored.pinned || undefined,
     tabColor: stored.tabColor || undefined,
     createdAt: stored.createdAt || existing?.createdAt || Date.now(),
@@ -459,6 +462,7 @@ function agentFromStored(
       stored.lastResumeToken ??
       ((stored.codexAccountId || "default") === (existing?.codexAccountId || "default") && (stored.claudeAccountId || "default") === (existing?.claudeAccountId || "default") ? existing?.lastSessionId : undefined),
     status: existing?.status ?? "idle",
+    terminalEpoch: existing?.terminalEpoch,
     runtimeStatus: existing?.runtimeStatus ?? "idle",
     deferredStart: existing?.deferredStart ?? (existing ? undefined : true),
     resumeEligible: typeof stored.resumeEligible === "boolean"
@@ -1161,6 +1165,8 @@ function App() {
         status: a.status,
         aiToolId: a.aiToolId,
         dangerous: a.dangerous,
+        modelSettings: a.modelSettings,
+        sshHostId: a.sshHostId,
       })),
       availableTools: AI_TOOLS.filter(
         (tool) => tool.id === "none" || !disabledTools.includes(tool.id)
@@ -1242,6 +1248,10 @@ function App() {
         status: a.status,
         lastSessionId: a.lastSessionId ?? null,
         sshHostId: a.sshHostId ?? null,
+        modelSettings: a.modelSettings,
+        codexAccountId: a.codexAccountId,
+        codexPoolAccountId: a.codexPoolAccountId,
+        claudeAccountId: a.claudeAccountId,
       })),
       availableTools: AI_TOOLS.filter(
         (tool) => tool.id === "none" || !disabledTools.includes(tool.id)
@@ -3528,7 +3538,7 @@ function App() {
   const spawnAgentInBackground = useCallback(
     async (
       agentId: string,
-      options: { recovering?: boolean; verifyActive?: boolean } = {}
+      options: { recovering?: boolean; verifyActive?: boolean; resumeSessionId?: string; poolResumeOwnerId?: string } = {}
     ) => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) {
@@ -3604,7 +3614,8 @@ function App() {
           const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
-            setAgentSessionId
+            setAgentSessionId,
+            { resumeSessionId: options.resumeSessionId }
           );
           return invoke<SpawnTerminalResult>("spawn_pty", {
             id: agentId,
@@ -3612,6 +3623,8 @@ function App() {
             cwd,
             initCommand,
             launchOptions,
+            modelSettings: agent.modelSettings,
+            poolResumeOwnerId: options.poolResumeOwnerId,
             initialPrompt,
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
@@ -3779,6 +3792,55 @@ function App() {
       renameAgent(id, name);
     }).then(track);
 
+    listen<{ requestId: string; id: string; settings: SessionModel | null; restart: boolean }>("remote:session-model", (event) => {
+      if (cancelled) return;
+      const payload = event.payload;
+      const complete = (result: { ok: boolean; restarted?: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 }) => invoke("complete_remote_session_model", {
+        requestId: payload.requestId, id: payload.id, ...result,
+      }).catch(() => false);
+      void (async () => {
+        const agent = agentsRef.current.find(item => item.id === payload.id);
+        if (!agent) return complete({ ok: false, error: "세션을 찾을 수 없습니다.", statusCode: 404 });
+        if (!["codex", "claude"].includes(agent.aiToolId) || agent.sshHostId || detachedAgentIdsRef.current.has(agent.id)) {
+          return complete({ ok: false, error: "현재 작업창의 로컬 Codex 또는 Claude 세션을 선택하세요.", statusCode: 409 });
+        }
+        const settings = normalizeSessionModel(payload.settings);
+        if (payload.settings && !settings) throw new Error("Invalid model settings.");
+        sessionModelArgs(settings, agent.launchOptions, agent.aiToolId);
+        // Acknowledge only after the durable workspace snapshot includes this change.
+        const next = agentsRef.current.map(item => item.id === agent.id ? { ...item, modelSettings: settings } : item);
+        const stored = mergeStoredByIdForWrite(next.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
+        const json = JSON.stringify(stored);
+        localStorage.setItem(LS_AGENTS, json);
+        storedAgentsJsonRef.current = json;
+        agentsRef.current = agentsRef.current.map(item => item.id === agent.id ? { ...item, modelSettings: settings } : item);
+        setAgents(agentsRef.current);
+        await persistStorageSnapshot(true);
+        if (!payload.restart) return complete({ ok: true });
+        try {
+          const group = groupsRef.current.find(item => collectAgentIds(item.layout).has(agent.id));
+          const restart = await invoke("restart_session_model", { id: agent.id, expectedSessionId: group?.sessionPins?.[agent.id] });
+          clearAgentStartupReadyTimer(agent.id);
+          const entry = termsRef.current.get(agent.id);
+          if (entry) {
+            try { saveScrollback(agent.id, entry.serialize.serialize({ scrollback: 1000 })); } catch {}
+            entry.term.dispose(); termsRef.current.delete(agent.id);
+          }
+          agentsRef.current = agentsRef.current.map(item => item.id === agent.id ? { ...item,
+            lastSessionId: restart.sessionId || item.lastSessionId, deferredStart: false,
+            terminalEpoch: (item.terminalEpoch || 0) + 1 } : item);
+          setAgents(agentsRef.current);
+          const result = await spawnAgentInBackground(agent.id, { recovering: true,
+            resumeSessionId: restart.sessionId || undefined, poolResumeOwnerId: restart.poolResumeOwnerId });
+          if (!result.ok) throw new Error(result.error);
+          return complete({ ok: true, restarted: true });
+        } catch (error) {
+          return complete({ ok: false, statusCode: 409, error: `설정은 저장되었습니다. 재시작하지 못했습니다: ${String(error)}`.slice(0, 1000) });
+        }
+      })().catch(error => complete({ ok: false, error: String(error).slice(0, 1000), statusCode: 500 }));
+    }).then(track);
+
     return () => {
       cancelled = true;
       for (const unlisten of unlisteners) unlisten();
@@ -3790,6 +3852,7 @@ function App() {
     remoteEnabled,
     renameAgent,
     spawnAgentInBackground,
+    clearAgentStartupReadyTimer,
     text,
   ]);
 
