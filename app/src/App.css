@@ -1829,17 +1829,6 @@ body,
   font-size: 11px;
 }
 
-/* "Active only" filter toggle: dim dot when off, green-accent when on. */
-.active-only-btn {
-  font-size: 9px;
-  color: var(--app-muted);
-}
-.active-only-btn.active-only-on {
-  color: #3fb950;
-  border-color: #3fb950;
-  background: var(--app-active-bg);
-}
-
 .sidebar-section-title-list {
   list-style: none;
 }
@@ -2234,6 +2223,59 @@ body,
 }
 .sidebar-search-clear:hover {
   color: var(--app-text);
+}
+
+.sidebar-session-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 10px 8px;
+}
+
+.sidebar-session-filter {
+  flex: 1 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-button-bg);
+  color: var(--app-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sidebar-session-filter-label {
+  white-space: nowrap;
+}
+
+.sidebar-session-filter-count {
+  color: var(--app-soft-text);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-session-filter:hover {
+  background: var(--app-button-hover);
+}
+
+.sidebar-session-filter[aria-pressed="true"] {
+  background: var(--app-active-bg);
+  border-color: var(--app-accent);
+  color: var(--app-heading);
+  font-weight: 600;
+}
+
+.sidebar-session-filter[aria-pressed="true"] .sidebar-session-filter-count {
+  color: var(--app-text);
+}
+
+.sidebar-session-filter:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 
 .screen-groups {
@@ -2796,7 +2838,8 @@ body,
 .status-idle {
   background: var(--app-soft-text);
 }
-.status-standby {
+.status-standby,
+.status-sleeping {
   background: #58a6ff;
 }
 .session-standby {

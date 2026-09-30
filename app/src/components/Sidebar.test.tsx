@@ -77,27 +77,105 @@ function stubSidebarState(values: Record<string, string>) {
 }
 
 describe("Sidebar", () => {
-  it("keeps dormant restored sessions visible with a blue standby marker in active-only mode", () => {
-    stubSidebarState({ "multiagent.activeOnly.v1": "1" });
-    const html = renderSidebar(
-      [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }],
-      [{ ...agent("dormant", "p"), deferredStart: true, resumeEligible: true }],
-    );
+  it("classifies restored blue sessions as Sleeping and excludes them from Active", () => {
+    const projects = [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }];
+    const sleeping = [{ ...agent("dormant", "p"), deferredStart: true, resumeEligible: true }];
+    stubSidebarState({ "multiagent.sessionFilter.v1": "sleeping" });
+    const html = renderSidebar(projects, sleeping);
     expect(html).toContain("DORMANT");
-    expect(html).toContain("status-standby");
-    expect(html).not.toContain("status-running");
+    expect(html).toContain("status-sleeping");
+    expect(html).toContain('title="Sleeping · 클릭하면 시작"');
+    expect(html).toContain('data-session-filter="sleeping" aria-pressed="true"');
+    stubSidebarState({ "multiagent.sessionFilter.v1": "active" });
+    expect(renderSidebar(projects, sleeping)).not.toContain("DORMANT");
   });
 
-  it("hides never-started and deactivated sessions from active-only without blue markers", () => {
+  it("shows never-started and deactivated sessions only in All without blue markers", () => {
     const projects = [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }];
     const inactive = { ...agent("never-started", "p"), deferredStart: true, resumeEligible: false };
     stubSidebarState({ "multiagent.activeOnly.v1": "1" });
+    expect(renderSidebar(projects, [inactive])).not.toContain("NEVER-STARTED");
+    stubSidebarState({ "multiagent.sessionFilter.v1": "sleeping" });
     expect(renderSidebar(projects, [inactive])).not.toContain("NEVER-STARTED");
     stubSidebarState({ "multiagent.activeOnly.v1": "0" });
     const html = renderSidebar(projects, [inactive]);
     expect(html).toContain("NEVER-STARTED");
     expect(html).toContain("status-idle");
-    expect(html).not.toContain("status-standby");
+    expect(html).not.toContain("status-sleeping");
+  });
+
+  it("keeps starting, recovering and live work states in Active, including questions", () => {
+    const projects = [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }];
+    const active: Agent[] = ["starting", "recovering", "running", "working", "waiting", "blocked"].map((status) => ({
+      ...agent(status, "p"), status: status as Agent["status"],
+    }));
+    const inactive: Agent[] = ["idle", "exited", "unreachable"].map((status) => ({
+      ...agent(status, "p"), status: status as Agent["status"], resumeEligible: true,
+    }));
+    stubSidebarState({ "multiagent.sessionFilter.v1": "active" });
+    const html = renderSidebar(projects, [...active, ...inactive]);
+    for (const entry of active) expect(html).toContain(entry.name);
+    for (const entry of inactive) expect(html).not.toContain(`>${entry.name}<`);
+    expect(html).not.toContain("status-sleeping");
+  });
+
+  it("uses the saved Sleeping filter ahead of the old active-only preference", () => {
+    stubSidebarState({ "multiagent.sessionFilter.v1": "sleeping", "multiagent.activeOnly.v1": "1" });
+    const html = renderSidebar(
+      [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }],
+      [
+        { ...agent("awake", "p"), status: "running" },
+        { ...agent("suspended", "p"), deferredStart: true, resumeEligible: true, idleResumeSessionId: "original" },
+      ],
+    );
+    expect(html).toContain("SUSPENDED");
+    expect(html).not.toContain("AWAKE");
+    expect(html).toContain("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원");
+    const counts = [...html.matchAll(/sidebar-session-filter-count">(\d+)/g)].map(([, count]) => Number(count));
+    expect(counts).toEqual([2, 1, 1]);
+  });
+
+  it("migrates the old active-only preference when the new value is absent or invalid", () => {
+    const projects = [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }];
+    for (const saved of [undefined, "invalid"]) {
+      stubSidebarState({ "multiagent.activeOnly.v1": "1", ...(saved ? { "multiagent.sessionFilter.v1": saved } : {}) });
+      const html = renderSidebar(projects, [{ ...agent("awake", "p"), status: "running" }]);
+      expect(html).toContain("AWAKE");
+      expect(html).toContain('data-session-filter="active" aria-pressed="true"');
+    }
+  });
+
+  it("hides projects and virtual folders without sessions in the selected state", () => {
+    stubSidebarState({ "multiagent.sessionFilter.v1": "sleeping" });
+    const html = renderSidebar(
+      [
+        { id: "awake-p", name: "Awake project", folder: "C:/awake", createdAt: 1, projectFolderId: "awake-f" },
+        { id: "sleep-p", name: "Sleeping project", folder: "C:/sleep", createdAt: 1, projectFolderId: "sleep-f" },
+      ],
+      [
+        { ...agent("awake", "awake-p"), status: "running" },
+        { ...agent("dormant", "sleep-p"), deferredStart: true, resumeEligible: true },
+      ], [], null,
+      { projectFolders: [
+        { id: "awake-f", name: "Awake folder", machineKey: "local", createdAt: 1 },
+        { id: "sleep-f", name: "Sleeping folder", machineKey: "local", createdAt: 1 },
+      ] },
+    );
+    expect(html).toContain("Sleeping folder");
+    expect(html).toContain("Sleeping project");
+    expect(html).not.toContain("Awake folder");
+    expect(html).not.toContain("Awake project");
+  });
+
+  it("offers a way back to All when there are no Sleeping sessions", () => {
+    stubSidebarState({ "multiagent.sessionFilter.v1": "sleeping" });
+    const html = renderSidebar(
+      [{ id: "p", name: "Project", folder: "C:/p", createdAt: 1 }],
+      [{ ...agent("awake", "p"), status: "running" }],
+    );
+    expect(html).toContain("Sleeping 세션 없음");
+    expect(html).toContain("필터 초기화 · 전체 보기");
+    expect(html).not.toContain("project-node");
   });
 
   afterEach(() => vi.unstubAllGlobals());

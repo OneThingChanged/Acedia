@@ -66,15 +66,19 @@ does not change the provider's start or resume lifecycle.
 
 On a cold desktop start, saved sessions and the previous Screen layout return
 without allocating xterm instances or PTYs. Restored sessions show a steady
-blue standby marker only when previously activated or already in standby.
+blue Sleeping marker only when previously activated or already in standby.
 Never-started and explicitly deactivated sessions remain gray/inactive, with
 terminal allocation still deferred. A persisted eligibility flag preserves
 standby through repeated restarts independently of the live-process journal;
 explicit deactivation clears it. Legacy records use the remembered running IDs
 only when the flag is absent. Clicking a session, tab, or its pane
 starts only that session through the normal provider-resume path. Other panes
-in the same split remain dormant. Standby sessions remain visible under the
-sidebar's active-only filter but are not reported as running processes.[^app-shell][^pane-slot]
+in the same split remain dormant. The sidebar's All / Active / Sleeping filters
+separate these dormant sessions from live processes: Sleeping entries appear
+in All or Sleeping, while Active includes starting, recovering, and running
+sessions regardless of their work or question state. Search stays within the
+chosen status. See [workspace interactions](workspace-interactions.md) for
+filter persistence and visibility.[^app-shell][^pane-slot]
 
 Returning from the tray reattaches only IDs confirmed live by the main process;
 having one live PTY does not activate the remaining dormant sessions. Explicit

@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.37 EXE release](release-1-8-1-37.md) - Separate blue Sleeping sessions from Active with saved sidebar filters, counts and search.
+
 * [Acedia 1.8.1.35 EXE release](release-1-8-1-35.md) - Download original Markdown/HTML/JSON, images and videos from Remote previews, Documents headers and document actions.
 
 * [Acedia 1.8.1.34 EXE release](release-1-8-1-34.md) - Change Codex/Claude session model and effort from Remote; keep waiting questions visible in desktop and Remote chat.

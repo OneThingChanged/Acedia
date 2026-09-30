@@ -73,8 +73,20 @@ sources:
 ## Navigation and visibility
 
 The left sidebar organizes project folders, projects, configured sessions, and
-Screens. Search, active-only filtering, and folder/project collapse change what
-is visible; they do not delete or activate sessions.[^sidebar]
+Screens. The session filters below search offer **All / Active / Sleeping**, with
+counts of all configured sessions in each category. Active includes running,
+starting, recovering, working, and question/permission-waiting sessions.
+Sleeping means the steady blue, deferred session that can start or resume when
+selected; it has no active process. Never-started, explicitly deactivated,
+exited, and unreachable entries remain available in All.[^sidebar]
+
+Search by project, folder, session, or path stays within the chosen status.
+Projects, virtual folders, and machines with no matching sessions are hidden
+under Active or Sleeping. An empty result offers a reset to All and clears the
+search. The selected status survives reopening the app; the previous active-only
+preference migrates to Active. Screen shortcuts remain available above the
+project tree. Filtering and folder/project collapse change visibility without
+deleting or activating sessions.[^sidebar]
 
 A fixed Browser Hub entry sits above the project tree and reports the global
 browser count. Opening it preserves the active Screen layout but replaces the
@@ -90,14 +102,14 @@ creation can create an initial session using the tool and dangerous-mode choice
 made in the creation flow.[^app-shell]
 
 After a full restart, saved Screen layouts appear without starting processes.
-Only previously activated or already-standby sessions have a steady blue dot;
+Only previously activated or already-standby sessions have a steady blue Sleeping dot;
 never-started and explicitly deactivated sessions remain gray/inactive.
 Standby eligibility is persisted separately from the allocation guard, so an
 unclicked standby session stays blue through repeated restarts. Explicit
 deactivation clears that eligibility. Selecting a session, tab, or pane
 starts only that session; merely displaying other panes in a split does not
-start their processes. Standby entries stay visible under the active-only
-sidebar filter. Returning from the tray reconnects sessions confirmed live by
+start their processes. Sleeping entries appear under All or Sleeping and are
+excluded from Active. Returning from the tray reconnects sessions confirmed live by
 the host and keeps the others dormant.[^app-shell][^pane-slot][^sidebar]
 
 New Codex sessions and existing Luna presets resolve to `gpt-6-luna` with `max`

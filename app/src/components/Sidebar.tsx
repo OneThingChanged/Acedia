@@ -20,6 +20,7 @@ import type {
 } from "../types";
 import { collectAgentIdsInOrder } from "../lib/layout";
 import { isAgentRuntimeActive } from "../lib/agentActivity";
+import { isStandbySession } from "../lib/sessionStandby";
 import { loadSshHosts, sshHostSummary } from "../lib/sshHosts";
 import { useAppLanguage } from "../lib/appLanguage";
 
@@ -28,6 +29,8 @@ const LS_COLLAPSED_MACHINES = "multiagent.collapsedMachines.v1";
 const LS_COLLAPSED_PROJECT_FOLDERS =
   "multiagent.collapsedProjectFolders.v1";
 const LS_ACTIVE_ONLY = "multiagent.activeOnly.v1";
+const LS_SESSION_FILTER = "multiagent.sessionFilter.v1";
+type SessionFilter = "all" | "active" | "sleeping";
 
 const SCREEN_COLORS = [
   "#58a6ff",
@@ -38,12 +41,20 @@ const SCREEN_COLORS = [
   "#4f9cf9",
 ];
 
-function loadActiveOnly(): boolean {
+function loadSessionFilter(): SessionFilter {
   try {
-    return localStorage.getItem(LS_ACTIVE_ONLY) === "1";
+    const saved = localStorage.getItem(LS_SESSION_FILTER);
+    if (saved === "all" || saved === "active" || saved === "sleeping") return saved;
+    return localStorage.getItem(LS_ACTIVE_ONLY) === "1" ? "active" : "all";
   } catch {
-    return false;
+    return "all";
   }
+}
+
+function matchesSessionFilter(agent: Agent, filter: SessionFilter): boolean {
+  if (filter === "all") return true;
+  const sleeping = isStandbySession(agent);
+  return filter === "sleeping" ? sleeping : !sleeping && isAgentRuntimeActive(agent);
 }
 
 type MachineGroup = {
@@ -284,13 +295,21 @@ export function Sidebar({
     });
   };
 
-  // "Active only" filter: show just running sessions and their projects.
-  const [activeOnly, setActiveOnly] = useState<boolean>(() => loadActiveOnly());
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>(loadSessionFilter);
   useEffect(() => {
     try {
-      localStorage.setItem(LS_ACTIVE_ONLY, activeOnly ? "1" : "0");
+      localStorage.setItem(LS_SESSION_FILTER, sessionFilter);
     } catch {}
-  }, [activeOnly]);
+  }, [sessionFilter]);
+
+  const sessionFilterCounts = useMemo(() => {
+    const counts = { all: agents.length, active: 0, sleeping: 0 };
+    for (const agent of agents) {
+      if (matchesSessionFilter(agent, "sleeping")) counts.sleeping += 1;
+      else if (matchesSessionFilter(agent, "active")) counts.active += 1;
+    }
+    return counts;
+  }, [agents]);
 
   const projectSessionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -411,9 +430,8 @@ export function Sidebar({
 
   const searchTerm = normalizeSessionSearch(searchQuery);
 
-  // Filter sections by search (project-name match shows all its sessions,
-  // otherwise only matching session names) and, when "active only" is on, by
-  // live status. Returns null to hide the whole project.
+  // Search and status filters intersect. Project/folder matches include only
+  // sessions in the selected status. Returns null to hide the whole project.
   const filterSections = (
     projectId: string,
     projectName: string,
@@ -435,14 +453,11 @@ export function Sidebar({
         }))
         .filter((s) => s.members.length > 0);
     }
-    // "Active only" hides inactive sessions, but a search should reach them too:
-    // while searching, skip the active-status filter so deactivated/exited
-    // sessions matching the query still show up.
-    if (activeOnly && !searchTerm) {
+    if (sessionFilter !== "all") {
       result = result
         .map((s) => ({
           ...s,
-          members: s.members.filter((agent) => (agent.deferredStart && agent.resumeEligible) || isAgentRuntimeActive(agent)),
+          members: s.members.filter((agent) => matchesSessionFilter(agent, sessionFilter)),
         }))
         .filter((s) => s.members.length > 0);
       return result.length > 0 ? result : null;
@@ -599,6 +614,12 @@ export function Sidebar({
     const isDragging = dragState?.fromAgentId === a.id;
     const isActiveGroup = groupId === activeGroupId;
     const screen = screenByAgentId.get(a.id);
+    const sleeping = isStandbySession(a);
+    const statusTitle = sleeping
+      ? a.idleResumeSessionId
+        ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
+        : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
+      : text(a.status, a.status);
     return (
       <li
         key={a.id}
@@ -646,8 +667,12 @@ export function Sidebar({
         }}
       >
         <div className="agent-row-top">
-          <span className={`status status-${a.deferredStart && a.resumeEligible ? "standby" : a.status}`}
-            title={a.deferredStart && a.resumeEligible ? a.idleResumeSessionId ? text("유휴 자동 중지 · 클릭하면 원래 대화 복원", "Suspended while idle · click to resume the original conversation") : text("대기 · 클릭하면 시작", "Standby · click to start") : undefined} />
+          <span
+            className={`status status-${sleeping ? "sleeping" : a.status}`}
+            title={statusTitle}
+            role="img"
+            aria-label={sleeping ? text("Sleeping", "Sleeping") : text(a.status, a.status)}
+          />
           <span
             className="agent-tool-icon"
             style={{ color: toolForId(a.aiToolId).iconColor }}
@@ -945,9 +970,9 @@ export function Sidebar({
           ) !== null
       );
       if (
-        (searchTerm || activeOnly) &&
+        (searchTerm || sessionFilter !== "all") &&
         visibleProjects.length === 0 &&
-        !folderMatchesSearch
+        (sessionFilter !== "all" || !folderMatchesSearch)
       ) {
         return null;
       }
@@ -1102,7 +1127,7 @@ export function Sidebar({
               </span>
               <span className="project-folder-name">{bucket.name}</span>
               <span className="project-folder-count">
-                {bucket.projects.length}
+                {visibleProjects.length}
               </span>
             </button>
           </div>
@@ -1127,6 +1152,15 @@ export function Sidebar({
     });
   };
 
+  const hasVisibleTreeEntries =
+    projects.some((project) => {
+      const folder = projectFolders.find((entry) => entry.id === project.projectFolderId);
+      const folderMatches = !!folder && searchTerm.length > 0 && folder.name.toLowerCase().includes(searchTerm);
+      return filterSections(project.id, project.name, folderMatches) !== null;
+    }) ||
+    (sessionFilter === "all" && searchTerm.length > 0 &&
+      projectFolders.some((folder) => folder.name.toLowerCase().includes(searchTerm)));
+
   return (
     <aside className="sidebar">
       <div className="project-tree">
@@ -1149,16 +1183,6 @@ export function Sidebar({
             {sessionPickerMode ? text("Projects · 세션 선택", "Projects · Select session") : "Projects"}
           </div>
           <button
-            className={`section-action-btn active-only-btn ${
-              activeOnly ? "active-only-on" : ""
-            }`}
-            onClick={() => setActiveOnly((v) => !v)}
-            title={activeOnly ? text("전체 세션 보기", "Show all sessions") : text("활성 세션만 보기", "Show active sessions only")}
-            aria-pressed={activeOnly}
-          >
-            ●
-          </button>
-          <button
             className="section-action-btn project-folder-create-btn"
             onClick={() => onNewProjectFolder("local")}
             title={text("새 프로젝트 폴더", "New project folder")}
@@ -1179,6 +1203,7 @@ export function Sidebar({
             className="sidebar-search-input"
             value={searchQuery}
             placeholder={text("프로젝트 · 세션 · 경로 검색", "Search projects, sessions and paths")}
+            aria-label={text("프로젝트 · 세션 · 경로 검색", "Search projects, sessions and paths")}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           {searchQuery && (
@@ -1186,10 +1211,31 @@ export function Sidebar({
               className="sidebar-search-clear"
               onClick={() => setSearchQuery("")}
               title="Clear"
+              aria-label={text("검색 지우기", "Clear search")}
             >
               ×
             </button>
           )}
+        </div>
+        <div className="sidebar-session-filters" role="group" aria-label={text("세션 상태 필터", "Session status filter")}>
+          {([
+            { value: "all", label: text("전체", "All"), title: text("전체 세션 보기", "Show all sessions") },
+            { value: "active", label: text("Active", "Active"), title: text("활성 세션만 보기", "Show active sessions only") },
+            { value: "sleeping", label: text("Sleeping", "Sleeping"), title: text("휴면 세션만 보기", "Show sleeping sessions only") },
+          ] as const).map(({ value, label, title }) => (
+            <button
+              key={value}
+              type="button"
+              className="sidebar-session-filter"
+              data-session-filter={value}
+              aria-pressed={sessionFilter === value}
+              title={title}
+              onClick={() => setSessionFilter(value)}
+            >
+              <span className="sidebar-session-filter-label">{label}</span>
+              <span className="sidebar-session-filter-count">{sessionFilterCounts[value]}</span>
+            </button>
+          ))}
         </div>
         {screens.length > 0 && (
           <section className="screen-groups" aria-label="Split screens">
@@ -1262,13 +1308,14 @@ export function Sidebar({
               );
               const emptyFolderMatches = machineFolders.some(
                 (folder) =>
+                  sessionFilter === "all" &&
                   searchTerm.length > 0 &&
                   folder.name.toLowerCase().includes(searchTerm)
               );
               if (
                 visible.length === 0 &&
                 !emptyFolderMatches &&
-                (searchTerm.length > 0 || activeOnly || machineFolders.length === 0)
+                (searchTerm.length > 0 || sessionFilter !== "all" || machineFolders.length === 0)
               ) {
                 return null;
               }
@@ -1327,19 +1374,19 @@ export function Sidebar({
           <div className="empty-hint">Click + to add a project</div>
         )}
         {projects.length > 0 &&
-          activeOnly &&
-          !projects.some((p) => filterSections(p.id, p.name) !== null) && (
+          !hasVisibleTreeEntries && (
             <button
               type="button"
               className="empty-hint empty-hint-action"
-              onClick={() => setActiveOnly(false)}
+              onClick={() => { setSessionFilter("all"); setSearchQuery(""); }}
               title={text("전체 세션 보기로 전환", "Switch to all sessions")}
             >
-              {text(
-                `활성 세션 없음 · 숨겨진 프로젝트 ${projects.length}개`,
-                `No active sessions · ${projects.length} hidden project${projects.length === 1 ? "" : "s"}`,
-              )}
-              <span className="empty-hint-cta">{text("클릭해서 전체 보기", "Click to show all")}</span>
+              {searchTerm
+                ? text("선택한 필터에서 검색 결과 없음", "No results match this search and filter")
+                : sessionFilter === "sleeping"
+                  ? text("Sleeping 세션 없음", "No sleeping sessions")
+                  : text("Active 세션 없음", "No active sessions")}
+              <span className="empty-hint-cta">{text("필터 초기화 · 전체 보기", "Clear filters · show all")}</span>
             </button>
           )}
       </div>
