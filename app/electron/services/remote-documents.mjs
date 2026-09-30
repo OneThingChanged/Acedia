@@ -329,6 +329,28 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
   };
 }
 
+async function sendRemoteDocumentDownload(request, response, ...args) {
+  const { resolved, stats } = await resolveRemoteProjectFile(...args);
+  const extension = path.extname(resolved).toLowerCase();
+  if (!REMOTE_DOCUMENT_EXTENSIONS.has(extension) && !REMOTE_IMAGE_EXTENSIONS.has(extension) && extension !== ".json") {
+    throw new RemoteDocumentError(415, "지원하지 않는 다운로드 형식입니다.");
+  }
+  const name = path.basename(resolved);
+  const fallbackName = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  const encodedName = encodeURIComponent(name).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  response.writeHead(200, {
+    "content-type": "application/octet-stream",
+    "content-length": stats.size,
+    "content-disposition": `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`,
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; sandbox",
+    "cross-origin-resource-policy": "same-origin",
+    "x-content-type-options": "nosniff",
+  });
+  if (request.method === "HEAD" || !stats.size) response.end();
+  else await pipeline(fs.createReadStream(resolved), response);
+}
+
 async function sendRemoteImage(response, snapshot, projectId, requestedPath, agentId = null) {
   const { resolved, stats } = await resolveRemoteProjectFile(snapshot, projectId, requestedPath, agentId);
   const contentType = REMOTE_IMAGE_EXTENSIONS.get(path.extname(resolved).toLowerCase());
@@ -681,13 +703,13 @@ function sendRemoteDocumentError(response, error) {
 }
 
 
-const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/preview", "/api/docs/path", "/api/docs/file", "/api/files/image", "/api/files/asset", "/api/files/video"]);
+const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/download", "/api/docs/preview", "/api/docs/path", "/api/docs/file", "/api/files/image", "/api/files/asset", "/api/files/video"]);
 
 // Caller owns authentication. Capability URLs retain their separate token gate.
 export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews, mutationAllowed, trashDocument }) {
   if (!DOCUMENT_ROUTES.has(url.pathname) ||
       (url.pathname === "/api/docs/file" && request.method !== "DELETE") ||
-      (request.method !== "GET" && !(request.method === "HEAD" && url.pathname === "/api/files/video") &&
+      (request.method !== "GET" && !(request.method === "HEAD" && ["/api/files/video", "/api/docs/download"].includes(url.pathname)) &&
        !(request.method === "DELETE" && url.pathname === "/api/docs/file"))) return false;
   try {
     if (request.method === "DELETE") {
@@ -708,6 +730,7 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
         break;
       }
       case "/api/docs/read": sendJson(response, 200, await readRemoteDocument(...args)); break;
+      case "/api/docs/download": await sendRemoteDocumentDownload(request, response, ...args); break;
       case "/api/docs/preview": {
         const location = await issueRemoteHtmlPreview(previews, ...args);
         if (url.searchParams.get("format") === "json") {

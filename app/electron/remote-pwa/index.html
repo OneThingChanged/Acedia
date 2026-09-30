@@ -185,6 +185,7 @@
                   <span id="documentPath"></span>
                 </div>
                 <span class="document-kind" id="documentKind" hidden></span>
+                <button class="small-button file-download-button" id="documentDownloadButton" type="button" hidden>다운로드</button>
               </div>
               <div class="document-message" id="documentMessage">왼쪽 목록에서 Markdown·HTML·영상 파일을 선택하세요.</div>
               <article class="document-markdown" id="documentMarkdown" hidden></article>
@@ -432,6 +433,7 @@
             <span id="filePreviewPath"></span>
           </div>
           <span class="document-kind" id="filePreviewKind"></span>
+          <button class="small-button file-download-button" id="filePreviewDownload" type="button" hidden>다운로드</button>
           <button class="icon-button" id="filePreviewClose" type="button" title="미리보기 닫기" aria-label="미리보기 닫기">×</button>
         </header>
         <div class="file-preview-body">
@@ -508,6 +510,7 @@
       </form>
     </div>
     <div class="document-context-menu" id="documentContextMenu" role="menu" aria-label="문서 작업" hidden>
+      <button type="button" role="menuitem" data-document-action="download">다운로드</button>
       <button type="button" role="menuitem" data-document-action="path">경로 보기</button>
       <button type="button" role="menuitem" data-document-action="copy-relative">상대 경로 복사</button>
       <hr>

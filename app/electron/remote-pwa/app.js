@@ -76,6 +76,7 @@ const ui = {
   documentName: $("#documentName"),
   documentPath: $("#documentPath"),
   documentKind: $("#documentKind"),
+  documentDownloadButton: $("#documentDownloadButton"),
   documentMessage: $("#documentMessage"),
   documentMarkdown: $("#documentMarkdown"),
   documentHtmlLaunch: $("#documentHtmlLaunch"),
@@ -84,6 +85,7 @@ const ui = {
   filePreviewTitle: $("#filePreviewTitle"),
   filePreviewPath: $("#filePreviewPath"),
   filePreviewKind: $("#filePreviewKind"),
+  filePreviewDownload: $("#filePreviewDownload"),
   filePreviewClose: $("#filePreviewClose"),
   filePreviewMessage: $("#filePreviewMessage"),
   filePreviewMarkdown: $("#filePreviewMarkdown"),
@@ -301,6 +303,7 @@ let documentMenuFile = null;
 let documentMenuTrigger = null;
 let documentPathTrigger = null;
 const deletingDocuments = new Set();
+const downloadingFiles = new Set();
 let filePreviewRequest = 0;
 let filePreviewObjectUrl = "";
 let filePreviewPreviousFocus = null;
@@ -1725,6 +1728,7 @@ async function loadDocument(projectId, relativePath, { force = false } = {}) {
 }
 
 function renderDocumentPreview() {
+  syncFileDownloadButtons();
   const relativePath = selectedDocumentPath;
   const key = relativePath && selection.type === "documents"
     ? documentKey(selection.id, relativePath)
@@ -1819,6 +1823,54 @@ function remoteFileQuery(projectId, relativePath, agentId = "") {
   return new URLSearchParams(values);
 }
 
+function currentDocumentDownload() {
+  return selection.type === "documents" && selection.id && selectedDocumentPath
+    ? { projectId: selection.id, path: selectedDocumentPath }
+    : null;
+}
+
+function syncFileDownloadButtons() {
+  for (const [button, file] of [[ui.documentDownloadButton, currentDocumentDownload()], [ui.filePreviewDownload, filePreviewContext]]) {
+    button.hidden = !file;
+    const busy = Boolean(file && downloadingFiles.has(remoteFileQuery(file.projectId, file.path, file.agentId).toString()));
+    button.disabled = busy;
+    button.setAttribute("aria-busy", String(busy));
+    button.textContent = t(busy ? "다운로드 준비 중…" : "다운로드");
+    const label = file ? t("{0} 다운로드", [file.name || file.path.split(/[\\/]/).pop()]) : t("다운로드");
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+}
+
+async function downloadRemoteFile(file) {
+  if (!file?.projectId || !file.path) return;
+  const query = remoteFileQuery(file.projectId, file.path, file.agentId).toString();
+  if (downloadingFiles.has(query)) return;
+  downloadingFiles.add(query);
+  syncFileDownloadButtons();
+  try {
+    const href = `/api/docs/download?${query}`;
+    // Check errors before starting a browser-managed, streaming download. The
+    // original bytes never need to be buffered in the PWA as a Blob.
+    const response = await fetch(href, {
+      method: "HEAD", cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(await apiError(response));
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = file.name || file.path.split(/[\\/]/).pop() || "";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    showToast(t("다운로드를 시작했습니다."));
+  } catch (error) {
+    showToast(t("파일을 다운로드하지 못했습니다: {0}", [error.message || error]));
+  } finally {
+    downloadingFiles.delete(query);
+    syncFileDownloadButtons();
+  }
+}
+
 async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
   if (!projectId || !relativePath) return;
   const query = remoteFileQuery(projectId, relativePath, agentId);
@@ -1870,6 +1922,7 @@ function closeFilePreview() {
   filePreviewRequest += 1;
   resetFilePreviewContent();
   filePreviewContext = null;
+  syncFileDownloadButtons();
   ui.filePreviewOverlay.hidden = true;
   document.documentElement.classList.remove("file-preview-open");
   const previousFocus = filePreviewPreviousFocus;
@@ -1894,6 +1947,8 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   const requestId = ++filePreviewRequest;
   if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
   resetFilePreviewContent();
+  filePreviewContext = { agentId, projectId, path, displayPath: path, kind };
+  syncFileDownloadButtons();
   ui.filePreviewOverlay.hidden = false;
   document.documentElement.classList.add("file-preview-open");
   ui.filePreviewTitle.textContent = path.split(/[\\/]/).pop() || path;
@@ -1933,6 +1988,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
         kind: result.kind || kind,
       };
       filePreviewContext = context;
+      syncFileDownloadButtons();
       if (kind === "text") {
         const pre = document.createElement("pre"); pre.textContent = result.content || "";
         ui.filePreviewMarkdown.replaceChildren(pre);
@@ -2710,6 +2766,7 @@ async function loadUsage(refresh = false) {
 }
 
 function renderSelection() {
+  syncFileDownloadButtons();
   hosting.translate();
   accountPoolView.translate();
   ui.appShell.dataset.view = selection.type;
@@ -5140,6 +5197,7 @@ ui.documentContextMenu.addEventListener("click", (event) => {
   const trigger = documentMenuTrigger;
   if (!action || !file) return;
   closeDocumentMenu({ restoreFocus: true });
+  if (action === "download") void downloadRemoteFile(file);
   if (action === "path") void showDocumentPath(file, trigger);
   if (action === "copy-relative") void copyDocumentPath(file.path);
   if (action === "delete") void deleteRemoteDocument(file);
@@ -5272,6 +5330,8 @@ ui.filePreviewMarkdown.addEventListener("click", (event) => {
     kind,
   );
 });
+ui.documentDownloadButton.addEventListener("click", () => void downloadRemoteFile(currentDocumentDownload()));
+ui.filePreviewDownload.addEventListener("click", () => void downloadRemoteFile(filePreviewContext && { ...filePreviewContext }));
 ui.filePreviewClose.addEventListener("click", closeFilePreview);
 ui.filePreviewOverlay.addEventListener("click", (event) => {
   if (event.target === ui.filePreviewOverlay) closeFilePreview();

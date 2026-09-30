@@ -40,8 +40,14 @@ The Dashboard exposes bounded endpoints for:
 * terminal snapshot plus live SSE deltas;
 * terminal input, attachments, cancel, restart/activation, create, and rename;
 * Codex/Claude transcript chat;
-* project document listing, Markdown/image reading, and isolated HTML preview;
+* project document listing, Markdown/image reading, original file downloads, and isolated HTML preview;
 * local usage history and provider account-limit snapshots.[^web-services][^web-tests]
+
+The shared document preview, Documents header and document actions menu offer
+**Download** for the original file, including Markdown, HTML, JSON, images and
+videos. Downloads preserve the filename and stream the bytes through the same
+project path checks. See [Remote downloads](remote-service.md#original-file-downloads)
+for supported paths, preparation feedback and verification scope.
 
 The browser does not own a second terminal. Mutations resolve an agent against
 the Electron-owned PTY and return a conflict when the lifecycle state makes the

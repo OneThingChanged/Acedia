@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.35 EXE release](release-1-8-1-35.md) - Download original Markdown/HTML/JSON, images and videos from Remote previews, Documents headers and document actions.
+
 * [Acedia 1.8.1.34 EXE release](release-1-8-1-34.md) - Change Codex/Claude session model and effort from Remote; keep waiting questions visible in desktop and Remote chat.
 
 * [Acedia 1.8.1.29 EXE release](release-1-8-1-29.md) - Keep Remote session navigation open and name routed requests by project/session; show actual session account assignments and clarify stale quota readings.
@@ -72,9 +74,9 @@ configuration that supports it.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
 * [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
-* [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents, usage, session model/effort editing and visible waiting questions.
+* [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents and downloads, usage, session model/effort editing and visible waiting questions.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
-* [Remote service](remote-service.md) - Remote/PWA/Android access, session model/effort editing, waiting-question chat cards, language synchronization and authentication boundaries.
+* [Remote service](remote-service.md) - Remote/PWA/Android access, original file downloads, session model/effort editing, waiting-question chat cards, language synchronization and authentication boundaries.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
 * [Central usage collector](central-usage-collector.md) - Employee/account attribution, company receiver, Acedia and standalone collection, plugin scope and ordinary-chat limitations.

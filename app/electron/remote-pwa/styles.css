@@ -478,7 +478,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
 }
 .document-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 43px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
 .document-sidebar-toggle, .document-sidebar-backdrop { display: none; }
-.document-preview-head > div { display: grid; min-width: 0; }
+.document-preview-head > div { display: grid; flex: 1 1 auto; min-width: 0; }
 .document-preview-head strong, .document-preview-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .document-preview-head strong { font-size: var(--font-small); }
 .document-preview-head span { margin-top: 3px; color: var(--muted); font-size: var(--font-caption); }
@@ -522,6 +522,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .file-preview-head strong { font-size: var(--font-small); }
 .file-preview-head > div > span { margin-top: 3px; color: var(--muted); font-size: var(--font-caption); }
 .file-preview-head .icon-button { flex: 0 0 34px; font-size: 18px; }
+.file-preview-head .file-download-button, .document-preview-head .file-download-button { flex: 0 0 auto; min-height: 44px; white-space: nowrap; font-weight: 700; }
 .file-preview-body { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .file-preview-message { display: grid; width: 100%; height: 100%; place-items: center; padding: 24px; color: var(--muted); text-align: center; font-size: var(--font-small); }
 .file-preview-markdown { width: 100%; height: 100%; }
@@ -554,7 +555,11 @@ html[data-native-app="true"] .android-download-button { display: none !important
 @media (max-width: 680px) {
   .file-preview-overlay { padding: 6px; }
   .file-preview-dialog { width: 100%; height: calc(var(--visual-viewport-height, 100dvh) - 12px); border-radius: 11px; }
-  .file-preview-head { min-height: 48px; padding-left: 10px; }
+  .file-preview-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; min-height: 48px; padding-left: 10px; }
+  .file-preview-head > div { grid-column: 1 / 3; grid-row: 1; }
+  .file-preview-head .document-kind { grid-column: 1; grid-row: 2; justify-self: start; }
+  .file-preview-head .file-download-button { grid-column: 2 / 4; grid-row: 2; justify-self: end; }
+  .file-preview-head .icon-button { grid-column: 3; grid-row: 1; min-width: 44px; min-height: 44px; }
   .file-preview-markdown { padding: 18px 14px 36px; }
   .file-preview-image-wrap { padding: 10px; }
   .session-editor-overlay { align-items: end; padding: 6px; }
@@ -1369,7 +1374,11 @@ html[data-native-app="true"] .android-download-button { display: none !important
     background: rgba(80, 223, 208, 0.08);
     font-size: 15px;
   }
-  .document-preview-head { min-height: 48px; padding: 6px 8px; }
+  .document-preview-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; min-height: 48px; padding: 6px 8px; }
+  .document-preview-head .document-sidebar-toggle { grid-column: 1; grid-row: 1; }
+  .document-preview-head > div { grid-column: 2 / 4; grid-row: 1; }
+  .document-preview-head .document-kind { grid-column: 1 / 3; grid-row: 2; justify-self: start; }
+  .document-preview-head .file-download-button { grid-column: 3; grid-row: 2; }
   .document-message { min-height: 0; }
   .document-markdown { min-height: 0; padding: 18px 14px 40px; font-size: var(--font-body); }
   .document-html { min-height: 0; }

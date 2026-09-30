@@ -25,6 +25,12 @@ sources:
   - id: remote-documents
     resource: ../app/electron/services/remote-documents.mjs
     title: "Shared project document routes and preview capabilities"
+  - id: document-download-tests
+    resource: ../app/electron/services/remote-document-download.test.mjs
+    title: "Original download bytes, filenames and access boundaries"
+  - id: document-download-smoke
+    resource: ../app/scripts/electron-document-download-smoke.mjs
+    title: "Actual desktop/mobile browser downloads"
   - id: remote-submissions
     resource: ../app/electron/services/remote-submissions.mjs
     title: "Durable submission deduplication"
@@ -112,7 +118,7 @@ the extracted modules have these responsibilities:
 | `remote-pwa/chat-render.js` | User/assistant turns, tool details and diffs |
 | `remote-pwa/chat-history.js` | Pure sequence deduplication, ordering and overlapping-page merging |
 | `remote-pwa/i18n.js`, `remote-pwa/translations.js` | App-language messages, trusted initial-shell bindings and locale-aware usage dates |
-| `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, HTML capabilities and one shared document API dispatcher |
+| `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, original file downloads, HTML capabilities and one shared document API dispatcher |
 | `services/remote-http.mjs` | JSON headers, body length and response serialization |
 | `services/web-services.mjs` | Server lifecycle, authentication, session APIs, static asset allowlist and tunnel orchestration |
 
@@ -123,10 +129,36 @@ Full paths in chat can open files under registered project roots. When a registe
 Unreal plugin has a `.uproject` ancestor, its enclosing Unreal workspace is also
 allowed, so `Saved` images and JSON reports can be previewed from Remote. Other
 absolute paths remain blocked. JSON files open from chat links without being
-added to the Documents index. Remote PWA cache v79 delivers the updated client.
+added to the Documents index. Remote PWA cache v80 is used for the 1.8.1.35 download UI.
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
+
+## Original file downloads
+
+Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 **다운로드**를
+누르면 원본 파일을 저장한다. 문서 목록 우클릭 메뉴와 모바일 **⋮ 문서 작업**에도
+다운로드가 있다. Markdown은 원본 `.md`/`.markdown`, HTML은 원본 HTML 파일
+한 개로 저장하며 JSON·이미지·MP4/WebM도 같은 동작을 사용한다.
+
+`GET /api/docs/download`는 기존 `projectId`, `path`, 선택적 `agentId`로 파일을
+해석한다. 프로젝트·세션 상대 경로와 등록된 프로젝트/Unreal 작업공간의 전체 경로를
+지원한다. Remote 인증·승인 뒤 실행하며 프로젝트 밖 경로, 외부로 향한 링크, SSH와
+지원하지 않는 형식은 거부한다. `Content-Disposition`의 UTF-8 파일명으로 한글을
+보존하고 `application/octet-stream`, `nosniff`, `no-store`로 원본 바이트를 전송한다.
+
+클라이언트는 `HEAD`로 접근·존재 여부를 먼저 확인하고 브라우저의 파일 다운로드를
+시작한다. 준비 중 중복 요청을 막고 실패 후 버튼을 복구한다. 본문을 PWA 메모리에
+모으지 않고 서버에서 스트리밍하므로 2MB 미리보기 제한을 넘는 문서도 저장할 수 있다.
+준비 완료 안내는 다운로드 시작을 뜻하며 실제 저장 진행은 브라우저가 관리한다.
+
+소스 검증: 다운로드와 기존 웹 서비스 **22개 테스트**가 원본 바이트·한글 파일명·
+HEAD·큰 문서·빈 파일·경로 제한·인증을 확인했다.
+`npm --prefix app run electron:document-download-smoke`는 1024×850, 390×850,
+375×812와 844×375에서 실제 파일 저장, 미리보기/상단/메뉴 진입, 오류 복구와 모바일
+배치를 확인한다. 전체 소스 테스트는 **865개**가 통과했다. 설치 파일 검증은
+[1.8.1.35 릴리스 기록](release-1-8-1-35.md)에 정리한다. 실제 Android WebView 저장은
+별도 검증이다.
 
 ## Hosting (1.8.1.20 source, publication pending)
 
