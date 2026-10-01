@@ -76,4 +76,18 @@ describe("RemoteDeviceMonitorService", () => {
     expect(service.authenticate(second.token)).toBeNull();
     expect(service.authenticate(guest.token)).not.toBeNull();
   });
+
+  it("delivers a final reply preview without exposing raw hook or terminal fields", async () => {
+    const { service } = createService({ now: () => 20_000 });
+    const issued = service.issue("owner");
+    service.publish({
+      type: "agent-done", agentId: "agent-1", sessionId: "session-1", title: "Project / Build",
+      preview: "**빌드가 통과했습니다.**\n배포 파일을 준비했습니다.",
+      body: "SECRET terminal output", transcript_path: "SECRET path",
+    });
+    const result = await service.poll(issued.token, issued.cursor);
+    expect(result.events[0].body).toBe("빌드가 통과했습니다.\n배포 파일을 준비했습니다.");
+    expect(JSON.stringify(result)).not.toContain("SECRET");
+    expect(fs.readFileSync(service.file, "utf8")).not.toContain("빌드가 통과했습니다.");
+  });
 });

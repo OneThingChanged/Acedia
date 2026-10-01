@@ -1164,6 +1164,56 @@ describe("Electron dashboard server", () => {
     expect(rejected.status).toBe(401);
   });
 
+  it("delivers hook and matching-session reply previews through the native monitor API", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-native-reply-api-"));
+    roots.push(root);
+    const browserNotifications = [];
+    const service = new RemoteDashboardService({
+      baseDir: root,
+      stateProvider: () => ({}),
+      writePty: () => false,
+      chatProvider: () => ({
+        sessionId: "session-2",
+        blocks: [
+          { role: "user", kind: "text", text: "확인해 줘" },
+          { role: "tool", kind: "tool-result", output: "SECRET terminal output" },
+          { role: "assistant", kind: "text", text: "최종 답변을 알림에 표시합니다." },
+        ],
+      }),
+      pushService: {
+        async notifyDone(value) { browserNotifications.push(value); return { sent: 0 }; },
+      },
+    });
+    services.push(service);
+    service.config.server_port = 0;
+    service.syncAgents([{ id: "agent-1", name: "Build", project: "ProjectA" }]);
+    const status = await service.start();
+    const issuedResponse = await fetch(`${status.url}/api/monitor/device`, {
+      method: "POST", headers: { origin: status.url, "content-type": "application/json" }, body: "{}",
+    });
+    const issued = await issuedResponse.json();
+    await service.notifyAgentDone({
+      id: "agent-1", event: "done", session_id: "session-1",
+      assistant_message: "**작업을 마쳤습니다.**\n[결과](/docs/result.md)를 확인하세요.",
+      terminal_output: "SECRET terminal output",
+    });
+    await service.notifyAgentDone({ id: "agent-1", event: "done", session_id: "session-2" });
+    const polled = await fetch(`${status.url}/api/monitor/device?cursor=${issued.cursor}`, {
+      headers: { authorization: `Bearer ${issued.token}` },
+    });
+    const result = await polled.json();
+    expect(polled.status).toBe(200);
+    expect(result.events.map((event) => event.body)).toEqual([
+      "작업을 마쳤습니다.\n결과를 확인하세요.", "최종 답변을 알림에 표시합니다.",
+    ]);
+    expect(result.events[0].title).toBe("ProjectA / Build");
+    expect(JSON.stringify(result)).not.toContain("SECRET");
+    expect(browserNotifications).toEqual([
+      { agentId: "agent-1", sessionId: "session-1", title: "ProjectA / Build" },
+      { agentId: "agent-1", sessionId: "session-2", title: "ProjectA / Build" },
+    ]);
+  });
+
   it("stores bounded same-origin image attachments and rejects spoofed or cross-origin files", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-remote-attachment-"));
     roots.push(root);

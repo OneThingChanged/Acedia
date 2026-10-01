@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.39 notification changes](release-1-8-1-39.md) - EXE and signed APK with Acedia branding, quiet connection status and expandable final-answer previews; package checks passed, publication and updated-phone verification pending.
+
 * [Acedia 1.8.1.38 EXE release](release-1-8-1-38.md) - Resume queued messages after activation, align Remote session filters, refresh all account limits and clarify completion/token accounting.
 
 * [Acedia 1.8.1.37 EXE release](release-1-8-1-37.md) - Separate blue Sleeping sessions from Active with saved sidebar filters, counts and search.

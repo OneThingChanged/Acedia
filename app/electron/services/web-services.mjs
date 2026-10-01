@@ -12,6 +12,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { RemoteDeviceMonitorService } from "./remote-device-monitor-service.mjs";
+import { completionNotificationPreview } from "./remote-notification-preview.mjs";
 import { RemotePushService } from "./remote-push-service.mjs";
 
 const DASHBOARD_HTML = String.raw`<!doctype html>
@@ -1044,7 +1045,7 @@ export class RemoteDashboardService {
     return this.notifyAgentEvent(payload, "question");
   }
 
-  notifyAgentEvent(payload, kind) {
+  async notifyAgentEvent(payload, kind) {
     const agent = this.agents.find((entry) => entry.id === payload.id) ?? null;
     const viewAgent = Array.isArray(this.view?.agents)
       ? this.view.agents.find((entry) => entry.id === payload.id)
@@ -1061,9 +1062,13 @@ export class RemoteDashboardService {
       sessionId: payload.session_id,
       title: `${projectName} / ${agentName}`,
     };
+    const preview = kind === "done"
+      ? await completionNotificationPreview(payload, (id, options) => this.chatProvider(id, options))
+      : "";
     this.deviceMonitorService.publish({
       type: kind === "question" ? "agent-question" : "agent-done",
       ...notification,
+      ...(preview ? { preview } : {}),
     });
     return kind === "question"
       ? this.pushService.notifyQuestion(notification)

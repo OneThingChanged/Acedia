@@ -35,6 +35,13 @@ refuses to fall back to debug signing. `npm run apk:verify` is compile-only and
 must never be published. Play Store distribution additionally requires an AAB
 upload pipeline, but sideloaded release APKs do not require a store listing.
 
+Every APK build refreshes the Android project with Expo prebuild before Gradle
+compilation. This reapplies the tracked app name, notification resources, and
+Kotlin monitor templates, so a version-only build cannot retain an older
+“MultiAgent Mobile” label or service implementation. Android displays the app
+as **Acedia**; the package id and release signing identity remain compatible
+with existing installations.
+
 Copy `mobile/.env.example` to the ignored `mobile/.env.signing.local`, replace its one
 password value, and run `npm run signing:setup` once. The setup creates the external
 keystore and local public metadata used automatically by the standard desktop build.
@@ -91,11 +98,33 @@ its native session token and its optional notification-monitor token.
 The APK does not use Firebase, FCM, Expo Push, or an external notification
 account. After GitHub login and desktop approval, tapping the Remote notification
 button issues a revocable notification-only token and starts an Android
-`remoteMessaging` Foreground Service. Android displays an ongoing “Acedia
-monitoring” notification while the service independently long-polls every PC
+`remoteMessaging` Foreground Service. Android requires an ongoing service
+notification while the service independently long-polls every PC
 whose native notification button was enabled. Completion/question events
-include the profile name and create privacy-safe local notifications; tapping
-one switches to the matching PC and opens its Session.
+include the project/session title and show the PC profile as secondary text;
+tapping one switches to the matching PC and opens its Session.
+
+The connection-status channel is silent, disables vibration and badges, and
+uses secret lock-screen visibility. Its small ongoing status entry remains in
+the notification drawer because Android requires it for this foreground-service
+transport. Work notifications use a separate high-importance channel and stay
+enabled when the connection channel is muted. Phone-level lock-screen and
+channel settings still control the final presentation.
+To hide the drawer entry entirely, disable only **백그라운드 연결 상태 (무음)**
+in Android's per-channel notification settings; leave **에이전트 작업 알림**
+enabled. The app does not disable all Acedia notifications automatically.
+
+Completion notifications show up to 2,000 characters of the assistant's final
+reply as plain text, with an expandable Android BigText layout. The desktop
+uses the completion hook's reply first, then the latest assistant text from the
+matching session's chat if the hook omitted it. Tool output and reasoning are
+excluded. Missing replies, a changed session, or a slow chat read retain the
+generic completion message. Questions retain the generic “응답이 필요합니다.”
+message. Reply previews require the updated desktop server and APK; an older
+APK ignores the supplied body and an older desktop sends a generic message.
+Previews are delivered only through the authenticated native monitor endpoint,
+are held in its bounded in-memory event queue, and are not written to the device
+token file. Browser Web Push retains its generic completion text.
 
 The desktop stores only the token SHA-256 hash in
 `remote-monitor-devices.json`; the APK encrypts the raw token with Android

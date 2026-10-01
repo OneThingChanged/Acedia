@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { notificationPreview } from "./remote-notification-preview.mjs";
 
 const MAX_DEVICES = 32;
 const MAX_DEVICES_PER_LOGIN = 4;
@@ -137,7 +138,7 @@ export class RemoteDeviceMonitorService {
     if (this.devices.length !== before) this.save();
   }
 
-  publish({ type, agentId, sessionId, title }) {
+  publish({ type, agentId, sessionId, title, preview }) {
     const id = clean(agentId);
     if (!id) return null;
     const safeType = type === "agent-question" ? "agent-question" : "agent-done";
@@ -158,7 +159,9 @@ export class RemoteDeviceMonitorService {
       type: safeType,
       agentId: id.slice(0, 128),
       title: (clean(title) || "Acedia").slice(0, 120),
-      body: safeType === "agent-question" ? "응답이 필요합니다." : "작업이 완료되었습니다.",
+      body: safeType === "agent-question"
+        ? "응답이 필요합니다."
+        : notificationPreview(preview) || "작업이 완료되었습니다.",
       createdAt: now,
     };
     this.events.push(event);

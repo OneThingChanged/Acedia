@@ -162,14 +162,19 @@ class MultiAgentMonitorService : Service() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     notifications.createNotificationChannel(NotificationChannel(
       MONITOR_CHANNEL,
-      "Acedia 백그라운드 모니터링",
+      "백그라운드 연결 상태 (무음)",
       NotificationManager.IMPORTANCE_LOW,
-    ).apply { description = "여러 Remote 작업 상태 연결을 유지합니다." })
+    ).apply {
+      description = "Android가 요구하는 연결 유지 상태입니다. 작업 알림은 별도 채널로 표시됩니다."
+      setSound(null, null)
+      enableVibration(false)
+      setShowBadge(false)
+    })
     notifications.createNotificationChannel(NotificationChannel(
       EVENT_CHANNEL,
       "에이전트 작업 알림",
       NotificationManager.IMPORTANCE_HIGH,
-    ).apply { description = "완료 및 응답 필요 상태를 알립니다." })
+    ).apply { description = "최종 답변 미리보기와 응답 필요 상태를 알립니다." })
   }
 
   private fun launchIntent(config: MonitorConfig? = null, agentId: String? = null): PendingIntent {
@@ -195,11 +200,14 @@ class MultiAgentMonitorService : Service() {
 
   private fun monitorNotification(state: String) = NotificationCompat.Builder(this, MONITOR_CHANNEL)
     .setSmallIcon(R.drawable.multiagent_notification_icon)
-    .setContentTitle("Acedia 모니터링 중")
+    .setContentTitle("Acedia 백그라운드 연결")
     .setContentText(state)
     .setContentIntent(launchIntent())
     .setOngoing(true)
     .setOnlyAlertOnce(true)
+    .setSilent(true)
+    .setPriority(NotificationCompat.PRIORITY_LOW)
+    .setVisibility(NotificationCompat.VISIBILITY_SECRET)
     .setCategory(NotificationCompat.CATEGORY_SERVICE)
     .build()
 
@@ -208,16 +216,24 @@ class MultiAgentMonitorService : Service() {
     if (!Regex("^[A-Za-z0-9._:-]{1,128}$").matches(agentId)) return
     val type = event.optString("type")
     val title = event.optString("title", "Acedia").take(120)
-    val body = if (type == "agent-question") "응답이 필요합니다." else "작업이 완료되었습니다."
+    val fallback = if (type == "agent-question") "응답이 필요합니다." else "작업이 완료되었습니다."
+    val eventBody = event.optString("body").trim()
+    val body = if (eventBody.isBlank()) fallback else eventBody.substring(
+      0,
+      eventBody.offsetByCodePoints(0, min(2_000, eventBody.codePointCount(0, eventBody.length))),
+    )
     notifications.notify(
       "${config.profileId}:${type}:${agentId}".hashCode(),
       NotificationCompat.Builder(this, EVENT_CHANNEL)
         .setSmallIcon(R.drawable.multiagent_notification_icon)
-        .setContentTitle("${config.profileName} · $title")
+        .setContentTitle(title)
+        .setSubText(config.profileName)
         .setContentText(body)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
         .setContentIntent(launchIntent(config, agentId))
         .setAutoCancel(true)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setCategory(NotificationCompat.CATEGORY_MESSAGE)
         .build(),
     )
@@ -240,7 +256,7 @@ class MultiAgentMonitorService : Service() {
 
   companion object {
     const val ACTION_SYNC = "com.onethingchanged.multiagent.mobile.SYNC_MONITORS"
-    private const val MONITOR_CHANNEL = "multiagent-monitor"
+    private const val MONITOR_CHANNEL = "acedia-monitor-status-v2"
     private const val EVENT_CHANNEL = "multiagent-agent-events"
     private const val MONITOR_NOTIFICATION_ID = 42001
   }

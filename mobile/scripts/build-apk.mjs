@@ -29,6 +29,17 @@ if (!allowDebugSigning) {
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const android = path.join(root, "android");
+// Refresh native resources and our Kotlin templates on every APK build. Merely
+// updating Gradle versions can otherwise ship an old app label or monitor.
+const prebuild = spawnSync(
+  process.execPath,
+  [path.join(root, "node_modules", "expo", "bin", "cli"), "prebuild", "--platform", "android", "--no-install"],
+  { cwd: root, env: { ...process.env, NODE_ENV: "production" }, stdio: "inherit", windowsHide: true },
+);
+if (prebuild.error || prebuild.status !== 0) {
+  console.error(prebuild.error?.message || "Android native configuration refresh failed.");
+  process.exit(prebuild.status || 1);
+}
 try {
   const synchronized = synchronizeAndroidVersion(root);
   console.log(

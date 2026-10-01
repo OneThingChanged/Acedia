@@ -91,6 +91,15 @@ sources:
   - id: device-monitor
     resource: ../app/electron/services/remote-device-monitor-service.mjs
     title: "Android foreground-monitor token service"
+  - id: notification-preview
+    resource: ../app/electron/services/remote-notification-preview.mjs
+    title: "Bounded final-answer previews for native notifications"
+  - id: native-monitor
+    resource: ../mobile/native/android/MultiAgentMonitorService.kt
+    title: "Android notification channels and expandable completion notifications"
+  - id: mobile-builder
+    resource: ../mobile/scripts/build-apk.mjs
+    title: "Android source refresh before signed release compilation"
   - id: runtime-variant
     resource: ../app/electron/runtime-variant.cjs
     title: "Runtime variant restrictions"
@@ -488,6 +497,26 @@ authentication through an app link/ticket flow. A foreground monitor can keep
 an authenticated connection while the app is backgrounded and display local
 completion notifications without Firebase.[^mobile-manifest][^device-monitor]
 
+The Android app label is Acedia. Its release builder refreshes native resources
+and Kotlin templates before compilation, preventing an existing generated
+project from keeping the older MultiAgent Mobile branding. The connection
+service uses a silent, low-importance channel with vibration and badges disabled
+and secret lock-screen visibility. Android still requires its ongoing entry in
+the notification drawer while this transport runs.[^native-monitor][^mobile-builder]
+
+Native completion notifications contain a plain-text preview of the assistant's
+final reply, bounded to 2,000 characters and expandable through Android BigText.
+The server prefers the completion hook's reply and otherwise reads the last
+assistant text in the matching session, with a 1.5-second lookup deadline. A
+session mismatch or missing reply keeps the generic completion message. Tool
+output and reasoning are never selected as preview text. The project/session
+title remains the primary label and the PC profile is secondary text. Reply
+previews live only in the bounded in-memory monitor event queue, require both
+the updated desktop and APK, and are available only to approved native-monitor
+bearer tokens. The separate browser Web Push payload remains generic.
+Phone-level notification settings still determine lock-screen visibility.
+[^notification-preview][^device-monitor][^native-monitor][^web-services]
+
 Opening a profile lazily creates one WebView for that PC. The APK keeps an opened
 profile view mounted but hidden when the operator returns to the combined Session
 Hub or switches PCs, preserving page state and that WebView's navigation history
@@ -565,6 +594,9 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^codex-turn-completion]: Codex transcript completion fallback for missed hooks
 [^pty-submit]: PTY message formatting and ordered submission
 [^device-monitor]: Android foreground-monitor token service
+[^notification-preview]: Bounded final-answer previews for native notifications
+[^native-monitor]: Android notification channels and expandable completion notifications
+[^mobile-builder]: Android source refresh before signed release compilation
 [^runtime-variant]: Runtime variant restrictions
 [^mobile-manifest]: Android client manifest
 [^mobile-shell]: Android profile and retained WebView shell
