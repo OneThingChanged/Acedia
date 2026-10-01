@@ -9,11 +9,18 @@ export function quotaPresentation(window, limitsAt, now = Date.now()) {
 }
 
 export function recordedTokens(record) {
-  const input = Number(record?.inputTokens) || 0;
-  const output = Number(record?.outputTokens) || 0;
+  const input = record?.inputTokens;
+  const output = record?.outputTokens;
+  if (!Number.isSafeInteger(input) || input < 0 || !Number.isSafeInteger(output) || output < 0) return null;
   const known = record?.usageReported === true
     || (record?.usageReported !== false && input + output > 0);
-  return known ? input + output : null;
+  return known && Number.isSafeInteger(input + output) ? input + output : null;
+}
+
+export function requestStatus(record) {
+  if (record.status === 'cancelled') return record.completionObserved === false
+    ? '완료 전 연결 종료' : '연결 종료 (완료 여부 미확인)';
+  return { completed: '완료', failed: '실패' }[record.status] || '처리 중…';
 }
 
 export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) {
@@ -32,6 +39,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
   const toolbar = el('div', '', 'pool-toolbar');
   const toggle = el('button', '분산 켜기'); toggle.type = 'button';
   const refresh = el('button', '목록 새로고침'); refresh.type = 'button'; toolbar.append(toggle, refresh);
+  const refreshStatus = el('p', '', 'pool-refresh-status'); refreshStatus.setAttribute('role', 'status'); refreshStatus.setAttribute('aria-live', 'polite');
   const form = el('form', '', 'pool-toolbar'); const label = el('label', '계정 이름');
   const input = el('input'); input.required = true; input.maxLength = 80; input.autocomplete = 'off'; label.append(input);
   const add = el('button', '계정 추가'); add.type = 'submit';
@@ -39,7 +47,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
   form.append(label, add, cancelEdit);
   const list = el('div', '', 'pool-list');
   const recordsTitle = el('h3', '최근 분산 요청'); const records = el('div', '', 'pool-records');
-  panel.append(intro, toolbar, form, status, list, recordsTitle, records); root.append(tabs, panel);
+  const recordsHint = el('p', '요청별 토큰 정보가 없어도 사용량이 발생할 수 있습니다. 대화 기록의 토큰 합계는 위 계정 카드에서 확인하세요.', 'pool-records-hint');
+  panel.append(intro, toolbar, refreshStatus, form, status, list, recordsTitle, recordsHint, records); root.append(tabs, panel);
   if (loginAccountId) {
     tabs.hidden = true;
     intro.textContent = t('인증 탭에서 로그인한 뒤 이 화면으로 돌아오세요. 완료되면 계정 관리 화면으로 자동 이동합니다.');
@@ -60,7 +69,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
   }
   function schedule() {
     clearTimeout(timer);
-    if (visible && entered && !root.closest('[hidden]')) timer = setTimeout(() => void run(() => api(), true), data?.accounts.some(a => a.state === 'login_pending') ? 2500 : 15000);
+    if (visible && entered && !root.closest('[hidden]')) timer = setTimeout(() => void run(() => api(), true), data?.quotaRefresh?.running ? 1500
+      : data?.accounts.some(a => a.state === 'login_pending') ? 2500 : 15000);
   }
   async function run(task, quiet = false) {
     if (busy) return;
@@ -79,13 +89,22 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
   function render() {
     const admin = data?.canManage === true;
     form.hidden = toolbar.hidden = !admin || Boolean(loginAccountId);
+    refreshStatus.hidden = !admin || Boolean(loginAccountId);
     for (const node of panel.querySelectorAll('button,input')) node.disabled = !admin || busy;
     toggle.textContent = t(data?.enabled ? '분산 끄기' : '분산 켜기'); toggle.setAttribute('aria-pressed', String(Boolean(data?.enabled)));
+    const job = data?.quotaRefresh;
+    refresh.disabled = !admin || busy || Boolean(job?.running);
+    refresh.textContent = t(job?.running ? '갱신 중…' : '목록 새로고침');
+    refresh.title = t('모든 계정의 한도와 목록을 새로고칩니다.');
+    refreshStatus.textContent = !job ? '' : job.running
+      ? t('계정 한도 갱신 중… {0}/{1}', [job.completed, job.total])
+      : job.total === 0 ? t('갱신할 계정이 없습니다. 계정을 추가하고 로그인하세요.')
+      : t('목록 갱신 완료 · 성공 {0} · 실패 {1} · 건너뜀 {2}', [job.succeeded, job.failed, job.skipped]);
     add.textContent = t(editingId ? '이름 저장' : '계정 추가'); cancelEdit.hidden = !editingId;
     list.replaceChildren(); records.replaceChildren();
     if (!data) return;
-    if (!admin) { list.append(el('p', '계정 등록과 분산 설정은 소유자만 관리할 수 있습니다.')); recordsTitle.hidden = true; return; }
-    recordsTitle.hidden = records.hidden = Boolean(loginAccountId);
+    if (!admin) { list.append(el('p', '계정 등록과 분산 설정은 소유자만 관리할 수 있습니다.')); recordsTitle.hidden = recordsHint.hidden = true; return; }
+    recordsTitle.hidden = recordsHint.hidden = records.hidden = Boolean(loginAccountId);
     if (loginAccountId) {
       const target = data.accounts.find(account => account.id === loginAccountId);
       if (!target) status.textContent = t('로그인 계정을 찾을 수 없습니다. Dashboard로 돌아가 다시 시작하세요.');
@@ -96,12 +115,16 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     }
     if (!data.accounts.length) list.append(el('p', '등록한 분산 계정이 없습니다. 계정을 추가한 뒤 로그인하세요.'));
     for (const account of data.accounts.filter(account => !loginAccountId || account.id === loginAccountId)) {
+      const quotaResult = job?.results?.find(item => item.id === account.id);
+      const quotaBusy = job?.running && quotaResult?.status === 'running';
       const card = el('article', '', 'pool-card'); const title = el('h3'); title.textContent = account.label;
       const state = el('p', `${account.email || ''} ${account.plan || ''} · ${t(names[account.state] || '확인 필요')} · ${t(account.enabled ? '분산 참여' : '분산 제외')}`);
       if (account.cooldownUntil > Date.now()) state.append(el('span', ' · ' + t('한도 대기')));
       const statistics = account.stats;
       const legacy = Number(statistics.legacyFailedOrCancelled) || 0;
-      const numbers = el('p', `${t('요청')} ${statistics.requests.toLocaleString()} · ${t(legacy ? '새 집계 실패' : '실패')} ${statistics.failures.toLocaleString()} · ${t('취소됨')} ${(statistics.cancelled || 0).toLocaleString()}`);
+      const legacyDisconnected = Number(statistics.version >= 3 ? statistics.legacyDisconnected : statistics.cancelled) || 0;
+      const cancelled = statistics.version >= 3 ? Number(statistics.cancelled) || 0 : 0;
+      const numbers = el('p', `${t('요청')} ${statistics.requests.toLocaleString()} · ${t(legacy ? '새 집계 실패' : '실패')} ${statistics.failures.toLocaleString()} · ${t('완료 전 연결 종료')} ${cancelled.toLocaleString()}`);
       const measured = Number(statistics.measuredRequests) > 0 || statistics.inputTokens + statistics.outputTokens > 0;
       const transcript = account.transcriptUsage;
       const usage = el('p', transcript?.events > 0
@@ -112,8 +135,12 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
       card.append(title, state, numbers, usage);
       if (transcript?.events > 0) card.append(el('small', '기록된 계정 배정 기간의 Codex 대화 토큰입니다.'));
       if (legacy) card.append(el('small', t('기존 실패·취소 혼합 {0}건은 분리할 수 없습니다.', [legacy.toLocaleString()])));
-      if (statistics.unmeasuredRequests > 0) card.append(el('small', t('사용량 미집계 생성 요청 {0}건', [statistics.unmeasuredRequests.toLocaleString()])));
+      if (legacyDisconnected) card.append(el('small', t('기존 연결 종료 {0}건은 완료 여부를 확인할 수 없습니다.', [legacyDisconnected.toLocaleString()])));
+      if (statistics.unmeasuredRequests > 0) card.append(el('small', t('응답 토큰 정보가 없는 생성 요청 {0}건', [statistics.unmeasuredRequests.toLocaleString()])));
       if (account.error) card.append(el('p', account.error));
+      if (quotaResult?.status === 'failed') card.append(el('p', '한도 갱신에 실패했습니다. 이전 조회값을 유지합니다.'));
+      if (quotaResult?.reason === 'login_required') card.append(el('small', '로그인이 필요해 한도 갱신을 건너뛰었습니다.'));
+      if (quotaResult?.reason === 'login_pending') card.append(el('small', '로그인 진행 중인 계정은 한도 갱신을 건너뜁니다.'));
       const bucket = account.limits?.rateLimitsByLimitId?.codex || account.limits?.rateLimits;
       for (const [name, w] of [[t('기본 한도'), bucket?.primary], [t('추가 한도'), bucket?.secondary]]) {
         if (typeof w?.usedPercent !== 'number') continue;
@@ -145,7 +172,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
       } else if (!loginAccountId) {
         const methods = data.defaultLoginMethod === 'device' ? ['device', 'browser'] : ['browser', 'device'];
         for (const method of methods) {
-          const start = button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => {}, actions, account.active > 0);
+          const start = button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => {}, actions, account.active > 0 || quotaBusy);
           start.onclick = () => {
             if (busy) return;
             // Reserve the tab during the user gesture, before the asynchronous request.
@@ -165,13 +192,12 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
         }
         if (data.defaultLoginMethod === 'device') card.append(el('small', '다른 기기에서는 기기 코드 로그인을 사용하세요. ChatGPT 보안 설정에서 기기 코드 로그인을 활성화해야 합니다.'));
         button(account.enabled ? '분산 제외' : '분산 참여', () => api({ action: 'update', id: account.id, enabled: !account.enabled }), actions, account.state !== 'ready' && !account.enabled);
-        button('한도 새로고침', () => api({ action: 'refresh', id: account.id }), actions, account.state !== 'ready');
         const rename = el('button', '이름 변경'); rename.type = 'button';
         rename.onclick = () => { editingId = account.id; input.value = account.label; render(); input.focus(); }; actions.append(rename);
         button('제거', async () => {
           if (!window.confirm(`${account.label}: ${t('계정을 제거하면 이 계정에 연결된 대화를 계속할 수 없습니다. 제거할까요?')}`)) return data;
           return api({ action: 'remove', id: account.id });
-        }, actions, account.active > 0);
+        }, actions, account.active > 0 || quotaBusy);
       }
       card.append(actions); list.append(card);
     }
@@ -179,10 +205,10 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     if (!data.recent.length) records.append(el('p', '분산으로 처리한 요청이 없습니다. 분산을 켜고 새 Codex 세션을 시작하세요.'));
     for (const item of data.recent.slice(0, 20)) {
       const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
-      const state = { completed: '완료', failed: '실패', cancelled: '취소됨' }[item.status] || '처리 중…';
+      const state = requestStatus(item);
       const total = recordedTokens(item);
       const tokens = item.operation === 'models' ? t('사용량 대상 아님')
-        : total == null ? t('토큰 미집계') : `${total.toLocaleString()} ${t('토큰')}`;
+        : total == null ? t('요청별 토큰 정보 없음') : `${total.toLocaleString()} ${t('토큰')}`;
       records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${tokens} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
     }
   }
@@ -198,7 +224,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     input.value = ''; editingId = null; return result;
   }); };
   cancelEdit.onclick = () => { editingId = null; input.value = ''; render(); input.focus(); };
-  refresh.onclick = () => void run(() => api()); toggle.onclick = () => void run(() => api({ action: 'configure', enabled: !data.enabled }));
+  refresh.onclick = () => { refresh.textContent = t('갱신 중…'); void run(() => api({ action: 'refresh_all' })); };
+  toggle.onclick = () => void run(() => api({ action: 'configure', enabled: !data.enabled }));
   select(Boolean(loginAccountId) || pageUrl.searchParams.get('accounts') === '1');
   return { translate, enter: () => { if (entered) return; entered = true; if (visible) void run(() => api()); }, leave: () => { entered = false; clearTimeout(timer); clearTimeout(returnTimer); returnTimer = null; } };
 }

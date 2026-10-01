@@ -8,6 +8,7 @@ import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, in
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { parseChatPrompt, promptSignature } from "./chat-prompt.js";
+import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts } from "./session-state.js";
 
 bindShellTranslations(document);
 
@@ -44,6 +45,8 @@ const ui = {
   filters: $("#filters"),
   sessionList: $("#sessionList"),
   emptyState: $("#emptyState"),
+  emptySessionMessage: $("#emptySessionMessage"),
+  resetSessionFilter: $("#resetSessionFilter"),
   monitorView: $("#monitorView"),
   monitorTitle: $("#monitorTitle"),
   monitorMeta: $("#monitorMeta"),
@@ -215,20 +218,23 @@ const STATUS = {
   starting: { get label() { return t("시작 중"); }, rank: 2 },
   done: { get label() { return t("완료"); }, rank: 3 },
   idle: { get label() { return t("대기"); }, rank: 4 },
+  sleeping: { get label() { return t("Sleeping"); }, rank: 5 },
   offline: { get label() { return t("비활성"); }, rank: 5 },
 };
 const STATUS_ORDER = Object.keys(STATUS);
-const FILTERS = ["all", "active", ...STATUS_ORDER];
-const FILTER_LABELS = { get all() { return t("전체 세션"); }, get active() { return t("활성 세션"); } };
+const FILTER_LABELS = { get all() { return t("전체 세션"); }, get active() { return t("활성 세션"); }, get sleeping() { return t("휴면 세션"); } };
+const SESSION_FILTER_KEY = "multiagent.remote.sessionFilter.v1";
 
 let remoteState = { agents: [], view: { projects: [], agents: [], groups: [] } };
 const initialUrl = new URL(location.href);
 let routeDepth = Number.isSafeInteger(Number(history.state?.multiagentDepth))
   ? Math.max(0, Number(history.state.multiagentDepth))
   : 0;
-let activeFilter = FILTERS.includes(initialUrl.searchParams.get("filter"))
-  ? initialUrl.searchParams.get("filter")
-  : "all";
+function loadSessionFilter(url) {
+  if (url.searchParams.has("filter")) return normalizeSessionFilter(url.searchParams.get("filter"));
+  try { return normalizeSessionFilter(localStorage.getItem(SESSION_FILTER_KEY)); } catch { return "all"; }
+}
+let activeFilter = loadSessionFilter(initialUrl);
 function selectionFromUrl(url) {
   if (url.searchParams.get("hosting") === "1") return { type: "hosting", id: null };
   if (url.searchParams.get("usage") === "1") return { type: "usage", id: null };
@@ -452,6 +458,12 @@ function statusOf(agent) {
   return "offline";
 }
 
+function displayStatusOf(agent) {
+  if (isSleepingSession(agent)) return "sleeping";
+  if (["starting", "recovering"].includes(agent?.runtimeStatus)) return agent.runtimeStatus;
+  return statusOf(agent);
+}
+
 function stripTerminal(value) {
   return String(value ?? "")
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
@@ -566,7 +578,7 @@ function screenGroups() {
 
 function sortedAgents() {
   return allAgents().sort((left, right) => {
-    const statusDifference = STATUS[statusOf(left)].rank - STATUS[statusOf(right)].rank;
+    const statusDifference = STATUS[displayStatusOf(left)].rank - STATUS[displayStatusOf(right)].rank;
     if (statusDifference !== 0) return statusDifference;
     const projectDifference = projectName(left).localeCompare(projectName(right), getLanguage());
     if (projectDifference !== 0) return projectDifference;
@@ -576,7 +588,9 @@ function sortedAgents() {
 
 function matchesQuery(agent, query) {
   if (!query) return true;
-  return [agent.name, agent.id, projectName(agent), toolName(agent), agent.hook?.prompt]
+  const project = projectMap().get(agent.projectId);
+  const folder = remoteState.view?.projectFolders?.find((item) => item.id === project?.projectFolderId);
+  return [agent.name, agent.id, projectName(agent), agent.folder, project?.folder, folder?.name, toolName(agent), agent.hook?.prompt]
     .some((value) => text(value).toLowerCase().includes(query));
 }
 
@@ -587,10 +601,7 @@ function visibleAgents() {
     if (projectDifference !== 0) return projectDifference;
     return text(left.name || left.id).localeCompare(text(right.name || right.id), getLanguage());
   }).filter((agent) => {
-    const status = statusOf(agent);
-    if (activeFilter === "active" && status === "offline") return false;
-    if (!["all", "active"].includes(activeFilter) && status !== activeFilter) return false;
-    return matchesQuery(agent, query);
+    return matchesSessionFilter(agent, activeFilter) && matchesQuery(agent, query);
   });
 }
 
@@ -657,9 +668,12 @@ function updateUrl({ push = false } = {}) {
 }
 
 function setActiveFilter(filter, { updateHistory = true, push = false } = {}) {
-  activeFilter = FILTERS.includes(filter) ? filter : "all";
+  activeFilter = normalizeSessionFilter(filter);
+  try { localStorage.setItem(SESSION_FILTER_KEY, activeFilter); } catch {}
   for (const button of ui.filters.querySelectorAll("[data-filter]")) {
-    button.classList.toggle("active", button.dataset.filter === activeFilter);
+    const selected = button.dataset.filter === activeFilter;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
   }
   for (const card of ui.summaryGrid.querySelectorAll("[data-summary-filter]")) {
     card.classList.toggle("active", card.dataset.summaryFilter === activeFilter);
@@ -669,7 +683,7 @@ function setActiveFilter(filter, { updateHistory = true, push = false } = {}) {
 
 function renderSummary() {
   const counts = Object.fromEntries(STATUS_ORDER.map((status) => [status, 0]));
-  for (const agent of allAgents()) counts[statusOf(agent)] += 1;
+  for (const agent of allAgents()) counts[displayStatusOf(agent)] += 1;
   ui.workingCount.textContent = String(counts.working);
   ui.questionCount.textContent = String(counts.attention);
   ui.doneCount.textContent = String(counts.done);
@@ -692,6 +706,14 @@ const sessionModelEditor = createSessionModelEditor({
 
 function renderNavigation() {
   sessionModelEditor.update();
+  const counts = sessionFilterCounts(allAgents());
+  for (const button of ui.filters.querySelectorAll("[data-filter]")) {
+    const filter = button.dataset.filter;
+    button.querySelector(".session-filter-count").textContent = String(counts[filter]);
+    button.querySelector(".session-filter-label").textContent = filter === "all" ? t("전체")
+      : filter === "active" ? getLanguage() === "ko" ? "Active" : t("활성") : t("Sleeping");
+    button.setAttribute("aria-label", t("{0} · {1}개 세션", [button.querySelector(".session-filter-label").textContent, counts[filter]]));
+  }
   const query = ui.searchInput.value.trim().toLowerCase();
   const screens = screenGroups().filter((screen) => {
     if (!query) return true;
@@ -749,7 +771,7 @@ function renderNavigation() {
   for (const agent of agents) {
     const button = sessionRows.get(agent.id);
     if (!button) continue;
-    const status = statusOf(agent);
+    const status = displayStatusOf(agent);
     button.dataset.status = status;
     button.classList.toggle("selected", selection.type === "session" && selection.id === agent.id);
     const dot = button.querySelector(".status-dot");
@@ -759,6 +781,10 @@ function renderNavigation() {
     button.querySelector(".session-status").textContent = STATUS[status].label;
   }
   ui.emptyState.hidden = agents.length !== 0;
+  ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")
+    : activeFilter === "sleeping" ? t("휴면 세션이 없습니다.")
+    : activeFilter === "active" ? t("활성 세션이 없습니다.") : t("조건에 맞는 세션이 없습니다.");
+  ui.resetSessionFilter.hidden = activeFilter === "all" && !query;
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");
@@ -771,7 +797,7 @@ function renderMonitor() {
   const statuses = activeFilter === "all"
     ? STATUS_ORDER
     : activeFilter === "active"
-      ? STATUS_ORDER.filter((status) => status !== "offline")
+      ? STATUS_ORDER.filter((status) => !["offline", "sleeping"].includes(status))
       : [activeFilter];
   const filterLabel = FILTER_LABELS[activeFilter] || STATUS[activeFilter].label;
   ui.monitorTitle.textContent = filterLabel;
@@ -781,7 +807,8 @@ function renderMonitor() {
   ui.monitorBoard.dataset.filtered = ["all", "active"].includes(activeFilter) ? "false" : "true";
   const fragment = document.createDocumentFragment();
   for (const status of statuses) {
-    const agents = sortedAgents().filter((agent) => statusOf(agent) === status && matchesQuery(agent, query));
+    const agents = sortedAgents().filter((agent) => displayStatusOf(agent) === status
+      && matchesSessionFilter(agent, activeFilter) && matchesQuery(agent, query));
     const lane = make("section", "status-lane");
     lane.dataset.status = status;
     const head = make("div", "lane-head");
@@ -896,7 +923,7 @@ function renderLayoutNode(node, screen) {
     tab.type = "button";
     tab.dataset.tabAgent = id;
     tab.classList.toggle("active", id === activeAgent.id);
-    tab.append(make("span", `status-dot ${statusOf(agent)}`), make("span", "", text(agent.name || id)));
+    tab.append(make("span", `status-dot ${displayStatusOf(agent)}`), make("span", "", text(agent.name || id)));
     tab.addEventListener("click", () => {
       leafTabSelection.set(`${screen.id}:${leaf.id}`, id);
       screenRenderKey = "";
@@ -923,7 +950,7 @@ function renderLayoutNode(node, screen) {
 
   const body = make("div", "terminal-body");
   const meta = make("div", "terminal-meta");
-  const status = make("span", `status-chip ${statusOf(activeAgent)}`, STATUS[statusOf(activeAgent)].label);
+  const status = make("span", `status-chip ${displayStatusOf(activeAgent)}`, STATUS[displayStatusOf(activeAgent)].label);
   status.dataset.role = "status";
   const metaText = make("span", "", `${projectName(activeAgent)} · ${toolName(activeAgent)}`);
   metaText.dataset.role = "meta";
@@ -1154,7 +1181,7 @@ function updateScreenLive(screen) {
   for (const panel of ui.screenLayout.querySelectorAll("[data-screen-agent]")) {
     const agent = agentsById.get(panel.dataset.screenAgent);
     if (!agent) continue;
-    const status = statusOf(agent);
+    const status = displayStatusOf(agent);
     const statusNode = panel.querySelector('[data-role="status"]');
     statusNode.className = `status-chip ${status}`;
     statusNode.textContent = STATUS[status].label;
@@ -1175,7 +1202,7 @@ function updateScreenLive(screen) {
   for (const tab of ui.screenLayout.querySelectorAll("[data-tab-agent]")) {
     const agent = agentsById.get(tab.dataset.tabAgent);
     const dot = tab.querySelector(".status-dot");
-    if (agent && dot) dot.className = `status-dot ${statusOf(agent)}`;
+    if (agent && dot) dot.className = `status-dot ${displayStatusOf(agent)}`;
   }
   updateScreenHeader(screen);
   syncScreenChats(screen);
@@ -1212,10 +1239,11 @@ function renderSession() {
     return;
   }
   const status = statusOf(agent);
+  const displayStatus = displayStatusOf(agent);
   const question = questionDetails(agent);
   const prompt = text(agent.hook?.prompt);
-  ui.detailStatus.className = `status-chip ${status}`;
-  ui.detailStatus.textContent = STATUS[status].label;
+  ui.detailStatus.className = `status-chip ${displayStatus}`;
+  ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
   ui.detailMeta.textContent = `${projectName(agent)} · ${toolName(agent)}`;
   if (ui.sessionOffline) ui.sessionOffline.hidden = status !== "offline";
@@ -3504,10 +3532,15 @@ function clearAcceptedComposer(agentId, snapshot) {
 }
 
 // Never inject a queued instruction into a running turn. Cancellation and
-// completion hooks normalize the state back to idle before this queue drains.
+// completion release the working state before this queue drains.
 const agentBusy = (agent) => statusOf(agent) === "working";
-const agentInitializing = (agent) => ["recovering", "starting"].includes(statusOf(agent));
-const agentReady = (agent) => !agentBusy(agent) && !agentInitializing(agent) && !["offline", "unreachable"].includes(statusOf(agent));
+const agentInitializing = (agent) => ["recovering", "starting"].includes(agent?.runtimeStatus)
+  || ["recovering", "starting"].includes(statusOf(agent));
+// Activation ends when the CLI is running, even if a resumed turn or question
+// is still busy. Work completion is a separate condition for draining input.
+const agentActivated = (agent) => !agentInitializing(agent) && statusOf(agent) !== "offline"
+  && (!agent?.runtimeStatus || agent.runtimeStatus === "running");
+const agentReady = (agent) => agentActivated(agent) && !agentBusy(agent);
 
 function renderComposerQueue() {
   const el = ui.composerQueue;
@@ -3521,7 +3554,9 @@ function renderComposerQueue() {
   const error = sessionQueueErrors.get(agent.id);
   const head = make("div", "composer-queue-head", error === "outcome-unknown"
     ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
-    : t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
+    : error === "activation-timeout"
+      ? t("예약 대기열 {0} · 세션 시작이 지연되고 있습니다. 실행되면 자동 전송합니다.", [queue.length])
+      : t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   if (error) {
     const retry = make("button", "composer-queue-retry", error === "outcome-unknown"
       ? t("대화 확인 후 다시 보내기") : error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
@@ -3567,7 +3602,17 @@ async function drainQueues() {
     for (const [agentId, queue] of sessionQueues) {
       if (!queue.length) { sessionQueues.delete(agentId); continue; }
       const agent = agentMap().get(agentId);
-      if (!agent || sendingAgents.has(agentId) || sessionQueueErrors.has(agentId)) continue;
+      if (!agent || sendingAgents.has(agentId)) continue;
+      if (agentActivated(agent)) {
+        sessionActivationDeadlines.delete(agentId);
+        // A late startup can recover without user input. Failed/uncertain
+        // submissions still require explicit retry to prevent duplicate sends.
+        if (sessionQueueErrors.get(agentId) === "activation-timeout") {
+          sessionQueueErrors.delete(agentId);
+          if (selectedAgent()?.id === agentId) renderComposerQueue();
+        }
+      }
+      if (sessionQueueErrors.has(agentId)) continue;
       const activationDeadline = sessionActivationDeadlines.get(agentId);
       if (activationDeadline && Date.now() >= activationDeadline) {
         sessionActivationDeadlines.delete(agentId);
@@ -3631,8 +3676,7 @@ async function waitForSessionReady(agentId) {
     || Date.now() + SESSION_ACTIVATION_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const agent = agentMap().get(agentId);
-    const initializing = agent && agentInitializing(agent);
-    if (agent && statusOf(agent) !== "offline" && !initializing) {
+    if (agent && agentActivated(agent)) {
       sessionActivationDeadlines.delete(agentId);
       await new Promise((resolve) => setTimeout(resolve, 350));
       return true;
@@ -5187,6 +5231,13 @@ ui.searchInput.addEventListener("input", () => {
   renderNavigation();
   if (selection.type === "monitor") renderMonitor();
 });
+ui.resetSessionFilter.addEventListener("click", () => {
+  ui.searchInput.value = "";
+  setActiveFilter("all", { push: true });
+  renderNavigation();
+  if (selection.type === "monitor") renderMonitor();
+  ui.filters.querySelector('[data-filter="all"]').focus({ preventScroll: true });
+});
 ui.documentProjectSelect.addEventListener("change", () => selectDocuments(ui.documentProjectSelect.value));
 ui.documentSearchInput.addEventListener("input", () => {
   if (selection.type === "documents") renderDocuments();
@@ -5636,9 +5687,7 @@ addEventListener("popstate", (event) => {
     : Math.max(0, routeDepth - 1);
   const url = new URL(location.href);
   const previousDocumentKey = `${selection.type}:${selection.id || ""}:${selectedDocumentPath || ""}`;
-  activeFilter = FILTERS.includes(url.searchParams.get("filter"))
-    ? url.searchParams.get("filter")
-    : "all";
+  activeFilter = normalizeSessionFilter(url.searchParams.get("filter"));
   selection = selectionFromUrl(url);
   selectedDocumentPath = selection.type === "documents" ? (url.searchParams.get("file") || null) : null;
   const nextDocumentKey = `${selection.type}:${selection.id || ""}:${selectedDocumentPath || ""}`;

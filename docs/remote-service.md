@@ -22,6 +22,15 @@ sources:
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
+  - id: session-filters
+    resource: ../app/electron/shared/session-state.mjs
+    title: "Shared Remote session lifecycle filters and PTY projection"
+  - id: session-filter-tests
+    resource: ../app/electron/shared/session-state.test.mjs
+    title: "Desktop classification parity and runtime projection checks"
+  - id: session-filter-smoke
+    resource: ../app/scripts/electron-remote-session-filter-smoke.mjs
+    title: "Remote and Dashboard session filter runtime verification"
   - id: remote-documents
     resource: ../app/electron/services/remote-documents.mjs
     title: "Shared project document routes and preview capabilities"
@@ -61,6 +70,9 @@ sources:
   - id: remote-ui-smoke
     resource: ../app/scripts/electron-remote-pwa-smoke.mjs
     title: "Desktop and mobile Remote PWA runtime smoke"
+  - id: remote-queue-smoke
+    resource: ../app/scripts/electron-remote-queue-smoke.mjs
+    title: "Remote and Dashboard queue activation and completion smoke"
   - id: remote-language
     resource: ../app/electron/remote-pwa/i18n.js
     title: "Remote display language and locale formatting"
@@ -232,6 +244,44 @@ Remote configuration, approval state, tunnel metadata, and device tokens live
 under local application data. Credentials, signing keys, and OAuth secrets must
 not be committed to the repository.
 
+## Session filters
+
+Dashboard and Remote use the desktop sidebar's **All / Active / Sleeping**
+categories. Each button shows the count across all configured sessions, even
+while searching. Active includes running, starting and recovering processes,
+including sessions working, waiting for answers/permission, or finished with a
+live process. Sleeping means `deferredStart === true` and `resumeEligible === true`:
+a restored or suspended session that can start or resume and has a steady blue
+dot. Never-started, explicitly deactivated, exited and unreachable sessions
+remain in All.[^session-filters][^session-filter-tests]
+
+The desktop publishes runtime and standby flags to both web projections. The
+host's actual PTY presence overrides delayed metadata: a live process cannot
+remain Sleeping, and an old running/hook status without a process cannot remain
+Active. Explicit startup/recovery can appear in Active before PTY allocation.
+Filtering changes visibility only; it does not start or resume sessions.
+[^session-filters][^electron-main]
+
+The selected filter is saved in the browser's local storage, independently of
+the desktop selection. Explicit URL filters take priority, and Back restores
+the category from the URL. Previous working, question, starting, recovery and
+done links map to Active; previous idle/offline links map to All. Search by
+project, session, folder or path stays within the selected category. Project
+headings without matches disappear; desktop Screen shortcuts remain available.
+Empty results offer **Show all sessions**, which clears the search and returns
+to All. The shared UI also applies to Android's retained WebView.
+[^remote-client][^remote-styles]
+
+2026-10-01 source validation: 60 related tests and the TypeScript/Vite build
+passed. Isolated Electron runs cover Remote and loopback Dashboard at 1280px and
+375px, with landscape checks at 844px: labels/counts, lifecycle classification,
+saved selection, old links, Back, keyboard selection, search/reset, state changes,
+steady blue dots and absence of activation requests. Desktop/mobile Remote PWA
+smoke also passed, covering chat, documents, account UI and six display locales.
+These changes are included in EXE 1.8.1.38 with cache v81; release verification
+is recorded in [the release notes](release-1-8-1-38.md), and user installation
+remains separate.[^session-filter-smoke][^remote-ui-smoke]
+
 ## Session and content surface
 
 Desktop Chat, Dashboard and Remote show an **Answer needed / 답변 대기 중**
@@ -287,7 +337,23 @@ least 500ms, observes PTY output, and then waits for 250ms of quiet output (boun
 80ms delay could overlap a CLI's paste handling. A failed immediate
 submission leaves the draft and attachments available,
 while an activation timeout keeps its queued message and exposes retry instead
-of silently deleting it.[^web-services][^remote-client][^web-tests][^pty-submit]
+of silently deleting it. The 30-second activation limit applies only until the
+CLI is running; resumed work or a question can then wait longer without expiring
+activation. If startup finishes after the limit, the activation warning clears
+automatically and queued messages send in order when work and questions finish.
+Runtime availability is checked separately from a Done hook, so stale completion
+metadata cannot authorize input to a session that is still starting. Failed or
+uncertain submissions remain paused for explicit retry.[^web-services][^remote-client][^web-tests][^pty-submit]
+
+`npm run electron:remote-queue-smoke` checks this behavior through the actual
+Remote and Dashboard pages at desktop and phone widths, using isolated profiles,
+ephemeral loopback ports and mock sessions. It covers a turn longer than the
+activation limit, late startup, blocking questions, FIFO/session isolation and
+failed or uncertain submissions, including legacy payloads without runtime
+metadata. Both Codex and Claude fixtures passed, and the queue UI was inspected
+at phone and landscape widths. The correction is included in EXE 1.8.1.38;
+[release verification](release-1-8-1-38.md) and installation on the user's
+desktop are separate checks.[^remote-queue-smoke]
 
 Only one composer submission may write a given PTY at a time. If the terminal
 changes or output does not settle after text was written, the request is marked
@@ -480,6 +546,9 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker
 [^remote-client]: Remote PWA client
+[^session-filters]: Shared Remote session lifecycle filters and PTY projection
+[^session-filter-tests]: Desktop classification parity and runtime projection checks
+[^session-filter-smoke]: Remote and Dashboard session filter runtime verification
 [^remote-documents]: Shared project document routes and preview capabilities
 [^remote-http]: Shared HTTP JSON response framing
 [^chat-markup]: Chat markup escaping and project file links
@@ -489,6 +558,7 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^chat-transcript]: Transcript decoding and pending native questions
 [^question-ui-smoke]: Desktop and Remote question visibility smoke
 [^remote-ui-smoke]: Desktop and mobile Remote PWA runtime smoke
+[^remote-queue-smoke]: Remote and Dashboard queue activation and completion smoke
 [^remote-language]: Remote display language and locale formatting
 [^remote-styles]: Remote typography and responsive layout
 [^electron-main]: Desktop browser ownership and Remote frame provider

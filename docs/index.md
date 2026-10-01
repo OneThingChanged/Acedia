@@ -17,6 +17,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.38 EXE release](release-1-8-1-38.md) - Resume queued messages after activation, align Remote session filters, refresh all account limits and clarify completion/token accounting.
+
 * [Acedia 1.8.1.37 EXE release](release-1-8-1-37.md) - Separate blue Sleeping sessions from Active with saved sidebar filters, counts and search.
 
 * [Acedia 1.8.1.35 EXE release](release-1-8-1-35.md) - Download original Markdown/HTML/JSON, images and videos from Remote previews, Documents headers and document actions.
@@ -66,7 +68,7 @@ configuration that supports it.
 
 ## Sessions and integrations
 
-* [Acedia account pool](account-pool.md) - Dashboard and Remote account registration, launch-time routing, per-session account choice and usage.
+* [Acedia account pool](account-pool.md) - Account registration and routing; one-button quota refresh for all accounts, completion-aware outcomes and response/transcript token sources.
 
 
 * [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, account quotas, personal-account migration and integration boundaries.
@@ -78,7 +80,7 @@ configuration that supports it.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents and downloads, usage, session model/effort editing and visible waiting questions.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
-* [Remote service](remote-service.md) - Remote/PWA/Android access, original file downloads, session model/effort editing, waiting-question chat cards, language synchronization and authentication boundaries.
+* [Remote service](remote-service.md) - Remote/PWA/Android access, desktop-equivalent All/Active/Sleeping filters, original downloads, session model/effort editing, waiting questions and authentication boundaries.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
 * [Central usage collector](central-usage-collector.md) - Employee/account attribution, company receiver, Acedia and standalone collection, plugin scope and ordinary-chat limitations.

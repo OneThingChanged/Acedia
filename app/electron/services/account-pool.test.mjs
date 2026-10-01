@@ -9,7 +9,7 @@ import { LocalDashboardService, RemoteDashboardService } from './web-services.mj
 
 const resources = [];
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s).reverse(), decryptString: b => Buffer.from(b).reverse().toString() };
-afterEach(async () => { for (const { pool, root, web } of resources.splice(0)) { pool.close(); await web?.stop(); fs.rmSync(root, { recursive: true, force: true }); } });
+afterEach(async () => { for (const { pool, root, web } of resources.splice(0)) { pool.close(); await pool.refreshing; await web?.stop(); fs.rmSync(root, { recursive: true, force: true }); } });
 function fixture(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-pool-test-'));
   const seen = [];
@@ -103,7 +103,7 @@ describe('Acedia account pool', () => {
     expect((await request(pool, 'two')).response.status).toBe(200);
     await request(pool, 'one');
     expect(seen.map(r => r.headers['chatgpt-account-id'])).toEqual(['A', 'B', 'A']);
-    expect(pool.snapshot().accounts.find(x => x.id === a).stats).toMatchObject({ version: 2, requests: 2, failures: 0, cancelled: 0,
+    expect(pool.snapshot().accounts.find(x => x.id === a).stats).toMatchObject({ version: 3, requests: 2, failures: 0, cancelled: 0,
       measuredRequests: 2, unmeasuredRequests: 0, inputTokens: 24, outputTokens: 6, cachedTokens: 8 });
     expect(pool.state.sessions.two.accountId).toBe(b);
     expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
@@ -152,9 +152,134 @@ describe('Acedia account pool', () => {
     pool.account(id).stats = { requests: 100, failures: 90, inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
     pool.persist();
     const restored = new AccountPool(root, { safeStorage });
-    expect(restored.snapshot().accounts[0].stats).toMatchObject({ version: 2, requests: 100, failures: 0,
-      cancelled: 0, legacyFailedOrCancelled: 90, inputTokens: 0, outputTokens: 0 });
+    expect(restored.snapshot().accounts[0].stats).toMatchObject({ version: 3, requests: 100, failures: 0,
+      cancelled: 0, legacyDisconnected: 0, legacyFailedOrCancelled: 90, inputTokens: 0, outputTokens: 0 });
     restored.close();
+  });
+  it('preserves old disconnect counts without treating them as confirmed cancellations', () => {
+    const { pool, root } = fixture(); const id = add(pool, 'A');
+    pool.account(id).stats = { version: 2, requests: 100, failures: 2, cancelled: 80,
+      legacyFailedOrCancelled: 7, measuredRequests: 4, unmeasuredRequests: 96,
+      inputTokens: 30, outputTokens: 12, cachedTokens: 10 };
+    pool.persist();
+    const restored = new AccountPool(root, { safeStorage });
+    expect(restored.account(id).stats).toMatchObject({ version: 3, requests: 100, failures: 2,
+      cancelled: 0, legacyDisconnected: 80, legacyFailedOrCancelled: 7,
+      measuredRequests: 4, unmeasuredRequests: 96, inputTokens: 30, outputTokens: 12, cachedTokens: 10 });
+    restored.persist(); restored.close();
+    const reopened = new AccountPool(root, { safeStorage });
+    expect(reopened.account(id).stats).toMatchObject({ cancelled: 0, legacyDisconnected: 80 });
+    reopened.close();
+  });
+  it.each([false, true])('keeps completion when the client closes after its final event (usage: %s)', async usage => {
+    const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        const event = { type: 'response.completed', response: { id: 'r1',
+          ...(usage ? { usage: { input_tokens: 12, output_tokens: 3 } } : {}) } };
+        controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify(event) + '\n\n'));
+        options.signal.addEventListener('abort', () => controller.error(new Error('client finished reading')), { once: true });
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('completed');
+    const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
+      method: 'POST', headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test', input: [] }),
+    });
+    const reader = response.body.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('response.completed');
+    await reader.cancel();
+    for (let attempt = 0; attempt < 100 && pool.state.recent.length === 0; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true,
+      httpStatus: 200, usageReported: usage, inputTokens: usage ? 12 : 0, outputTokens: usage ? 3 : 0 });
+    expect(pool.account(id).stats).toMatchObject({ requests: 1, failures: 0, cancelled: 0,
+      measuredRequests: usage ? 1 : 0, unmeasuredRequests: usage ? 0 : 1 });
+  });
+  it('keeps an explicit failure when the client closes after the error event', async () => {
+    const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"type":"response.failed"}\n\n'));
+        options.signal.addEventListener('abort', () => controller.error(new Error('client read the error')), { once: true });
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('failed');
+    const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
+      method: 'POST', headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test', input: [] }),
+    });
+    const reader = response.body.getReader(); await reader.read(); await reader.cancel();
+    for (let attempt = 0; attempt < 100 && pool.state.recent.length === 0; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'failed', completionObserved: false });
+    expect(pool.account(id).stats).toMatchObject({ failures: 1, cancelled: 0 });
+  });
+  it('reads multiline SSE data and event names across byte and CRLF boundaries', async () => {
+    const text = ': keepalive\r\nevent: response.completed\r\ndata: {"response":\r\ndata: {"usage":{"input_tokens":12,"output_tokens":3,"cached_input_tokens":4},"note":"완료"}}\r\n\r\n';
+    const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) { for (const byte of new TextEncoder().encode(text)) controller.enqueue(Uint8Array.of(byte)); controller.close(); },
+    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true);
+    expect((await request(pool, 'multiline')).text).toBe(text);
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true,
+      usageReported: true, inputTokens: 12, outputTokens: 3, cachedTokens: 4 });
+    expect(pool.account(id).stats).toMatchObject({ measuredRequests: 1, failures: 0, inputTokens: 12, outputTokens: 3 });
+  });
+  it('does not count cumulative usage snapshots twice and preserves measured zero', async () => {
+    let text = 'data: {"type":"response.created","response":{"usage":{"input_tokens":10,"output_tokens":2}}}\n\n'
+      + 'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3}}}\n\n';
+    const { pool } = fixture({ fetchImpl: async () => new Response(text, { headers: { 'content-type': 'text/event-stream' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'snapshots');
+    text = 'data: {"type":"response.completed","response":{"usage":{"input_tokens":0,"output_tokens":0}}}\n\n';
+    await request(pool, 'zero');
+    expect(pool.state.recent.at(-1)).toMatchObject({ usageReported: true, inputTokens: 0, outputTokens: 0 });
+    expect(pool.account(id).stats).toMatchObject({ measuredRequests: 2, inputTokens: 12, outputTokens: 3 });
+  });
+  it('preserves forwarding and reads later completion after an oversized SSE event', async () => {
+    const prefix = 'data: {"type":"response.output_text.delta","delta":"' + 'x'.repeat(2 * 1024 * 1024);
+    const suffix = '"}\n\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3}}}\n\n';
+    const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode(prefix));
+      controller.enqueue(new TextEncoder().encode(suffix)); controller.close();
+    } }), { headers: { 'content-type': 'text/event-stream' } }) });
+    add(pool, 'A'); await pool.setEnabled(true);
+    const { text } = await request(pool, 'oversized');
+    expect(text.length).toBe(prefix.length + suffix.length);
+    expect(text.endsWith(suffix)).toBe(true);
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', usageReported: true,
+      inputTokens: 12, outputTokens: 3 });
+  });
+  it('recognizes an explicitly completed untyped response in SSE', async () => {
+    const { pool } = fixture({ fetchImpl: async () => new Response('data: {"status":"completed","usage":{"input_tokens":2,"output_tokens":1}}\n\n',
+      { headers: { 'content-type': 'text/event-stream' } }) });
+    add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'untyped');
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true,
+      usageReported: true, inputTokens: 2, outputTokens: 1 });
+  });
+  it('keeps failed and incomplete JSON responses as failures even if they contain usage', async () => {
+    let status = 'failed';
+    const { pool } = fixture({ fetchImpl: async () => new Response(JSON.stringify({ status,
+      usage: { input_tokens: 2, output_tokens: 1 } }), { headers: { 'content-type': 'application/json' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'failed');
+    status = 'incomplete'; await request(pool, 'incomplete');
+    expect(pool.state.recent.map(record => record.status)).toEqual(['failed', 'failed']);
+    expect(pool.account(id).stats).toMatchObject({ failures: 2, cancelled: 0, measuredRequests: 2 });
+  });
+  it('orders recent requests by their displayed start time when streams finish out of order', async () => {
+    let now = Date.now(), finishFirst, calls = 0;
+    const { pool } = fixture({ now: () => now, fetchImpl: async () => ++calls === 1
+      ? new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
+        finishFirst = () => { controller.enqueue(new TextEncoder().encode('data: {"type":"response.completed"}\n\n')); controller.close(); };
+      } }), { headers: { 'content-type': 'text/event-stream' } })
+      : new Response('data: {"type":"response.completed"}\n\n', { headers: { 'content-type': 'text/event-stream' } }) });
+    add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('earlier');
+    const first = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
+      method: 'POST', headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'test', input: [] }),
+    });
+    now += 10_000; await request(pool, 'later'); finishFirst(); await first.text();
+    expect(pool.snapshot().recent.map(record => record.sessionId)).toEqual(['later', 'earlier']);
   });
   it('counts a client-aborted successful HTTP stream as cancelled, not failed or zero measured tokens', async () => {
     const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
@@ -307,6 +432,104 @@ describe('Acedia account pool', () => {
     const id = add(pool, 'A'); await Promise.all([pool.credentials(id, true), pool.credentials(id, true)]);
     expect(maximum).toBe(1); expect(fs.existsSync(path.join(pool.home(id), 'auth.json'))).toBe(false);
   });
+  it('refreshes every authenticated account with two RPCs at most and shares duplicate jobs', async () => {
+    const seen = []; let active = 0, maximum = 0;
+    const { pool } = fixture({ rpcFactory: (_env, home) => ({
+      initialize: async () => { active++; maximum = Math.max(maximum, active); }, close: () => { active--; },
+      call: async method => {
+        if (method === 'account/read') return { account: { type: 'chatgpt' } };
+        expect(method).toBe('account/rateLimits/read'); seen.push(JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8')).tokens.account_id);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return { rateLimits: { primary: { usedPercent: 25 } } };
+      },
+    }) });
+    const ids = ['A', 'B', 'C', 'D', 'E'].map(label => add(pool, label));
+    pool.update(ids[1], false);
+    pool.account(ids[2]).limits = { rateLimits: { primary: { usedPercent: 100 } } };
+    const empty = pool.create('Not signed in');
+    const first = pool.refreshAll(); const second = pool.refreshAll();
+    expect(second.id).toBe(first.id); expect(first.running).toBe(true);
+    await pool.refreshing;
+    expect(seen.sort()).toEqual(['A', 'B', 'C', 'D', 'E']); expect(maximum).toBe(2); expect(active).toBe(0);
+    expect(first).toMatchObject({ running: false, total: 6, completed: 6, succeeded: 5, failed: 0, skipped: 1 });
+    expect(first.results.find(item => item.id === empty)).toMatchObject({ status: 'skipped', reason: 'login_required' });
+    expect(pool.account(ids[1]).enabled).toBe(false);
+    for (const id of ids) {
+      expect(pool.account(id).limits.rateLimits.primary.usedPercent).toBe(25);
+      expect(pool.account(id).limitsAt).toBeGreaterThan(0);
+      expect(pool.account(id).stats.requests).toBe(0);
+      expect(fs.existsSync(path.join(pool.home(id), 'auth.json'))).toBe(false);
+    }
+    expect(pool.rpcs.size).toBe(0);
+    expect(pool.snapshot(false).quotaRefresh).toBeUndefined();
+  });
+  it('preserves previous readings on partial refresh failure and still updates other accounts', async () => {
+    const { pool } = fixture({ rpcFactory: (_env, home) => ({ initialize: async () => {}, close: () => {}, call: async method => {
+      if (method === 'account/read') return { account: { type: 'chatgpt' } };
+      if (JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8')).tokens.account_id === 'A') throw new Error('private-upstream-error SECRET');
+      return { rateLimits: { primary: { usedPercent: 30 } } };
+    } }) });
+    const a = add(pool, 'A'), b = add(pool, 'B');
+    pool.account(a).limits = { rateLimits: { primary: { usedPercent: 20 } } }; pool.account(a).limitsAt = 1000;
+    const job = pool.refreshAll(); await pool.refreshing;
+    expect(job).toMatchObject({ completed: 2, succeeded: 1, failed: 1, skipped: 0 });
+    expect(pool.account(a)).toMatchObject({ limits: { rateLimits: { primary: { usedPercent: 20 } } }, limitsAt: 1000 });
+    expect(pool.account(b).limits.rateLimits.primary.usedPercent).toBe(30);
+    expect(JSON.stringify(pool.snapshot())).not.toMatch(/private-upstream|SECRET|secret-refresh|access_token/);
+  });
+  it('skips accounts with an active login and handles an empty account list', async () => {
+    const { pool } = fixture({ rpcFactory: () => { throw new Error('Unexpected RPC'); } });
+    const empty = pool.refreshAll(); await pool.refreshing;
+    expect(empty).toMatchObject({ running: false, total: 0, completed: 0 });
+    const id = add(pool, 'A'); pool.jobs.set(id, { public: null, finish: () => {} });
+    const job = pool.refreshAll(); await pool.refreshing;
+    expect(job).toMatchObject({ total: 1, succeeded: 0, failed: 0, skipped: 1 });
+    expect(job.results[0]).toMatchObject({ status: 'skipped', reason: 'login_pending' });
+  });
+  it('recovers temporary credentials when constructing the quota RPC fails', async () => {
+    const { pool } = fixture({ rpcFactory: () => { throw new Error('Cannot start CLI'); } });
+    const id = add(pool, 'A'); const saved = pool.unseal(pool.account(id).auth);
+    const job = pool.refreshAll(); await pool.refreshing;
+    expect(job).toMatchObject({ running: false, total: 1, completed: 1, failed: 1 });
+    expect(pool.unseal(pool.account(id).auth)).toBe(saved);
+    expect(fs.existsSync(path.join(pool.home(id), 'auth.json'))).toBe(false);
+    expect(pool.rpcs.size).toBe(0); expect(pool.locks.size).toBe(0);
+  });
+  it('stops quota RPCs and queued accounts on service shutdown', async () => {
+    let started = 0, closed = 0;
+    const { pool } = fixture({ rpcFactory: () => {
+      let rejectPending, terminated = false;
+      return { initialize: async () => {}, close: () => { if (terminated) return; terminated = true; closed++; rejectPending?.(new Error('closed')); }, call: async method => {
+        if (method === 'account/read') return { account: { type: 'chatgpt' } };
+        started++; return new Promise((_resolve, reject) => { rejectPending = reject; });
+      } };
+    } });
+    const ids = ['A', 'B', 'C'].map(label => add(pool, label));
+    const job = pool.refreshAll(); const pending = pool.refreshing;
+    for (let attempt = 0; attempt < 100 && started < 2; attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    expect(started).toBe(2); pool.close(); await pending;
+    expect(job).toMatchObject({ running: false, total: 3, completed: 3, failed: 0, skipped: 3 });
+    expect(pool.rpcs.size).toBe(0); expect(closed).toBe(2);
+    for (const id of ids) expect(fs.existsSync(path.join(pool.home(id), 'auth.json'))).toBe(false);
+  });
+  it('starts a background quota refresh through the local Dashboard and polls the shared job', async () => {
+    let release, reads = 0;
+    const held = new Promise(resolve => { release = resolve; });
+    const { pool, root, item } = fixture({ rpcFactory: () => ({ initialize: async () => {}, close: () => release(), call: async method => {
+      if (method === 'account/read') return { account: { type: 'chatgpt' } };
+      reads++; await held; return { rateLimits: { primary: { usedPercent: 25 } } };
+    } }) });
+    add(pool, 'A');
+    const web = new LocalDashboardService({ baseDir: root, configName: 'web.json', defaultPort: 0, providers: { accountPoolApi: (...args) => pool.api(...args) } }); item.web = web;
+    const { url } = await web.start();
+    const start = () => fetch(url + '/api/account-pool', { method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(url).origin }, body: JSON.stringify({ action: 'refresh_all' }) }).then(response => response.json());
+    const first = await start(); expect(first.quotaRefresh.running).toBe(true);
+    const second = await start(); expect(second.quotaRefresh.id).toBe(first.quotaRefresh.id);
+    expect((await fetch(url + '/api/account-pool').then(response => response.json())).quotaRefresh.running).toBe(true);
+    release(); await pool.refreshing;
+    expect(reads).toBe(1);
+    expect((await fetch(url + '/api/account-pool').then(response => response.json())).quotaRefresh).toMatchObject({ running: false, succeeded: 1 });
+  });
   it('requires owner permissions and same-origin JSON for web management', async () => {
     const { pool, root, item } = fixture();
     const web = new RemoteDashboardService({ baseDir: path.join(root, 'remote'), accountPoolApi: (...args) => pool.api(...args) });
@@ -319,7 +542,9 @@ describe('Acedia account pool', () => {
     expect(await fetch(base + '/api/account-pool', { headers: guest }).then(r => r.json())).toMatchObject({ canManage: false });
     for (const headers of [guest, { ...owner, origin: 'https://evil.invalid' }]) {
       expect((await fetch(base + '/api/account-pool', { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', label: 'A' }) })).status).toBe(403);
+      expect((await fetch(base + '/api/account-pool', { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'refresh_all' }) })).status).toBe(403);
     }
+    expect(pool.quotaRefresh).toBeNull();
     expect((await fetch(base + '/api/account-pool', { method: 'POST', headers: { ...owner, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', label: 'A' }) })).status).toBe(200);
   });
   it('serves the account UI through the existing local Dashboard', async () => {

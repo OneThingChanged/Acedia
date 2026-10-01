@@ -23,7 +23,15 @@ const pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, fe
     { type: 'response.output_text.delta', item_id: item.id, output_index: 0, content_index: 0, delta: 'POOL_FIXTURE_OK' },
     { type: 'response.output_text.done', item_id: item.id, output_index: 0, content_index: 0, text: 'POOL_FIXTURE_OK' },
     { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
-  return new Response(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+  const stream = events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+  // The real CLI stops reading at response.completed. Keep the first upstream
+  // stream open to verify that this normal transport close is still completed.
+  const body = calls.filter(c => c.url.endsWith('/responses')).length === 1
+    ? new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode(stream));
+      options.signal.addEventListener('abort', () => controller.error(new Error('fixture client finished reading')), { once: true });
+    } }) : stream;
+  return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
 } });
 let rpc;
 try {
@@ -48,6 +56,11 @@ try {
     assert.equal(code, 0, error); assert.ok(output.includes('POOL_FIXTURE_OK'), output + error);
   }
   assert.deepEqual(calls.filter(c => c.url.endsWith('/responses')).map(c => c.account), ['A', 'B', 'A']);
+  for (let attempt = 0; attempt < 100 && pool.state.recent.filter(r => r.operation === 'generation').length < 3; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+  const records = pool.state.recent.filter(r => r.operation === 'generation');
+  assert.equal(records.length, 3);
+  assert.ok(records.every(r => r.status === 'completed' && r.completionObserved && r.usageReported));
+  assert.equal(records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0), 45);
   console.log('ACCOUNT_POOL_REAL_CLI_RPC_AND_STREAM_OK');
 } finally {
   rpc?.close(); pool.close();

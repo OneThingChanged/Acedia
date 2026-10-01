@@ -88,6 +88,11 @@ preference migrates to Active. Screen shortcuts remain available above the
 project tree. Filtering and folder/project collapse change visibility without
 deleting or activating sessions.[^sidebar]
 
+The shared Dashboard/Remote sidebar uses these same All/Active/Sleeping categories,
+with global counts and a browser-local saved selection. Search stays within the
+category; empty results can reset to All. See [Remote session filters](remote-service.md#session-filters)
+for state projection and source validation.
+
 A fixed Browser Hub entry sits above the project tree and reports the global
 browser count. Opening it preserves the active Screen layout but replaces the
 center surface with tabs for every application-owned browser, including parked

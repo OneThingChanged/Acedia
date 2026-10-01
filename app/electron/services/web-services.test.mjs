@@ -251,8 +251,11 @@ describe("Electron dashboard server", () => {
     expect(pageBody).toContain('data-usage-period="year"');
     expect(pageBody).toContain('id="usageChart"');
     expect(pageBody).toContain('id="mobileSessionsButton"');
-    expect(pageBody).toContain('data-filter="active"');
-    expect(pageBody).toContain('data-filter="recovering"');
+    expect([...pageBody.matchAll(/data-filter="([^"]+)"/g)].map(match => match[1])).toEqual(['all', 'active', 'sleeping']);
+    const sessionState = await fetch(`${status.url}/pwa/session-state.js`);
+    expect(sessionState.status).toBe(200);
+    expect(sessionState.headers.get('cache-control')).toBe('no-cache');
+    expect(await sessionState.text()).toContain('export function matchesSessionFilter');
     expect(pageBody).toContain('id="restartSessionButton" type="button">활성화</button>');
     expect(pageBody).toContain('data-mode="browser"');
     expect(pageBody).toContain('id="browserViewport"');
@@ -392,9 +395,9 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v80');
+    expect(workerBody).toContain('multiagent-remote-v81');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
-    for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js"]) {
+    for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js", "session-state.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
       expect(module.status).toBe(200);
       expect(module.headers.get("content-type")).toContain("javascript");

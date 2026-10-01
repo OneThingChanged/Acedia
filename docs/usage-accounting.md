@@ -21,6 +21,9 @@ sources:
   - id: status-bar
     resource: ../app/src/components/UsageStatusBar.tsx
     title: "Desktop account-limit status bar"
+  - id: account-pool
+    resource: ../app/electron/services/account-pool.mjs
+    title: "Routed request outcomes and response usage"
 ---
 
 # Usage accounting
@@ -37,6 +40,19 @@ reopening the usage page does not require rebuilding all history.[^usage-service
 
 Remote SSH transcripts that do not exist on this PC are outside this ingestion
 model.
+
+## Routed request usage
+
+[Account routing](account-pool.md) keeps response-reported request tokens separate
+from transcript totals. A request without response token data can still consume
+tokens; the account card shows transcript totals for recorded assignment periods.
+Transcript token events do not carry a routed request ID, so those totals are not
+distributed across individual requests or matched by timestamp alone. Reported
+zero remains distinct from missing usage.[^account-pool][^usage-ui]
+
+Receiving a completion event takes precedence over a later client disconnect.
+Historical disconnect counts are preserved separately because older records
+cannot establish whether completion preceded the disconnect.[^account-pool]
 
 ## Local storage
 
@@ -98,6 +114,7 @@ identity. See [profile display management](properties-and-usage.md).[^usage-serv
 
 [^usage-service]: Electron usage service
 [^usage-tests]: Usage aggregation tests
+[^account-pool]: Routed request outcomes and response usage
 [^usage-ui]: Dashboard and Remote usage UI
 [^status-bar]: Desktop account-limit status bar
 

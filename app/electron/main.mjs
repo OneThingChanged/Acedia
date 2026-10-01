@@ -63,6 +63,7 @@ import { RemoteSessionModelBroker } from "./services/remote-session-model-broker
 import { SessionModelService, lastTurnModel, modelRestartAllowed, verifyModelSessionStart } from "./services/session-model-service.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
 import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
+import { projectSessionRuntime } from "./shared/session-state.mjs";
 import { TerminalSessionService } from "./services/terminal-session-service.mjs";
 import {
   findWindowsExecutable,
@@ -662,6 +663,7 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
       });
     return {
       ...agent,
+      ...projectSessionRuntime(agent, live),
       status: live ? completedWithoutHook ? "done" : agent.status : "offline",
       output: sanitizeTerminalOutput(
         ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? ""

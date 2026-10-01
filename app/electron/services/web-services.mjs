@@ -120,6 +120,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-state.js", { file: "../shared/session-state.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],

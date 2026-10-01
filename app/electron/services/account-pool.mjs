@@ -10,12 +10,15 @@ import { readCodexModels } from '../shared/session-model.mjs';
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(data)); };
-const stats = () => ({ version: 2, requests: 0, failures: 0, cancelled: 0,
-  legacyFailedOrCancelled: 0, measuredRequests: 0, unmeasuredRequests: 0,
+const stats = () => ({ version: 3, requests: 0, failures: 0, cancelled: 0,
+  legacyFailedOrCancelled: 0, legacyDisconnected: 0, measuredRequests: 0, unmeasuredRequests: 0,
   inputTokens: 0, outputTokens: 0, cachedTokens: 0 });
-const upgradeStats = previous => previous.version === 2 ? previous : {
-  ...stats(), ...previous, version: 2, failures: 0, cancelled: 0,
-  legacyFailedOrCancelled: count(previous.failures), measuredRequests: 0, unmeasuredRequests: 0,
+const upgradeStats = previous => {
+  if (previous.version === 3) return previous;
+  const upgraded = { ...stats(), ...previous, version: 3, cancelled: 0,
+    legacyDisconnected: count(previous.legacyDisconnected) + count(previous.cancelled) };
+  return previous.version === 2 ? upgraded : { ...upgraded, failures: 0,
+    legacyFailedOrCancelled: count(previous.failures), measuredRequests: 0, unmeasuredRequests: 0 };
 };
 const atomic = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file + '.tmp', JSON.stringify(value), { mode: 0o600 }); fs.renameSync(file + '.tmp', file); };
 const validId = value => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
@@ -29,6 +32,7 @@ export class AccountPool {
     this.transcriptUsageForPeriods = transcriptUsageForPeriods;
     this.state = { enabled: false, accounts: [], sessions: {}, recent: [] }; this.jobs = new Map(); this.locks = new Map(); this.active = new Map();
     this.server = null; this.starting = null; this.closed = false; this.controllers = new Set();
+    this.rpcs = new Map(); this.refreshStopped = false; this.quotaRefresh = null; this.refreshing = null;
     try {
       if (fs.statSync(this.file).size > 8 * 1024 * 1024) throw new Error();
       this.state = JSON.parse(fs.readFileSync(this.file, 'utf8'));
@@ -78,7 +82,8 @@ export class AccountPool {
         login: this.jobs.get(a.id)?.public || null,
         transcriptUsage: (() => { try { return this.transcriptUsageForPeriods?.(periodsByAccount.get(a.id) || []) || null; } catch { return null; } })() })),
       sessions: Object.entries(this.state.sessions).slice(-100).map(([id, s]) => ({ id, accountId: s.accountId, lastUsed: s.lastUsed })),
-      recent: this.state.recent.slice(-50).reverse() };
+      recent: this.state.recent.slice().reverse().sort((a, b) => b.at - a.at).slice(0, 50),
+      quotaRefresh: this.quotaRefresh ? { ...this.quotaRefresh, results: this.quotaRefresh.results.map(item => ({ ...item })) } : null };
   }
   create(label) {
     this.guard();
@@ -148,9 +153,19 @@ export class AccountPool {
     a.auth = this.seal(raw); this.persist(); fs.unlinkSync(file);
   }
   async connect(a) {
-    const { home, env } = this.prepareHome(a);
-    const rpc = this.rpcFactory(env, home);
-    try { await rpc.initialize(); return rpc; } catch (error) { rpc.close(); this.capture(a); throw error; }
+    if (this.refreshStopped) throw fail('계정 서비스가 종료 중입니다.', 503);
+    let rpc;
+    try {
+      const { home, env } = this.prepareHome(a);
+      rpc = this.rpcFactory(env, home);
+      const close = rpc.close.bind(rpc);
+      rpc.close = () => { this.rpcs.delete(rpc); return close(); };
+      this.rpcs.set(rpc, a);
+      await rpc.initialize(); return rpc;
+    } catch (error) {
+      try { rpc?.close(); } finally { this.capture(a); }
+      throw error;
+    }
   }
   identity(a, data) {
     if (data?.account?.type !== 'chatgpt') throw fail('ChatGPT 계정 로그인이 필요합니다.');
@@ -272,6 +287,45 @@ export class AccountPool {
       finally { rpc.close(); this.capture(a); this.persist(); }
     });
   }
+  refreshAll() {
+    this.guard();
+    if (this.refreshStopped) throw fail('계정 서비스가 종료 중입니다.', 503);
+    if (this.quotaRefresh?.running) return this.quotaRefresh;
+    const job = { id: randomUUID(), running: true, startedAt: this.now(), finishedAt: null,
+      total: this.state.accounts.length, completed: 0, succeeded: 0, failed: 0, skipped: 0,
+      results: this.state.accounts.map(account => ({ id: account.id, status: 'pending' })) };
+    this.quotaRefresh = job;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < job.results.length && !this.refreshStopped) {
+        const item = job.results[cursor++];
+        const account = this.state.accounts.find(a => a.id === item.id);
+        if (!account || !account.auth || this.jobs.has(item.id)) {
+          item.status = 'skipped';
+          item.reason = !account ? 'removed' : this.jobs.has(item.id) ? 'login_pending' : 'login_required';
+          job.skipped++; job.completed++; continue;
+        }
+        item.status = 'running';
+        try { await this.credentials(item.id, false, true); item.status = 'succeeded'; job.succeeded++; }
+        catch {
+          item.status = this.refreshStopped ? 'skipped' : 'failed';
+          if (this.refreshStopped) { item.reason = 'stopped'; job.skipped++; }
+          else job.failed++;
+        }
+        finally { job.completed++; }
+      }
+    };
+    // Return immediately so large pools do not outlive a web request timeout.
+    // Every viewer polls the same job; duplicate clicks do not start extra RPCs.
+    this.refreshing = Promise.resolve().then(() => Promise.all(Array.from({ length: Math.min(2, job.total) }, worker)))
+      .finally(() => {
+        for (const item of job.results) if (item.status === 'pending') {
+          item.status = 'skipped'; item.reason = 'stopped'; job.skipped++; job.completed++;
+        }
+        job.running = false; job.finishedAt = this.now(); this.refreshing = null;
+      });
+    return job;
+  }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
     if (session.accountId) {
@@ -390,7 +444,7 @@ export class AccountPool {
       a = this.choose(sessionId); this.active.set(a.id, (this.active.get(a.id) || 0) + 1);
       this.state.sessions[sessionId].lastUsed = this.now();
       record = { at: this.now(), sessionId, accountId: a.id, operation: endpoint === '/models' ? 'models' : 'generation',
-        status: 'running', usageReported: false, inputTokens: 0, outputTokens: 0 };
+        status: 'running', completionObserved: false, usageReported: false, inputTokens: 0, outputTokens: 0 };
       const tokens = await this.credentials(a.id);
       const headers = { authorization: `Bearer ${tokens.access_token}`, 'chatgpt-account-id': tokens.account_id, 'content-type': 'application/json', accept: 'text/event-stream, application/json', originator: 'codex_cli_rs' };
       for (const key of ['openai-beta', 'version', 'session_id', 'conversation_id', 'x-codex-turn-state', 'x-codex-turn-metadata', 'user-agent']) if (typeof req.headers[key] === 'string') headers[key] = req.headers[key];
@@ -405,6 +459,7 @@ export class AccountPool {
       }
       record.httpStatus = upstream.status;
       if (!upstream.ok) {
+        record.status = 'failed';
         await upstream.body?.cancel();
         if ([401, 403].includes(upstream.status)) a.status = 'login_required';
         if (upstream.status === 429) { const retry = Number(upstream.headers.get('retry-after')); a.cooldownUntil = this.now() + Math.min(3600, Math.max(30, Number.isFinite(retry) ? retry : 60)) * 1000; }
@@ -414,27 +469,63 @@ export class AccountPool {
       const responseHeaders = { 'content-type': contentType, 'cache-control': 'no-store', 'x-accel-buffering': 'no' };
       for (const key of ['x-codex-turn-state', 'x-request-id']) if (upstream.headers.get(key)) responseHeaders[key] = upstream.headers.get(key);
       res.writeHead(upstream.status, responseHeaders);
-      const decoder = new StringDecoder('utf8'); let tail = '', completed = false;
-      const inspect = text => {
+      const streaming = contentType.toLowerCase().includes('text/event-stream');
+      const decoder = new StringDecoder('utf8');
+      const inspectionLimit = 2 * 1024 * 1024;
+      let tail = '', eventName = '', dataLines = [], eventLength = 0, oversized = false;
+      const inspect = (text, event = '') => {
         let data; try { data = JSON.parse(text); } catch { return; }
-        if (data.type === 'response.failed' || data.type === 'error' || data.type === 'response.incomplete') record.status = 'failed';
-        if (data.type === 'response.completed' || (!data.type && data.usage)) completed = true;
-        const usage = data.response?.usage || data.usage;
+        if (!data || typeof data !== 'object') return;
+        const type = data.type || event;
+        const response = data.response || data;
+        if (['response.failed', 'error', 'response.incomplete'].includes(type)
+          || ['failed', 'incomplete'].includes(response.status)) record.status = 'failed';
+        if (record.status !== 'failed' && (type === 'response.completed'
+          || (!type && response.status === 'completed')
+          || (!streaming && !type && !response.status && (response.usage || data.usage)))) record.completionObserved = true;
+        const usage = response.usage || data.usage;
         if (usage && Number.isSafeInteger(usage.input_tokens) && usage.input_tokens >= 0
           && Number.isSafeInteger(usage.output_tokens) && usage.output_tokens >= 0) {
           // Providers may send cumulative usage before the final event. Keep the
           // latest reported value without adding repeated SSE snapshots together.
           record.usageReported = true;
           record.inputTokens = usage.input_tokens; record.outputTokens = usage.output_tokens;
-          record.cachedTokens = count(usage.input_tokens_details?.cached_tokens);
+          record.cachedTokens = Math.min(usage.input_tokens,
+            count(usage.input_tokens_details?.cached_tokens ?? usage.cached_input_tokens));
         }
+      };
+      const dispatch = () => {
+        if (!oversized && dataLines.length) inspect(dataLines.join('\n'), eventName);
+        eventName = ''; dataLines = []; eventLength = 0; oversized = false;
+      };
+      const line = value => {
+        if (!value) { dispatch(); return; }
+        if (value.startsWith(':')) return;
+        const colon = value.indexOf(':');
+        const field = colon < 0 ? value : value.slice(0, colon);
+        const content = colon < 0 ? '' : value.slice(colon + 1).replace(/^ /, '');
+        if (field === 'event') eventName = content.slice(0, 200);
+        if (field === 'data' && !oversized) {
+          eventLength += content.length + 1;
+          if (eventLength > inspectionLimit) { oversized = true; dataLines = []; }
+          else dataLines.push(content);
+        }
+      };
+      const readLines = (final = false) => {
+        let newline;
+        while ((newline = tail.search(/[\r\n]/)) >= 0) {
+          // A CR at the chunk boundary may be the first half of CRLF.
+          if (!final && tail[newline] === '\r' && newline === tail.length - 1) break;
+          const value = tail.slice(0, newline).replace(/^\uFEFF/, '');
+          const length = tail[newline] === '\r' && tail[newline + 1] === '\n' ? 2 : 1;
+          tail = tail.slice(newline + length); line(value);
+        }
+        if (tail.length > inspectionLimit) { tail = ''; oversized = true; dataLines = []; }
       };
       if (upstream.body) for await (const chunk of upstream.body) {
         tail += decoder.write(Buffer.from(chunk));
-        if (contentType.includes('text/event-stream')) {
-          let newline; while ((newline = tail.indexOf('\n')) >= 0) { const line = tail.slice(0, newline).trim(); tail = tail.slice(newline + 1); if (line.startsWith('data:')) inspect(line.slice(5).trim()); }
-        }
-        if (tail.length > 2 * 1024 * 1024) tail = '';
+        if (streaming) readLines();
+        else if (tail.length > inspectionLimit) { tail = ''; oversized = true; }
         if (!res.write(chunk)) await new Promise((resolve, reject) => {
           const cleanup = () => { res.off('drain', drained); res.off('close', closed); };
           const drained = () => { cleanup(); resolve(); }; const closed = () => { cleanup(); reject(new Error('closed')); };
@@ -442,11 +533,16 @@ export class AccountPool {
           if (res.destroyed) closed();
         });
       }
-      tail += decoder.end(); if (tail) inspect(tail.startsWith('data:') ? tail.slice(5).trim() : tail);
-      if (record.status !== 'failed') record.status = contentType.includes('text/event-stream') && !completed ? 'failed' : 'completed';
+      tail += decoder.end();
+      if (streaming) { readLines(true); if (tail) line(tail); dispatch(); }
+      else if (!oversized && tail) inspect(tail);
+      if (record.status !== 'failed') record.status = streaming && !record.completionObserved ? 'failed' : 'completed';
       res.end();
     } catch (error) {
-      if (record) record.status = clientDisconnected ? 'cancelled' : 'failed';
+      // Clients finish reading at response.completed, sometimes before upstream
+      // EOF. Closing that transport must not erase a known terminal outcome.
+      if (record && record.status !== 'failed') record.status = record.completionObserved ? 'completed'
+        : clientDisconnected ? 'cancelled' : 'failed';
       if (!res.headersSent && !res.destroyed) json(res, error.status || 502, { error: { message: error.status ? error.message : '분산 요청 연결에 실패했습니다.', type: 'acedia_pool_error' } });
       else if (!res.destroyed) res.destroy();
     } finally {
@@ -482,6 +578,7 @@ export class AccountPool {
         case 'update': this.update(b.id, b.enabled, b.label); break;
         case 'remove': this.remove(b.id); break;
         case 'refresh': await this.credentials(b.id, false, true); break;
+        case 'refresh_all': this.refreshAll(); break;
         case 'configure': await this.setEnabled(b.enabled); break;
         default: throw fail('지원하지 않는 작업입니다.');
       }
@@ -490,7 +587,12 @@ export class AccountPool {
     return true;
   }
   close() {
+    this.refreshStopped = true;
     for (const job of this.jobs.values()) void job.finish(false);
+    for (const [rpc, account] of this.rpcs) {
+      rpc.close();
+      try { this.capture(account); } catch { this.loadError = '종료 중 계정 인증 정보를 정리하지 못했습니다.'; }
+    }
     for (const controller of this.controllers) controller.abort();
     this.server?.closeAllConnections(); this.server?.close();
   }

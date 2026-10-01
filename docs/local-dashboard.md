@@ -69,6 +69,15 @@ shows available questions and choices and opens the session terminal for native
 answers. The card clears when work resumes, and scheduled messages wait until
 the question is answered. See [Remote question behavior](remote-service.md#session-and-content-surface).
 
+Session activation and work completion use separate conditions for scheduled
+messages. Once the CLI is running, a long turn or blocking question does not
+expire the activation timer. A startup that finishes late automatically releases
+its activation warning; the queue resumes when work and questions finish.
+Failed or uncertain submissions still require explicit retry. Remote and
+Dashboard share this client logic and its `electron:remote-queue-smoke` check.
+The correction is included in EXE 1.8.1.38; see [release verification](release-1-8-1-38.md).
+Installed-app verification remains separate.[^remote-client]
+
 Initial terminal state is delivered as a snapshot; later output arrives as SSE
 deltas. Hook and workspace changes refresh the projected state. Periodic client
 refresh remains a recovery mechanism, not the authoritative activity source.[^remote-client]

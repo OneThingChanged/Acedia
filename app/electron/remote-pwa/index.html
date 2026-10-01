@@ -104,18 +104,13 @@
               <button class="nav-add-button" id="newSessionButton" type="button" title="새 세션" aria-label="새 세션">＋</button>
             </span>
           </div>
-          <div class="filter-row" id="filters" aria-label="세션 필터">
-            <button class="active" type="button" data-filter="all">전체</button>
-            <button type="button" data-filter="active">활성</button>
-            <button type="button" data-filter="working">작업</button>
-            <button type="button" data-filter="attention">질문</button>
-            <button type="button" data-filter="recovering">복구</button>
-            <button type="button" data-filter="done">완료</button>
-            <button type="button" data-filter="idle">대기</button>
-            <button type="button" data-filter="offline">비활성</button>
+          <div class="filter-row" id="filters" role="group" aria-label="세션 필터">
+            <button class="active" type="button" data-filter="all" aria-pressed="true" title="전체 세션 보기"><span class="session-filter-label">전체</span><span class="session-filter-count">0</span></button>
+            <button type="button" data-filter="active" aria-pressed="false" title="활성 세션만 보기"><span class="session-filter-label">Active</span><span class="session-filter-count">0</span></button>
+            <button type="button" data-filter="sleeping" aria-pressed="false" title="휴면 세션만 보기"><span class="session-filter-label">Sleeping</span><span class="session-filter-count">0</span></button>
           </div>
           <div class="session-list" id="sessionList" aria-live="polite"></div>
-          <p class="empty-state" id="emptyState" hidden>조건에 맞는 세션이 없습니다.</p>
+          <div class="empty-state" id="emptyState" hidden><p id="emptySessionMessage">조건에 맞는 세션이 없습니다.</p><button class="small-button" id="resetSessionFilter" type="button">전체 세션 보기</button></div>
         </section>
       </aside>
       <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="탐색 메뉴 닫기"></button>
