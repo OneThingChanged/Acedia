@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.39 notification changes
 description: Quiet the Android connection indicator, refresh APK branding and show expandable final-answer previews.
-status: draft
+status: stable
 last_updated: 2026-10-01
 sources:
   - resource: remote-service.md
@@ -53,8 +53,16 @@ sources:
 - EXE Authenticode: **NotSigned**. 파일 무결성 검증은 코드 서명을 대신하지 않는다.
 - OKF 문서 검증: 오류 **0**, 기존 날짜 경고 **1** (`known-limitations.md`).
 
-## 남은 반영과 검증
+## 공개 배포
 
-새 답변 미리보기에는 **데스크톱과 APK 모두 업데이트**가 필요하다. 로컬 EXE/APK 빌드와 패키지 검증은 완료했으며 공개 게시·공개 업데이트 검증·사용자 설치는 별도 단계다. 실행 중인 사용자 앱과 세션은 종료하지 않았다. APK 교체 후 Remote 알림을 껐다 다시 켜 새 모니터링 서비스를 시작한다.
+[GitHub 안정 릴리스 v1.8.1.39](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.39)를 **2026-10-01 23:36:10 KST**에 게시했다. 소스 커밋과 공개 태그는 `e7776f572360c95ff280ec19a016c33006121118`이다. GitHub 최신 안정 릴리스가 1.8.1.39이며 draft/prerelease가 아님을 확인했다.
+
+게시 파일은 EXE, 해당 blockmap, 같은 빌드의 `latest-exe.json`, 별도 설치용 `Acedia-Mobile-1.8.1.39.apk`다. 업로드된 네 파일의 크기와 GitHub SHA-256 digest가 로컬 파일과 일치한다.
+
+실제 `GithubExeUpdateService`로 **1.8.1.38 → 1.8.1.39** 공개 업데이트 감지를 확인했다. 공개 EXE를 다운로드해 크기·SHA-256 및 설치 전 재검증이 통과했다. 별도 공개 APK도 실제 다운로드한 바이트가 로컬 서명 APK와 같은 크기·SHA-256이다. 설치 프로그램은 실행하지 않았다.
+
+## 설치와 실기기 검증
+
+새 답변 미리보기에는 **데스크톱과 APK 모두 업데이트**가 필요하다. 공개 배포는 사용자 PC나 휴대폰의 설치 확인을 뜻하지 않는다. 실행 중인 사용자 앱과 세션은 종료하지 않았고 직접 설치도 수행하지 않았다. APK 교체 후 Remote 알림을 껐다 다시 켜 새 모니터링 서비스를 시작한다.
 
 사용자 스크린샷으로 기존 APK의 작업 완료 수신을 확인했다. 새 APK의 실기기 알림 펼치기·세션 이동·잠금화면 표시와 장시간 잠금 중 즉시 수신은 아직 검증하지 않았다. 현재 전송은 Android foreground service의 서버 long-poll 방식이며 FCM이나 절전 예외 처리를 추가하지 않았다.
