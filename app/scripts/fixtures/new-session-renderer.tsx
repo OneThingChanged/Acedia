@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { NewAgentModal } from "../../src/components/NewAgentModal";
+import { NewProjectModal } from "../../src/components/NewProjectModal";
 import { AppLanguageProvider } from "../../src/lib/appLanguage";
 import { saveAgentDefaults } from "../../src/lib/agentDefaults";
+import { saveSshHosts } from "../../src/lib/sshHosts";
 import "../../src/App.css";
 
 const accountA = "11111111-1111-4111-8111-111111111111";
@@ -22,15 +24,17 @@ window.multiAgentElectron = {
     return null;
   },
   onEvent: () => () => {},
+  showOpenDialog: async () => "C:/fixture/browsed-project",
 };
 localStorage.setItem("multiagent.appLanguage.v1", "ko");
 saveAgentDefaults("codex", { dangerous: true });
+saveSshHosts([{ id: "fixture-ssh", label: "Fixture server", host: "fixture.invalid", user: "fixture", port: 22 }]);
 
 function Harness() {
-  const [fixture, setFixture] = useState({ key: 0, theme: "soft", language: "ko", ssh: false, missing: false, poolOff: false });
+  const [fixture, setFixture] = useState({ key: 0, kind: "session", theme: "soft", language: "ko", ssh: false, missing: false, poolOff: false });
   const [open, setOpen] = useState(false);
   window.fixtureShow = options => {
-    const next = { theme: "soft", language: "ko", ssh: false, missing: false, poolOff: false, ...options };
+    const next = { kind: "session", theme: "soft", language: "ko", ssh: false, missing: false, poolOff: false, ...options };
     window.fixtureRoutingOff = next.poolOff;
     window.fixtureCreated = null;
     localStorage.setItem("multiagent.appLanguage.v1", next.language);
@@ -44,8 +48,15 @@ function Harness() {
   return <div className={`app app-theme-${fixture.theme}`} style={{ height: "100vh" }}>
     <button id="fixture-open" onClick={() => window.fixtureShow()} style={{ margin: 20 }}>새 세션 열기</button>
     <AppLanguageProvider key={fixture.key}>
-      {open && <NewAgentModal project={project} defaultName="Plugin" onCancel={() => setOpen(false)}
-        onCreate={payload => { window.fixtureCreated = payload; }} />}
+      {open && (fixture.kind === "project"
+        ? <NewProjectModal defaultName="Project flow" onCancel={() => setOpen(false)}
+            projectFolders={[
+              { id: "local-folder", name: "Local projects", machineKey: "local" },
+              { id: "ssh-folder", name: "Remote projects", machineKey: "ssh:fixture-ssh" },
+            ]}
+            onCreate={payload => { window.fixtureCreated = payload; }} />
+        : <NewAgentModal project={project} defaultName="Plugin" onCancel={() => setOpen(false)}
+            onCreate={payload => { window.fixtureCreated = payload; }} />)}
     </AppLanguageProvider>
   </div>;
 }

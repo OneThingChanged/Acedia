@@ -3,7 +3,7 @@ type: Playbook
 title: EXE와 Store 배포 채널
 description: "독립 EXE의 GitHub 업데이트, Store와의 병행 설치, 릴리스 생성 및 검증 절차."
 status: stable
-last_updated: 2026-09-11
+last_updated: 2026-10-02
 sources:
   - resource: ../app/electron/runtime-variant.cjs
     title: 채널별 설치·업데이트 분리
@@ -11,6 +11,10 @@ sources:
     title: 네 자리 버전 GitHub EXE 업데이트
   - resource: ../app/scripts/build-electron-standard.mjs
     title: 설치 파일과 업데이트 manifest 생성
+  - resource: ../app/scripts/publish-github-exe.ps1
+    title: 초안 자산 검증과 안정 릴리스 게시
+  - resource: ../.github/workflows/release-exe.yml
+    title: 고정 소스의 GitHub EXE 빌드·배포
   - resource: ../app/electron/main.mjs
     title: 다운로드 및 세션 저장 후 설치
 ---
@@ -62,6 +66,24 @@ npm 호환 버전은 세 자리로 유지한다. EXE 업데이트에는 별도 `
 공식 저장소의 해당 태그 URL이 일치하지 않으면 설치를 차단한다. draft/prerelease와
 EXE manifest가 없는 Store/Company 릴리스는 업데이트 대상으로 선택하지 않는다.
 현재 조회 범위는 GitHub의 최신 릴리스 100개다. 네트워크·API 제한 오류는 설정에 표시된다.
+
+### GitHub 러너에서 배포
+
+로컬 GitHub CLI 인증이나 릴리스 업로드 도구가 없는 환경에서는 소스를 먼저 검증하고
+버전 변경과 함께 GitHub에 커밋한다. 해당 커밋에서 `release/exe/X.Y.Z.R` 브랜치를
+만들면 `Publish Standard EXE` 워크플로우가 실행된다. Actions에서 같은 워크플로우를
+수동 실행할 수도 있다. main의 일반 변경만으로 배포를 시작하지 않는다.
+
+워크플로우는 이전 공개 manifest의 `bundledMobileVersion`에 해당하는 APK를 내려받아
+공개 자산 해시와 프로젝트 릴리스 인증서를 확인한다. 전체 검사와 두 생성 창의 실제
+Electron 검증, native PTY, EXE 빌드, packaged bridge/Dashboard·lifecycle 검증을 마친 뒤
+초안에 EXE·blockmap·manifest를 올린다. 업로드 크기·GitHub SHA-256과 소스 태그를
+확인하고 안정 릴리스로 게시한다. 기존 안정 릴리스를 덮어쓰지 않으며, 재사용 가능한
+초안도 같은 소스 커밋이어야 한다. 게시 후 공개 업데이터 다운로드 검증은 계속 필요하다.
+
+로컬 산출물 확인만 할 때는 `app/`에서
+`./scripts/publish-github-exe.ps1 -VerifyOnly`를 실행한다. 새 APK를 만드는 절차와
+Microsoft Store·Company 배포는 이 워크플로우에 포함하지 않는다.
 
 ### 공식 저장소 주소 변경
 

@@ -1,0 +1,102 @@
+name: Publish Standard EXE
+
+on:
+  create:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exe-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'OneThingChanged/Acedia' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.ref_type == 'branch' && startsWith(github.event.ref, 'release/exe/')))
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Confirm source version
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).multiAgentReleaseVersion
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Invalid product version.' }
+          if ($env:GITHUB_REF_NAME.StartsWith('release/exe/') -and
+              $env:GITHUB_REF_NAME -ne "release/exe/$version") { throw 'Release branch and source version differ.' }
+      - name: Prepare the existing signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE '.build-tools'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $zip = Join-Path $root 'android-build-tools.zip'
+          Invoke-WebRequest 'https://dl.google.com/android/repository/build-tools_r35_windows.zip' -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant() -ne 'af059bb67cf7786f45ee0db85e2d24985df1b4b6') {
+            throw 'Android build tools checksum mismatch.'
+          }
+          $sdk = Join-Path $root 'android-sdk'
+          $tools = Join-Path $sdk 'build-tools/35.0.0'
+          Expand-Archive -LiteralPath $zip -DestinationPath $tools
+          $extracted = (Get-ChildItem -LiteralPath $tools -Directory | Select-Object -First 1).FullName
+          "ANDROID_SDK_ROOT=$sdk" >> $env:GITHUB_ENV
+          # The archive has an android-15 wrapper directory.
+          $sdkBuildTools = Join-Path $sdk 'build-tools'
+          $verifiedTools = Join-Path $sdkBuildTools '35.0.0-verified'
+          if (-not $extracted.StartsWith([IO.Path]::GetFullPath($root) + [IO.Path]::DirectorySeparatorChar)) {
+            throw 'Unsafe Android tools path.'
+          }
+          Move-Item -LiteralPath $extracted -Destination $verifiedTools
+          $manifestPath = Join-Path $root 'previous-exe.json'
+          Invoke-WebRequest 'https://github.com/OneThingChanged/Acedia/releases/latest/download/latest-exe.json' -OutFile $manifestPath
+          $mobileVersion = (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).bundledMobileVersion
+          if ($mobileVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Invalid bundled APK version.' }
+          $releaseJson = & gh api "repos/OneThingChanged/Acedia/releases/tags/v$mobileVersion"
+          if ($LASTEXITCODE -ne 0) { throw 'Previous APK release lookup failed.' }
+          $release = ($releaseJson -join "`n") | ConvertFrom-Json
+          $asset = @($release.assets | Where-Object name -eq "Acedia-Mobile-$mobileVersion.apk")
+          if ($release.draft -or $release.prerelease -or $asset.Count -ne 1 -or
+              $asset[0].digest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Verified public APK asset is missing.' }
+          $apk = Join-Path $root 'Acedia-Mobile.apk'
+          Invoke-WebRequest $asset[0].browser_download_url -OutFile $apk
+          if ((Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant() -ne $asset[0].digest.Substring(7) -or
+              (Get-Item $apk).Length -ne $asset[0].size) { throw 'Public APK checksum mismatch.' }
+          "MULTIAGENT_MOBILE_APK_PATH=$apk" >> $env:GITHUB_ENV
+          "MULTIAGENT_ANDROID_CERT_SHA256=6d85fd669451bfb44289dbb1b5e1648f33367bdff0d983a9d04b76355d6f7573" >> $env:GITHUB_ENV
+      - run: npm ci --no-audit --no-fund
+      - name: Source and creation dialog checks
+        run: |
+          npm test -- --testTimeout=15000 --maxWorkers=4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run electron:new-session-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run electron:smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: npm run release:build:github -- --desktop-only
+      - name: Packaged checks
+        run: |
+          npm run electron:packaged-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run electron:packaged-lifecycle-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/publish-github-exe.ps1 -VerifyOnly
+      - name: Upload, verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-github-exe.ps1

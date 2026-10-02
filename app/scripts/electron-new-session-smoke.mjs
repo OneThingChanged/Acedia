@@ -27,6 +27,9 @@ async function exerciseUI() {
     await wait();
   };
   const worker = kind => document.querySelector(`[data-worker-kind="${kind}"]`);
+  const toggleWorkers = async () => {
+    document.querySelector(".session-worker-disclosure > summary").click(); await wait();
+  };
   const showCodex = async () => {
     window.fixtureShow(); await wait(); await change(tool(), "codex"); await wait();
   };
@@ -34,6 +37,8 @@ async function exerciseUI() {
   document.querySelector("#fixture-open").focus(); document.querySelector("#fixture-open").click();
   await wait(); await change(tool(), "codex"); await wait();
   check(dialog().getAttribute("role") === "dialog" && dialog().getAttribute("aria-modal") === "true", "Missing dialog semantics");
+  check(!document.querySelector(".session-worker-disclosure").open, "Workers should start collapsed");
+  check(document.querySelector(".session-worker-overview").textContent.includes("gpt-6-luna"), "Hidden defaults have no summary");
   name().focus();
   name().dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
   check(document.activeElement === button(), "Backward focus trap");
@@ -47,19 +52,22 @@ async function exerciseUI() {
   check(accounts.length === 2 && !accounts[0].disabled && !accounts[1].disabled, "Accounts did not load");
   await change(accounts[0], "11111111-1111-4111-8111-111111111111");
   await change(accounts[1], "22222222-2222-4222-8222-222222222222");
+  await toggleWorkers();
   await change(worker("documents").querySelector("[data-worker-model]"), "gpt-6-sol");
   await change(worker("documents").querySelector("[data-worker-effort]"), "ultra");
   await change(worker("html").querySelector("select"), "claude-opus");
   await change(worker("html").querySelector("[data-worker-model]"), "sonnet");
   await change(worker("html").querySelector("[data-worker-effort]"), "high");
   const checks = document.querySelectorAll(".new-session-execution input");
-  checks[1].click(); await wait(); button().click(); await wait();
+  checks[1].click(); await wait(); await toggleWorkers(); button().click(); await wait();
   const payload = window.fixtureCreated;
   check(payload.name === "Plugin flow" && payload.aiToolId === "codex", "Lost name or provider");
   check(payload.codexAccountId === accounts[0].value && payload.codexPoolAccountId === accounts[1].value, "Lost account choices");
   check(payload.dangerous && payload.useAltScreen, "Lost execution flags");
   check(payload.workerSettings.documents.model === "gpt-6-sol" && payload.workerSettings.documents.effort === "ultra", "Lost document worker settings");
   check(payload.workerSettings.html.model === "sonnet" && payload.workerSettings.html.effort === "high", "Lost HTML worker settings");
+  check(document.querySelector(".session-worker-overview").textContent.includes("sonnet"), "Worker summary did not update");
+  await toggleWorkers();
   await change(worker("documents").querySelector("[data-worker-model]"), "gpt-5.5");
   check(worker("documents").querySelector("[data-worker-effort]").value === "xhigh", "Invalid effort was kept");
   await change(worker("html").querySelector("select"), "");
@@ -68,7 +76,7 @@ async function exerciseUI() {
   await change(document.querySelector(".new-session-accounts select"), "11111111-1111-4111-8111-111111111111");
   button().click(); await wait();
   check(window.fixtureCreated.claudeAccountId && !window.fixtureCreated.workerSettings && !window.fixtureCreated.codexAccountId, "Codex options leaked into Claude");
-  check(document.querySelector(".new-session-workers-empty") && !document.querySelector('[data-testid="session-worker-settings"]'), "Missing alternate provider state");
+  check(!document.querySelector(".session-worker-disclosure") && !document.querySelector('[data-testid="session-worker-settings"]'), "Workers shown for another provider");
   await change(tool(), "none"); button().click(); await wait();
   check(!window.fixtureCreated.dangerous && !document.querySelector(".advanced-launch-options"), "Shell-only options leaked");
   await showCodex();
@@ -89,14 +97,73 @@ async function exerciseUI() {
   document.querySelector("#fixture-open").focus(); document.querySelector("#fixture-open").click(); await wait();
   dialog().querySelector(".new-session-footer .btn-secondary").click(); await wait();
   check(!dialog() && document.activeElement.id === "fixture-open", "Cancel did not restore focus");
-  return "NEW_SESSION_INTERACTION_OK";
+
+  window.fixtureShow({ kind: "project" }); await wait();
+  const projectName = () => document.querySelector(".new-project-details input");
+  const projectTool = () => document.querySelector(".new-project-tool select");
+  const projectField = label => [...document.querySelectorAll(".new-project-details .field")]
+    .find(field => field.querySelector(".field-label")?.textContent === label);
+  check(projectTool().value === "" && button().disabled, "Project preselected a tool");
+  await change(projectTool(), "codex");
+  check(button().disabled, "Missing project folder allowed creation");
+  await change(projectName(), "  Compact project  ");
+  document.querySelector(".folder-row .browse-btn").click(); await wait();
+  check(document.querySelector(".folder-row input").value === "C:/fixture/browsed-project", "Folder browse failed");
+  await change(projectField("사이드바 폴더").querySelector("select"), "local-folder");
+  const projectAccounts = document.querySelectorAll(".new-session-accounts select");
+  await change(projectAccounts[0], "11111111-1111-4111-8111-111111111111");
+  await change(projectAccounts[1], "22222222-2222-4222-8222-222222222222");
+  check(!document.querySelector(".session-worker-disclosure").open, "Project workers should start collapsed");
+  button().click(); await wait();
+  check(window.fixtureCreated.name === "Compact project" && window.fixtureCreated.folder === "C:/fixture/browsed-project", "Lost project basics");
+  check(window.fixtureCreated.projectFolderId === "local-folder", "Lost sidebar folder");
+  check(window.fixtureCreated.codexAccountId === projectAccounts[0].value && window.fixtureCreated.codexPoolAccountId === projectAccounts[1].value, "Lost first-session accounts");
+  check(window.fixtureCreated.workerSettings.documents === "codex-luna-max" && window.fixtureCreated.workerSettings.html === "codex-luna-max", "Collapsed defaults were not submitted");
+  await toggleWorkers();
+  await change(worker("documents").querySelector("[data-worker-model]"), "gpt-6-sol");
+  await change(worker("html").querySelector("select"), "");
+  await toggleWorkers(); button().click(); await wait();
+  check(window.fixtureCreated.workerSettings.documents.model === "gpt-6-sol" && !window.fixtureCreated.workerSettings.html, "Collapsed project edits were not submitted");
+  check(document.querySelector(".session-worker-overview").textContent.includes("사용 안 함"), "Disabled worker missing from summary");
+  const projectAdvanced = document.querySelector(".advanced-launch-options details");
+  projectAdvanced.open = true; await wait();
+  [...projectAdvanced.querySelectorAll("button")].find(control => control.textContent === "직접 지정").click(); await wait();
+  check(button().disabled, "Invalid first-session launch path allowed creation");
+  await change(projectAdvanced.querySelector('input[aria-label="CLI 실행 파일 경로"]'), "C:/fixture/project-codex.cmd");
+  projectAdvanced.querySelector('input[aria-label="CLI 실행 파일 경로"]').dispatchEvent(new FocusEvent("focusout", { bubbles: true })); await wait();
+  check(!button().disabled, "Valid first-session launch path blocked creation");
+  button().click(); await wait();
+  check(window.fixtureCreated.launchOptions?.executable === "C:/fixture/project-codex.cmd", "Lost first-session launch path");
+  await change(projectField("실행 위치").querySelector("select"), "ssh");
+  check(button().disabled, "Missing SSH host allowed creation");
+  await change(projectField("SSH 호스트").querySelector("select"), "fixture-ssh");
+  await change(projectField("원격 폴더").querySelector("input"), " /home/fixture/project ");
+  check(!projectField("사이드바 폴더").querySelector("select").value, "Local sidebar folder leaked into SSH");
+  await change(projectField("사이드바 폴더").querySelector("select"), "ssh-folder");
+  check(!document.querySelector(".new-session-accounts") && !document.querySelector(".advanced-launch-options"), "Local first-session controls shown for SSH");
+  button().click(); await wait();
+  check(window.fixtureCreated.sshHostId === "fixture-ssh" && window.fixtureCreated.remoteFolder === "/home/fixture/project" && window.fixtureCreated.folder === "", "Lost SSH project fields");
+  check(!window.fixtureCreated.codexAccountId && !window.fixtureCreated.codexPoolAccountId && !window.fixtureCreated.launchOptions && window.fixtureCreated.projectFolderId === "ssh-folder", "Local options leaked into SSH project");
+  await change(projectField("실행 위치").querySelector("select"), "local");
+  check(document.querySelector(".folder-row input").value === "C:/fixture/browsed-project", "Changing run location lost the local folder");
+  await change(projectTool(), "none"); button().click(); await wait();
+  check(!window.fixtureCreated.workerSettings && !window.fixtureCreated.dangerous && !window.fixtureCreated.launchOptions, "Codex settings leaked into Shell project");
+  projectName().focus();
+  projectName().dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+  check(document.activeElement === button(), "Project backward focus trap");
+  button().dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+  check(document.activeElement === projectName(), "Project forward focus trap");
+  projectTool().focus();
+  projectTool().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await wait(); check(!dialog() && document.activeElement.id === "fixture-open", "Project Escape did not restore focus");
+  return "CREATION_INTERACTION_OK session + project";
 }
 
 function runElectronUI(temporary, artifacts) {
   const { app, BrowserWindow } = require("electron");
   app.setPath("userData", path.join(temporary, "profile"));
   app.whenReady().then(async () => {
-  const timer = setTimeout(() => { console.error("New-session UI smoke timed out"); app.exit(2); }, 45000);
+  const timer = setTimeout(() => { console.error("Creation UI smoke timed out"); app.exit(2); }, 60000);
   let win;
   try {
     win = new BrowserWindow({ show: false, useContentSize: true, width: 1366, height: 768, webPreferences: { backgroundThrottling: false } });
@@ -104,33 +171,37 @@ function runElectronUI(temporary, artifacts) {
     win.webContents.on("console-message", event => { if (event.level === "error") errors.push(event.message); });
     await win.loadFile(path.join(temporary, "index.html"));
     console.log(await win.webContents.executeJavaScript(`(${exerciseUI.toString()})()`));
-    for (const [width, height, theme, language, advanced] of [
+    for (const kind of ["project", "session"]) {
+    for (const [width, height, theme, language, advanced, workers] of [
       [1366, 768, "soft", "ko", false], [1920, 1080, "soft", "ko", false],
       [1366, 768, "light", "en", false], [1024, 768, "warm", "en", false],
       [390, 844, "soft", "ko", false], [375, 667, "light", "en", false],
       [844, 375, "soft", "ko", false], [1366, 768, "soft", "ko", true], [390, 844, "soft", "ko", true],
+      [1366, 768, "soft", "ko", false, true], [390, 844, "soft", "ko", false, true],
     ]) {
       win.setContentSize(width, height);
-      await win.webContents.executeJavaScript(`window.fixtureShow(${JSON.stringify({ theme, language })})`);
+      await win.webContents.executeJavaScript(`window.fixtureShow(${JSON.stringify({ kind, theme, language })})`);
       await new Promise(resolve => setTimeout(resolve, 100));
       await win.webContents.executeJavaScript(`(async () => {
         const waitFor=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,40));}throw Error('Fixture did not settle');};
         await waitFor(()=>document.querySelector('.new-session-modal') && document.querySelector('.app').classList.contains('app-theme-${theme}'));
-        const tool=document.querySelector('.new-session-identity select');tool.value='codex';tool.dispatchEvent(new Event('change',{bubbles:true}));
+        const tool=document.querySelector('.new-session-identity select, .new-project-tool select');tool.value='codex';tool.dispatchEvent(new Event('change',{bubbles:true}));
         await waitFor(()=>document.querySelector('[data-testid="session-worker-settings"]') && document.querySelectorAll('.new-session-accounts select').length===2 && [...document.querySelectorAll('.new-session-accounts select')].every(el=>!el.disabled));
         if(${advanced}) {document.querySelector('.advanced-launch-options details').open=true;await new Promise(r=>setTimeout(r,100));document.querySelector('.new-session-body').scrollTop=100000;}
+        if(${!!workers}) {document.querySelector('.session-worker-disclosure').open=true;await new Promise(r=>setTimeout(r,100));}
         await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       })()`);
       const state = await win.webContents.executeJavaScript(`(() => {
         const dialog=document.querySelector('.new-session-modal'),body=document.querySelector('.new-session-body'),footer=document.querySelector('.new-session-footer').getBoundingClientRect();
-        if(body.scrollWidth>body.clientWidth+1 || dialog.scrollWidth>dialog.clientWidth+1) throw Error('Horizontal overflow at ${width}x${height}');
-        if(footer.bottom>innerHeight || footer.top<0) throw Error('Hidden footer at ${width}x${height}');
-        if(${width>=1366 && !advanced} && body.scrollHeight>body.clientHeight+1) throw Error('Default desktop requires scrolling');
-        return {viewport:[innerWidth,innerHeight],dialogWidth:dialog.getBoundingClientRect().width,scroll:body.scrollHeight>body.clientHeight+1};
+        return {viewport:[innerWidth,innerHeight],dialogWidth:dialog.getBoundingClientRect().width,dialogHeight:dialog.getBoundingClientRect().height,scroll:body.scrollHeight>body.clientHeight+1,horizontalOverflow:body.scrollWidth>body.clientWidth+1 || dialog.scrollWidth>dialog.clientWidth+1,footerVisible:footer.bottom<=innerHeight && footer.top>=0};
       })()`);
       const image = await win.webContents.capturePage();
-      await fs.writeFile(path.join(artifacts, `${width}x${height}-${theme}-${language}${advanced ? "-advanced" : ""}.png`), image.toPNG());
-      console.log("NEW_SESSION_LAYOUT_OK", theme, language, advanced ? "advanced" : "default", JSON.stringify(state));
+      await fs.writeFile(path.join(artifacts, `${kind}-${width}x${height}-${theme}-${language}${advanced ? "-advanced" : workers ? "-workers" : ""}.png`), image.toPNG());
+      if (state.horizontalOverflow || !state.footerVisible || (width >= 1366 && !advanced && !workers && state.scroll)) {
+        throw new Error(`Creation layout failed: ${kind} ${width}x${height} ${JSON.stringify(state)}`);
+      }
+      console.log("CREATION_LAYOUT_OK", kind, theme, language, advanced ? "advanced" : workers ? "workers" : "default", JSON.stringify(state));
+    }
     }
     if (errors.length) throw new Error(errors.join("\n"));
     console.log("NEW_SESSION_UI_OK", artifacts);
