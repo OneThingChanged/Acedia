@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.44 account recovery, token refresh and browser compatibility
 description: Resume after account exclusion, keep Dashboard token totals current and display embedded verification widgets.
-status: draft
+status: stable
 last_updated: 2026-10-03
 sources:
   - resource: account-pool.md
@@ -30,8 +30,19 @@ sources:
 - 계정 복구 관련 검사 **109개**와 실제 설치 CLI의 격리 실행을 통과했다. 모의 서버로 5회 요청을 검증하고, A 제외 후 B로 같은 대화 ID를 재개하면서 이전 사용자·응답 메시지가 유지되는 것을 확인했다. 실제 상용 서버의 계정 간 대화 접근 정책은 별도다.
 - 사용량 갱신 관련 검사 **45개**와 Remote/PWA의 1920px·1024px·390px, 6개 언어 화면 검증을 통과했다.
 - 브라우저 관련 검사 **12개**와 실제 Electron 내장 탭의 설정 저장·요청 헤더·페이지 User-Agent·MCP 탭 적용 검증을 통과했다. 동일한 보안 설정의 표시된 테스트 창에서 Zhihu 인증 위젯을 확인했다.
-- 로컬 전체 **143개 파일·916개 테스트**, TypeScript/Vite 빌드와 변경 파일 공백 검사를 통과했다. 첫 전체 실행에서 Git 경로가 없어 실패한 7개 검사는 경로를 보완해 통과했고 Windows 설치·PowerShell 검사는 각각 단독 실행했다. 공식 EXE 빌드·packaged 검증 및 공개 업데이터 다운로드 결과는 배포 완료 후 기록한다.
+- 로컬 전체 **143개 파일·916개 테스트**, TypeScript/Vite 빌드와 변경 파일 공백 검사를 통과했다. 첫 전체 실행에서 Git 경로가 없어 실패한 7개 검사는 경로를 보완해 통과했고 Windows 설치·PowerShell 검사는 각각 단독 실행했다.
+- [공식 Windows 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/37042694410)에서도 **143개 파일·916개 테스트**, 생성 창 상호작용·22개 화면 조합, 터미널 경로 클릭, native PTY, TypeScript/Vite·NSIS 빌드가 통과했다. Packaged bridge/Dashboard·브라우저 호환성 설정·lifecycle 검증이 통과했다. 예상한 거부 경로와 빠른 PTY 종료 시의 `AttachConsole failed` 로그가 있으므로 로그 전체가 무오류였다는 뜻은 아니다.
 
-## 배포 상태
+## 공개 배포
 
-소스 검증을 마치고 공식 GitHub EXE 배포를 준비한다. 설치본 게시와 현재 실행 중인 앱의 업데이트 설치는 별도 단계다.
+2026-10-03 **02:48:59 KST**, [v1.8.1.44](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.44)를 최신 안정 릴리스로 게시했다. 제품 태그와 릴리스 대상은 고정 소스 `7e27dfb5a8b221395f904fdd38af125de832b733`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.44-x64.exe` | 120,881,737 | `3c68f401aabeed2d7c4676ff70eca3f06dfb9a1de0aa33bbe9251124b1eeb761` |
+| `Acedia-Setup-1.8.1.44-x64.exe.blockmap` | 127,055 | `f6d093cc09b73b07388a2f18caded0a967dee6d0c35eee392f424dd43af60b75` |
+| `latest-exe.json` | 256 | `7fd3feabbf13d5e5d19dd0fd3dcbdaac0591797f133e865f74a44ff9aae8bac6` |
+
+공개 설치 파일 FileVersion은 **1.8.1.44**, Authenticode는 **NotSigned**다. 같은 빌드의 manifest와 설치 파일 크기·SHA-256이 일치한다.
+
+**02:50:31 KST**에 프로덕션 업데이터로 **1.8.1.43 → 1.8.1.44 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 공개 세 자산의 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다. 설치 프로그램은 실행하지 않았으며 사용 중인 앱의 설정에서 업데이트를 진행한다.

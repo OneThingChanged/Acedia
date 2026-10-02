@@ -45,6 +45,7 @@ also requests a transcript scan. Account quota lookups continue separately in th
 background. The visible usage page refreshes every 30 seconds and refreshes again
 when its browser tab becomes visible. Its record count shows the token scan's
 freshness separately from the monitor connection and account quota timestamps.
+This refresh behavior ships in [EXE 1.8.1.44](release-1-8-1-44.md).
 
 Calendar buckets use the desktop's local timezone. Work spanning midnight belongs
 to two dates. Cached input is a subset of provider input, and reasoning output is
