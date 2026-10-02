@@ -81,6 +81,13 @@ Electron 검증, native PTY, EXE 빌드, packaged bridge/Dashboard·lifecycle �
 확인하고 안정 릴리스로 게시한다. 기존 안정 릴리스를 덮어쓰지 않으며, 재사용 가능한
 초안도 같은 소스 커밋이어야 한다. 게시 후 공개 업데이터 다운로드 검증은 계속 필요하다.
 
+느린 러너에서 검사 설정만 조정해 같은 제품 소스를 다시 빌드할 때는
+`rebuild/exe/X.Y.Z.R/실행이름` 브랜치를 만든다. 실행기는 고정한
+`release/exe/X.Y.Z.R` 브랜치의 제품 소스를 checkout하고 실제 HEAD를 게시 태그의
+대상으로 사용한다. CI 설정 커밋과 제품 소스 커밋을 구분하며 같은 제품 소스를
+재빌드할 때 버전은 올리지 않는다. 전체 검사는 러너에서 60초 제한·동시 worker 2개로
+실행하고 검사 실패를 무시하지 않는다.
+
 로컬 산출물 확인만 할 때는 `app/`에서
 `./scripts/publish-github-exe.ps1 -VerifyOnly`를 실행한다. 새 APK를 만드는 절차와
 Microsoft Store·Company 배포는 이 워크플로우에 포함하지 않는다.

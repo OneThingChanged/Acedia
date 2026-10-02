@@ -51,8 +51,16 @@ describe('central usage collector', () => {
   it('aggregates full-period timelines beyond 500 events with Korean dates and employee scoping', async () => {
     const f = await fixture(), base = Date.parse('2026-01-01T14:59:59Z');
     const insert = f.service.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?,?,?)');
-    for (let i = 0; i < 501; i++) insert.run(token(), f.employee.id, 'fixture-device', f.codex.id, 'codex', base + i * 1000, 2, '{}');
-    insert.run(token(), f.other.id, 'other-device', f.codex.id, 'codex', base, 5, '{}');
+    // Commit fixture data together so hundreds of fsyncs cannot stall the loopback connection on CI.
+    f.service.db.exec('BEGIN');
+    try {
+      for (let i = 0; i < 501; i++) insert.run(token(), f.employee.id, 'fixture-device', f.codex.id, 'codex', base + i * 1000, 2, '{}');
+      insert.run(token(), f.other.id, 'other-device', f.codex.id, 'codex', base, 5, '{}');
+      f.service.db.exec('COMMIT');
+    } catch (error) {
+      f.service.db.exec('ROLLBACK');
+      throw error;
+    }
     const route = '/v1/summary?from=' + (base - 1000) + '&to=' + (base + 600000);
     const summary = await f.admin(route.slice(4));
     expect(summary.recent).toHaveLength(500);

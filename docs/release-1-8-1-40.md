@@ -1,7 +1,7 @@
 ---
 type: Release
-title: Acedia 1.8.1.40 compact creation dialogs
-description: Shorten the project and Codex session creation dialogs while preserving account, worker and launch settings.
+title: Acedia 1.8.1.40 creation dialog candidate
+description: Unpublished creation-dialog candidate, followed by 1.8.1.41 after a CI fixture correction.
 status: stable
 last_updated: 2026-10-02
 sources:
@@ -37,6 +37,8 @@ sources:
 
 GitHub의 `Publish Standard EXE` 워크플로우는 `release/exe/1.8.1.40` 브랜치 생성 또는 수동 실행으로 고정 소스를 다시 검사·빌드한다. 초안에 EXE·blockmap·같은 빌드의 `latest-exe.json`을 올리고 업로드 크기·SHA-256과 태그 커밋을 확인한 다음 안정 릴리스로 게시한다. 일반 main 변경만으로 배포를 실행하지 않는다.
 
+첫 GitHub 러너 실행에서는 기존 사용량 대용량 집계와 PowerShell hook 검사 2개가 15초 제한을 넘겼다. 제품 소스 `33a01ab6ea297f6ba57c8db84f104850bb4036bf`는 유지하고 CI 설정만 `3ff3b12`에서 60초 제한·동시 worker 2개로 조정했다. 재빌드 실행은 `rebuild/exe/1.8.1.40/runner-2`에서 고정 제품 소스를 checkout한다. 같은 제품 커밋의 재빌드이므로 버전은 1.8.1.40으로 유지한다.
+
 ## 공개 배포
 
-게시와 실제 공개 업데이터 다운로드 검증은 배포 완료 후 기록한다. 실행 중인 사용자 앱과 세션의 설치·재시작은 별도다.
+**이 후보는 공개 게시하지 않았다.** 두 번째 러너 실행에서는 898개 검사가 통과하고 대용량 집계 검사만 `ECONNRESET`으로 실패했다. 502회 개별 SQLite commit 동안 loopback 연결이 유휴 제한을 넘기는 기존 fixture 문제를 확인했다. 같은 데이터와 검증 조건을 유지하면서 한 transaction으로 준비하도록 고치고 [1.8.1.41](release-1-8-1-41.md)로 이어간다.
