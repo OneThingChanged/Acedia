@@ -26,8 +26,20 @@ sources:
 
 수정 전 실제 Electron에서 `SubStorage는`을 여는 실패를 재현했다. 수정 후 팔레트/RGB·상대/절대·한글·줄바꿈 경로 **8개 조합**의 클릭 대상과 조사 비클릭 검사가 통과했다. 기존 soft/hard wrap 경로와 색상 없는 한글 이름 검사도 통과했다.
 
-관련 검사 **24개**와 1.8.1.43 TypeScript/Vite 빌드가 통과했다. 공식 러너의 전체 검사·native PTY·EXE 패키지 검증을 진행한다.
+관련 검사 **24개**와 1.8.1.43 TypeScript/Vite 빌드가 통과했다.
+
+[공식 GitHub 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/37028400291)에서 전체 **141개 파일·899개 테스트**, 생성 창 상호작용·22개 화면 조합, 기존 soft/hard wrap 경로와 새 색상 경계 8개 조합의 native pointer 검사, native PTY, TypeScript/Vite·NSIS 빌드와 packaged bridge/Dashboard·lifecycle 검증이 통과했다. Windows 사용량 설치·watcher와 PowerShell 검사는 각각 단독으로 실행했다. 예상한 거부 경로의 오류와 빠른 PTY 종료의 `AttachConsole failed` 로그도 관찰했으므로 로그 전체가 무오류였다는 뜻은 아니다.
 
 ## 공개 배포
 
-공식 GitHub EXE 워크플로우에서 고정 소스를 빌드하고 같은 빌드의 설치 파일·blockmap·`latest-exe.json`을 검증해 게시한다. 공개 배포 후 실제 업데이터 다운로드와 설치 전 해시 검증 결과를 기록한다.
+2026-10-03 **00:43:37 KST**, [v1.8.1.43](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.43)를 최신 안정 릴리스로 게시했다. 제품 태그와 릴리스 대상은 고정 소스 `6fd12a31fc6ad54074d76d77e58cadada77096df`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.43-x64.exe` | 120,878,922 | `bdef51a8c487eab1c66b1e5321e072cceaad0519cd0a5e5933aa348fdb63a5da` |
+| `Acedia-Setup-1.8.1.43-x64.exe.blockmap` | 126,656 | `a8a1c5b7e1153eba9de6fbb1bbad53c06de79b7930809dffa429f086d44cf94d` |
+| `latest-exe.json` | 256 | `183a95bd266c585981c1186fdb45538af7145089ade51ab1ac021fd1eee425a9` |
+
+공개 설치 파일 FileVersion은 **1.8.1.43**, Authenticode는 **NotSigned**다. 같은 빌드의 manifest와 설치 파일 크기·SHA-256이 일치한다.
+
+00:45:02 KST에 프로덕션 업데이터로 **1.8.1.42 → 1.8.1.43 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 공개 세 자산의 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다. 설치 프로그램은 실행하지 않았으며 사용 중인 앱의 설정에서 업데이트를 진행한다.
