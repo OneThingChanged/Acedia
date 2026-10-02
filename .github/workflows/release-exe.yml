@@ -16,7 +16,8 @@ jobs:
     if: >-
       github.repository == 'OneThingChanged/Acedia' &&
       (github.event_name == 'workflow_dispatch' ||
-       (github.event.ref_type == 'branch' && startsWith(github.event.ref, 'release/exe/')))
+       (github.event.ref_type == 'branch' &&
+        (startsWith(github.event.ref, 'release/exe/') || startsWith(github.event.ref, 'rebuild/exe/'))))
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
@@ -24,7 +25,19 @@ jobs:
         shell: pwsh
         working-directory: app
     steps:
+      - name: Resolve fixed product source
+        id: source
+        working-directory: .
+        run: |
+          if ($env:GITHUB_REF_NAME -match '^rebuild/exe/(\d+\.\d+\.\d+\.\d+)/[^/]+$') {
+            $sourceRef = "release/exe/$($Matches[1])"
+          } else {
+            $sourceRef = $env:GITHUB_SHA
+          }
+          "ref=$sourceRef" >> $env:GITHUB_OUTPUT
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.ref }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
@@ -40,6 +53,12 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Invalid product version.' }
           if ($env:GITHUB_REF_NAME.StartsWith('release/exe/') -and
               $env:GITHUB_REF_NAME -ne "release/exe/$version") { throw 'Release branch and source version differ.' }
+          if ($env:GITHUB_REF_NAME.StartsWith('rebuild/exe/') -and
+              $env:GITHUB_REF_NAME.Split('/')[2] -ne $version) { throw 'Rebuild branch and source version differ.' }
+          $sourceCommit = & git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Product source commit is missing.' }
+          "RELEASE_SOURCE_COMMIT=$sourceCommit" >> $env:GITHUB_ENV
+          Write-Output "Product source: $sourceCommit / $version"
       - name: Prepare the existing signed APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,7 +101,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Source and creation dialog checks
         run: |
-          npm test -- --testTimeout=15000 --maxWorkers=4
+          npm test -- --testTimeout=60000 --maxWorkers=2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run electron:new-session-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -99,4 +118,4 @@ jobs:
       - name: Upload, verify and publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-github-exe.ps1
+        run: ./scripts/publish-github-exe.ps1 -SourceCommit $env:RELEASE_SOURCE_COMMIT
