@@ -7,6 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
+last_updated: 2026-10-03
 stale_after: 2026-11-30
 sources:
   - id: session-workers
@@ -30,6 +31,9 @@ sources:
   - id: pane-slot
     resource: ../app/src/components/PaneSlot.tsx
     title: "Pane and tab host"
+  - id: context-menus
+    resource: ../app/src/components/Menus.tsx
+    title: "Workspace context menus"
   - id: terminal-area
     resource: ../app/src/components/TerminalArea.tsx
     title: "Terminal and chat surface"
@@ -155,6 +159,13 @@ or navigating one pane does not blank the browser beside it.[^pane-slot]
 Closing a terminal tab changes layout ownership but does not mean “delete this
 session.” Process activation/deactivation and tab placement remain separate
 operations.
+
+Right-clicking a local session tab offers **Open current project** to open its
+own project's root folder in Windows File Explorer. The target comes from the
+clicked session, even when another project is selected. Sessions without a
+local project folder and SSH sessions omit this action. Document tabs retain
+their separate **Reveal in File Explorer** action. The menu closes after the
+click, and a failed folder open reports a toast.[^app-shell][^context-menus]
 
 ## Terminal and chat
 
@@ -290,6 +301,7 @@ The domain invariants behind these interactions are documented in
 [^workspace-focus]: Active terminal focus recovery
 [^sidebar]: Project and session sidebar
 [^pane-slot]: Pane and tab host
+[^context-menus]: Workspace context menus
 [^terminal-area]: Terminal and chat surface
 [^chat-view]: Persistent chat history and artifacts
 [^file-tree]: File tree panel

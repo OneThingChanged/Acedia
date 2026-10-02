@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-10-03
+
+* **1.8.1.42 EXE preparation**: Added Open current project to local session tab context menus, resolving the folder from the clicked session rather than the active project. SSH sessions and missing local folders omit the action; document tabs retain file reveal. Updated all supported menu languages, workspace behavior, README badges and release documentation. Product and Android source versions advance to 1.8.1.42; npm stays 1.8.1 and the existing signed APK 1.8.1.39/code 21 is reused. Validation and public delivery are tracked in the [release record](release-1-8-1-42.md).
+
 ## 2026-10-02
 
 * **1.8.1.41 EXE release**: Published compact project/session dialogs with expandable workers and advanced settings, visible footer and keyboard support. Batched the 502-row timeline fixture without changing assertions and separated Windows installer/PowerShell tests on the hosted runner. All 141 files/899 tests, 22 Electron layouts/interactions, native PTY, production build and packaged bridge/Dashboard/lifecycle checks passed. Stable tag v1.8.1.41 targets product commit 9de6680; the three uploaded assets were downloaded and reverified before publication by release ID after the tag endpoint omitted the draft. The production updater detects 1.8.1.41 from 1.8.1.39 and validates its real public download before installation; all asset sizes/digests, FileVersion, manifest, latest stable release and tag match. Reuses signed APK 1.8.1.39/code 21. User installation is separate. See [release and verification](release-1-8-1-41.md).

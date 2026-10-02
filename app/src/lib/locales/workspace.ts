@@ -171,6 +171,7 @@ export const WORKSPACE_TRANSLATIONS: readonly TranslationRow[] = [
   ["Sent to session", "已发送到会话", "已傳送至工作階段", "セッションに送信しました", "Enviado a la sesión"],
   ["Send to session failed", "发送到会话失败", "傳送至工作階段失敗", "セッションへの送信に失敗しました", "Error al enviar a la sesión"],
   ["Go to project", "转到项目", "前往專案", "プロジェクトへ移動", "Ir al proyecto"],
+  ["Open current project", "打开当前项目", "開啟目前專案", "現在のプロジェクトを開く", "Abrir proyecto actual"],
   ["Reveal in File Explorer", "在文件资源管理器中显示", "在檔案總管中顯示", "エクスプローラーで表示", "Mostrar en el Explorador de archivos"],
   ["Open with default app", "使用默认应用打开", "使用預設應用程式開啟", "既定のアプリで開く", "Abrir con la aplicación predeterminada"],
   ["Open with OS", "通过系统打开", "透過系統開啟", "OS で開く", "Abrir con el sistema"],

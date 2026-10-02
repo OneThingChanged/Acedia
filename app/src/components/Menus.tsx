@@ -152,6 +152,8 @@ export function TabContextMenu({
   chatMode,
   onToggleChat,
   canChat,
+  canOpenProject,
+  onOpenProject,
   canRevealInExplorer,
   onRevealInExplorer,
 }: {
@@ -171,6 +173,8 @@ export function TabContextMenu({
   chatMode: boolean;
   onToggleChat: () => void;
   canChat: boolean;
+  canOpenProject: boolean;
+  onOpenProject: () => void;
   canRevealInExplorer: boolean;
   onRevealInExplorer: () => void;
 }) {
@@ -202,6 +206,14 @@ export function TabContextMenu({
         <button className="ctx-item" onClick={run(() => onSplit("v"))}>
           {text("아래로 분할", "Split down")}
         </button>
+        {canOpenProject && (
+          <>
+            <div className="ctx-separator" />
+            <button className="ctx-item" onClick={run(onOpenProject)}>
+              {text("현재 프로젝트 열기", "Open current project")}
+            </button>
+          </>
+        )}
         {canRevealInExplorer && (
           <>
             <div className="ctx-separator" />

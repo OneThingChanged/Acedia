@@ -43,6 +43,8 @@ describe("TabContextMenu", () => {
         chatMode={false}
         onToggleChat={() => {}}
         canChat={true}
+        canOpenProject={true}
+        onOpenProject={() => {}}
         canRevealInExplorer={false}
         onRevealInExplorer={() => {}}
       />
@@ -75,6 +77,8 @@ describe("TabContextMenu", () => {
         chatMode={false}
         onToggleChat={() => {}}
         canChat={true}
+        canOpenProject={true}
+        onOpenProject={() => {}}
         canRevealInExplorer={false}
         onRevealInExplorer={() => {}}
       />
@@ -102,6 +106,8 @@ describe("TabContextMenu", () => {
         chatMode={false}
         onToggleChat={() => {}}
         canChat={false}
+        canOpenProject={false}
+        onOpenProject={() => {}}
         canRevealInExplorer={true}
         onRevealInExplorer={() => {}}
       />

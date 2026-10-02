@@ -4171,6 +4171,12 @@ function App() {
     )
       ? tabContextMenu
       : null;
+  const tabContextSession = visibleTabContextMenu
+    ? agents.find((agent) => agent.id === visibleTabContextMenu.agentId)
+    : undefined;
+  const tabContextProject = tabContextSession
+    ? projects.find((project) => project.id === tabContextSession.projectId)
+    : undefined;
   const tabContextDocument = useMemo(() => {
     if (!visibleTabContextMenu) return null;
     const ref = parseDocTabId(visibleTabContextMenu.agentId);
@@ -4635,12 +4641,8 @@ function App() {
       {visibleTabContextMenu && (
         <TabContextMenu
           state={visibleTabContextMenu}
-          pinned={
-            !!agents.find((a) => a.id === visibleTabContextMenu.agentId)?.pinned
-          }
-          tabColor={
-            agents.find((a) => a.id === visibleTabContextMenu.agentId)?.tabColor ?? null
-          }
+          pinned={!!tabContextSession?.pinned}
+          tabColor={tabContextSession?.tabColor ?? null}
           canReopen={recentlyClosedTabsRef.current.length > 0}
           onDismiss={dismissTransientMenus}
           onSplit={(direction) =>
@@ -4655,9 +4657,12 @@ function App() {
           onReopen={reopenClosedTab}
           chatMode={chatModeAgents.has(visibleTabContextMenu.agentId)}
           onToggleChat={() => toggleChatMode(visibleTabContextMenu.agentId)}
-          canChat={toolSupportsChat(
-            agents.find((a) => a.id === visibleTabContextMenu.agentId)?.aiToolId
-          )}
+          canChat={toolSupportsChat(tabContextSession?.aiToolId)}
+          canOpenProject={!!tabContextProject?.folder && !tabContextProject.sshHostId}
+          onOpenProject={() => {
+            if (!tabContextProject?.folder || tabContextProject.sshHostId) return;
+            void handleOpenFolderPath(visibleTabContextMenu.agentId, ".");
+          }}
           canRevealInExplorer={!!tabContextDocument}
           onRevealInExplorer={() => {
             if (!tabContextDocument) return;

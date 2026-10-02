@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.1.41-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.1.42-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -19,6 +19,7 @@
 - **세션 상태 필터** — 사이드바 검색 아래에서 전체·Active·Sleeping을 선택합니다. 파란 Sleeping은 시작·복원 대기 상태이며, 검색도 저장한 필터 안에서 적용하고 결과 없는 프로젝트는 숨깁니다. [사이드바 사용법](docs/workspace-interactions.md#navigation-and-visibility)을 참고하세요.
 - **짧은 프로젝트·세션 생성 창** — 기본 설정은 가로로 배치하고 작업자·고급 설정은 필요할 때 펼칩니다. 작은 화면에서도 취소·만들기 버튼은 항상 보입니다. [새 세션 사용법](docs/session-creation.md)을 참고하세요.
 - **탭 & 중첩 분할** — 가로/세로 패널, 5존 드래그 앤 드롭(가운데=탭 합치기, 가장자리=분할), 크기 조절 스플리터
+- **현재 프로젝트 열기** — 로컬 세션 탭을 우클릭해 해당 프로젝트 폴더를 Windows 탐색기로 엽니다. 다른 프로젝트가 활성화돼 있어도 우클릭한 세션을 기준으로 엽니다
 - **Screen** — 한 세션은 전역에서 정확히 한 그룹에만 소속. 사이드바의 `Screen 1 (A+B+C)` 요약으로 정확한 레이아웃으로 바로 전환
 - **세션 관리** — 재시작, 비활성화(PTY만 종료하고 세션 유지), 별명 변경, 디스크 최신 세션으로 재등록, 그룹을 특정 세션 ID로 고정(PIN)
 
