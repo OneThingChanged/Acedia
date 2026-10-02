@@ -16,11 +16,19 @@ try {
     window.multiAgentElectron = { invoke: async () => null, onEvent: () => () => {} };
     window.opened = [];
     const open = (_, file) => window.opened.push(file);
-    const entry = createEntry('fixture', open, open, open, open);
+    let entry = createEntry('fixture', open, open, open, open);
     document.body.appendChild(entry.el); entry.term.open(entry.el); entry.term.resize(80, 20);
     window.seed = async (file, hard) => {
       entry.term.reset(); window.opened = [];
       const output = hard ? 'report (' + file.slice(0,70) + '\\r\\n  ' + file.slice(70) + ')' : 'report (' + file + ')';
+      await new Promise(resolve => entry.term.write(output, resolve));
+    };
+    window.seedRaw = async output => {
+      // Keep each color fixture independent of xterm's cached hover links.
+      entry.term.dispose(); entry.el.remove();
+      entry = createEntry('fixture', open, open, open, open);
+      document.body.appendChild(entry.el); entry.term.open(entry.el); entry.term.resize(80, 20);
+      window.opened = [];
       await new Promise(resolve => entry.term.write(output, resolve));
     };
     window.point = (row, col) => {
@@ -56,12 +64,43 @@ try {
           assert.equal(await win.webContents.executeJavaScript('window.opened.length'),2);
         }
       }
-      console.log('TERMINAL_WRAPPED_PATH_POINTER_AND_HIT_TEST_OK'); app.exit(0);
+      const width = text => [...text].reduce((sum, char) => sum + (/[가-힣]/.test(char) ? 2 : 1), 0);
+      const cell = index => [Math.floor(index / 80), index % 80];
+      const click = async ([row,col]) => {
+        const point = await win.webContents.executeJavaScript('window.point('+row+','+col+')');
+        win.webContents.sendInputEvent({type:'mouseMove',...point}); await wait();
+        win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
+        win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point}); await wait();
+      };
+      const paths = ['03_Development/GitHub/SubStorage', '자료/프로젝트는', 'C:\\\\Projects\\\\한글 프로젝트는', '03_Development/GitHub/a-very-long-folder-name-that-wraps-across-the-terminal/SubStorage'];
+      for (const color of ['\\x1b[32m', '\\x1b[38;2;80;190;120m']) {
+        for (const file of paths) {
+          const prefix = 'folder ';
+          const output = prefix + color + file + '\\x1b[39m는 이미 다운로드되어 있습니다.';
+          win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+          await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(output)+')'); await wait();
+          const end = width(prefix + file);
+          const [row,col] = cell(end - 1);
+          assert.equal((await win.webContents.executeJavaScript('window.hit('+row+','+col+')')).text, file);
+          for (const offset of [0,1]) {
+            const [suffixRow,suffixCol] = cell(end + offset);
+            assert.equal(await win.webContents.executeJavaScript('window.hit('+suffixRow+','+suffixCol+')'),null);
+          }
+          await click(cell(end - 1));
+          assert.equal(await win.webContents.executeJavaScript('window.opened.at(-1)'),file);
+          await click(cell(end));
+          assert.equal(await win.webContents.executeJavaScript('window.opened.length'),1);
+        }
+      }
+      await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify('folder 자료/프로젝트는')+')'); await wait();
+      assert.equal((await win.webContents.executeJavaScript('window.hit(0,14)')).text,'자료/프로젝트는');
+      console.log('TERMINAL_WRAPPED_PATH_POINTER_AND_HIT_TEST_OK');
+      console.log('TERMINAL_COLORED_PATH_SUFFIX_POINTER_AND_HIT_TEST_OK 8 cases'); app.exit(0);
     } catch(error) { console.error(error); app.exit(1); } });
   `);
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(require("electron"), [path.join(temporary, "main.cjs")], { env, stdio: "inherit", windowsHide: true });
-  const timer = setTimeout(() => child.kill(), 25_000);
+  const timer = setTimeout(() => child.kill(), 60_000);
   const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); }).finally(() => clearTimeout(timer));
   if (code !== 0) throw new Error("Terminal links smoke failed: " + code);
 } finally {

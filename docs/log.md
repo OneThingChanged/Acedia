@@ -2,7 +2,9 @@
 
 ## 2026-10-03
 
-* **1.8.1.42 EXE preparation**: Added Open current project to local session tab context menus, resolving the folder from the clicked session rather than the active project. SSH sessions and missing local folders omit the action; document tabs retain file reveal. Updated all supported menu languages, workspace behavior, README badges and release documentation. Product and Android source versions advance to 1.8.1.42; npm stays 1.8.1 and the existing signed APK 1.8.1.39/code 21 is reused. Validation and public delivery are tracked in the [release record](release-1-8-1-42.md).
+* **1.8.1.43 terminal link correction**: Reproduced the green SubStorage path swallowing the following Korean particle. Shared foreground-color boundaries now limit both native hover link ranges and direct mouse hit detection to the highlighted filesystem path. Palette/RGB, Korean names ending in 는, absolute paths with spaces, soft wrapping, and uncolored Korean names passed native pointer verification. Added this smoke to the official release workflow. Validation and delivery are tracked in the [release record](release-1-8-1-43.md).
+
+* **1.8.1.42 EXE release**: Added Open current project to local session tab context menus, resolving the folder from the clicked session rather than the active project. SSH sessions and missing local folders omit the action; document tabs retain file reveal. Updated all supported menu languages, workspace behavior, README badges and release documentation. Published v1.8.1.42 from edb8d7a after all 141 files/899 tests, creation dialogs, native PTY, EXE build and packaged bridge/Dashboard/lifecycle checks passed. Verified the three public assets, installer version and hash, source tag and production updater download from 1.8.1.41. Reuses signed APK 1.8.1.39/code 21; installation remains user-controlled. See the [release record](release-1-8-1-42.md).
 
 ## 2026-10-02
 

@@ -17,6 +17,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.43 EXE release](release-1-8-1-43.md) - Bound highlighted terminal paths to their color span so adjacent Korean prose is not clickable.
 * [Acedia 1.8.1.42 EXE release](release-1-8-1-42.md) - Open a local session's project folder from the tab context menu; release verification and publication record.
 * [Acedia 1.8.1.41 EXE release](release-1-8-1-41.md) - Published compact project/session dialogs with expandable settings, persistent footer and keyboard support; public updater and all asset hashes verified.
 * [Acedia 1.8.1.40 candidate](release-1-8-1-40.md) - Unpublished candidate and CI runner findings before the 1.8.1.41 release.

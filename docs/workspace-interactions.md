@@ -37,6 +37,12 @@ sources:
   - id: terminal-area
     resource: ../app/src/components/TerminalArea.tsx
     title: "Terminal and chat surface"
+  - id: terminal-links
+    resource: ../app/src/lib/terminal.ts
+    title: "Terminal path matching and pointer ranges"
+  - id: terminal-links-smoke
+    resource: ../app/scripts/electron-terminal-links-smoke.mjs
+    title: "Native terminal link pointer verification"
   - id: chat-view
     resource: ../app/src/components/ChatView.tsx
     title: "Persistent chat history and artifacts"
@@ -176,6 +182,14 @@ update existing views across windows and apply to new terminals. Lower scrollbac
 limits can trim screen history without deleting stored conversations. See the
 [settings roadmap](settings-expansion-roadmap.md) for defaults, scope and validation.
 
+Highlighted filesystem paths stop at the ANSI foreground-color boundary. For
+example, green `03_Development/GitHub/SubStorage` followed by ordinary `는` opens
+`SubStorage`; the particle has no link underline or click action. Hover links and
+direct mouse hit detection use the same boundary. Palette and RGB highlights,
+Korean folder names (including names ending in `는`), and wrapped paths retain
+their full path text. Uncolored paths keep the existing filename matching;
+URLs and OSC 8 hyperlinks keep their separate recognition.[^terminal-links][^terminal-links-smoke]
+
 All agents, including [Antigravity CLI](gemini-cli.md), have a terminal view. Codex and Claude additionally have a
 transcript-backed chat view; other tools remain terminal-only. Sending to an
 inactive chat-capable session first activates it and then waits for startup
@@ -303,6 +317,8 @@ The domain invariants behind these interactions are documented in
 [^pane-slot]: Pane and tab host
 [^context-menus]: Workspace context menus
 [^terminal-area]: Terminal and chat surface
+[^terminal-links]: Terminal path matching and pointer ranges
+[^terminal-links-smoke]: Native terminal link pointer verification
 [^chat-view]: Persistent chat history and artifacts
 [^file-tree]: File tree panel
 [^git-discovery]: Child Git repository discovery

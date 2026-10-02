@@ -26,8 +26,20 @@ sources:
 
 ## 검증
 
-메뉴·앱 언어·번역 카탈로그·릴리스 버전의 관련 검사 **15개**와 1.8.1.42 TypeScript/Vite 빌드가 통과했다. 공식 GitHub 러너의 전체 검사·native PTY·packaged bridge/Dashboard·lifecycle 검증을 진행한다.
+메뉴·앱 언어·번역 카탈로그·릴리스 버전의 관련 검사 **15개**와 1.8.1.42 TypeScript/Vite 빌드가 통과했다.
+
+[공식 GitHub 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/37026344153)에서 전체 **141개 파일·899개 테스트**, 생성 창 상호작용·22개 화면 조합, native PTY, TypeScript/Vite·NSIS 빌드와 packaged bridge/Dashboard·lifecycle 검증이 통과했다. Windows 설치·watcher 검사 2개와 PowerShell 검사 19개는 공식 절차에 따라 따로 실행했다. 예상한 거부 경로의 오류와 빠른 PTY 종료의 `AttachConsole failed` 로그도 관찰했으므로 로그 전체가 무오류였다는 뜻은 아니다.
 
 ## 공개 배포
 
-공식 GitHub EXE 워크플로우에서 고정 소스를 빌드하고 같은 빌드의 설치 파일·blockmap·`latest-exe.json`을 검증해 게시한다. 공개 배포 후 프로덕션 업데이터의 이전 버전 감지와 실제 다운로드·설치 전 해시 검증 결과를 기록한다.
+2026-10-03 **00:25:45 KST**, [v1.8.1.42](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.42)를 당시 최신 안정 릴리스로 게시했다. 제품 태그와 릴리스 대상은 `edb8d7aa4035a484275a0a6a0be91d5a0fbb9912`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.42-x64.exe` | 120,878,813 | `86a086f07ccfac15f8415f2a9daa42e0008ec3e95f054b821dfc2b999bb6c18f` |
+| `Acedia-Setup-1.8.1.42-x64.exe.blockmap` | 126,720 | `247aa6ee2e3c9c718ce3714f4804ac872ddb7acd170958a83f67c787ee64c148` |
+| `latest-exe.json` | 256 | `2789fbe8b3c5bf5050523bcf8e3b7d6e6871650d5a123d5df333ba1b6c7107bf` |
+
+공개 설치 파일 FileVersion은 **1.8.1.42**, Authenticode는 **NotSigned**다. 같은 빌드의 manifest와 설치 파일 크기·SHA-256이 일치한다.
+
+00:26:45 KST에 프로덕션 업데이터로 **1.8.1.41 → 1.8.1.42 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 크기·SHA-256, 제품 소스 태그와 재사용 APK 버전도 확인했다. 설치 프로그램 실행은 별도 사용자 동작이다.

@@ -553,6 +553,39 @@ export function findMarkdownPathAt(
 
 type CellRef = { row: number; col: number; width: number };
 
+function boundPathMatchToForeground(
+  term: Terminal,
+  logical: { text: string; cellMap: CellRef[] },
+  match: MarkdownPathMatch
+): MarkdownPathMatch {
+  const first = logical.cellMap[match.startIndex];
+  const firstCell = first && term.buffer.active.getLine(first.row)?.getCell(first.col);
+  if (!firstCell || firstCell.isFgDefault()) return match;
+
+  // Highlighted paths can touch prose, e.g. green `SubStorage` + default `는`.
+  // Use the ANSI foreground boundary for both the target and clickable range;
+  // uncolored paths retain their ordinary Unicode filename matching.
+  const mode = firstCell.getFgColorMode();
+  const color = firstCell.getFgColor();
+  for (let index = match.startIndex + 1; index < match.endIndex; index++) {
+    const ref = logical.cellMap[index];
+    const cell = ref && term.buffer.active.getLine(ref.row)?.getCell(ref.col);
+    if (!cell || (cell.getFgColorMode() === mode && cell.getFgColor() === color)) continue;
+    const raw = logical.text.slice(match.startIndex, match.endIndex);
+    const cleanedStart = raw.indexOf(match.text);
+    if (cleanedStart < 0) return match;
+    const text = match.text.slice(0, index - match.startIndex - cleanedStart).trimEnd();
+    if (!text) return match;
+    return {
+      ...match,
+      text,
+      endIndex: index,
+      endColumn: match.startColumn + cellWidth(logical.text.slice(match.startIndex, index)),
+    };
+  }
+  return match;
+}
+
 function cellLinearIndex(termCols: number, row: number, col: number) {
   return row * termCols + col;
 }
@@ -581,11 +614,14 @@ function findMatchAtCell(
 }
 
 function findTerminalLinkInLogicalLineAtCell(
+  term: Terminal,
   logical: { text: string; cellMap: CellRef[] },
-  termCols: number,
   row: number,
   col: number
 ): TerminalMouseLink | null {
+  const termCols = term.cols;
+  const pathMatches = (matches: MarkdownPathMatch[]) =>
+    matches.map((match) => boundPathMatchToForeground(term, logical, match));
   const occupied: MarkdownPathMatch[] = [];
 
   const url = findMatchAtCell(
@@ -598,12 +634,12 @@ function findTerminalLinkInLogicalLineAtCell(
   if (url) return { kind: "url", text: url };
   occupied.push(...findUrlMatches(logical.text));
 
-  const absoluteMatches = findAbsolutePathMatches(logical.text);
+  const absoluteMatches = pathMatches(findAbsolutePathMatches(logical.text));
   const absolute = findMatchAtCell(logical, termCols, row, col, absoluteMatches);
   if (absolute) return { kind: "terminal", text: absolute };
   occupied.push(...absoluteMatches);
 
-  const markdownMatches = findMarkdownPathMatches(logical.text).filter(
+  const markdownMatches = pathMatches(findMarkdownPathMatches(logical.text)).filter(
     (match) => !occupied.some((existing) => rangeOverlaps(existing, match))
   );
   const markdown = findMatchAtCell(
@@ -616,14 +652,14 @@ function findTerminalLinkInLogicalLineAtCell(
   if (markdown) return { kind: "markdown", text: markdown };
   occupied.push(...markdownMatches);
 
-  const imageMatches = findImagePathMatches(logical.text).filter(
+  const imageMatches = pathMatches(findImagePathMatches(logical.text)).filter(
     (match) => !occupied.some((existing) => rangeOverlaps(existing, match))
   );
   const image = findMatchAtCell(logical, termCols, row, col, imageMatches);
   if (image) return { kind: "image", text: image };
   occupied.push(...imageMatches);
 
-  const fileMatches = findGeneralFilePathMatches(logical.text, occupied);
+  const fileMatches = pathMatches(findGeneralFilePathMatches(logical.text, occupied));
   const file = findMatchAtCell(logical, termCols, row, col, fileMatches);
   if (file) return { kind: "terminal", text: file };
   occupied.push(...fileMatches);
@@ -633,7 +669,7 @@ function findTerminalLinkInLogicalLineAtCell(
     termCols,
     row,
     col,
-    findFolderPathMatches(logical.text, occupied)
+    pathMatches(findFolderPathMatches(logical.text, occupied))
   );
   if (folder) return { kind: "folder", text: folder };
 
@@ -769,7 +805,7 @@ export function findTerminalLinkAtMouseEvent(
   const logical = buildLogicalLine(term, row);
   if (!logical) return null;
 
-  return findTerminalLinkInLogicalLineAtCell(logical, term.cols, row, col);
+  return findTerminalLinkInLogicalLineAtCell(term, logical, row, col);
 }
 
 export function findTerminalUrlAtMouseEvent(term: Terminal, event: MouseEvent) {
@@ -839,6 +875,7 @@ function registerMarkdownLinkProvider(
         match: MarkdownPathMatch,
         onActivate: (path: string) => void
       ) => {
+        match = boundPathMatchToForeground(term, logical, match);
         const startCell = cellMap[match.startIndex];
         const lastCell = cellMap[match.endIndex - 1];
         if (!startCell || !lastCell) return;
