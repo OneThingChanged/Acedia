@@ -12,6 +12,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-tag:
+    if: >-
+      github.repository == 'OneThingChanged/Acedia' &&
+      github.event_name == 'create' && github.event.ref_type == 'branch' &&
+      startsWith(github.event.ref, 'prepare-tag/exe/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare the fixed product tag without publishing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_NAME -notmatch '^prepare-tag/exe/(\d+\.\d+\.\d+\.\d+)$') { throw 'Invalid tag preparation branch.' }
+          $version = $Matches[1]
+          $sourceCommit = & gh api "repos/OneThingChanged/Acedia/git/ref/heads/release/exe/$version" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'Fixed product source is missing.' }
+          $encoded = & gh api "repos/OneThingChanged/Acedia/contents/app/package.json?ref=$sourceCommit" --jq '.content'
+          if ($LASTEXITCODE -ne 0) { throw 'Product version lookup failed.' }
+          $package = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($encoded -join "`n"))) | ConvertFrom-Json
+          if ($package.multiAgentReleaseVersion -ne $version) { throw 'Product version differs from the tag.' }
+          $tagJson = & gh api "repos/OneThingChanged/Acedia/git/ref/tags/v$version" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            $tagJson = & gh api --method POST 'repos/OneThingChanged/Acedia/git/refs' -f "ref=refs/tags/v$version" -f "sha=$sourceCommit"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag creation failed.' }
+          }
+          $tagRef = ($tagJson -join "`n") | ConvertFrom-Json
+          if ($tagRef.object.type -ne 'commit' -or $tagRef.object.sha -ne $sourceCommit) { throw 'Product tag differs from the fixed source.' }
+          Write-Output "Prepared v$version from $sourceCommit; no release was published."
   release:
     if: >-
       github.repository == 'OneThingChanged/Acedia' &&
@@ -132,4 +162,14 @@ jobs:
       - name: Upload, verify and publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-github-exe.ps1 -SourceCommit $env:RELEASE_SOURCE_COMMIT
+        run: |
+          # Draft releases do not create a backing tag. Prepare it before the publisher verifies it.
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).multiAgentReleaseVersion
+          $tagJson = & gh api "repos/OneThingChanged/Acedia/git/ref/tags/v$version" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            $tagJson = & gh api --method POST 'repos/OneThingChanged/Acedia/git/refs' -f "ref=refs/tags/v$version" -f "sha=$env:RELEASE_SOURCE_COMMIT"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag creation failed.' }
+          }
+          $tagRef = ($tagJson -join "`n") | ConvertFrom-Json
+          if ($tagRef.object.type -ne 'commit' -or $tagRef.object.sha -ne $env:RELEASE_SOURCE_COMMIT) { throw 'Tag differs from the build source.' }
+          ./scripts/publish-github-exe.ps1 -SourceCommit $env:RELEASE_SOURCE_COMMIT
