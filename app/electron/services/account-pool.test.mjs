@@ -9,7 +9,11 @@ import { LocalDashboardService, RemoteDashboardService } from './web-services.mj
 
 const resources = [];
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s).reverse(), decryptString: b => Buffer.from(b).reverse().toString() };
-afterEach(async () => { for (const { pool, root, web } of resources.splice(0)) { pool.close(); await pool.refreshing; await web?.stop(); fs.rmSync(root, { recursive: true, force: true }); } });
+afterEach(async () => { for (const { pool, root, web } of resources.splice(0)) {
+  pool.close(); await pool.refreshing; await web?.stop();
+  if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-pool-test-')) throw new Error('Unexpected fixture directory');
+  fs.rmSync(root, { recursive: true });
+} });
 function fixture(options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-pool-test-'));
   const seen = [];
@@ -29,6 +33,9 @@ function add(pool, label) {
 }
 async function request(pool, id, overrides = {}) {
   const launch = await pool.launch(id);
+  return sendRequest(pool, launch, overrides);
+}
+async function sendRequest(pool, launch, overrides = {}) {
   const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, { method: 'POST', headers: { authorization: `Bearer ${launch.env.ACEDIA_ACCOUNT_POOL_KEY}`, 'content-type': 'application/json', ...overrides.headers }, body: JSON.stringify({ model: 'test', stream: true, input: [] }) });
   return { response, text: await response.text() };
 }
@@ -53,13 +60,14 @@ describe('Acedia account pool', () => {
     expect(fs.existsSync(path.join(rpcHome, 'auth.json'))).toBe(false);
     expect(pool.locks.size).toBe(0); expect(closes).toBe(2);
   });
-  it('keeps the routed owner for a model restart without turning Auto into an account pin', async () => {
+  it.each(['quota', 'excluded'])('preserves the owner on model restart and rejects it when unavailable (%s)', async reason => {
     const { pool } = fixture(); const first = add(pool, 'A'); add(pool, 'B');
     await pool.setEnabled(true); await pool.launch('model-session');
     await pool.launch('model-session', null, first);
     expect(pool.state.sessions['model-session'].accountId).toBe(first);
     expect(pool.state.sessions['model-session'].preferredAccountId).toBeUndefined();
-    pool.account(first).cooldownUntil = Date.now() + 60000;
+    if (reason === 'excluded') pool.update(first, false);
+    else pool.account(first).cooldownUntil = Date.now() + 60000;
     await expect(pool.launch('model-session', null, first)).rejects.toMatchObject({ status: 409 });
     expect(pool.state.sessions['model-session'].accountId).toBe(first);
     await pool.setEnabled(false);
@@ -79,7 +87,7 @@ describe('Acedia account pool', () => {
     await request(pool, 'one'); await request(pool, 'one');
     expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'A']);
   });
-  it('pins a chosen account, rejects an unavailable pin, and rebalances when changed back to auto', async () => {
+  it.each(['quota', 'excluded'])('keeps an unavailable pin (%s) until explicitly changed back to auto', async reason => {
     const { pool, root } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
     await pool.setEnabled(true);
     expect(pool.choices().accounts).toMatchObject([{ id: first, available: true }, { id: second, available: true }]);
@@ -91,7 +99,8 @@ describe('Acedia account pool', () => {
     expect(pool.choose('manual').id).toBe(second);
     await pool.launch('manual', second);
     expect(pool.state.sessions.manual.accountId).toBe(second);
-    pool.account(second).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
+    if (reason === 'excluded') pool.update(second, false);
+    else pool.account(second).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
     await expect(pool.launch('manual', second)).rejects.toThrow(/선택한 분산 계정/);
     expect(pool.state.sessions.manual.accountId).toBe(second);
     await pool.launch('manual');
@@ -109,11 +118,62 @@ describe('Acedia account pool', () => {
     expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
     expect(pool.sessionAssignment('not-launched')).toMatchObject({ label: null, assigned: false });
   });
-  it('never silently migrates a paused or deleted conversation account', async () => {
-    const { pool, seen } = fixture(); const id = add(pool, 'A'); add(pool, 'B'); await pool.setEnabled(true);
-    await request(pool, 'one'); pool.update(id, false);
-    expect((await request(pool, 'one')).response.status).toBe(503);
-    pool.remove(id); expect((await request(pool, 'one')).response.status).toBe(404);
+  it('moves an excluded automatic account only when its session restarts', async () => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true);
+    const original = await pool.launch('one');
+    expect((await sendRequest(pool, original)).response.status).toBe(200);
+    pool.update(first, false);
+    // Requests from the still-running CLI cannot silently switch accounts.
+    expect((await sendRequest(pool, original)).response.status).toBe(503);
+    expect(pool.state.sessions.one.accountId).toBe(first);
+    expect(seen).toHaveLength(1);
+    const restarted = await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(second);
+    expect(pool.sessionAssignment('one')).toMatchObject({ label: 'B', assigned: true });
+    expect(restarted.env).toEqual(original.env);
+    expect((await sendRequest(pool, restarted)).response.status).toBe(200);
+    expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'B']);
+    expect(pool.account(first).enabled).toBe(false);
+  });
+  it('recovers an excluded automatic assignment after the app reloads its saved pool', async () => {
+    const { pool, root, item, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true); await request(pool, 'one'); pool.update(first, false); pool.close();
+    const restored = new AccountPool(root, { safeStorage, port: 0, fetchImpl: pool.fetch }); item.pool = restored;
+    expect(restored.state.sessions.one.accountId).toBe(first);
+    expect((await request(restored, 'one')).response.status).toBe(200);
+    expect(restored.state.sessions.one.accountId).toBe(second);
+    expect(JSON.parse(fs.readFileSync(restored.file, 'utf8')).sessions.one.accountId).toBe(second);
+    expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'B']);
+  });
+  it.each(['quota', 'excluded'])('rejects restart with no replacement for an unavailable account (%s) without losing its assignment', async reason => {
+    const { pool } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    await pool.setEnabled(true); await request(pool, 'one'); pool.update(second, false);
+    if (reason === 'excluded') pool.update(first, false);
+    else pool.account(first).cooldownUntil = Date.now() + 60000;
+    const before = structuredClone(pool.state.sessions.one);
+    await expect(pool.launch('one')).rejects.toMatchObject({ status: 503 });
+    expect(pool.state.sessions.one).toEqual(before);
+    pool.update(second, true);
+    expect((await request(pool, 'one')).response.status).toBe(200);
+    expect(pool.state.sessions.one.accountId).toBe(second);
+  });
+  it.each(['removed', 'login_required', 'login_pending', 'credentials_missing'])('keeps ownership when the original account is %s', async reason => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A'); add(pool, 'B');
+    await pool.setEnabled(true);
+    const original = await pool.launch('one'); await sendRequest(pool, original);
+    if (reason === 'removed') pool.remove(first);
+    else {
+      pool.update(first, false);
+      pool.account(first).cooldownUntil = Date.now() + 60000;
+      if (reason === 'login_required') pool.account(first).status = 'login_required';
+      else if (reason === 'login_pending') pool.jobs.set(first, { finish() {} });
+      else pool.account(first).auth = null;
+    }
+    const status = reason === 'removed' ? 404 : 503;
+    expect((await sendRequest(pool, original)).response.status).toBe(status);
+    await expect(pool.launch('one')).rejects.toMatchObject({ status });
+    expect(pool.state.sessions.one.accountId).toBe(first);
     expect(seen).toHaveLength(1);
   });
   it('does not forward unauthenticated, cross-origin or unsupported requests', async () => {
@@ -351,7 +411,7 @@ describe('Acedia account pool', () => {
     expect((await request(pool, 'one')).response.status).toBe(200);
     expect(calls).toEqual(['A', 'B']);
   });
-  it('keeps separate transcript attribution periods when a session changes accounts', async () => {
+  it.each(['quota', 'excluded'])('keeps separate transcript attribution periods when replacing an account (%s)', async reason => {
     let now = Date.now();
     const { pool } = fixture({ now: () => now, transcriptUsageForPeriods: periods => (
       periods.length ? { events: periods.length, inputTokens: 13, outputTokens: 6, cachedTokens: 3 } : null
@@ -360,7 +420,8 @@ describe('Acedia account pool', () => {
     await request(pool, 'one');
     expect(pool.state.sessions.one.assignmentPeriods).toEqual([{ accountId: first, startedAt: now }]);
     now += 10_000;
-    pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(now / 1000) + 3600 } } };
+    if (reason === 'excluded') pool.update(first, false);
+    else pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(now / 1000) + 3600 } } };
     await pool.launch('one');
     expect(pool.state.sessions.one.assignmentPeriods).toEqual([
       { accountId: first, startedAt: now - 10_000, endedAt: now },
@@ -368,7 +429,7 @@ describe('Acedia account pool', () => {
     ]);
     expect(pool.snapshot().accounts.map(account => account.transcriptUsage?.events)).toEqual([1, 1]);
   });
-  it('rotates a pinned account on restart when its recorded quota is full', async () => {
+  it('rotates an automatic assignment on restart when its recorded quota is full', async () => {
     const { pool } = fixture(); const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);
     await request(pool, 'one');
     pool.account(a).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now()/1000)+3600 } } };

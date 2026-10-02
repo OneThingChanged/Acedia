@@ -4,7 +4,7 @@ import { useAppLanguage } from '../lib/appLanguage';
 import { SettingLabel, SettingScope, settingTarget } from './SettingsSearch';
 import { BrowserExtensionsPanel } from './BrowserExtensionsPanel';
 
-export type BrowserPreferences = { revision: number; home: string; search: string; zoom: number; links: string; profiles: { id: string; label: string }[]; defaultProfile: string; restoreTabs: boolean };
+export type BrowserPreferences = { revision: number; home: string; search: string; zoom: number; links: string; compatibility: boolean; profiles: { id: string; label: string }[]; defaultProfile: string; restoreTabs: boolean };
 export function BrowserSettingsPanel() {
   const { text } = useAppLanguage();
   const [value, setValue] = useState<BrowserPreferences | null>(null);
@@ -23,6 +23,7 @@ export function BrowserSettingsPanel() {
       {row('browser.search', <select aria-label={text('검색엔진', 'Search engine')} value={value.search} onChange={e => setValue({ ...value, search: e.target.value })}><option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option></select>, text('주소창에 입력한 검색어에 적용', 'Used for search phrases in the address bar'))}
       {row('browser.zoom', <select aria-label={text('기본 확대율', 'Default zoom')} value={value.zoom} onChange={e => setValue({ ...value, zoom: Number(e.target.value) })}>{[50,75,90,100,110,125,150,175,200].map(n => <option key={n} value={n}>{n}%</option>)}</select>, text('저장 시 현재·새 브라우저 탭에 적용', 'Applies to current and new browser tabs when saved'))}
       {row('browser.links', <select aria-label={text('웹 링크 열기', 'Open web links')} value={value.links} onChange={e => setValue({ ...value, links: e.target.value })}><option value="external">{text('기본 외부 브라우저', 'Default external browser')}</option><option value="internal">{text('앱 내부 새 탭', 'New tab in this app')}</option></select>, text('앱의 일반 웹 링크에 적용. 로그인 전용 흐름은 해당 도구의 방식을 사용합니다.', 'Applies to ordinary app web links. Dedicated sign-in flows use their tool’s browser flow.'))}
+      {row('browser.compatibility', <input aria-label={text('웹사이트 호환성', 'Website compatibility')} type="checkbox" checked={value.compatibility} onChange={e => setValue({ ...value, compatibility: e.target.checked })}/>, text('로그인·인증 페이지 호환성을 높입니다. 변경 후 열린 페이지는 새로고침하세요.', 'Improves compatibility with sign-in and verification pages. Reload open pages after changing this setting.'))}
       {row('browser.defaultProfile', <select aria-label={text('기본 브라우저 프로필', 'Default browser profile')} value={value.defaultProfile} onChange={e => setValue({ ...value, defaultProfile: e.target.value })}>{value.profiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select>, text('새 탭에 적용 · 기존 탭의 프로필은 유지', 'Used for new tabs · existing tabs keep their profile'))}
       {row('browser.restore', <input aria-label={text('웹 탭 복원', 'Restore web tabs')} type="checkbox" checked={value.restoreTabs} onChange={e => setValue({ ...value, restoreTabs: e.target.checked })}/>, text('다음 앱 시작 시 웹 탭을 원래 프로필로 복원 · 최대 50개', 'Restore up to 50 web tabs with their profiles on the next app start'))}
     </div>

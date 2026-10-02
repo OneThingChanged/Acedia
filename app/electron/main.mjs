@@ -8,6 +8,7 @@ import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
 import { browserPreferences, browserAddress } from "./services/browser-preferences.mjs";
+import { applyBrowserCompatibility } from "./services/browser-compatibility.mjs";
 import { BrowserExtensions } from "./services/browser-extensions.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { BrowserActivity } from "./services/browser-activity.mjs";
@@ -803,22 +804,7 @@ usageIndex.claudeAccounts = () => [
 ];
 
 async function browserUsageSummary(refresh = false, historySelection = null) {
-  // Local totals should not wait for a live account request. Claude's usage
-  // endpoint can take up to ten seconds, so refresh limits in the background
-  // and let the browser poll the cached snapshot until it settles.
-  if (refresh) {
-    void usageIndex.refreshRateLimits().catch((error) => {
-      console.warn("[electron] usage limit refresh failed", error?.message || error);
-    });
-  }
-  const rateLimits = usageIndex.rateLimitSummary();
-  return {
-    ...rateLimits,
-    refreshPending: Boolean(usageIndex.rateLimitRefresh),
-    tokens: usageIndex.dashboardSummary(),
-    ...usageIndex.usageOverview(),
-    history: usageIndex.usageHistory(historySelection),
-  };
+  return usageIndex.browserSummary(refresh, historySelection);
 }
 
 function dispatchRemoteSessionCreate(payload) {
@@ -2072,6 +2058,7 @@ async function createDocumentBrowserWindowNow({
       partition: profile.partition,
     },
   });
+  applyBrowserCompatibility(view.webContents, browserSettings.get().compatibility, app.getName());
   const record = {
     id: browserId,
     profileId: profile.id,
@@ -5037,7 +5024,10 @@ async function invokeCommand(event, command, rawArgs) {
         await browserExtensions.removeProfile(browserProfile(previous, profile.id));
       }
       for (const record of documentBrowserWindows.values()) {
-        if (!record.view.webContents.isDestroyed()) record.view.webContents.setZoomFactor(next.zoom / 100);
+        if (!record.view.webContents.isDestroyed()) {
+          record.view.webContents.setZoomFactor(next.zoom / 100);
+          applyBrowserCompatibility(record.view.webContents, next.compatibility, app.getName());
+        }
       }
       publishDocumentBrowserCatalog();
       return next;

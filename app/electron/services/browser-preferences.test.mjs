@@ -29,4 +29,18 @@ describe('Browser preferences', () => {
       expect(fs.readFileSync(prefs.file, 'utf8')).toBe('{broken');
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
+  it('enables compatibility for existing profiles and persists an explicit opt-out', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-prefs-compat-'));
+    try {
+      const prefs = browserPreferences(root);
+      fs.writeFileSync(prefs.file, JSON.stringify({ revision: 3, home: 'https://example.com/' }));
+      expect(prefs.get().compatibility).toBe(true);
+      prefs.set({ compatibility: false }, 3);
+      expect(browserPreferences(root).get().compatibility).toBe(false);
+      expect(() => prefs.set({ compatibility: 'true' }, 4)).toThrow('compatibility');
+    } finally {
+      if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('browser-prefs-compat-')) throw Error('Unexpected fixture directory');
+      fs.rmSync(root, { recursive: true });
+    }
+  });
 });

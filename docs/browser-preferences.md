@@ -7,6 +7,7 @@ sources:
   - resource: ../app/src/components/BrowserSettingsPanel.tsx
   - resource: ../app/electron/services/browser-preferences.mjs
   - resource: ../app/electron/services/browser-preferences.test.mjs
+  - resource: ../app/electron/services/browser-compatibility.mjs
   - resource: ../app/electron/services/browser-settings-smoke.mjs
   - resource: ../app/electron/services/browser-profiles.mjs
   - resource: ../app/scripts/electron-browser-profiles-smoke.mjs
@@ -28,9 +29,19 @@ sources:
 | 검색엔진 | 주소창의 검색어를 Google/Bing/DuckDuckGo로 전달한다. HTTP/HTTPS 주소와 호스트명은 직접 연다. |
 | 기본 확대율 | 저장 시 현재·새 탭에 50–200% 적용. 페이지 이동 시 기본 배율을 사용한다. |
 | 웹 링크 열기 | 앱의 일반 웹 링크를 내부 새 탭 또는 기본 외부 브라우저에서 연다. 로그인 전용 흐름과 브라우저 페이지 내부 탐색은 기존 방식을 따른다. |
+| 웹사이트 호환성 | 기본 켜짐. 표준 Chromium 브라우저 정보를 사용해 로그인·인증 페이지의 호환성을 높인다. 저장 후 열린 페이지는 새로고침해야 한다. |
 
 시작 페이지와 주소창에서 HTTP/HTTPS 이외 스킴과 URL 안의 사용자명·비밀번호는 거부한다.
 설정 검색은 옵션 이름으로 이동하며 저장 자체를 실행하지 않는다.
+
+웹사이트 호환성은 내장 탭의 User-Agent에서 Electron과 앱 제품 토큰을 제거하고,
+실제 Chromium 버전과 운영체제 정보는 유지한다. 끄면 해당 탭의 원래 User-Agent로
+돌아간다. 새 탭·복원 탭·MCP 탭에 같은 설정을 적용한다. 저장할 때 페이지를 자동으로
+다시 불러오지 않으므로 작성 중인 폼이나 인증 상태는 사용자가 새로고침할 때까지 유지된다.
+
+사람 인증은 사이트에서 사용자가 직접 완료한다. Chromium의 CORS·인증서 검사·샌드박스와
+프로필별 쿠키 저장 방식을 유지한다. 외부 Chrome의 로그인 정보를 가져오거나 인증을
+자동으로 완료하지 않는다. 사이트에 따라 별도의 로그인이나 지원 브라우저가 필요할 수 있다.
 
 ## 프로필과 재시작 복원
 

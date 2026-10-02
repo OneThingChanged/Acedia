@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 export async function verifyBrowserSettings(window, records, integration) {
   const call = (command, args = {}) => window.webContents.executeJavaScript('window.multiAgentElectron.invoke(' + JSON.stringify(command) + ',' + JSON.stringify(args) + ')');
-  const server = http.createServer((_req, res) => res.end('<title>Browser preferences fixture</title><p>Local browser test</p>'));
+  const requests = new Map();
+  const server = http.createServer((req, res) => {
+    requests.set(req.url, req.headers['user-agent']);
+    res.end('<title>Browser preferences fixture</title><p>Local browser test</p>');
+  });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const home = 'http://127.0.0.1:' + server.address().port + '/';
   const before = await call('browser_preferences_get');
@@ -14,6 +18,19 @@ export async function verifyBrowserSettings(window, records, integration) {
     const record = records.get(first.browserId);
     assert.equal(record.view.webContents.getURL(), home);
     assert.equal(record.view.webContents.getZoomFactor(), 1.25);
+    assert.equal(settings.compatibility, true);
+    const standardAgent = await record.view.webContents.executeJavaScript('navigator.userAgent');
+    assert.ok(standardAgent.includes(`Chrome/${process.versions.chrome}`));
+    assert.ok(!standardAgent.includes('Electron/'));
+    assert.equal(requests.get('/'), standardAgent);
+    settings = await call('browser_preferences_set', { patch: { compatibility: false }, revision: settings.revision });
+    assert.equal(record.view.webContents.getURL(), home);
+    await call('document_browser_navigate', { browserId: first.browserId, url: home + 'original-agent' });
+    assert.ok(requests.get('/original-agent').includes(`Electron/${process.versions.electron}`));
+    settings = await call('browser_preferences_set', { patch: { compatibility: true }, revision: settings.revision });
+    await call('document_browser_navigate', { browserId: first.browserId, url: home + 'compatible-agent' });
+    assert.equal(requests.get('/compatible-agent'), standardAgent);
+    assert.equal(await record.view.webContents.executeJavaScript('navigator.userAgent'), standardAgent);
     settings = await call('browser_preferences_set', { patch: { zoom: 150 }, revision: settings.revision });
     assert.equal(record.view.webContents.getZoomFactor(), 1.5);
     await assert.rejects(call('browser_preferences_set', { patch: { home: 'file:///bad' }, revision: settings.revision }));
@@ -32,6 +49,7 @@ export async function verifyBrowserSettings(window, records, integration) {
     const mcp = await integration({ agentId: 'browser-settings-fixture', action: 'open', body: { url: home, profileId } });
     assert.equal(mcp.tab.profileId, profileId);
     assert.equal(mcp.tab.profileLabel, 'Work');
+    assert.equal(records.get(mcp.tab.browserId).view.webContents.getUserAgent(), standardAgent);
     await window.webContents.executeJavaScript(`window.browserShowEvents = []; window.stopBrowserShowEvents = window.multiAgentElectron.onEvent('document-browser:show-tab', event => window.browserShowEvents.push(event)); true;`);
     const shown = await integration({ agentId: 'browser-settings-fixture', action: 'show', body: { tabId: mcp.tab.tabId, placement: 'right' } });
     assert.equal(shown.ok, true);

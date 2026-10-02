@@ -2635,6 +2635,7 @@ function renderUsage() {
   );
   ui.usageProviderCount.textContent = String(groups.length);
   ui.usageTokenEvents.textContent = t("{0}개 사용 기록 기준", [formatTokenCount(tokens.events)]);
+  if (usageSummary?.tokensUpdatedAt) ui.usageTokenEvents.textContent += ` · ${formatUsageUpdated(usageSummary.tokensUpdatedAt)}`;
   renderUsageHistory();
   ui.usageProviderSummary.textContent = String(groups.length);
   ui.usageRemainingSummary.textContent = remaining == null
@@ -2731,6 +2732,21 @@ function renderUsage() {
   ui.usageProviderGrid.replaceChildren(fragment);
 }
 
+function scheduleUsageRefresh() {
+  if (selection.type !== "usage" || document.hidden || !nativePageActive) {
+    window.clearTimeout(usageRefreshPollTimer);
+    usageRefreshPollTimer = 0;
+    return;
+  }
+  if (usageRefreshPollTimer) return;
+  usageRefreshPollTimer = window.setTimeout(() => {
+    usageRefreshPollTimer = 0;
+    if (selection.type === "usage" && !document.hidden && nativePageActive &&
+      !usageLoading && !usageVisibilitySaving) void loadUsage(false);
+    else scheduleUsageRefresh();
+  }, usageSummary?.refreshPending ? 1_000 : 30_000);
+}
+
 async function loadUsage(refresh = false) {
   if (usageVisibilitySaving) return;
   const requestSerial = ++usageRequestSerial;
@@ -2764,6 +2780,7 @@ async function loadUsage(refresh = false) {
     if (requestSerial !== usageRequestSerial) return;
     usageSummary = {
       updatedAt: Number(result?.updatedAt) || 0,
+      tokensUpdatedAt: Number(result?.tokensUpdatedAt) || 0,
       refreshPending: result?.refreshPending === true,
       limits: Array.isArray(result?.limits) ? result.limits : [],
       profiles: Array.isArray(result?.profiles) ? result.profiles : [],
@@ -2776,12 +2793,6 @@ async function loadUsage(refresh = false) {
       usageSelection = { ...usageSelection, ...usageSummary.history.selection };
     }
     usageLoadedAt = Date.now();
-    window.clearTimeout(usageRefreshPollTimer);
-    if (usageSummary.refreshPending) {
-      usageRefreshPollTimer = window.setTimeout(() => {
-        if (selection.type === "usage" && !usageLoading) void loadUsage(false);
-      }, 1_000);
-    }
   } catch (error) {
     if (requestSerial !== usageRequestSerial) return;
     usageError = error instanceof Error ? error.message : String(error);
@@ -2790,6 +2801,9 @@ async function loadUsage(refresh = false) {
     usageLoading = false;
     usageRefreshing = false;
     renderUsage();
+    window.clearTimeout(usageRefreshPollTimer);
+    usageRefreshPollTimer = 0;
+    scheduleUsageRefresh();
   }
 }
 
@@ -2819,6 +2833,7 @@ function renderSelection() {
     renderUsage();
     if (!usageLoadAttempted) void loadUsage(true);
   }
+  scheduleUsageRefresh();
   if (selection.type === "session") renderSession();
   syncTerminal();
   syncSessionView();
@@ -5713,8 +5728,10 @@ addEventListener("popstate", (event) => {
   }
 });
 document.addEventListener("visibilitychange", () => {
+  scheduleUsageRefresh();
   if (!document.hidden && nativePageActive) {
     void fetchState({ quiet: true });
+    if (selection.type === "usage" && !usageLoading) void loadUsage(false);
     if (selection.type === "session" && sessionViewMode === "browser") scheduleRemoteBrowserFrame(0);
   }
 });
@@ -5735,6 +5752,7 @@ addEventListener("multiagent:native-visibility", (event) => {
   const active = event.detail?.active !== false;
   if (nativePageActive === active) return;
   nativePageActive = active;
+  scheduleUsageRefresh();
   document.documentElement.dataset.nativeActive = active ? "true" : "false";
   if (!active) {
     if (pollTimer) clearTimeout(pollTimer);
@@ -5744,6 +5762,7 @@ addEventListener("multiagent:native-visibility", (event) => {
     syncTerminal();
     return;
   }
+  if (selection.type === "usage" && !usageLoading) void loadUsage(false);
   void fetchState({ quiet: true }).finally(() => {
     renderSelection();
     schedulePoll(1600);

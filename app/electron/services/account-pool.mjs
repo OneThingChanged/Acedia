@@ -330,7 +330,7 @@ export class AccountPool {
     const session = this.state.sessions[sessionId];
     if (session.accountId) {
       const a = this.account(session.accountId);
-      if (!this.eligible(a)) throw fail('이 대화의 계정을 사용할 수 없습니다. 계정 상태를 확인하거나 새 세션을 만드세요.', 503);
+      if (!this.eligible(a)) throw fail('이 대화의 계정을 사용할 수 없습니다. 계정 상태 또는 세션 속성의 분산 계정을 확인한 뒤 다시 시작하세요.', 503);
       if (this.recordAssignment(sessionId, a.id)) this.persist();
       return a;
     }
@@ -399,17 +399,17 @@ export class AccountPool {
     const assigned = session.accountId;
     if (assigned && !preferredAccountId && !preserveOwnerId) {
       const previous = this.state.accounts.find(a => a.id === assigned);
-      // Move exhausted assignments only at CLI restart, never mid-response.
-      // Paused, removed and login-required accounts retain their ownership.
-      if (previous && this.quotaBlocked(previous)) {
+      // Reassign excluded or exhausted automatic accounts only at CLI restart.
+      // Account removal and authentication changes still require user action.
+      if (previous?.status === 'ready' && previous.auth && !this.jobs.has(assigned)
+        && (!previous.enabled || this.quotaBlocked(previous))) {
         const replacement = this.state.accounts.find(a => a.id !== assigned && this.eligible(a));
         if (replacement) session.accountId = replacement.id;
       }
     }
-    // Reserve an eligible account before the CLI starts so every request in
-    // this session uses an already visible, persistent owner.
-    if (session.accountId) this.recordAssignment(id, session.accountId);
-    else this.choose(id);
+    // Validate existing assignments too, so an unavailable account is reported
+    // before starting a CLI that would fail every request with HTTP 503.
+    this.choose(id);
     this.persist();
     const config = { model_provider: 'acedia_pool', 'model_providers.acedia_pool.name': 'Acedia Accounts',
       'model_providers.acedia_pool.base_url': `http://127.0.0.1:${this.server.address().port}/provider`,

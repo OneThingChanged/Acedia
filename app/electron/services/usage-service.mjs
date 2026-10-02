@@ -15,6 +15,7 @@ const FIVE_HOUR_MINUTES = 300;
 const SEVEN_DAY_MINUTES = 10_080;
 const USAGE_EVENT_PARSER_VERSION = 2;
 const USAGE_EVENT_PARSER_VERSION_KEY = "usage_event_parser_version";
+const TRANSCRIPT_REFRESH_INTERVAL_MS = 30_000;
 
 function number(value) {
   const parsed = Number(value);
@@ -151,6 +152,8 @@ export class UsageService {
     this.catalog = { projects: [], agents: [] };
     this.database = null;
     this.rateLimitRefresh = null;
+    this.transcriptRefresh = null;
+    this.transcriptUpdatedAt = 0;
     this.accountRefresh = new Map();
     this.codexUsageFetcher = options.codexUsageFetcher ?? null;
     this.dailyRollupSync = false;
@@ -625,6 +628,38 @@ export class UsageService {
       }
     }
     return summary;
+  }
+
+  refreshTranscriptUsage(force = false) {
+    if (this.transcriptRefresh) return this.transcriptRefresh;
+    if (!force && this.transcriptUpdatedAt > 0 &&
+      Date.now() - this.transcriptUpdatedAt < TRANSCRIPT_REFRESH_INTERVAL_MS) {
+      return Promise.resolve();
+    }
+    this.transcriptRefresh = this.ingestAll().then((summary) => {
+      this.transcriptUpdatedAt = Date.now();
+      return summary;
+    }).finally(() => { this.transcriptRefresh = null; });
+    return this.transcriptRefresh;
+  }
+
+  async browserSummary(refresh = false, historySelection = null) {
+    // Quotas can take seconds to fetch. Read local token records before
+    // returning history while account requests continue in the background.
+    await this.refreshTranscriptUsage(refresh);
+    if (refresh) {
+      void this.refreshRateLimits().catch((error) => {
+        console.warn("[electron] usage limit refresh failed", error?.message || error);
+      });
+    }
+    return {
+      ...this.rateLimitSummary(),
+      refreshPending: Boolean(this.rateLimitRefresh),
+      tokensUpdatedAt: this.transcriptUpdatedAt,
+      tokens: this.dashboardSummary(),
+      ...this.usageOverview(),
+      history: this.usageHistory(historySelection),
+    };
   }
 
   readLatestRateLimit(entry) {

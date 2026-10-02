@@ -36,7 +36,9 @@ void app.whenReady().then(async () => {
     const project = path.join(root, "project"); fs.mkdirSync(project);
     fs.writeFileSync(path.join(project, "guide.md"), "# Remote document fixture");
     fs.writeFileSync(path.join(project, "remove.md"), "# Move to trash fixture");
-    usage = new UsageService(path.join(root, "usage.db"), { scan: async () => [] });
+    const usageTranscripts = [];
+    usage = new UsageService(path.join(root, "usage.db"), { scan: async tool => tool === "codex" ? usageTranscripts : [] });
+    usage.refreshRateLimits = async () => {};
     const now = new Date();
     const event = usage.db().prepare("INSERT INTO usage_events (source_key, ts, tool, input_tokens, output_tokens, total_tokens, raw_kind, model) VALUES (?, ?, 'codex', ?, ?, ?, 'codex_token_count_v2', 'gpt-6-astra')");
     for (let day = 1; day <= now.getDate(); day++) {
@@ -46,7 +48,7 @@ void app.whenReady().then(async () => {
     service = new RemoteDashboardService({
       baseDir: path.join(root, "service"),
       trashDocument: async (file) => fs.renameSync(file, path.join(root, "trashed-document.md")),
-      usageProvider: (_refresh, selection) => ({updatedAt:Date.now(),limits:quota,profiles,tokens:usage.tokenTotals(),history:usage.usageHistory(selection)}),
+      usageProvider: async (refresh, selection) => ({ ...await usage.browserSummary(refresh, selection), updatedAt:Date.now(),limits:quota,profiles }),
       usageProfileVisibility: (key,hidden) => {
         quota = quota.map(limit => limit.profile.key===key?{...limit,profile:{...limit.profile,hidden,visible:!hidden}}:limit);
         profiles = profiles.map(profile => profile.key===key?{...profile,hidden,visible:!hidden}:profile);
@@ -228,6 +230,53 @@ void app.whenReady().then(async () => {
       await waitFor(win, "document.querySelector('#filePreviewOverlay').hidden && document.querySelector('#usageProviderGrid').getClientRects().length>0");
       await waitFor(win, "document.querySelector('#usageProviderGrid > .usage-provider-card') && document.querySelector('.usage-profile-review')");
       assert(await win.webContents.executeJavaScript("document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===1 && !document.querySelector('.usage-profile-review').open"), "Unused quota profile was not collapsed");
+      if (width === 1920) {
+        // Advance the scheduled usage callback without waiting 30 real seconds.
+        // Visibility is controlled here because these smoke windows are hidden.
+        await win.webContents.executeJavaScript(`(() => {
+          window.__usageTestHidden = false;
+          Object.defineProperty(document, 'hidden', { configurable:true, get:() => window.__usageTestHidden });
+          window.__usageOriginalTimeout = window.setTimeout;
+          window.__usageOriginalClear = window.clearTimeout;
+          window.setTimeout = (callback, delay, ...args) => {
+            const id = window.__usageOriginalTimeout(callback, delay, ...args);
+            if (delay === 30000) window.__usageScheduled = { id, fire:() => { window.__usageOriginalClear(id); callback(...args); } };
+            return id;
+          };
+          window.clearTimeout = id => {
+            if (window.__usageScheduled?.id === id) window.__usageScheduled = null;
+            window.__usageOriginalClear(id);
+          };
+          document.dispatchEvent(new Event('visibilitychange'));
+        })()`);
+        await waitFor(win, "!!window.__usageScheduled && !document.querySelector('#refreshUsageButton').disabled");
+        const before = usage.dashboardSummary();
+        const transcript = path.join(root, "ongoing.jsonl");
+        fs.writeFileSync(transcript, JSON.stringify({ timestamp:new Date().toISOString(),type:"event_msg",payload:{type:"token_count",info:{
+          last_token_usage:{input_tokens:14,output_tokens:3,total_tokens:17},total_token_usage:{total_tokens:17},
+        }}}) + "\n");
+        usageTranscripts.push({ path:transcript, sessionId:"ongoing", cwd:project });
+        usage.transcriptUpdatedAt = Date.now() - 31_000;
+        await win.webContents.executeJavaScript("window.__usageScheduled.fire()");
+        await waitFor(win, `document.querySelector('#usageSelectedTotal').textContent === ${JSON.stringify((before.totalTokens+17).toLocaleString('en-US'))}`);
+        assert(usage.dashboardSummary().events === before.events+1, "Automatic usage refresh missed the ongoing transcript");
+        assert(await win.webContents.executeJavaScript("document.querySelector('#usageTokenEvents').textContent.includes('·')"), "Token scan freshness was not shown");
+        await win.webContents.executeJavaScript("window.__usageTestHidden=true;document.dispatchEvent(new Event('visibilitychange'))");
+        assert(await win.webContents.executeJavaScript("window.__usageScheduled===null"), "Hidden usage page retained its polling timer");
+        await win.webContents.executeJavaScript("window.__usageTestHidden=false;document.dispatchEvent(new Event('visibilitychange'))");
+        await waitFor(win, "!!window.__usageScheduled && !document.querySelector('#refreshUsageButton').disabled");
+        await win.webContents.executeJavaScript("document.querySelector('#overviewButton').click()");
+        assert(await win.webContents.executeJavaScript("window.__usageScheduled===null"), "Leaving usage retained its polling timer");
+        await win.webContents.executeJavaScript("document.querySelector('#usageButton').click()");
+        await waitFor(win, "!!window.__usageScheduled");
+        await win.webContents.executeJavaScript(`(() => {
+          window.setTimeout = window.__usageOriginalTimeout;
+          window.clearTimeout = window.__usageOriginalClear;
+          delete document.hidden;
+          document.dispatchEvent(new Event('visibilitychange'));
+        })()`);
+        await waitFor(win, "!document.querySelector('#refreshUsageButton').disabled");
+      }
       await win.webContents.executeJavaScript("document.querySelector('.usage-profile-review').open=true;document.querySelector('.usage-profile-review .usage-profile-toggle').click()");
       await waitFor(win, "document.querySelectorAll('#usageProviderGrid > .usage-provider-card').length===2");
       await win.webContents.executeJavaScript(`document.querySelector('[data-provider="codex:${quotaProfileId}"] .usage-profile-toggle').click()`);
@@ -321,7 +370,7 @@ void app.whenReady().then(async () => {
       }
       win.destroy();
     }
-    console.log("MULTIAGENT_REMOTE_PWA_SMOKE_OK desktop/mobile chat, document preview, modules, service worker, account visibility, readable usage history, six display locales, preserved drafts and localized sign-in");
+    console.log("MULTIAGENT_REMOTE_PWA_SMOKE_OK desktop/mobile chat, document preview, modules, service worker, account visibility, fresh ongoing usage, readable usage history, six display locales, preserved drafts and localized sign-in");
   } catch (error) {
     console.error(error.stack || error); exitCode = 1;
   } finally {

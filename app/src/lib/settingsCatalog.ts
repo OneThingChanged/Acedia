@@ -59,6 +59,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("browser.search", "browser", "검색엔진", "Search engine", "saved", "주소창 google bing duckduckgo address"),
   entry("browser.zoom", "browser", "기본 확대율", "Default zoom", "saved", "배율 scale"),
   entry("browser.links", "browser", "웹 링크 열기", "Open web links", "saved", "내부 외부 internal external"),
+  entry("browser.compatibility", "browser", "웹사이트 호환성", "Website compatibility", "saved", "인증 로그인 캡차 captcha verification login chromium"),
   entry("general.theme", "general", "테마", "Theme", "app", "모양 appearance soft warm light"),
   entry("general.sound", "general", "알림음", "Notification sound", "app", "소리 sound TTS 음성 custom 파일 메시지 message"),
   entry("general.notifications", "general", "Windows 알림 표시", "Show Windows notifications", "app", "notification 알림 배너"),

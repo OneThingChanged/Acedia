@@ -15,6 +15,7 @@ const pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, fe
   calls.push({ url, account: options.headers['chatgpt-account-id'] });
   if (url.includes('/models')) return new Response('{"models":[]}', { headers: { 'content-type': 'application/json' } });
   const request = JSON.parse(options.body); assert.equal(request.stream, true); assert.ok(Array.isArray(request.input));
+  calls.at(-1).input = request.input;
   const item = { id: 'message_fixture', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'POOL_FIXTURE_OK', annotations: [] }] };
   const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: request.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
   const events = [{ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
@@ -47,23 +48,47 @@ try {
     a.auth = pool.seal(JSON.stringify({ tokens: { access_token: jwt, refresh_token: 'fixture', account_id: name } })); a.status = 'ready'; pool.update(id, true);
   }
   await pool.setEnabled(true);
-  for (const sessionId of ['one', 'two', 'one']) {
-    const launch = await pool.launch(sessionId); Object.assign(env, launch.env);
-    const child = spawn(binary, ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'danger-full-access', '-m', 'gpt-5.4', ...launch.args, 'Reply with POOL_FIXTURE_OK. Do not call tools.'], { env, cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const execute = async (args, launch) => {
+    const child = spawn(binary, args, { env: { ...env, ...launch.env }, cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '', error = ''; child.stdout.on('data', c => output += c); child.stderr.on('data', c => error = (error + c).slice(-6000));
     const timer = setTimeout(() => child.kill(), 25000);
     const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', resolve); }).finally(() => clearTimeout(timer));
     assert.equal(code, 0, error); assert.ok(output.includes('POOL_FIXTURE_OK'), output + error);
+    return output;
+  };
+  for (const sessionId of ['one', 'two', 'one']) {
+    const launch = await pool.launch(sessionId);
+    await execute(['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'danger-full-access', '-m', 'gpt-5.4', ...launch.args, 'Reply with POOL_FIXTURE_OK. Do not call tools.'], launch);
   }
   assert.deepEqual(calls.filter(c => c.url.endsWith('/responses')).map(c => c.account), ['A', 'B', 'A']);
-  for (let attempt = 0; attempt < 100 && pool.state.recent.filter(r => r.operation === 'generation').length < 3; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+  // Persist a real CLI conversation, exclude its routed account, then resume
+  // the same thread through the replacement with its previous messages intact.
+  const initial = await pool.launch('one');
+  const output = await execute(['exec', '--skip-git-repo-check', '--json', '--sandbox', 'danger-full-access', '-m', 'gpt-5.4', ...initial.args,
+    'Remember BEFORE_EXCLUSION. Reply with POOL_FIXTURE_OK. Do not call tools.'], initial);
+  const threadId = output.trim().split(/\r?\n/).map(line => JSON.parse(line)).find(event => event.type === 'thread.started')?.thread_id;
+  assert.ok(threadId, 'The CLI must persist a thread to resume');
+  const originalAccount = pool.state.sessions.one.accountId;
+  pool.update(originalAccount, false);
+  const restarted = await pool.launch('one');
+  assert.notEqual(pool.state.sessions.one.accountId, originalAccount);
+  const resumed = await execute(['exec', '--sandbox', 'danger-full-access', 'resume', '--skip-git-repo-check', '--json', ...restarted.args, threadId,
+    'Continue AFTER_EXCLUSION. Reply with POOL_FIXTURE_OK. Do not call tools.'], restarted);
+  assert.equal(resumed.trim().split(/\r?\n/).map(line => JSON.parse(line)).find(event => event.type === 'thread.started')?.thread_id, threadId);
+  const generations = calls.filter(call => call.url.endsWith('/responses'));
+  assert.deepEqual(generations.map(call => call.account), ['A', 'B', 'A', 'A', 'B']);
+  const continuation = JSON.stringify(generations.at(-1).input);
+  assert.ok(continuation.includes('BEFORE_EXCLUSION') && continuation.includes('POOL_FIXTURE_OK') && continuation.includes('AFTER_EXCLUSION'));
+  assert.equal(pool.account(originalAccount).enabled, false);
+  for (let attempt = 0; attempt < 100 && pool.state.recent.filter(r => r.operation === 'generation').length < 5; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
   const records = pool.state.recent.filter(r => r.operation === 'generation');
-  assert.equal(records.length, 3);
+  assert.equal(records.length, 5);
   assert.ok(records.every(r => r.status === 'completed' && r.completionObserved && r.usageReported));
-  assert.equal(records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0), 45);
+  assert.equal(records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0), 75);
   console.log('ACCOUNT_POOL_REAL_CLI_RPC_AND_STREAM_OK');
+  console.log('ACCOUNT_POOL_EXCLUDED_ACCOUNT_RESUME_OK');
 } finally {
   rpc?.close(); pool.close();
   if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-pool-cli-')) throw new Error('Unexpected cleanup path');
-  await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await fs.promises.rm(root, { recursive: true, maxRetries: 10, retryDelay: 200 });
 }

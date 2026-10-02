@@ -38,6 +38,20 @@ token events, and stores source identity and offsets so later refreshes process
 only new material. Events are deduplicated and rolled into daily aggregates;
 reopening the usage page does not require rebuilding all history.[^usage-service][^usage-tests]
 
+Dashboard reads scan local transcripts before returning token history, so recorded
+usage from an ongoing turn or a session without a completion hook is included.
+Passive reads share one scan and reuse it for up to 30 seconds; explicit Refresh
+also requests a transcript scan. Account quota lookups continue separately in the
+background. The visible usage page refreshes every 30 seconds and refreshes again
+when its browser tab becomes visible. Its record count shows the token scan's
+freshness separately from the monitor connection and account quota timestamps.
+
+Calendar buckets use the desktop's local timezone. Work spanning midnight belongs
+to two dates. Cached input is a subset of provider input, and reasoning output is
+a subset of provider output; each is counted once in the total. The input/output
+breakdown shows the remaining fresh input/non-reasoning output, with the subsets
+listed separately.
+
 Remote SSH transcripts that do not exist on this PC are outside this ingestion
 model.
 

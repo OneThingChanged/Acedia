@@ -2,7 +2,7 @@ import { DEFAULT_BROWSER_PROFILE, validateProfiles } from "./browser-profiles.mj
 import path from 'node:path';
 import { PreferencesStore } from './preferences-store.mjs';
 
-export const BROWSER_DEFAULTS = { revision: 0, home: 'https://www.google.com/', search: 'google', zoom: 100, links: 'external', profiles: [{ id: DEFAULT_BROWSER_PROFILE, label: 'Default' }], defaultProfile: DEFAULT_BROWSER_PROFILE, restoreTabs: false };
+export const BROWSER_DEFAULTS = { revision: 0, home: 'https://www.google.com/', search: 'google', zoom: 100, links: 'external', compatibility: true, profiles: [{ id: DEFAULT_BROWSER_PROFILE, label: 'Default' }], defaultProfile: DEFAULT_BROWSER_PROFILE, restoreTabs: false };
 const engines = { google: 'https://www.google.com/search?q=', bing: 'https://www.bing.com/search?q=', duckduckgo: 'https://duckduckgo.com/?q=' };
 export function webUrl(value) {
   const url = new URL(String(value));
@@ -18,7 +18,8 @@ export function browserAddress(value, settings) {
   return engines[settings.search] + encodeURIComponent(raw);
 }
 function validate(value) {
+  if (typeof value.compatibility !== 'boolean') throw new Error('Invalid browser compatibility setting.');
   if (!Object.hasOwn(engines, value.search) || !['internal', 'external'].includes(value.links) || !Number.isInteger(value.zoom) || value.zoom < 50 || value.zoom > 200 || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error('Invalid browser settings.');
-  return { revision: value.revision, home: webUrl(value.home), search: value.search, zoom: value.zoom, links: value.links, profiles: validateProfiles(value.profiles, value.defaultProfile), defaultProfile: value.defaultProfile, restoreTabs: value.restoreTabs === true };
+  return { revision: value.revision, home: webUrl(value.home), search: value.search, zoom: value.zoom, links: value.links, compatibility: value.compatibility, profiles: validateProfiles(value.profiles, value.defaultProfile), defaultProfile: value.defaultProfile, restoreTabs: value.restoreTabs === true };
 }
 export function browserPreferences(directory) { return new PreferencesStore(path.join(directory, 'browser-preferences.json'), BROWSER_DEFAULTS, validate); }
