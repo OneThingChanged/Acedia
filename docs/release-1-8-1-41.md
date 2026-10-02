@@ -38,4 +38,18 @@ sources:
 
 ## 공개 배포
 
-GitHub 안정 릴리스와 공개 업데이터 감지·다운로드·설치 전 해시 검증은 완료 후 기록한다. 사용자 PC의 설치·재시작은 별도다.
+2026-10-02 **14:25:31 KST**, [v1.8.1.41](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.41)을 최신 안정 릴리스로 게시했다. 태그와 릴리스 대상은 고정 제품 소스 `9de668062d12217c40f28fe10be02bd38f95dcb4`이며, APK·Store·Company 자산은 새로 게시하지 않았다.
+
+[최종 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/36968128359)에서 전체 **141개 파일·899개 테스트**, 생성 창 상호작용·**22개 화면 조합**, native PTY, TypeScript/Vite·NSIS 빌드와 packaged bridge/Dashboard·lifecycle 검증이 통과했다. Windows 설치·watcher와 PowerShell의 자체 대기 제한 때문에 전체 검사를 139개 파일·878개 테스트, 단독 2개 테스트, 단독 19개 테스트로 나눴다. 검증 조건은 유지하고 빌드 단계의 자동 게시는 차단했다.
+
+이 빌드의 초안에 올린 파일은 모두 검증됐으나 GitHub 태그별 조회가 초안을 반환하지 않아 게시 단계가 실패했다. [게시 실행](https://github.com/OneThingChanged/Acedia/actions/runs/36968846100)은 앞선 필수 검사 성공과 소스 로그를 확인하고, 기존 초안의 세 파일을 내려받아 버전·manifest·크기·GitHub SHA-256·태그를 재검증한 뒤 같은 자산을 릴리스 ID로 게시했다. 배포 스크립트도 초안 목록과 릴리스 ID를 사용하도록 수정했다. CI와 배포 도구의 변경은 EXE 포함 대상 밖이며 제품 소스는 유지했다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.41-x64.exe` | 120,878,592 | `d4cbfac4b14b70bd63a6060f7b8b641c654f166713893912850bd60dd73b8de0` |
+| `Acedia-Setup-1.8.1.41-x64.exe.blockmap` | 126,686 | `edb16ee401f3d082a4481eb9093f01f498165101d9f5ea80ebcc62f7af6e09a4` |
+| `latest-exe.json` | 256 | `893dbeed4e1dd9773d843e3387aec7125d91ccfe47b4e4aebabe10178410e84e` |
+
+공개 설치 파일의 FileVersion은 **1.8.1.41**, Authenticode는 **NotSigned**다. 로컬 후보와 러너 산출물의 해시는 서로 다르며, 위 표와 공개 manifest는 같은 러너 빌드의 쌍이다.
+
+14:26:25 KST에 프로덕션 업데이터로 **1.8.1.39 → 1.8.1.41 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 공개 세 자산의 크기·SHA-256, 최신 안정 릴리스, 제품 태그와 재사용 APK 버전도 확인했다. 사용자 PC의 설치 프로그램은 실행하지 않았으며 업데이트 설치·재시작은 사용자 앱의 설정에서 진행한다.
