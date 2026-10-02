@@ -101,7 +101,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Source and creation dialog checks
         run: |
-          npm test -- --exclude electron/services/electron-services.test.mjs --testTimeout=60000 --maxWorkers=2
+          npm test -- --exclude electron/services/electron-services.test.mjs --exclude electron/usage-collector/distribution.test.mjs --testTimeout=60000 --maxWorkers=2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The Windows installer/watcher suite also needs an idle runner for its polling deadline.
+          npm test -- electron/usage-collector/distribution.test.mjs --testTimeout=60000 --maxWorkers=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # This suite launches Windows PowerShell and has its own 15-second test deadline.
           npm test -- electron/services/electron-services.test.mjs --testTimeout=60000 --maxWorkers=1
