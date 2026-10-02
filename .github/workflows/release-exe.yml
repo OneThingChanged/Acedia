@@ -107,7 +107,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run electron:smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - run: npm run release:build:github -- --desktop-only
+      - name: Build EXE with publication disabled
+        run: |
+          # Configure the installed CLI; keep the fixed product source unchanged.
+          $builderShim = Join-Path (Get-Location) 'node_modules/.bin/electron-builder.cmd'
+          $builderCommand = Get-Content -LiteralPath $builderShim -Raw
+          if (-not $builderCommand.Contains('%*')) { throw 'Unexpected electron-builder CLI wrapper.' }
+          $builderCommand = $builderCommand.Replace('%*', '%* --publish never')
+          Set-Content -LiteralPath $builderShim -Value $builderCommand -Encoding ascii
+          npm run release:build:github -- --desktop-only
       - name: Packaged checks
         run: |
           npm run electron:packaged-smoke
