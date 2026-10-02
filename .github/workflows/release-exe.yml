@@ -12,6 +12,87 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  finalize-draft:
+    if: >-
+      github.repository == 'OneThingChanged/Acedia' &&
+      github.event_name == 'create' && github.event.ref_type == 'branch' &&
+      startsWith(github.event.ref, 'finalize/exe/')
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Verify the completed build and publish its uploaded draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Read-GithubJson {
+            param([string]$Endpoint)
+            $output = & gh api $Endpoint
+            if ($LASTEXITCODE -ne 0) { throw "GitHub lookup failed: $Endpoint" }
+            return ($output -join "`n") | ConvertFrom-Json
+          }
+          if ($env:GITHUB_REF_NAME -notmatch '^finalize/exe/(\d+\.\d+\.\d+\.\d+)/(\d+)$') { throw 'Invalid finalization branch.' }
+          $version = $Matches[1]
+          $buildRunId = $Matches[2]
+          $repository = 'OneThingChanged/Acedia'
+          $sourceCommit = (Read-GithubJson "repos/$repository/git/ref/heads/release/exe/$version").object.sha
+          $run = Read-GithubJson "repos/$repository/actions/runs/$buildRunId"
+          if ($run.status -ne 'completed' -or $run.event -ne 'create' -or
+              $run.path -ne '.github/workflows/release-exe.yml' -or
+              (-not $run.head_branch.StartsWith("rebuild/exe/$version/") -and $run.head_branch -ne "release/exe/$version")) {
+            throw 'The producer is not a completed official release build.'
+          }
+          $jobs = (Read-GithubJson "repos/$repository/actions/runs/$buildRunId/jobs").jobs
+          $producer = @($jobs | Where-Object name -eq 'release')
+          if ($producer.Count -ne 1) { throw 'Expected one release build job.' }
+          foreach ($name in @('Source and creation dialog checks', 'Build EXE with publication disabled', 'Packaged checks')) {
+            $step = @($producer[0].steps | Where-Object name -eq $name)
+            if ($step.Count -ne 1 -or $step[0].conclusion -ne 'success') { throw "Required build check did not pass: $name" }
+          }
+          $buildLog = & gh run view $buildRunId --repo $repository --log
+          if ($LASTEXITCODE -ne 0) { throw 'Producer log lookup failed.' }
+          $buildLog = $buildLog -join "`n"
+          if (-not $buildLog.Contains("Product source: $sourceCommit / $version")) { throw 'Build source attestation differs from the product source.' }
+          $installerName = "Acedia-Setup-$version-x64.exe"
+          $expectedNames = @($installerName, "$installerName.blockmap", 'latest-exe.json')
+          $drafts = @(Read-GithubJson "repos/$repository/releases?per_page=100" | Where-Object tag_name -eq "v$version")
+          if ($drafts.Count -ne 1 -or -not $drafts[0].draft -or $drafts[0].prerelease -or
+              $drafts[0].target_commitish -ne $sourceCommit -or $drafts[0].assets.Count -ne 3) { throw 'Expected one exact-source draft with three assets.' }
+          $draft = $drafts[0]
+          $assetRoot = Join-Path $env:RUNNER_TEMP "verified-exe-$version"
+          New-Item -ItemType Directory -Path $assetRoot | Out-Null
+          & gh release download "v$version" --repo $repository --dir $assetRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Draft asset download failed.' }
+          foreach ($name in $expectedNames) {
+            $asset = @($draft.assets | Where-Object name -eq $name)
+            $local = Get-Item -LiteralPath (Join-Path $assetRoot $name)
+            $hash = (Get-FileHash -LiteralPath $local.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.Count -ne 1 -or $local.Length -le 0 -or $local.Length -ne $asset[0].size -or
+                $asset[0].digest -ne "sha256:$hash") { throw "Draft asset digest differs: $name" }
+          }
+          $installer = Get-Item -LiteralPath (Join-Path $assetRoot $installerName)
+          $installerHash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Get-Content -LiteralPath (Join-Path $assetRoot 'latest-exe.json') -Raw | ConvertFrom-Json
+          if ($installer.VersionInfo.FileVersion -ne $version -or $manifest.schemaVersion -ne 1 -or
+              $manifest.channel -ne 'exe' -or $manifest.version -ne $version -or $manifest.fileName -ne $installerName -or
+              $manifest.size -ne $installer.Length -or $manifest.sha256 -ne $installerHash -or
+              $manifest.bundledMobileVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+              -not $buildLog.Contains("SHA-256 $installerHash, Authenticode")) { throw 'Draft installer differs from the verified build or manifest.' }
+          $tagRef = Read-GithubJson "repos/$repository/git/ref/tags/v$version"
+          if ($tagRef.object.type -ne 'commit' -or $tagRef.object.sha -ne $sourceCommit) { throw 'Release tag differs from the verified source.' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          Write-Output "Verified uploaded $installerName ($($installer.Length) bytes, SHA-256 $installerHash, Authenticode $($signature.Status))."
+          $result = & gh api --method PATCH "repos/$repository/releases/$($draft.id)" -F draft=false -F prerelease=false -f make_latest=true
+          if ($LASTEXITCODE -ne 0) { throw 'Draft publication failed.' }
+          $published = Read-GithubJson "repos/$repository/releases/$($draft.id)"
+          $latest = Read-GithubJson "repos/$repository/releases/latest"
+          if ($published.draft -or $published.prerelease -or -not $published.published_at -or
+              $published.target_commitish -ne $sourceCommit -or $latest.id -ne $published.id) { throw 'Latest stable publication was not confirmed.' }
+          Write-Output "Published $($published.html_url) from $sourceCommit; installer execution was not required."
   prepare-tag:
     if: >-
       github.repository == 'OneThingChanged/Acedia' &&

@@ -39,9 +39,28 @@ function Invoke-GithubCli {
   return $output
 }
 
-$existingJson = & gh api "repos/$repository/releases/tags/$tag" 2>$null
-if ($LASTEXITCODE -eq 0) {
-  $existing = ($existingJson -join "`n") | ConvertFrom-Json
+function Get-ReleaseForTag {
+  # The tag endpoint omits drafts, including drafts whose Git tag already exists.
+  $json = Invoke-GithubCli -Arguments @('api', "repos/$repository/releases?per_page=100")
+  $releases = ($json -join "`n") | ConvertFrom-Json
+  $matches = @($releases | Where-Object tag_name -eq $tag)
+  if ($matches.Count -gt 1) { throw 'Multiple releases use this product tag.' }
+  if ($matches.Count -eq 1) { return $matches[0] }
+  return $null
+}
+
+$tagJson = & gh api "repos/$repository/git/ref/tags/$tag" 2>$null
+if ($LASTEXITCODE -ne 0) {
+  $tagJson = Invoke-GithubCli -Arguments @('api', '--method', 'POST', "repos/$repository/git/refs",
+    '-f', "ref=refs/tags/$tag", '-f', "sha=$SourceCommit")
+}
+$preparedTag = ($tagJson -join "`n") | ConvertFrom-Json
+if ($preparedTag.object.type -ne 'commit' -or $preparedTag.object.sha -ne $SourceCommit) {
+  throw 'Release tag does not point to the build source commit.'
+}
+
+$existing = Get-ReleaseForTag
+if ($null -ne $existing) {
   if (-not $existing.draft -or $existing.prerelease -or $existing.target_commitish -ne $SourceCommit) {
     throw 'An existing release must be a draft for this exact source commit.'
   }
@@ -56,7 +75,8 @@ if ($LASTEXITCODE -eq 0) {
     '--draft', '--title', "Acedia $version", '--notes-file', $notesPath)
 }
 Invoke-GithubCli -Arguments (@('release', 'upload', $tag, '--repo', $repository, '--clobber') + $assets)
-$uploaded = ((Invoke-GithubCli -Arguments @('api', "repos/$repository/releases/tags/$tag")) -join "`n") | ConvertFrom-Json
+$uploaded = Get-ReleaseForTag
+if ($null -eq $uploaded) { throw 'Uploaded draft was not found.' }
 if (-not $uploaded.draft -or $uploaded.target_commitish -ne $SourceCommit -or $uploaded.assets.Count -ne $assets.Count) {
   throw 'Draft release target or asset set does not match the verified build.'
 }
@@ -70,7 +90,11 @@ foreach ($assetPath in $assets) {
 }
 $tagRef = ((Invoke-GithubCli -Arguments @('api', "repos/$repository/git/ref/tags/$tag")) -join "`n") | ConvertFrom-Json
 if ($tagRef.object.type -ne 'commit' -or $tagRef.object.sha -ne $SourceCommit) { throw 'Release tag does not point to the build source commit.' }
-Invoke-GithubCli -Arguments @('release', 'edit', $tag, '--repo', $repository, '--draft=false', '--prerelease=false', '--latest')
-$published = ((Invoke-GithubCli -Arguments @('api', "repos/$repository/releases/tags/$tag")) -join "`n") | ConvertFrom-Json
-if ($published.draft -or $published.prerelease -or -not $published.published_at) { throw 'Stable publication was not confirmed.' }
+Invoke-GithubCli -Arguments @('api', '--method', 'PATCH', "repos/$repository/releases/$($uploaded.id)",
+  '-F', 'draft=false', '-F', 'prerelease=false', '-f', 'make_latest=true') | Out-Null
+$published = ((Invoke-GithubCli -Arguments @('api', "repos/$repository/releases/$($uploaded.id)")) -join "`n") | ConvertFrom-Json
+$latest = ((Invoke-GithubCli -Arguments @('api', "repos/$repository/releases/latest")) -join "`n") | ConvertFrom-Json
+if ($published.draft -or $published.prerelease -or -not $published.published_at -or $latest.id -ne $published.id) {
+  throw 'Latest stable publication was not confirmed.'
+}
 Write-Output "Published $($published.html_url) from $SourceCommit."
