@@ -62,6 +62,7 @@ pauses while hidden and resumes on return. The record count shows collection
 progress and the last successful full refresh separately from quota timestamps;
 a failed or partially failed collection preserves stored totals and shows a
 retry message instead of claiming that all records are current.
+This bounded background collection ships in [EXE 1.8.1.45](release-1-8-1-45.md).
 
 Calendar buckets use the desktop's local timezone. Work spanning midnight belongs
 to two dates. Cached input is a subset of provider input, and reasoning output is

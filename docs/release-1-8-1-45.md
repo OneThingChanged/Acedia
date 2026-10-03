@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.45 responsive Dashboard usage collection
 description: Open usage immediately from stored totals and process large transcript histories in bounded background batches.
-status: draft
+status: stable
 last_updated: 2026-10-03
 sources:
   - resource: usage-accounting.md
@@ -31,7 +31,18 @@ sources:
 - 대용량 회귀 검사는 파일 크기를 **11 GiB로 보고하는 모의 파일 접근**으로 읽기 크기 제한·집계 중 Dashboard 응답·종료 시 파일 정리를 확인한다. 실제 11 GiB 파일 전체를 집계한 시험이라는 뜻은 아니다.
 - 여러 읽기 구간에 걸친 UTF-8·Claude 사용량, 불완전한 마지막 행, 재시작 후 모델·누적 토큰 상태 보존, 동시 hook/새로고침 중복 방지, 파일 축소와 64 MiB 초과 단일 행의 안전한 실패를 확인했다.
 - 실제 Electron Remote/PWA 화면을 1920px·1024px·390px 및 6개 언어로 검증했다. 파일 탐색을 의도적으로 대기시켜도 사용량 응답과 집계 중 표시가 나오며, 집계 완료 후 화면 합계가 갱신되는 것을 확인했다.
+- [공식 Windows 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/37091625536)의 전체 자동 검사, 생성 창·터미널 링크·native PTY, TypeScript/Vite·NSIS 빌드, packaged bridge/Dashboard·lifecycle 검증이 모두 통과했다.
 
 ## 공개 배포
 
-공식 Windows 빌드·packaged 검증·GitHub 게시와 공개 업데이터 다운로드 검증 결과는 완료 후 기록한다. 사용자 PC 설치는 별도다.
+2026-10-03 **12:03:17 KST**, [v1.8.1.45](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.45)를 최신 안정 릴리스로 게시했다. 제품 태그와 릴리스 대상은 고정 소스 `2294fbd0e200b78f95e1706832180ff0ca049973`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.45-x64.exe` | 120,885,129 | `061ad86d33c374db963340f88e6e86615ed943c2bc504597b429aa252cce7ec7` |
+| `Acedia-Setup-1.8.1.45-x64.exe.blockmap` | 126,889 | `53a6154fb56f758bab78272f24e401ee128100bfb4a5dfca500affcaab882567` |
+| `latest-exe.json` | 256 | `ee9403f495113f8c4b04d8d8988c1948a81335f1528a152c37a5501db7133df3` |
+
+공개 설치 파일 FileVersion은 **1.8.1.45**, Authenticode는 **NotSigned**다. 같은 빌드의 manifest와 설치 파일 크기·SHA-256이 일치한다.
+
+**12:04:34 KST**에 프로덕션 업데이터로 **1.8.1.44 → 1.8.1.45 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다. 설치 프로그램은 실행하지 않았으며 사용자 PC 설치는 별도다.
