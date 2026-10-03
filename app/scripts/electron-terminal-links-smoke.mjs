@@ -13,7 +13,8 @@ try {
   await build({ stdin: { resolveDir: root, loader: "ts", contents: `
     import { createEntry, findTerminalLinkAtMouseEvent } from './src/lib/terminal';
     import '@xterm/xterm/css/xterm.css';
-    window.multiAgentElectron = { invoke: async () => null, onEvent: () => () => {} };
+    window.invocations = [];
+    window.multiAgentElectron = { invoke: async (command,args) => { window.invocations.push({command,args}); return null; }, onEvent: () => () => {} };
     window.opened = [];
     const open = (_, file) => window.opened.push(file);
     let entry = createEntry('fixture', open, open, open, open);
@@ -28,7 +29,7 @@ try {
       entry.term.dispose(); entry.el.remove();
       entry = createEntry('fixture', open, open, open, open);
       document.body.appendChild(entry.el); entry.term.open(entry.el); entry.term.resize(80, 20);
-      window.opened = [];
+      window.opened = []; window.invocations = [];
       await new Promise(resolve => entry.term.write(output, resolve));
     };
     window.point = (row, col) => {
@@ -94,6 +95,41 @@ try {
       }
       await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify('folder 자료/프로젝트는')+')'); await wait();
       assert.equal((await win.webContents.executeJavaScript('window.hit(0,14)')).text,'자료/프로젝트는');
+
+      const fileUrls = [
+        'file:///C:/Users/jinta/.codex/generated_images/01a10116-34fe-7bb0-ad51-98b37a7751c0/exec-c8e51a16-4dc6-4fa0-b9f8-c359ae36f43b.png',
+        'file:///C:/Images/raincoat%20kitten%23one.png',
+        'file://localhost/C:/Images/%EB%85%B8%EB%9E%80%20%EC%9A%B0%EB%B9%84.png',
+      ];
+      for (const file of fileUrls) {
+        const prefix = 'Saved to: ';
+        win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+        await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(prefix+file)+')'); await wait();
+        for (const index of [prefix.length, prefix.length+file.indexOf('C:'), prefix.length+file.length-1]) {
+          const [row,col] = cell(index);
+          assert.deepEqual(await win.webContents.executeJavaScript('window.hit('+row+','+col+')'), {kind:'terminal',text:file});
+          await click([row,col]);
+          assert.equal(await win.webContents.executeJavaScript('window.opened.at(-1)'),file);
+        }
+        assert.equal(await win.webContents.executeJavaScript('window.opened.length'),3);
+      }
+      const file = fileUrls[1];
+      const osc = '\\x1b]8;;' + file + '\\x1b\\\\generated image\\x1b]8;;\\x1b\\\\';
+      win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+      await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(osc)+')'); await wait();
+      assert.deepEqual(await win.webContents.executeJavaScript('window.hit(0,4)'), {kind:'terminal',text:file});
+      await click([0,4]);
+      assert.equal(await win.webContents.executeJavaScript('window.opened.at(-1)'),file);
+      for (const uri of ['https://example.com/result.png', 'javascript:alert(1)']) {
+        const output = '\\x1b]8;;' + uri + '\\x1b\\\\generated image\\x1b]8;;\\x1b\\\\';
+        win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+        await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(output)+')'); await wait();
+        assert.deepEqual(await win.webContents.executeJavaScript('window.hit(0,4)'), uri.startsWith('https:') ? {kind:'url',text:uri} : null);
+        await click([0,4]);
+        assert.equal(await win.webContents.executeJavaScript('window.opened.length'),0);
+        assert.deepEqual(await win.webContents.executeJavaScript('window.invocations'), uri.startsWith('https:') ? [{command:'open_external_url',args:{url:uri}}] : []);
+      }
+      console.log('TERMINAL_FILE_URL_POINTER_AND_OSC8_OK');
       console.log('TERMINAL_WRAPPED_PATH_POINTER_AND_HIT_TEST_OK');
       console.log('TERMINAL_COLORED_PATH_SUFFIX_POINTER_AND_HIT_TEST_OK 8 cases'); app.exit(0);
     } catch(error) { console.error(error); app.exit(1); } });

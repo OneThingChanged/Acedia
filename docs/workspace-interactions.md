@@ -43,6 +43,9 @@ sources:
   - id: terminal-links-smoke
     resource: ../app/scripts/electron-terminal-links-smoke.mjs
     title: "Native terminal link pointer verification"
+  - id: terminal-path-service
+    resource: ../app/electron/services/terminal-path-service.mjs
+    title: "Local filesystem and file URL resolution"
   - id: chat-view
     resource: ../app/src/components/ChatView.tsx
     title: "Persistent chat history and artifacts"
@@ -190,6 +193,15 @@ Korean folder names (including names ending in `는`), and wrapped paths retain
 their full path text. Uncolored paths keep the existing filename matching;
 URLs and OSC 8 hyperlinks keep their separate recognition.[^terminal-links][^terminal-links-smoke]
 
+File URLs such as `file:///C:/Users/name/.codex/generated_images/result.png`
+use the local filesystem resolver. Clicking the scheme, drive, or a wrapped
+continuation opens the same target; OSC 8 links with a visible label follow the
+same routing. Encoded spaces, Unicode and filename characters are decoded once,
+including `file://localhost/` addresses. Images outside the project open in the
+image viewer, while documents and folders use their existing open actions.
+Malformed URLs and missing targets fail without falling back to a shorter path.
+HTTP links keep their configured browser behavior.[^terminal-links][^terminal-path-service][^terminal-links-smoke]
+
 All agents, including [Antigravity CLI](gemini-cli.md), have a terminal view. Codex and Claude additionally have a
 transcript-backed chat view; other tools remain terminal-only. Sending to an
 inactive chat-capable session first activates it and then waits for startup
@@ -319,6 +331,7 @@ The domain invariants behind these interactions are documented in
 [^terminal-area]: Terminal and chat surface
 [^terminal-links]: Terminal path matching and pointer ranges
 [^terminal-links-smoke]: Native terminal link pointer verification
+[^terminal-path-service]: Local filesystem and file URL resolution
 [^chat-view]: Persistent chat history and artifacts
 [^file-tree]: File tree panel
 [^git-discovery]: Child Git repository discovery

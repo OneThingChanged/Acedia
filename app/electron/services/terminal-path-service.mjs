@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const IMAGE_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico",
@@ -47,6 +48,14 @@ function absolutePrefix(candidate) {
 export function resolveTerminalPath(folder, rawPath) {
   const candidate = cleanCandidate(rawPath);
   if (!candidate) throw new Error("경로가 비어 있습니다.");
+  if (/^file:/i.test(candidate)) {
+    let filePath;
+    try { filePath = fileURLToPath(candidate); }
+    catch { throw new Error("파일 URL이 올바르지 않습니다."); }
+    const target = existing(filePath);
+    if (!target) throw new Error("파일 또는 폴더를 찾을 수 없습니다.");
+    return { kind: kindFor(target), path: target };
+  }
   if (path.isAbsolute(candidate)) {
     const target = absolutePrefix(candidate);
     if (!target) throw new Error("파일 또는 폴더를 찾을 수 없습니다.");

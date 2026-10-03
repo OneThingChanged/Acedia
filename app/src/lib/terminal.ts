@@ -67,6 +67,8 @@ const IMAGE_PATH_RE =
 const ABSOLUTE_PATH_RE =
   /(?:[A-Za-z]:[\\/]|\\\\[^<>"|?*\r\n\\\/]+[\\/][^<>"|?*\r\n\\\/]+[\\/])[^<>"|?*\r\n]*/gi;
 
+const FILE_URL_RE = /\bfile:\/\/[^\s"'<>`|]+/gi;
+
 const PATH_PART = String.raw`[^\s"'<>|:*?()\[\]{},;\\\/]+`;
 const GENERAL_FILE_PATH_RE = new RegExp(
   String.raw`(?:\.{1,2}[\\/])?(?:${PATH_PART}[\\/])+${PATH_PART}\.[A-Za-z0-9]{1,16}(?::\d+(?::\d+)?)?`,
@@ -108,6 +110,13 @@ export type TerminalMouseLink =
   | { kind: "markdown"; text: string }
   | { kind: "image"; text: string }
   | { kind: "folder"; text: string };
+
+function terminalLinkForUri(uri: string): TerminalMouseLink | null {
+  const text = uri.trim();
+  if (/^file:\/\//i.test(text)) return { kind: "terminal", text };
+  if (/^https?:\/\//i.test(text)) return { kind: "url", text };
+  return null;
+}
 
 export function loadTerminalFontSize() {
   return loadTerminalSettings().fontSize;
@@ -385,6 +394,22 @@ function findUrlMatches(text: string): MarkdownPathMatch[] {
   return matches;
 }
 
+function findFileUrlMatches(text: string): MarkdownPathMatch[] {
+  FILE_URL_RE.lastIndex = 0;
+  return [...text.matchAll(FILE_URL_RE)].map((match) => {
+    const cleaned = cleanImagePathCandidate(match[0]);
+    const start = match.index ?? 0;
+    const startColumn = cellWidth(text.slice(0, start));
+    return {
+      text: cleaned,
+      startIndex: start,
+      endIndex: start + cleaned.length,
+      startColumn,
+      endColumn: startColumn + cellWidth(cleaned),
+    };
+  });
+}
+
 function findAbsolutePathMatches(text: string): MarkdownPathMatch[] {
   const matches: MarkdownPathMatch[] = [];
   ABSOLUTE_PATH_RE.lastIndex = 0;
@@ -634,7 +659,16 @@ function findTerminalLinkInLogicalLineAtCell(
   if (url) return { kind: "url", text: url };
   occupied.push(...findUrlMatches(logical.text));
 
-  const absoluteMatches = pathMatches(findAbsolutePathMatches(logical.text));
+  const fileUrlMatches = findFileUrlMatches(logical.text).filter(
+    (match) => !occupied.some((existing) => rangeOverlaps(existing, match))
+  );
+  const fileUrl = findMatchAtCell(logical, termCols, row, col, fileUrlMatches);
+  if (fileUrl) return { kind: "terminal", text: fileUrl };
+  occupied.push(...fileUrlMatches);
+
+  const absoluteMatches = pathMatches(findAbsolutePathMatches(logical.text)).filter(
+    (match) => !occupied.some((existing) => rangeOverlaps(existing, match))
+  );
   const absolute = findMatchAtCell(logical, termCols, row, col, absoluteMatches);
   if (absolute) return { kind: "terminal", text: absolute };
   occupied.push(...absoluteMatches);
@@ -800,7 +834,8 @@ export function findTerminalLinkAtMouseEvent(
 
   // OSC 8 first — the authoritative URL even when the visible text is a label.
   const osc = oscUrlAtCell(term, row, col);
-  if (osc) return { kind: "url", text: osc };
+  const oscLink = osc ? terminalLinkForUri(osc) : null;
+  if (oscLink) return oscLink;
 
   const logical = buildLogicalLine(term, row);
   if (!logical) return null;
@@ -873,9 +908,10 @@ function registerMarkdownLinkProvider(
 
       const pushLink = (
         match: MarkdownPathMatch,
-        onActivate: (path: string) => void
+        onActivate: (path: string) => void,
+        respectForeground = true
       ) => {
-        match = boundPathMatchToForeground(term, logical, match);
+        if (respectForeground) match = boundPathMatchToForeground(term, logical, match);
         const startCell = cellMap[match.startIndex];
         const lastCell = cellMap[match.endIndex - 1];
         if (!startCell || !lastCell) return;
@@ -897,7 +933,13 @@ function registerMarkdownLinkProvider(
       };
 
       if (onTerminalPath) {
+        for (const match of findFileUrlMatches(text)) {
+          if (occupied.some((existing) => rangeOverlaps(existing, match))) continue;
+          occupied.push(match);
+          pushLink(match, (path) => onTerminalPath(id, path), false);
+        }
         for (const match of findAbsolutePathMatches(text)) {
+          if (occupied.some((existing) => rangeOverlaps(existing, match))) continue;
           occupied.push(match);
           pushLink(match, (path) => onTerminalPath(id, path));
         }
@@ -956,6 +998,11 @@ export function createEntry(
   options: CreateEntryOptions = {}
 ): TerminalEntry {
   const isWindows = navigator.userAgent.includes("Windows");
+  const openLinkUri = (uri: string) => {
+    const link = terminalLinkForUri(uri);
+    if (link?.kind === "terminal") onTerminalPath?.(id, link.text);
+    else if (link?.kind === "url") openTerminalUrl(link.text);
+  };
   const term = new Terminal({
     ...terminalSettingsOptions(loadTerminalSettings()),
     theme: TERMINAL_THEMES[loadAppTheme()] ?? TERMINAL_THEME,
@@ -964,11 +1011,11 @@ export function createEntry(
     windowsPty: isWindows
       ? { backend: "conpty" }
       : undefined,
-    // Open xterm's natively-parsed OSC 8 hyperlinks in the browser (the
-    // capture-phase handler in PaneSlot covers the mouse-tracking case).
+    // Route native OSC 8 links through the same file/HTTP distinction as the
+    // capture-phase handler in PaneSlot, including file links with labels.
     linkHandler: {
-      activate: (_event, uri) => openTerminalUrl(uri),
-      allowNonHttpProtocols: false,
+      activate: (_event, uri) => openLinkUri(uri),
+      allowNonHttpProtocols: true,
     },
   });
   const fit = new FitAddon();
