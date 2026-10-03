@@ -1,6 +1,6 @@
 ---
 type: Release
-title: Acedia 1.8.1.47 native Codex tools and workspace MCP
+title: Acedia 1.8.1.48 native Codex tools and workspace MCP
 description: Preserve native tools for distributed Codex accounts and create projects and sessions through the managed MCP connection.
 status: draft
 last_updated: 2026-10-03
@@ -16,14 +16,14 @@ sources:
   - resource: ../.github/workflows/release-exe.yml
 ---
 
-# Acedia 1.8.1.47
+# Acedia 1.8.1.48
 
 ## 변경 사항
 
 - **분산 계정의 Codex 기본 도구 유지**: 각 세션을 배정 계정으로 인증한 전용 native app-server에 연결한다. 이미지·검색 등 Codex 기본 도구 요청을 같은 계정으로 전달하고, 기존 MCP·hooks·실행 프로필과 대화 이어받기를 유지한다. 실제 계정 토큰은 실행 인수·환경변수·공용 로그인 파일에 기록하지 않는다.
 - **프로젝트·세션 생성 MCP**: 기존 `multiagent_browser` 연결에 `acedia_projects`, `acedia_project_create`, `acedia_session_create`를 추가한다. 이미 있는 로컬 폴더를 프로젝트로 등록해 첫 세션을 만들거나 추가 세션을 생성할 수 있다. 중복 폴더·재시도를 처리하며, 저장 및 시작 결과를 구분해 반환한다.
 - 분산 실행에는 **Codex CLI 0.160.0 이상**이 필요하다. 각 계정의 도구 제공 여부와 외부 Apps 연결 권한은 해당 서비스에서 결정한다. 업데이트 후 기존 세션을 다시 시작해야 새 연결 방식과 MCP 도구 목록이 적용된다.
-- 제품·Android 소스 버전은 **1.8.1.47**, npm 호환 버전은 **1.8.1**이다. EXE에는 기존 서명 APK **1.8.1.39 / versionCode 21**을 재사용한다.
+- 제품·설치 파일·Android 소스 버전은 **1.8.1.48**, npm 호환 버전은 **1.8.1**이다. EXE에는 기존 서명 APK **1.8.1.39 / versionCode 21**을 재사용한다.
 
 ## Changes
 

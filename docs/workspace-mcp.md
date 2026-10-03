@@ -16,7 +16,7 @@ sources:
 
 # Acedia 프로젝트·세션 MCP
 
-소스 1.8.1.47부터 제공한다. Acedia에서 실행한 CLI의 기존 `multiagent_browser`
+소스 1.8.1.48부터 제공한다. Acedia에서 실행한 CLI의 기존 `multiagent_browser`
 MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없이 업데이트 후 세션을
 다시 시작하면 도구 목록에 나타난다. 원격 웹 기능을 켜지 않아도 로컬 MCP는 동작한다.
 
@@ -58,4 +58,4 @@ workspace snapshot 저장과 첫 터미널 시작 시도가 끝난 뒤 결과를
 2026-10-03 소스 검증: 전체 153개 테스트 파일의 980개 검사, TypeScript/Vite 빌드와
 위 실제 Electron 검사를 통과했다. 분산 계정의 native CLI 도구·계정 전환·대화 복원
 검사는 [계정 분산 문서](account-pool.md)에 기록한다. 설치 파일 배포와 공개 업데이트
-검증 결과는 [1.8.1.47 릴리스 문서](release-1-8-1-47.md)에 기록한다.
+검증 결과는 [1.8.1.48 릴리스 문서](release-1-8-1-48.md)에 기록한다.
