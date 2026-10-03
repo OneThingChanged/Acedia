@@ -536,16 +536,14 @@ function publishAgentHookEvent(eventName, payload) {
       }
     }
     if (payload.event === "done" && transcriptPath) {
-      try {
-        usageIndex.ingestHook(
-          payload.id,
-          transcriptPath,
-          payload.session_id,
-          payload.cwd
-        );
-      } catch (error) {
+      void usageIndex.ingestHook(
+        payload.id,
+        transcriptPath,
+        payload.session_id,
+        payload.cwd
+      ).catch((error) => {
         console.warn("[electron] usage hook ingest failed", error);
-      }
+      });
     }
     if (payload.event === "done") {
       // Claude limits live behind the OAuth usage endpoint (not the transcript),
@@ -778,7 +776,13 @@ function writeMiraControlAgentInput({
   };
 }
 
-const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService, { antigravityQuotaFile: antigravityQuotaPath() });
+const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService, {
+  antigravityQuotaFile: antigravityQuotaPath(),
+  activeSessions: () => [...ptys.entries()].map(([id, session]) => ({
+    aiToolId: session.aiToolId,
+    sessionId: agentSessionIds.get(id) || usageIndex.catalog.agents.find(agent => agent.id === id)?.lastSessionId,
+  })),
+});
 let centralCollector = null;
 function getCentralCollector() {
   const isolated = !app.isPackaged || userDataOverride || bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke;

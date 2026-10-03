@@ -246,6 +246,8 @@ export const messages = [
   ["{0}{1} 합계 {2}","{0} {1} · Total {2}","{0}{1} · 总计{2}","{0}{1} · 合計{2}","{0}{1} · 合計{2}","{0} {1} · Total {2}"],
   ["선택 {0} 토큰 상세","Selected {0} · Token breakdown","所选{0} · 令牌明细","所選{0} · Token 明細","選択した{0} · トークン内訳","{0} seleccionado · Desglose de tokens"],
   ["{0}개 사용 기록 기준","Based on {0} usage records","基于{0}条用量记录","依據{0}筆用量記錄","{0}件の使用記録に基づく","Basado en {0} registros de uso"],
+  ["사용 기록 집계 중…","Updating usage records…","正在汇总用量记录…","正在彙總用量記錄…","使用記録を集計中…","Actualizando registros de uso…"],
+  ["일부 사용 기록을 갱신하지 못했습니다. 저장된 집계를 표시합니다. 새로고침으로 다시 시도하세요.","Some usage records could not be updated. Saved totals are shown. Refresh to retry.","部分用量记录未能更新。正在显示已保存的汇总。请刷新重试。","部分用量記錄無法更新。目前顯示已儲存的彙總。請重新整理以重試。","一部の使用記録を更新できませんでした。保存済みの集計を表示しています。更新して再試行してください。","No se pudieron actualizar algunos registros de uso. Se muestran los totales guardados. Actualiza para reintentar."],
   ["갱신 중…","Refreshing…","正在刷新…","正在重新整理…","更新中…","Actualizando…"],
   ["새로고침","Refresh","刷新","重新整理","更新","Actualizar"],
   ["사용량을 불러오지 못했습니다: {0}","Could not load usage: {0}"],

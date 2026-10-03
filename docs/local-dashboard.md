@@ -82,6 +82,14 @@ Initial terminal state is delivered as a snapshot; later output arrives as SSE
 deltas. Hook and workspace changes refresh the projected state. Periodic client
 refresh remains a recovery mechanism, not the authoritative activity source.[^remote-client]
 
+Opening a chat reads the selected session's bounded recent transcript slice;
+older conversation blocks are paged from the conversation store. Usage opens
+with stored aggregates and collects new transcript records in the background,
+prioritizing active sessions. It does not wait for inactive multi-GB history to
+be parsed. Pending collection is visible and totals update as batches arrive.
+See [usage collection](usage-accounting.md#incremental-collection) for checkpoint,
+memory-limit and partial-failure behavior.
+
 The coordinator's resolved app language is included in the synchronized state.
 The browser applies it on the next state poll, including usage dates and number
 formatting; the visiting browser's language does not override this preference.

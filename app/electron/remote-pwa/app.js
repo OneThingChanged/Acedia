@@ -2636,6 +2636,7 @@ function renderUsage() {
   ui.usageProviderCount.textContent = String(groups.length);
   ui.usageTokenEvents.textContent = t("{0}개 사용 기록 기준", [formatTokenCount(tokens.events)]);
   if (usageSummary?.tokensUpdatedAt) ui.usageTokenEvents.textContent += ` · ${formatUsageUpdated(usageSummary.tokensUpdatedAt)}`;
+  if (usageSummary?.tokensRefreshPending) ui.usageTokenEvents.textContent += ` · ${t("사용 기록 집계 중…")}`;
   renderUsageHistory();
   ui.usageProviderSummary.textContent = String(groups.length);
   ui.usageRemainingSummary.textContent = remaining == null
@@ -2656,6 +2657,10 @@ function renderUsage() {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "loading";
     ui.usageMessage.textContent = t("Codex·Claude 사용량을 확인하고 있습니다.");
+  } else if (usageSummary?.tokensRefreshFailed) {
+    ui.usageMessage.hidden = false;
+    ui.usageMessage.dataset.state = "error";
+    ui.usageMessage.textContent = t("일부 사용 기록을 갱신하지 못했습니다. 저장된 집계를 표시합니다. 새로고침으로 다시 시도하세요.");
   } else if (groups.length === 0) {
     ui.usageMessage.hidden = false;
     ui.usageMessage.dataset.state = "empty";
@@ -2744,7 +2749,7 @@ function scheduleUsageRefresh() {
     if (selection.type === "usage" && !document.hidden && nativePageActive &&
       !usageLoading && !usageVisibilitySaving) void loadUsage(false);
     else scheduleUsageRefresh();
-  }, usageSummary?.refreshPending ? 1_000 : 30_000);
+  }, usageSummary?.refreshPending || usageSummary?.tokensRefreshPending ? 1_000 : 30_000);
 }
 
 async function loadUsage(refresh = false) {
@@ -2781,6 +2786,8 @@ async function loadUsage(refresh = false) {
     usageSummary = {
       updatedAt: Number(result?.updatedAt) || 0,
       tokensUpdatedAt: Number(result?.tokensUpdatedAt) || 0,
+      tokensRefreshPending: result?.tokensRefreshPending === true,
+      tokensRefreshFailed: result?.tokensRefreshFailed === true,
       refreshPending: result?.refreshPending === true,
       limits: Array.isArray(result?.limits) ? result.limits : [],
       profiles: Array.isArray(result?.profiles) ? result.profiles : [],

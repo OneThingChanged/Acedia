@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import { readUsageBatches } from "./usage-transcript-reader.mjs";
 import { readAntigravityQuota } from "./antigravity-usage.mjs";
 import { baselineCost, PRICE_BASIS } from "../usage-collector/pricing.mjs";
 import os from "node:os";
@@ -154,6 +156,13 @@ export class UsageService {
     this.rateLimitRefresh = null;
     this.transcriptRefresh = null;
     this.transcriptUpdatedAt = 0;
+    this.transcriptAttemptedAt = 0;
+    this.transcriptRefreshFailed = false;
+    this.fileIngests = new Map();
+    this.closed = false;
+    this.activeSessions = options.activeSessions ?? (() => this.catalog.agents.map(agent => ({
+      aiToolId: agent.aiToolId, sessionId: agent.lastSessionId,
+    })));
     this.accountRefresh = new Map();
     this.codexUsageFetcher = options.codexUsageFetcher ?? null;
     this.dailyRollupSync = false;
@@ -230,6 +239,8 @@ export class UsageService {
     if (!columns.has("cumulative_segment")) {
       database.exec("ALTER TABLE usage_sources ADD COLUMN cumulative_segment INTEGER NOT NULL DEFAULT 0");
     }
+    if (!columns.has("model")) database.exec("ALTER TABLE usage_sources ADD COLUMN model TEXT");
+    if (!columns.has("cwd")) database.exec("ALTER TABLE usage_sources ADD COLUMN cwd TEXT");
   }
 
   migrateUsageEventParser(database) {
@@ -538,10 +549,21 @@ export class UsageService {
   }
 
   ingestFile(entry, tool) {
+    if (this.closed) return Promise.resolve(0);
+    // Completion hooks, explicit imports and Dashboard refreshes share offsets.
+    const key = process.platform === "win32" ? entry.path.toLowerCase() : entry.path;
+    if (this.fileIngests.has(key)) return this.fileIngests.get(key);
+    const operation = this.ingestFileNow(entry, tool).finally(() => this.fileIngests.delete(key));
+    this.fileIngests.set(key, operation);
+    return operation;
+  }
+
+  async ingestFileNow(entry, tool) {
+    const stat = await fs.promises.stat(entry.path);
+    if (this.closed || !stat.isFile()) return 0;
     const db = this.db();
-    const stat = fs.statSync(entry.path);
     const source = db.prepare(`SELECT session_id sessionId,last_offset lastOffset,
-      last_cumulative lastCumulative,cumulative_segment cumulativeSegment
+      last_cumulative lastCumulative,cumulative_segment cumulativeSegment,model,cwd
       FROM usage_sources WHERE source_path=?`).get(entry.path);
     let start = Number(source?.lastOffset) || 0;
     let codexLastCumulative = source?.lastCumulative == null
@@ -554,13 +576,6 @@ export class UsageService {
       codexCumulativeSegment += 1;
     }
     if (start === stat.size) return 0;
-    const fd = fs.openSync(entry.path, "r");
-    const buffer = Buffer.alloc(stat.size - start);
-    fs.readSync(fd, buffer, 0, buffer.length, start);
-    fs.closeSync(fd);
-    const lastNewline = buffer.lastIndexOf(0x0a);
-    if (lastNewline < 0) return 0;
-    const readable = buffer.subarray(0, lastNewline + 1);
     if (source?.sessionId && entry.sessionId && source.sessionId !== entry.sessionId) {
       codexLastCumulative = null;
       codexCumulativeSegment += 1;
@@ -568,8 +583,8 @@ export class UsageService {
     const context = {
       tool,
       sessionId: entry.sessionId || source?.sessionId,
-      cwd: entry.cwd,
-      model: null,
+      cwd: (start > 0 && source?.cwd) || entry.cwd,
+      model: start > 0 ? source?.model ?? null : null,
       codexLastCumulative,
       codexCumulativeSegment,
     };
@@ -579,52 +594,73 @@ export class UsageService {
       source_path,source_offset,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
       reasoning_output_tokens,total_tokens,raw_kind
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    let cursor = 0;
-    let inserted = 0;
-    while (cursor < readable.length) {
-      const newline = readable.indexOf(0x0a, cursor);
-      if (newline < 0) break;
-      const offset = start + cursor;
-      const line = readable.subarray(cursor, newline).toString("utf8").trim();
-      cursor = newline + 1;
-      if (!line) continue;
-      let item;
-      try { item = JSON.parse(line); } catch { continue; }
-      this.updateContext(item, context);
-      this.captureRateLimits(item, entry.path);
-      const event = this.eventFromItem(item, context, offset);
-      if (!event) continue;
-      const result = insert.run(
-        event.sourceKey, event.ts, project?.id ?? null, project?.name ?? null,
-        agent.id, agent.name, event.sessionId ?? null, tool, event.model ?? null,
-        event.cwd ?? agent.folder ?? null, entry.path, offset, event.input, event.output,
-        event.cacheRead, event.cacheWrite, event.reasoning, event.total, event.rawKind
-      );
-      inserted += Number(result.changes);
-    }
-    db.prepare(`INSERT INTO usage_sources(source_path,tool,session_id,last_offset,last_size,updated_at,
-      last_cumulative,cumulative_segment)
-      VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET tool=excluded.tool,
+    const checkpoint = db.prepare(`INSERT INTO usage_sources(source_path,tool,session_id,last_offset,last_size,updated_at,
+      last_cumulative,cumulative_segment,model,cwd)
+      VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET tool=excluded.tool,
       session_id=excluded.session_id,last_offset=excluded.last_offset,last_size=excluded.last_size,
       updated_at=excluded.updated_at,last_cumulative=excluded.last_cumulative,
-      cumulative_segment=excluded.cumulative_segment`).run(
-        entry.path, tool, context.sessionId ?? null, start + readable.length, stat.size, Date.now(),
-        context.codexLastCumulative, context.codexCumulativeSegment
-      );
+      cumulative_segment=excluded.cumulative_segment,model=excluded.model,cwd=excluded.cwd`);
+    let inserted = 0;
+    for await (const batch of readUsageBatches(entry.path, start, stat.size, () => this.closed)) {
+      if (this.closed) break;
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        for (const { text, offset } of batch.records) {
+          let item;
+          try { item = JSON.parse(text); } catch { continue; }
+          this.updateContext(item, context);
+          this.captureRateLimits(item, entry.path);
+          const event = this.eventFromItem(item, context, offset);
+          if (!event) continue;
+          const result = insert.run(
+            event.sourceKey, event.ts, project?.id ?? null, project?.name ?? null,
+            agent.id, agent.name, event.sessionId ?? null, tool, event.model ?? null,
+            event.cwd ?? agent.folder ?? null, entry.path, offset, event.input, event.output,
+            event.cacheRead, event.cacheWrite, event.reasoning, event.total, event.rawKind
+          );
+          inserted += Number(result.changes);
+        }
+        checkpoint.run(
+          entry.path, tool, context.sessionId ?? null, batch.endOffset, stat.size, Date.now(),
+          context.codexLastCumulative, context.codexCumulativeSegment, context.model, context.cwd ?? null
+        );
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      // Do not monopolize Electron's event loop while importing old history.
+      // Transactions must be committed before yielding to other readers/hooks.
+      await yieldToEventLoop();
+    }
     return inserted;
   }
 
-  async ingestAll() {
+  ingestAll() {
+    return this.refreshTranscriptUsage(true);
+  }
+
+  async collectTranscriptUsage() {
     const summary = { files: 0, events: 0, errors: [] };
+    const candidates = [];
     for (const tool of ["codex", "claude"]) {
+      if (this.closed) return summary;
       const entries = await this.sessionService.scan(tool, true);
-      for (const entry of entries) {
-        try {
-          summary.events += this.ingestFile(entry, tool);
-          summary.files += 1;
-        } catch (error) {
-          summary.errors.push(`${entry.path}: ${String(error)}`);
-        }
+      for (const entry of entries) candidates.push({ entry, tool });
+    }
+    const sessionKey = (tool, id) => `${tool}:${String(id || "").toLowerCase()}`;
+    const active = new Set(this.activeSessions().filter(session => session.sessionId)
+      .map(session => sessionKey(session.aiToolId, session.sessionId)));
+    candidates.sort((a, b) =>
+      Number(active.has(sessionKey(b.tool, b.entry.sessionId))) - Number(active.has(sessionKey(a.tool, a.entry.sessionId))) ||
+      Number(b.entry.mtimeMs || 0) - Number(a.entry.mtimeMs || 0));
+    for (const { entry, tool } of candidates) {
+      if (this.closed) break;
+      try {
+        summary.events += await this.ingestFile(entry, tool);
+        summary.files += 1;
+      } catch (error) {
+        summary.errors.push(`${entry.path}: ${String(error)}`);
       }
     }
     return summary;
@@ -632,21 +668,32 @@ export class UsageService {
 
   refreshTranscriptUsage(force = false) {
     if (this.transcriptRefresh) return this.transcriptRefresh;
-    if (!force && this.transcriptUpdatedAt > 0 &&
-      Date.now() - this.transcriptUpdatedAt < TRANSCRIPT_REFRESH_INTERVAL_MS) {
+    if (this.closed) return Promise.resolve({ files: 0, events: 0, errors: [] });
+    if (!force && this.transcriptAttemptedAt > 0 &&
+      Date.now() - this.transcriptAttemptedAt < TRANSCRIPT_REFRESH_INTERVAL_MS) {
       return Promise.resolve();
     }
-    this.transcriptRefresh = this.ingestAll().then((summary) => {
-      this.transcriptUpdatedAt = Date.now();
+    this.transcriptRefreshFailed = false;
+    this.transcriptRefresh = this.collectTranscriptUsage().then((summary) => {
+      this.transcriptRefreshFailed = summary.errors.length > 0;
+      if (!this.closed && !this.transcriptRefreshFailed) this.transcriptUpdatedAt = Date.now();
       return summary;
-    }).finally(() => { this.transcriptRefresh = null; });
+    }).catch((error) => {
+      this.transcriptRefreshFailed = true;
+      throw error;
+    }).finally(() => {
+      this.transcriptAttemptedAt = Date.now();
+      this.transcriptRefresh = null;
+    });
     return this.transcriptRefresh;
   }
 
   async browserSummary(refresh = false, historySelection = null) {
-    // Quotas can take seconds to fetch. Read local token records before
-    // returning history while account requests continue in the background.
-    await this.refreshTranscriptUsage(refresh);
+    // Never put transcript discovery or a multi-GB backlog on the HTTP response
+    // path. The client polls the stored aggregates while collection continues.
+    void this.refreshTranscriptUsage(refresh).catch((error) => {
+      console.warn("[electron] usage transcript refresh failed", error?.message || error);
+    });
     if (refresh) {
       void this.refreshRateLimits().catch((error) => {
         console.warn("[electron] usage limit refresh failed", error?.message || error);
@@ -656,6 +703,8 @@ export class UsageService {
       ...this.rateLimitSummary(),
       refreshPending: Boolean(this.rateLimitRefresh),
       tokensUpdatedAt: this.transcriptUpdatedAt,
+      tokensRefreshPending: Boolean(this.transcriptRefresh),
+      tokensRefreshFailed: this.transcriptRefreshFailed,
       tokens: this.dashboardSummary(),
       ...this.usageOverview(),
       history: this.usageHistory(historySelection),
@@ -993,7 +1042,7 @@ export class UsageService {
     return refresh ? this.refreshRateLimits() : this.rateLimitSummary();
   }
 
-  ingestHook(agentId, transcriptPath, sessionId = null, cwd = null) {
+  async ingestHook(agentId, transcriptPath, sessionId = null, cwd = null) {
     if (!transcriptPath || !fs.existsSync(transcriptPath)) return 0;
     const agent = this.catalog.agents.find((candidate) => candidate.id === agentId);
     const tool = agent?.aiToolId;
@@ -1267,6 +1316,7 @@ export class UsageService {
   }
 
   close() {
+    this.closed = true;
     this.database?.close();
     this.database = null;
   }

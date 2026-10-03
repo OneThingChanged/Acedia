@@ -17,6 +17,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.45 EXE release](release-1-8-1-45.md) - Open Dashboard usage from stored totals and collect large transcript histories in bounded background batches, prioritizing active sessions.
 * [Acedia 1.8.1.44 EXE release](release-1-8-1-44.md) - Recover automatically assigned sessions after account exclusion, refresh token usage and improve embedded verification-page compatibility.
 * [Acedia 1.8.1.43 EXE release](release-1-8-1-43.md) - Published highlighted terminal path boundaries; native clicks and public updater/assets verified.
 * [Acedia 1.8.1.42 EXE release](release-1-8-1-42.md) - Open a local session's project folder from the tab context menu; release verification and publication record.

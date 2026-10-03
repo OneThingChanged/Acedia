@@ -38,14 +38,30 @@ token events, and stores source identity and offsets so later refreshes process
 only new material. Events are deduplicated and rolled into daily aggregates;
 reopening the usage page does not require rebuilding all history.[^usage-service][^usage-tests]
 
-Dashboard reads scan local transcripts before returning token history, so recorded
-usage from an ongoing turn or a session without a completion hook is included.
-Passive reads share one scan and reuse it for up to 30 seconds; explicit Refresh
-also requests a transcript scan. Account quota lookups continue separately in the
-background. The visible usage page refreshes every 30 seconds and refreshes again
-when its browser tab becomes visible. Its record count shows the token scan's
-freshness separately from the monitor connection and account quota timestamps.
-This refresh behavior ships in [EXE 1.8.1.44](release-1-8-1-44.md).
+Dashboard returns stored token totals and history immediately while transcript
+discovery and collection run in the background. Active sessions have priority
+over inactive history, but inactive sessions remain part of the cumulative
+totals. This replaces the awaited transcript scan introduced in
+[EXE 1.8.1.44](release-1-8-1-44.md): an unindexed multi-GB history must not hold
+the Dashboard response open or allocate a buffer the size of the backlog.
+
+Collection reads at most 256 KiB per I/O operation, yields between committed
+batches, and persists offsets, model/context and Codex cumulative state together
+with events. Incomplete final lines are retried after they are completed.
+Completion hooks and concurrent refresh/import requests share in-flight work.
+A single JSONL record exceeding 64 MiB stops that file at its last safe
+checkpoint and reports an incomplete refresh, rather than dropping usage or
+growing memory without a bound. Other files can still be collected.
+
+Passive reads share one job and reuse a completed attempt for up to 30 seconds;
+explicit Refresh also requests collection. Ongoing turns and newly discovered
+sessions therefore appear without requiring a completion hook. Account quota
+lookups continue separately. The visible usage page polls every second while
+either collection or quotas are pending, and every 30 seconds otherwise. Polling
+pauses while hidden and resumes on return. The record count shows collection
+progress and the last successful full refresh separately from quota timestamps;
+a failed or partially failed collection preserves stored totals and shows a
+retry message instead of claiming that all records are current.
 
 Calendar buckets use the desktop's local timezone. Work spanning midnight belongs
 to two dates. Cached input is a subset of provider input, and reasoning output is

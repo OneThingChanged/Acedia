@@ -250,13 +250,28 @@ void app.whenReady().then(async () => {
           document.dispatchEvent(new Event('visibilitychange'));
         })()`);
         await waitFor(win, "!!window.__usageScheduled && !document.querySelector('#refreshUsageButton').disabled");
+        const originalScan = usage.sessionService.scan;
+        let releaseScan;
+        const scanGate = new Promise(resolve => { releaseScan = resolve; });
+        usage.sessionService.scan = async tool => { await scanGate; return originalScan(tool); };
+        usage.transcriptAttemptedAt = Date.now() - 31_000;
+        try {
+          await win.webContents.executeJavaScript("document.querySelector('#refreshUsageButton').click()");
+          await waitFor(win, "!document.querySelector('#refreshUsageButton').disabled && document.querySelector('#usageTokenEvents').textContent.includes('사용 기록 집계 중')");
+          assert(usage.transcriptRefresh, "Dashboard did not respond while transcript discovery was blocked");
+        } finally {
+          releaseScan();
+          await usage.transcriptRefresh;
+          usage.sessionService.scan = originalScan;
+        }
+        await waitFor(win, "!document.querySelector('#usageTokenEvents').textContent.includes('사용 기록 집계 중') && !!window.__usageScheduled");
         const before = usage.dashboardSummary();
         const transcript = path.join(root, "ongoing.jsonl");
         fs.writeFileSync(transcript, JSON.stringify({ timestamp:new Date().toISOString(),type:"event_msg",payload:{type:"token_count",info:{
           last_token_usage:{input_tokens:14,output_tokens:3,total_tokens:17},total_token_usage:{total_tokens:17},
         }}}) + "\n");
         usageTranscripts.push({ path:transcript, sessionId:"ongoing", cwd:project });
-        usage.transcriptUpdatedAt = Date.now() - 31_000;
+        usage.transcriptAttemptedAt = Date.now() - 31_000;
         await win.webContents.executeJavaScript("window.__usageScheduled.fire()");
         await waitFor(win, `document.querySelector('#usageSelectedTotal').textContent === ${JSON.stringify((before.totalTokens+17).toLocaleString('en-US'))}`);
         assert(usage.dashboardSummary().events === before.events+1, "Automatic usage refresh missed the ongoing transcript");
@@ -378,9 +393,10 @@ void app.whenReady().then(async () => {
     for (const win of windows) if (!win.isDestroyed()) win.destroy();
     await service?.stop();
     usage?.close();
+    if (usage) await Promise.allSettled([usage.transcriptRefresh, ...usage.fileIngests.values()].filter(Boolean));
     // Only this smoke's freshly created directory is removed.
     if (path.dirname(root) === path.resolve(os.tmpdir()) && path.basename(root).startsWith("multiagent-remote-ui-")) {
-      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Chromium may retain its temporary profile until process exit. */ }
+      try { fs.rmSync(root, { recursive: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Chromium may retain its temporary profile until process exit. */ }
     }
     app.exit(exitCode);
   }
