@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.46 questions, LAN access and unified account usage
 description: Cyan question status and Chat answers, per-session alerts, local-network Dashboard access, and consistent Codex account quotas.
-status: draft
+status: stable
 last_updated: 2026-10-03
 sources:
   - resource: notifications-and-power.md
@@ -40,8 +40,18 @@ sources:
 - 실제 Electron과 프로덕션 preload/IPC 허용 목록으로 사용량 통합·계정 선택 승계·이름 변경·관리 화면 연결, LAN 연결·Chat 전송·문서 열기·복사·로그아웃을 검증했다.
 - 질문 UI·세션 아이콘·알림 설정을 데스크톱 및 390px/1024px 웹 화면에서 확인했다. 설치된 Codex CLI 0.160.0과 모의 모델 서버로 단일/여러 질문 감지 및 네이티브 폼 응답을 검증했으며 유료 모델 호출은 하지 않았다.
 - 기존 Remote/PWA의 PC·모바일 화면, 문서·사용 기록·서비스 워커와 6개 언어, 계정 등록·로그인·갱신 흐름을 확인했다.
-- GitHub Windows 빌드·packaged bridge/Dashboard·lifecycle 검증과 공개 업데이터 다운로드 확인은 배포 실행에서 완료 후 아래에 기록한다.
+- [공식 Windows 빌드](https://github.com/OneThingChanged/Acedia/actions/runs/37120830839)에서 전체 150개 파일·957개 테스트, 생성 창·터미널 링크·native PTY, TypeScript/Vite·NSIS 빌드, packaged bridge/Dashboard·lifecycle 검증과 자산 게시가 모두 통과했다.
 
 ## 공개 배포
 
-EXE 라이브 배포 준비 중이다. Microsoft Store와 새 APK 배포는 이 릴리스 범위에 포함하지 않는다. 게시 결과와 자산 무결성 검증을 완료한 뒤 갱신한다.
+2026-10-03 **20:53:34 KST**, [v1.8.1.46](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.46)를 최신 안정 릴리스로 게시했다. 제품 태그와 릴리스 대상은 고정 소스 `2b0b8520d2cd1518d9abef55296bd6836d39dc40`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.46-x64.exe` | 120,910,183 | `f27a479c7826e2ede7348e0c4c19573850b3a6587bd74c577976d8cb2505469a` |
+| `Acedia-Setup-1.8.1.46-x64.exe.blockmap` | 127,002 | `456da49a91507f0980da7faf8234a04d02fdb8ddce30710a63bffb9abc2fe32a` |
+| `latest-exe.json` | 256 | `c3504e40c49ea3830ab641ff936a560b73041aa8355c71d828552cedc6c2e43a` |
+
+공개 설치 파일 FileVersion은 **1.8.1.46**, Authenticode는 **NotSigned**다. 같은 빌드의 manifest와 설치 파일 크기·SHA-256이 일치한다.
+
+**20:54:30 KST**에 프로덕션 업데이터로 **1.8.1.44 및 1.8.1.45 → 1.8.1.46 감지·실제 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다. 설치 프로그램은 실행하지 않았으며 사용자 PC 설치는 앱의 Update에서 진행한다. Microsoft Store와 새 APK 배포는 수행하지 않았다.
