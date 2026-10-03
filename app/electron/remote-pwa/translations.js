@@ -84,6 +84,7 @@ export const messages = [
   ["기록된 계정 배정 기간의 Codex 대화 토큰입니다.", "Codex transcript tokens during recorded account assignments."],
   ["토큰 사용량 미집계", "Token usage unavailable"], ["토큰 미집계", "tokens unavailable"],
   ["사용량 대상 아님", "No token usage expected"],
+  ["도구 요청 · 대화 토큰과 별도", "Tool request · separate from conversation tokens"],
   ["기존 실패·취소 혼합 {0}건은 분리할 수 없습니다.", "{0} historical failed/cancelled requests cannot be separated."],
   ["사용량 미집계 생성 요청 {0}건", "{0} generation requests have no reported usage"],
   ["완료 전 연결 종료", "Disconnected before completion", "完成前连接断开", "完成前連線中斷", "完了前に接続終了", "Desconectado antes de finalizar"],

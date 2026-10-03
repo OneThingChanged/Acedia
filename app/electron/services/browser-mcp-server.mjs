@@ -26,6 +26,24 @@ const targetSchema = {
 
 const tools = [
   {
+    name: 'acedia_projects',
+    description: 'List registered Acedia projects, sessions, active status and available AI tools on this host PC. Use IDs from this result to create additional sessions.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'acedia_project_create',
+    description: 'Register an existing absolute local folder as an Acedia project and create its first AI session (Codex by default). Reuses an already registered folder without adding a session. Saves through the desktop coordinator. Check active and startError in the result; creation does not guarantee a CLI is ready. Does not create directories or submit a prompt.',
+    inputSchema: { type: 'object', properties: { folder: { type: 'string' }, name: { type: 'string', maxLength: 120 }, aiToolId: { type: 'string', default: 'codex' } }, required: ['folder'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'acedia_session_create',
+    description: 'Create an additional AI session in a registered local Acedia project. Use a new requestKey (letters, digits, _ or -) for each intended session and reuse it when retrying the same request in this running app. Codex is the default. Check active and startError in the result. Does not submit a prompt.',
+    inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string', maxLength: 120 }, aiToolId: { type: 'string', default: 'codex' }, requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' } }, required: ['projectId', 'requestKey'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
     name: "browser_tabs",
     description: "List the tabs available to the current Acedia session.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -193,6 +211,18 @@ async function callBrowser(action, body = {}, method = "POST") {
 
 async function callTool(name, args) {
   const body = args && typeof args === "object" ? { ...args } : {};
+  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create'].includes(name)) {
+    if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
+    const method = name === 'acedia_projects' ? 'GET' : 'POST';
+    const endpoint = name === 'acedia_session_create' ? 'sessions' : 'projects';
+    const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
+      method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Acedia request failed (${response.status})`);
+    return result;
+  }
   switch (name) {
     case "browser_tabs": return callBrowser("status", {}, "GET");
     case "browser_open": return callBrowser("open", body);

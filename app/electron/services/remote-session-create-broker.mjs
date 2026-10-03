@@ -53,14 +53,14 @@ export class RemoteSessionCreateBroker {
     });
   }
 
-  complete({ requestId, id, ok, error, statusCode }) {
+  complete({ requestId, id, ok, error, statusCode, startError }) {
     const pending = this.pending.get(requestId);
     if (!pending || pending.id !== id) return false;
 
     this.pending.delete(requestId);
     clearTimeout(pending.timeout);
     if (ok) {
-      pending.resolve({ id });
+      pending.resolve({ id, ...(startError ? { startError: String(startError).slice(0, 1000) } : {}) });
     } else {
       pending.reject(createStatusError(
         String(error || "세션을 생성하지 못했습니다."),

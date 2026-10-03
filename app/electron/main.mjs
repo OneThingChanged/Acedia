@@ -58,12 +58,14 @@ import {
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
 import { AccountPool } from "./services/account-pool.mjs";
+import { prepareLaunchCommand } from "./services/agent-launch.mjs";
 import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage } from "./services/pty-submit.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
+import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
 import { SessionModelService, lastTurnModel, modelRestartAllowed, verifyModelSessionStart } from "./services/session-model-service.mjs";
@@ -644,6 +646,7 @@ const hookService = new HookService({
   activateAgent: (agentId) => activateMiraControlAgent(agentId),
   writeAgentInput: (request) => writeMiraControlAgentInput(request),
   browserProvider: (request) => handleBrowserIntegration({ ...request, reveal: false }),
+  workspaceProvider: (request) => workspaceManagement.handle(request),
   mcpScriptPath: browserMcpScriptPath,
   sendEvent: publishAgentHookEvent,
   sessionService,
@@ -895,6 +898,12 @@ function dispatchRemoteSessionCreate(payload) {
 
 const remoteSessionCreateBroker = new RemoteSessionCreateBroker({
   dispatch: dispatchRemoteSessionCreate,
+  timeoutMs: 45_000,
+});
+const workspaceManagement = new WorkspaceManagement({
+  catalog: () => monitorService?.state || {},
+  create: payload => remoteSessionCreateBroker.create(payload),
+  isActive: id => ptys.has(id),
 });
 
 function dispatchRemoteSessionActivation(payload) {
@@ -3156,6 +3165,14 @@ async function testPasswordSshConnection(ssh, password) {
 
 const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-pool"), {
   safeStorage,
+  nativeCommand: (args, env, context) => {
+    const file = context.cliExecutable || (process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex");
+    if (file && (process.platform !== "win32" || /\.(?:exe|com)$/i.test(file))) return { file, args: ["app-server", ...args] };
+    const shell = path.join(process.env.SystemRoot || "C:/Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const script = prepareLaunchCommand("codex app-server", context.cliExecutable ? { executable: context.cliExecutable } : undefined,
+      { shell, toolId: "codex", env, extraArgs: args });
+    return { file: shell, args: ["-NoLogo", "-NoProfile", "-Command", script + "; exit $LASTEXITCODE"] };
+  },
   transcriptUsageForPeriods: (periods) => usageIndex.poolTranscriptUsage(periods),
   command: () => {
     const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
@@ -3174,7 +3191,7 @@ const spawnPty = createTerminalLauncher({
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }
   },
   accountsForTool,
-  accountPoolLaunch: (id, preferredAccountId, preserveOwnerId) => accountPool.launch(id, preferredAccountId, preserveOwnerId),
+  accountPoolLaunch: (id, preferredAccountId, preserveOwnerId, context) => accountPool.launchNative(id, preferredAccountId, preserveOwnerId, context),
   accountBindings,
   accountSwitches,
   defaultShell,

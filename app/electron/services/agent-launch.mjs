@@ -18,7 +18,7 @@ export function mergeLaunchEnvironment(base, raw, platform = process.platform) {
   return env;
 }
 
-function splitGeneratedCommand(command) {
+export function splitGeneratedCommand(command) {
   const result = [];
   let current = "", quote = "";
   for (let index = 0; index < command.length; index++) {

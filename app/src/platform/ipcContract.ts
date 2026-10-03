@@ -381,6 +381,7 @@ export type RuntimeCommandContract = {
       id: string;
       ok: boolean;
       error?: string;
+      startError?: string;
       statusCode?: 400 | 404 | 409 | 500 | 503;
     };
     result: boolean;

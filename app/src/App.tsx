@@ -2613,7 +2613,7 @@ function App() {
 
   // ---- Agent CRUD (side effects + layout via groupOps)
 
-  const createProject = useCallback((payload: NewProjectPayload) => {
+  const createProject = useCallback(async (payload: NewProjectPayload, options: { projectId?: string; agentId?: string } = {}) => {
     const machineKey = payload.sshHostId
       ? `ssh:${payload.sshHostId}`
       : "local";
@@ -2626,9 +2626,13 @@ function App() {
       ...payload,
       projectFolderId: validFolder?.id,
     });
+    if (options.projectId) { project.id = options.projectId; agent.projectId = options.projectId; }
+    if (options.agentId) agent.id = options.agentId;
     const addProject = () => {
-      setProjects((prev) => [project, ...prev]);
-      setAgents((prev) => [...prev, agent]);
+      projectsRef.current = [project, ...projectsRef.current];
+      agentsRef.current = [...agentsRef.current, agent];
+      setProjects(projectsRef.current);
+      setAgents(agentsRef.current);
       setActiveProjectId(project.id);
       applyGroupOp((state) =>
         groupOps.addNewAgent(state, agent.id, project.id)
@@ -2637,37 +2641,30 @@ function App() {
 
     if (!isElectronRuntime()) {
       addProject();
-      return;
+      return { created: true, id: agent.id, projectId: project.id };
     }
 
     // A project immediately creates a live first session, so claim it for this
     // peer window before TerminalArea can spawn the PTY.
-    void invoke<{ claimed: boolean }>("claim_agent_for_window", {
-      agentId: agent.id,
-    })
-      .then(({ claimed }) => {
-        if (!claimed) {
-          pushToast(
-            "",
-            project.name,
-            text("새 프로젝트의 첫 세션 소유권을 확보하지 못했습니다.", "Could not claim the first session for the new project.")
-          );
-          return;
-        }
-        setOwnedAgentIds((current) => {
-          const next = new Set(current).add(agent.id);
-          ownedAgentIdsRef.current = next;
-          return next;
-        });
-        addProject();
-      })
-      .catch((error) => {
-        pushToast(
-          "",
-          project.name,
-          text(`새 프로젝트를 만들 수 없습니다: ${String(error)}`, `Could not create the new project: ${String(error)}`)
-        );
+    try {
+      const { claimed } = await invoke<{ claimed: boolean }>("claim_agent_for_window", { agentId: agent.id });
+      if (!claimed) {
+        const error = text("새 프로젝트의 첫 세션 소유권을 확보하지 못했습니다.", "Could not claim the first session for the new project.");
+        pushToast("", project.name, error);
+        return { created: false, error };
+      }
+      setOwnedAgentIds((current) => {
+        const next = new Set(current).add(agent.id);
+        ownedAgentIdsRef.current = next;
+        return next;
       });
+      addProject();
+      return { created: true, id: agent.id, projectId: project.id };
+    } catch (reason) {
+      const error = text(`새 프로젝트를 만들 수 없습니다: ${String(reason)}`, `Could not create the new project: ${String(reason)}`);
+      pushToast("", project.name, error);
+      return { created: false, error };
+    }
   }, [
     applyGroupOp,
     pushToast,
@@ -2842,12 +2839,12 @@ function App() {
         "workerSettings"
       );
       const addAgent = () => {
-        setAgents((prev) => [
-          ...prev,
+        const next: Agent[] = [
+          ...agentsRef.current,
           {
             id,
             projectId: project.id,
-            name: payload.name.trim() || `Session ${prev.length + 1}`,
+            name: payload.name.trim() || `Session ${agentsRef.current.length + 1}`,
             folder: project.folder,
             aiToolId: tool.id,
             aiLabel: tool.label,
@@ -2873,7 +2870,9 @@ function App() {
             sshHostId: project.sshHostId,
             remoteFolder: project.remoteFolder,
           },
-        ]);
+        ];
+        agentsRef.current = next;
+        setAgents(next);
         applyGroupOp((s) => groupOps.addNewAgent(s, id, project.id));
       };
       if (!isElectronRuntime()) {
@@ -3686,10 +3685,10 @@ function App() {
     ]
   );
 
-  // Remote session management is handled only by the coordinator renderer so
+  // Remote and local MCP session management share the coordinator renderer so
   // multiple workspace windows cannot activate, create, or rename a session twice.
   useEffect(() => {
-    if (!remoteEnabled || !isCoordinatorWindow) return;
+    if (!isCoordinatorWindow) return;
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
     const track = (unlisten: () => void) => {
@@ -3735,6 +3734,8 @@ function App() {
       aiToolId: string;
       dangerous: boolean;
       codexPoolAccountId?: string;
+      project?: { name: string; folder: string };
+      workspaceManaged?: boolean;
     }>("remote:create-session", (event) => {
       if (cancelled) return;
       const payload = event.payload;
@@ -3742,6 +3743,7 @@ function App() {
       const complete = (result: {
         ok: boolean;
         error?: string;
+        startError?: string;
         statusCode?: 400 | 404 | 409 | 500 | 503;
       }) => invoke("complete_remote_session_create", {
         requestId: payload.requestId,
@@ -3755,7 +3757,7 @@ function App() {
         (tool) => tool.id === payload.aiToolId
           && (tool.id === "none" || !disabledTools.includes(tool.id))
       );
-      if (!projectExists) {
+      if (!projectExists && !payload.project) {
         void complete({
           ok: false,
           error: text("세션을 생성할 프로젝트가 더 이상 존재하지 않습니다.", "The project for this session no longer exists."),
@@ -3776,7 +3778,9 @@ function App() {
         void complete({ ok: false, error: text("세션 이름이 비어 있습니다.", "The session name is empty."), statusCode: 400 });
         return;
       }
-      void createAgent(
+      const creation = payload.project ? createProject({
+        ...payload.project, aiToolId: payload.aiToolId, dangerous: false,
+      }, { projectId: payload.projectId, agentId: payload.id }) : createAgent(
         {
           name,
           aiToolId: payload.aiToolId,
@@ -3784,10 +3788,22 @@ function App() {
           codexPoolAccountId: payload.codexPoolAccountId,
         },
         { projectId: payload.projectId, agentId: payload.id }
-      ).then((result) => complete(result.created
-        ? { ok: true }
-        : { ok: false, error: result.error, statusCode: 409 }
-      )).catch((reason) => complete({
+      );
+      void creation.then(async result => {
+        if (!result.created) return complete({ ok: false, error: result.error, statusCode: 409 });
+        if (!payload.workspaceManaged) return complete({ ok: true });
+        // MCP callers need an acknowledged durable result, not just delivery
+        // of a UI event. Keep the created items if a CLI launch fails.
+        const storedProjects = JSON.stringify(mergeStoredByIdForWrite(projectsRef.current.map(storedProjectFromProject),
+          parseStoredArray<StoredProject>(readLocalStorageValue(LS_PROJECTS)), removedProjectIdsRef.current));
+        const storedAgents = JSON.stringify(mergeStoredByIdForWrite(agentsRef.current.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current));
+        localStorage.setItem(LS_PROJECTS, storedProjects); storedProjectsJsonRef.current = storedProjects;
+        localStorage.setItem(LS_AGENTS, storedAgents); storedAgentsJsonRef.current = storedAgents;
+        await persistStorageSnapshot(true);
+        const started = await spawnAgentInBackground(payload.id, { verifyActive: true });
+        return complete({ ok: true, ...(started.ok ? {} : { startError: started.error }) });
+      }).catch((reason) => complete({
         ok: false,
         error: text(`세션 생성 결과를 처리하지 못했습니다: ${String(reason)}`, `Could not process the session creation result: ${String(reason)}`),
         statusCode: 500,
@@ -3857,6 +3873,7 @@ function App() {
     };
   }, [
     createAgent,
+    createProject,
     disabledTools,
     isCoordinatorWindow,
     remoteEnabled,

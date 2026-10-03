@@ -117,6 +117,10 @@ prevents a delayed bounds update from exposing a blocked browser again.[^image-v
 
 ## Managed MCP connection
 
+The same managed connection also exposes local project registration and session
+creation tools. See [Workspace MCP](workspace-mcp.md) for the tool schemas,
+acknowledgement behavior, and restart requirements.
+
 The `multiagent-browser` MCP process uses newline-delimited JSON-RPC over stdio.
 The PTY environment supplies its loopback integration port, bearer token,
 associated agent ID, and script path. The MCP process opens no independent

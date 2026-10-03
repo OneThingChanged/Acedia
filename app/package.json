@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.46",
+  "multiAgentReleaseVersion": "1.8.1.47",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -20,6 +20,8 @@
     "electron:advanced-launch-smoke": "node scripts/electron-advanced-launch-smoke.mjs",
     "electron:account-pool-smoke": "node scripts/electron-account-pool-smoke.mjs",
     "account-pool:cli-smoke": "node scripts/account-pool-cli-smoke.mjs",
+    "account-pool:tools-smoke": "node scripts/account-pool-tools-smoke.mjs",
+    "electron:workspace-mcp-smoke": "node scripts/electron-workspace-mcp-smoke.mjs",
     "electron:account-onboarding-smoke": "node scripts/electron-account-onboarding-smoke.mjs",
     "electron:browser-profiles-smoke": "node scripts/electron-browser-profiles-smoke.mjs",
     "electron:settings-search-smoke": "node scripts/electron-settings-search-smoke.mjs",
@@ -80,7 +82,9 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "web-push": "^3.6.7"
+    "smol-toml": "^1.9.0",
+    "web-push": "^3.6.7",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
@@ -117,7 +121,9 @@
       "assets/icon.ico",
       "node_modules/node-pty/**",
       "node_modules/@xterm/xterm/**",
-      "node_modules/web-push/**"
+      "node_modules/web-push/**",
+      "node_modules/ws/**",
+      "node_modules/smol-toml/**"
     ],
     "directories": {
       "output": "electron-dist"

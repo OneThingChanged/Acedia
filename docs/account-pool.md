@@ -2,10 +2,15 @@
 type: Integration
 title: Acedia 계정 분산
 description: 기존 Dashboard에서 전용 계정을 등록하고 로컬 Codex 세션을 계정별로 배분하는 자체 기능.
-status: draft
+status: stable
+last_updated: 2026-10-03
 sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
+  - resource: ../app/electron/services/account-pool-session.mjs
+  - resource: ../app/electron/services/account-pool-native.test.mjs
+  - resource: ../app/electron/services/account-pool-session.test.mjs
+  - resource: ../app/scripts/account-pool-tools-smoke.mjs
   - resource: ../app/electron/services/account-pool.test.mjs
   - resource: ../app/electron/services/terminal-launcher.mjs
   - resource: ../app/electron/services/web-services.mjs
@@ -126,10 +131,40 @@ SSH와 다른 AI 도구에는 적용하지 않는다. 로컬 CODEX_HOME, hooks, 
 다른 프로세스를 종료하거나 직접 연결로 우회하지 않는다. 세션별 인증 키는
 실행 환경변수로 전달하고 원격 관리 웹에는 표시하지 않는다.
 
-HTTP Responses 스트리밍, 모델 목록과 compact 요청을 전달한다. WebSocket은
-CLI 설정에서 비활성화한다. 요청 크기는 32 MiB, 전체 요청 제한 시간은 15분이다.
+현재 소스는 HTTP Responses 스트리밍, 모델 목록, compact와 Codex의 기본 도구
+요청을 전달한다. 요청 크기는 32 MiB, 전체 요청 제한 시간은 15분이다.
 인증 거부 응답은 동일 계정의 인증을 갱신한 뒤 한 번 재시도한다. 이미 전송을
 시작한 응답, 일반 통신 오류와 한도 초과는 다른 계정으로 자동 재시도하지 않는다.
+
+## 기본 도구와 분산 계정 (1.8.1.47)
+
+기존 사용자 지정 provider(`requires_openai_auth=false`)는 ChatGPT 계정 전용 도구가
+없는 세션으로 인식될 수 있었다. 소스 1.8.1.47부터 실행 중인 세션마다 설치된 Codex의
+별도 app-server를 시작하고, 배정 계정의 `chatgptAuthTokens`를 메모리로 제공한다.
+CLI 0.160.0에서 검증했으며 이 버전 이상과 실험적 app-server/remote API가 필요하다.
+지원하지 않는 CLI에서는 업데이트 안내로 실행을 중단한다.
+
+TUI는 세션별 임의 토큰으로 `ws://127.0.0.1:3020`에 연결한다. Acedia가 해당 토큰의
+전용 서버로 연결하고, 서버 자체의 임의 loopback 포트도 별도 토큰으로 보호한다.
+실제 계정 access token은 실행 인수·환경변수·공용 auth.json에 기록하지 않는다.
+인증 갱신 요청은 Acedia만 답하며, 같은 ChatGPT workspace인지 확인한다.
+공유된 CODEX_HOME의 기존 대화·hooks·MCP 설정을 유지하고, 생성된 실행 명령의
+worker/MCP 설정도 서버에 전달한다. 이름 있는 `<name>.config.toml` 프로필은 메모리에서
+읽어 thread RPC로 적용하므로 프로필의 MCP 환경변수도 명령줄에 노출하지 않는다.
+원격 TUI가 resume 시 거부하는 명시적 권한 옵션은 native thread RPC로 전달한다.
+
+모델 요청뿐 아니라 `/images/generations`, `/images/edits`, `/alpha/search` 등
+Codex 도구 요청도 고정된 계정의 Codex backend 아래로 전달한다. multipart·압축·바이너리
+본문은 보존하며 임의 목적지나 경로 이탈, 리다이렉트는 허용하지 않는다. 도구의
+403/429를 계정 전체의 로그아웃·모델 한도 초과로 바꾸지 않으며 상위 오류를 CLI에 전달한다.
+도구 요청은 대화 토큰 통계와 분리한다. Apps/MCP의 연결과 권한 처리는 native Codex가
+담당하므로 각 계정에 제공되는 도구와 외부 서비스 연결 권한은 별도로 필요하다.
+
+업데이트 후 기존 실행 세션을 다시 시작해야 새 연결 방식과 도구 목록이 적용된다.
+`account-pool:tools-smoke`는 격리된 두 모의 계정, 로컬 HTTPS/모델 응답, 실제 설치 CLI로
+이미지 결과·검색 결과·MCP 호출, 동일 계정 인증 갱신, 계정 제외 후 실제 TUI의 동일 대화
+resume과 이전 메시지 보존을 검사한다. 실제 상용 이미지 생성이나 외부 Apps 계정 연결을
+검증한 것은 아니며, 로컬 fixture 인증서를 시스템 신뢰 저장소에 설치하지 않는다.
 
 ## 인증과 기록
 

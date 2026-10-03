@@ -459,6 +459,7 @@ export class HookService {
     activateAgent = null,
     writeAgentInput = null,
     browserProvider = null,
+    workspaceProvider = null,
     mcpScriptPath = "",
   }) {
     this.baseDir = baseDir;
@@ -473,6 +474,7 @@ export class HookService {
     this.activateAgent = activateAgent;
     this.writeAgentInput = writeAgentInput;
     this.browserProvider = browserProvider;
+    this.workspaceProvider = workspaceProvider;
     this.mcpScriptPath = mcpScriptPath;
     this.server = null;
     this.port = 0;
@@ -535,6 +537,21 @@ export class HookService {
         return;
       }
       sendJson(response, 200, snapshot);
+      return;
+    }
+
+    if (url.pathname.startsWith('/integration/v1/workspace/')) {
+      const action = request.method === 'GET' && url.pathname === '/integration/v1/workspace/projects' ? 'list'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/projects' ? 'create-project'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session' : null;
+      try {
+        if (!action) throw Object.assign(new Error('not found'), { statusCode: 404 });
+        if (!this.workspaceProvider) throw Object.assign(new Error('workspace unavailable'), { statusCode: 503 });
+        if (request.method === 'POST' && !String(request.headers['content-type']).startsWith('application/json')) throw Object.assign(new Error('application/json required'), { statusCode: 415 });
+        const body = request.method === 'POST' ? await readIntegrationJson(request) : {};
+        const result = await this.workspaceProvider({ action, body, agentId: String(request.headers['x-acedia-agent-id'] || '') });
+        sendJson(response, 200, result);
+      } catch (error) { sendJson(response, error.statusCode || error.status || 500, { ok: false, error: error.message }); }
       return;
     }
 

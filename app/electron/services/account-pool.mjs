@@ -2,9 +2,12 @@ import fs from 'node:fs';
 import { accountLoginError, browserLoginUrl } from './account-login.mjs';
 import path from 'node:path';
 import http from 'node:http';
-import { randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
+import { randomUUID, randomBytes, createHmac, createHash, timingSafeEqual } from 'node:crypto';
+import { gunzipSync, zstdDecompressSync } from 'node:zlib';
+import { WebSocketServer } from 'ws';
 import { StringDecoder } from 'node:string_decoder';
 import { AccountPoolRpc } from './account-pool-rpc.mjs';
+import { AccountPoolSession } from './account-pool-session.mjs';
 import { readCodexModels } from '../shared/session-model.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -22,12 +25,20 @@ const upgradeStats = previous => {
 };
 const atomic = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file + '.tmp', JSON.stringify(value), { mode: 0o600 }); fs.renameSync(file + '.tmp', file); };
 const validId = value => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+const DEFAULT_UPSTREAM = 'https://chatgpt.com/backend-api/codex';
+const digest = value => createHash('sha256').update(value).digest();
+const sameSecret = (a, b) => timingSafeEqual(digest(a), digest(b));
+const backendOrigin = raw => {
+  try { const url = new URL(raw); return url.protocol === 'https:' && !url.username && !url.password
+    && !url.search && !url.hash && url.pathname === '/' ? url.origin : null; } catch { return null; }
+};
 
 export class AccountPool {
-  constructor(root, { safeStorage, command, rpcFactory, fetchImpl = fetch, port = 3020,
-    upstream = 'https://chatgpt.com/backend-api/codex', now = Date.now, transcriptUsageForPeriods = null } = {}) {
+  constructor(root, { safeStorage, command, nativeCommand, rpcFactory, sessionFactory = options => new AccountPoolSession(options), fetchImpl = fetch, port = 3020,
+    upstream = DEFAULT_UPSTREAM, now = Date.now, transcriptUsageForPeriods = null } = {}) {
     this.root = root; this.file = path.join(root, 'pool.json'); this.safeStorage = safeStorage;
     this.command = command; this.rpcFactory = rpcFactory || ((env, home) => new AccountPoolRpc(command(), env, home));
+    this.nativeCommand = nativeCommand; this.sessionFactory = sessionFactory; this.nativeSessions = new Map();
     this.fetch = fetchImpl; this.port = port; this.upstream = upstream; this.now = now;
     this.transcriptUsageForPeriods = transcriptUsageForPeriods;
     this.state = { enabled: false, accounts: [], sessions: {}, recent: [] }; this.jobs = new Map(); this.locks = new Map(); this.active = new Map();
@@ -178,6 +189,8 @@ export class AccountPool {
     if (this.state.accounts.some(other => other.id !== a.id && other.identity === identity)) throw fail('이미 등록한 계정입니다. 기존 항목을 사용하세요.', 409);
     if (a.identity && a.identity !== identity) throw fail('다른 계정입니다. 새 계정으로 등록하세요.', 409);
     a.identity = identity; a.email = data.account.email || null; a.plan = data.account.planType || null;
+    const origin = backendOrigin(data.workspaceRouting?.backendOrigin);
+    if (origin) a.backendOrigin = origin;
     a.status = 'ready'; a.cooldownUntil = null;
   }
   async beginLogin(id, method = 'browser') {
@@ -237,14 +250,14 @@ export class AccountPool {
     try { if (job.loginId) await job.rpc.call('account/login/cancel', { loginId: job.loginId }, 5000); }
     finally { await job.finish(false, 'cancelled'); }
   }
-  async credentials(id, force = false, limits = false) {
+  async credentials(id, force = false, limits = false, routing = false) {
     return this.exclusive(id, async () => {
       const a = this.account(id);
       if (!a.auth) throw fail('계정 로그인이 필요합니다.', 401);
       const saved = JSON.parse(this.unseal(a.auth));
       let expires = 0;
       try { expires = JSON.parse(Buffer.from(saved.tokens.access_token.split('.')[1], 'base64url').toString()).exp * 1000; } catch {}
-      if (!force && !limits && expires > this.now() + 120000) return saved.tokens;
+      if (!force && !limits && (!routing || a.backendOrigin) && expires > this.now() + 120000) return saved.tokens;
       const rpc = await this.connect(a);
       try {
         try { this.identity(a, await rpc.call('account/read', { refreshToken: force || expires <= this.now() + 120000 })); }
@@ -359,8 +372,9 @@ export class AccountPool {
     this.starting = (async () => {
       const server = http.createServer((req, res) => void this.proxy(req, res));
       server.headersTimeout = 15000; server.requestTimeout = 60000;
-      server.on('upgrade', (_req, socket) => socket.end('HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\n\r\n'));
+      server.on('upgrade', (req, socket, head) => this.upgrade(req, socket, head));
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(this.port, '127.0.0.1', resolve); });
+      if (this.closed) { server.close(); throw fail('계정 서비스가 종료 중입니다.', 503); }
       this.server = server;
     })();
     try { await this.starting; } catch { throw fail('분산 요청 서버를 시작하지 못했습니다. 포트 사용 상태를 확인하세요.', 503); } finally { this.starting = null; }
@@ -417,6 +431,60 @@ export class AccountPool {
       'model_providers.acedia_pool.requires_openai_auth': false, 'model_providers.acedia_pool.supports_websockets': false };
     return { env: { ACEDIA_ACCOUNT_POOL_KEY: this.token(id) }, args: Object.entries(config).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`]) };
   }
+  async launchNative(id, preferredAccountId, preserveOwnerId, context) {
+    if (!await this.launch(id, preferredAccountId, preserveOwnerId)) return null;
+    const accountId = this.state.sessions[id].accountId;
+    for (const lease of this.nativeSessions.values()) if (lease.sessionId === id) lease.runtime.close();
+    const leaseId = randomUUID();
+    const lease = { id: leaseId, sessionId: id, accountId, tokenHashes: [], chatgptAccountId: null, runtime: null };
+    const ensureAvailable = () => {
+      this.guard();
+      if (!this.state.enabled || this.state.sessions[id]?.accountId !== accountId
+        || !this.eligible(this.account(accountId)) || this.nativeSessions.get(leaseId) !== lease) {
+        throw fail('이 세션의 분산 계정을 사용할 수 없습니다. 계정 상태를 확인한 뒤 세션을 다시 시작하세요.', 503);
+      }
+    };
+    const getAuth = async (force = false, previousAccountId) => {
+      ensureAvailable();
+      if (previousAccountId && previousAccountId !== lease.chatgptAccountId) throw fail('계정이 다른 인증 갱신은 허용하지 않습니다.', 409);
+      const tokens = await this.credentials(accountId, force, false, true);
+      ensureAvailable();
+      if (lease.chatgptAccountId && lease.chatgptAccountId !== tokens.account_id) throw fail('분산 계정의 로그인 정보가 변경되었습니다.', 409);
+      lease.chatgptAccountId = tokens.account_id;
+      const hash = digest(tokens.access_token);
+      lease.tokenHashes = [hash, ...lease.tokenHashes.filter(saved => !timingSafeEqual(saved, hash))].slice(0, 2);
+      return { accessToken: tokens.access_token, chatgptAccountId: tokens.account_id, chatgptPlanType: this.account(accountId).plan || null };
+    };
+    const runtime = this.sessionFactory({ env: context.env, cwd: context.cwd, configArgs: context.configArgs,
+      providerUrl: `http://127.0.0.1:${this.server.address().port}/native-provider/${leaseId}`,
+      command: (args, env) => this.nativeCommand ? this.nativeCommand(args, env, context) : (() => {
+        const command = this.command(); return { file: command.file, args: [...command.args, ...args] };
+      })(), getAuth, ensureAvailable });
+    lease.runtime = runtime; lease.getAuth = getAuth;
+    this.nativeSessions.set(leaseId, lease);
+    runtime.once('closed', () => { this.nativeSessions.delete(leaseId); lease.tokenHashes = []; });
+    try {
+      await runtime.start(); ensureAvailable();
+      const origin = backendOrigin(runtime.workspaceOrigin);
+      if (origin) this.account(accountId).backendOrigin = origin;
+      return { native: true, env: { ACEDIA_CODEX_REMOTE_TOKEN: runtime.publicToken },
+        args: ['--remote', `ws://127.0.0.1:${this.server.address().port}`,
+          '--remote-auth-token-env', 'ACEDIA_CODEX_REMOTE_TOKEN'], release: () => runtime.close() };
+    } catch (error) { runtime.close(); throw error; }
+  }
+  upgrade(req, socket, head) {
+    const reject = code => socket.end(`HTTP/1.1 ${code}\r\nConnection: close\r\n\r\n`);
+    if (req.headers.origin || req.headers['sec-fetch-site'] === 'cross-site') return reject('403 Forbidden');
+    if (req.url !== '/') return reject('404 Not Found');
+    const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    if (!token || token.length > 256) return reject('401 Unauthorized');
+    // The stock TUI accepts ws://host:port only. Its per-launch capability
+    // selects the private runtime without putting session IDs in the URL.
+    const lease = [...this.nativeSessions.values()].find(item => !item.runtime.closed && sameSecret(token, item.runtime.publicToken));
+    if (!lease) return reject('401 Unauthorized');
+    this.webSockets ??= new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+    this.webSockets.handleUpgrade(req, socket, head, client => { void lease.runtime.attach(client); });
+  }
   async proxy(req, res) {
     let a, sessionId, record;
     const controller = new AbortController(); this.controllers.add(controller);
@@ -429,51 +497,86 @@ export class AccountPool {
     try {
       this.guard();
       if (req.headers.origin || req.headers['sec-fetch-site'] === 'cross-site') throw fail('브라우저 직접 요청은 허용하지 않습니다.', 403);
-      sessionId = this.authenticate(req); if (!sessionId) throw fail('인증이 필요합니다.', 401);
-      if (!this.state.enabled) throw fail('계정 분산이 꺼져 있습니다.', 503);
       const url = new URL(req.url, 'http://127.0.0.1');
-      const endpoint = url.pathname.slice('/provider'.length);
-      if (!url.pathname.startsWith('/provider/') || !((req.method === 'POST' && ['/responses', '/responses/compact'].includes(endpoint)) || (req.method === 'GET' && endpoint === '/models'))) throw fail('지원하지 않는 요청입니다.', 404);
+      const nativePath = /^\/native-provider\/([0-9a-f-]{36})(\/.*)$/.exec(url.pathname);
+      const lease = nativePath && this.nativeSessions.get(nativePath[1]);
+      if (nativePath) {
+        const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
+        if (!lease || token.length > 16384 || req.headers['chatgpt-account-id'] !== lease.chatgptAccountId
+          || !lease.tokenHashes.some(saved => timingSafeEqual(saved, digest(token)))) throw fail('인증이 필요합니다.', 401);
+        lease.runtime.ensureAvailable(); sessionId = lease.sessionId;
+      } else sessionId = this.authenticate(req);
+      if (!sessionId) throw fail('인증이 필요합니다.', 401);
+      if (!this.state.enabled) throw fail('계정 분산이 꺼져 있습니다.', 503);
+      const endpoint = nativePath ? nativePath[2] : url.pathname.slice('/provider'.length);
+      const modelRequest = req.method === 'POST' && ['/responses', '/responses/compact'].includes(endpoint);
+      const modelsRequest = req.method === 'GET' && endpoint === '/models';
+      // Native tools use this same base URL (images, search, uploads, etc.).
+      // Keep their transport transparent, but confine every route to the fixed
+      // Codex backend for the authenticated lease; never accept proxy targets.
+      const nativeTool = Boolean(nativePath && !modelRequest && !modelsRequest);
+      if ((!nativePath && !url.pathname.startsWith('/provider/'))
+        || (!nativeTool && !modelRequest && !modelsRequest)
+        || (nativeTool && (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+          || !/^\/(?:[a-zA-Z0-9_-]+\/?)+$/.test(endpoint)))) throw fail('지원하지 않는 요청입니다.', 404);
       let body;
-      if (req.method === 'POST') {
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const chunks = []; let size = 0;
         for await (const chunk of req) { size += chunk.length; if (size > 32 * 1024 * 1024) throw fail('요청 크기가 너무 큽니다.', 413); chunks.push(chunk); }
         body = Buffer.concat(chunks);
-        try { const data = JSON.parse(body); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(); } catch { throw fail('JSON 요청이 필요합니다.'); }
+        const encoding = !nativeTool && req.headers['content-encoding'];
+        try {
+          if (encoding === 'zstd') body = zstdDecompressSync(body, { maxOutputLength: 32 * 1024 * 1024 });
+          else if (encoding === 'gzip') body = gunzipSync(body, { maxOutputLength: 32 * 1024 * 1024 });
+          else if (encoding && encoding !== 'identity') throw new Error();
+        } catch { throw fail('압축 요청을 처리할 수 없습니다.', 415); }
+        if (!nativeTool) try { const data = JSON.parse(body); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(); } catch { throw fail('JSON 요청이 필요합니다.'); }
       }
       a = this.choose(sessionId); this.active.set(a.id, (this.active.get(a.id) || 0) + 1);
       this.state.sessions[sessionId].lastUsed = this.now();
-      record = { at: this.now(), sessionId, accountId: a.id, operation: endpoint === '/models' ? 'models' : 'generation',
+      record = { at: this.now(), sessionId, accountId: a.id, operation: nativeTool ? 'tool' : modelsRequest ? 'models' : 'generation',
         status: 'running', completionObserved: false, usageReported: false, inputTokens: 0, outputTokens: 0 };
-      const tokens = await this.credentials(a.id);
-      const headers = { authorization: `Bearer ${tokens.access_token}`, 'chatgpt-account-id': tokens.account_id, 'content-type': 'application/json', accept: 'text/event-stream, application/json', originator: 'codex_cli_rs' };
-      for (const key of ['openai-beta', 'version', 'session_id', 'conversation_id', 'x-codex-turn-state', 'x-codex-turn-metadata', 'user-agent']) if (typeof req.headers[key] === 'string') headers[key] = req.headers[key];
-      const send = () => this.fetch(this.upstream + endpoint + url.search, { method: req.method, headers, body, signal: controller.signal, redirect: 'manual' });
+      const tokens = lease ? await lease.getAuth() : await this.credentials(a.id);
+      const headers = { authorization: `Bearer ${tokens.accessToken ?? tokens.access_token}`, 'chatgpt-account-id': tokens.chatgptAccountId ?? tokens.account_id,
+        'content-type': nativeTool ? req.headers['content-type'] || 'application/json' : 'application/json',
+        accept: req.headers.accept || 'text/event-stream, application/json', originator: 'codex_cli_rs' };
+      if (nativeTool && req.headers['content-encoding']) headers['content-encoding'] = req.headers['content-encoding'];
+      for (const key of Object.keys(req.headers)) if (typeof req.headers[key] === 'string'
+        && (/^(?:x-codex-|x-openai-|openai-)/.test(key) || ['version', 'originator', 'session_id', 'conversation_id', 'user-agent'].includes(key))) headers[key] = req.headers[key];
+      const origin = lease && this.upstream === DEFAULT_UPSTREAM ? backendOrigin(a.backendOrigin) : null;
+      const target = origin ? origin + '/backend-api/codex' : this.upstream;
+      const send = () => {
+        lease?.runtime.ensureAvailable();
+        return this.fetch(target + endpoint + url.search, { method: req.method, headers, body, signal: controller.signal, redirect: 'manual' });
+      };
       let upstream = await send();
       if (upstream.status === 401) {
         // Retry only an explicit authentication rejection, on the same account, before sending any response bytes.
         await upstream.body?.cancel();
-        const refreshed = await this.credentials(a.id, true);
-        headers.authorization = `Bearer ${refreshed.access_token}`;
+        const refreshed = lease ? await lease.getAuth(true, lease.chatgptAccountId) : await this.credentials(a.id, true);
+        headers.authorization = `Bearer ${refreshed.accessToken ?? refreshed.access_token}`;
         upstream = await send();
       }
       record.httpStatus = upstream.status;
       if (!upstream.ok) {
         record.status = 'failed';
-        await upstream.body?.cancel();
-        if ([401, 403].includes(upstream.status)) a.status = 'login_required';
-        if (upstream.status === 429) { const retry = Number(upstream.headers.get('retry-after')); a.cooldownUntil = this.now() + Math.min(3600, Math.max(30, Number.isFinite(retry) ? retry : 60)) * 1000; }
-        throw fail(`계정 요청이 실패했습니다 (HTTP ${upstream.status}). 계정 상태를 확인하세요.`, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502);
+        if (upstream.status === 401 || (!nativeTool && upstream.status === 403)) a.status = 'login_required';
+        if (!nativeTool && upstream.status === 429) { const retry = Number(upstream.headers.get('retry-after')); a.cooldownUntil = this.now() + Math.min(3600, Math.max(30, Number.isFinite(retry) ? retry : 60)) * 1000; }
+        if (!lease || upstream.status < 400 || upstream.status >= 600) {
+          await upstream.body?.cancel();
+          throw fail(`계정 요청이 실패했습니다 (HTTP ${upstream.status}). 계정 상태를 확인하세요.`, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502);
+        }
       }
       const contentType = upstream.headers.get('content-type') || 'application/json';
       const responseHeaders = { 'content-type': contentType, 'cache-control': 'no-store', 'x-accel-buffering': 'no' };
-      for (const key of ['x-codex-turn-state', 'x-request-id']) if (upstream.headers.get(key)) responseHeaders[key] = upstream.headers.get(key);
+      for (const key of ['x-codex-turn-state', 'x-request-id', 'retry-after']) if (upstream.headers.get(key)) responseHeaders[key] = upstream.headers.get(key);
       res.writeHead(upstream.status, responseHeaders);
       const streaming = contentType.toLowerCase().includes('text/event-stream');
       const decoder = new StringDecoder('utf8');
       const inspectionLimit = 2 * 1024 * 1024;
       let tail = '', eventName = '', dataLines = [], eventLength = 0, oversized = false;
       const inspect = (text, event = '') => {
+        if (nativeTool) return;
         let data; try { data = JSON.parse(text); } catch { return; }
         if (!data || typeof data !== 'object') return;
         const type = data.type || event;
@@ -523,9 +626,11 @@ export class AccountPool {
         if (tail.length > inspectionLimit) { tail = ''; oversized = true; dataLines = []; }
       };
       if (upstream.body) for await (const chunk of upstream.body) {
-        tail += decoder.write(Buffer.from(chunk));
-        if (streaming) readLines();
-        else if (tail.length > inspectionLimit) { tail = ''; oversized = true; }
+        if (!nativeTool) {
+          tail += decoder.write(Buffer.from(chunk));
+          if (streaming) readLines();
+          else if (tail.length > inspectionLimit) { tail = ''; oversized = true; }
+        }
         if (!res.write(chunk)) await new Promise((resolve, reject) => {
           const cleanup = () => { res.off('drain', drained); res.off('close', closed); };
           const drained = () => { cleanup(); resolve(); }; const closed = () => { cleanup(); reject(new Error('closed')); };
@@ -536,7 +641,7 @@ export class AccountPool {
       tail += decoder.end();
       if (streaming) { readLines(true); if (tail) line(tail); dispatch(); }
       else if (!oversized && tail) inspect(tail);
-      if (record.status !== 'failed') record.status = streaming && !record.completionObserved ? 'failed' : 'completed';
+      if (record.status !== 'failed') record.status = !nativeTool && streaming && !record.completionObserved ? 'failed' : 'completed';
       res.end();
     } catch (error) {
       // Clients finish reading at response.completed, sometimes before upstream
@@ -588,6 +693,8 @@ export class AccountPool {
   }
   close() {
     this.refreshStopped = true;
+    for (const lease of this.nativeSessions.values()) lease.runtime.close();
+    this.webSockets?.close();
     for (const job of this.jobs.values()) void job.finish(false);
     for (const [rpc, account] of this.rpcs) {
       rpc.close();

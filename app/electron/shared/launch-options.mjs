@@ -3,7 +3,7 @@ const protectedNames = new Set([
   "CODEX_HOME", "CLAUDE_CONFIG_DIR", "QWEN_CODE_HOME",
   "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS",
   "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN",
-    "ACEDIA_ACCOUNT_POOL_KEY",
+  "ACEDIA_ACCOUNT_POOL_KEY", "ACEDIA_CODEX_REMOTE_TOKEN",
   "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
   "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "ANTHROPIC_CUSTOM_HEADERS",
   "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
@@ -35,7 +35,7 @@ export function launchOptionsProblem(raw) {
       value.args.reduce((sum, x) => sum + x.length, 0) > 24000 ||
       value.env.reduce((sum, x) => sum + x.name.length + x.value.length, 0) > 24000) return "limits";
   if (value.args.some(x => /[\x00-\x1f]/.test(x))) return "args";
-  const managedArgs = /^(?:resume$|--resume(?:=|$)|-r$|--id(?:=|$)|--no-alt-screen(?:=|$)|--dangerously-skip-permissions(?:=|$)|--dangerously-bypass-approvals-and-sandbox(?:=|$)|--yolo(?:=|$))/;
+  const managedArgs = /^(?:resume$|--resume(?:=|$)|-r$|--id(?:=|$)|--remote(?:=|$)|--remote-auth-token-env(?:=|$)|--no-alt-screen(?:=|$)|--dangerously-skip-permissions(?:=|$)|--dangerously-bypass-approvals-and-sandbox(?:=|$)|--yolo(?:=|$))/;
   if (value.args.some(x => managedArgs.test(x) || /^(?:(?:-c|--config)[= ]*)?cli_auth_credentials_store\s*=/.test(x))) return "managedArgs";
   const names = new Set();
   for (const item of value.env) {

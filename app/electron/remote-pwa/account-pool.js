@@ -212,7 +212,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
       const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
       const state = requestStatus(item);
       const total = recordedTokens(item);
-      const tokens = item.operation === 'models' ? t('사용량 대상 아님')
+      const tokens = item.operation === 'tool' ? t('도구 요청 · 대화 토큰과 별도')
+        : item.operation === 'models' ? t('사용량 대상 아님')
         : total == null ? t('요청별 토큰 정보 없음') : `${total.toLocaleString()} ${t('토큰')}`;
       records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${tokens} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
     }

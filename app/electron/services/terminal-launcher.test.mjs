@@ -62,6 +62,14 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it('retains generated MCP and worker settings for the native routed server and releases it with the terminal', async () => {
+    const f = fixture(); const release = vi.fn();
+    const accountPoolLaunch = vi.fn(async () => ({ env: { ACEDIA_CODEX_REMOTE_TOKEN: 'fixture' }, args: ['--remote', 'ws://127.0.0.1:12345'], release }));
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
+    await launch({ ...f.args, initCommand: `codex resume saved-id -c 'mcp_servers.multiagent_browser.enabled=true' -c 'developer_instructions="worker config"'` });
+    expect(accountPoolLaunch.mock.calls[0][3].configArgs).toEqual(['resume', 'saved-id', '-c', 'mcp_servers.multiagent_browser.enabled=true', '-c', 'developer_instructions="worker config"']);
+    f.sessions.close('session-a'); expect(release).toHaveBeenCalledOnce();
+  });
   it.each(["codex", "claude"])("passes session model/effort to the resumed %s CLI without changing its account", async aiToolId => {
     vi.useFakeTimers();
     const f = fixture();
@@ -87,7 +95,9 @@ describe("terminal launch lifecycle", () => {
     expect(f.sessions.get(f.args.id).poolRouted).toBe(true);
     expect(env.CODEX_HOME).toContain("account-a");
     expect(env.ACEDIA_ACCOUNT_POOL_KEY).toBe("lb-secret");
-    expect(accountPoolLaunch).toHaveBeenCalledWith(f.args.id, routedAccountId);
+    expect(accountPoolLaunch).toHaveBeenCalledWith(f.args.id, routedAccountId, null, expect.objectContaining({
+      cwd: os.tmpdir(), env: expect.objectContaining({ MULTIAGENT_AGENT_ID: f.args.id, CODEX_HOME: env.CODEX_HOME }),
+    }));
     await vi.advanceTimersByTimeAsync(600);
     expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"acedia_pool\"' 'continue work'\r");
     expect(f.processes[0].write.mock.calls[0][0]).not.toContain("lb-secret");

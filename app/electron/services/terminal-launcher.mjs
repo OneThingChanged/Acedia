@@ -2,9 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { prepareLaunchCommand, mergeLaunchEnvironment } from "./agent-launch.mjs";
+import { prepareLaunchCommand, mergeLaunchEnvironment, splitGeneratedCommand } from "./agent-launch.mjs";
 import { selectedAccountId } from "./provider-accounts.mjs";
 import { normalizeSessionModel, sessionModelArgs } from "../shared/session-model.mjs";
+import { normalizeLaunchOptions } from "../shared/launch-options.mjs";
+import { codexRemoteTuiArgs } from "./account-pool-session.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
 import { buildInteractiveSshArgs, findWindowsExecutable } from "./ssh-service.mjs";
 import { CodexScrollbackFilter, PassThroughTerminalFilter } from "./terminal-stream.mjs";
@@ -45,7 +47,9 @@ export function createTerminalLauncher({
     let executable;
     let shellArgs;
     let reversePort = null;
+    let poolRelease = null;
     const release = () => {
+      const releasePool = poolRelease; poolRelease = null; releasePool?.();
       if (reversePort === null) return;
       releaseRemotePort(reversePort);
       reversePort = null;
@@ -100,19 +104,30 @@ export function createTerminalLauncher({
       }
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
-      const poolLaunch = !ssh && aiToolId === "codex" ? await (args.poolResumeOwnerId
-        ? accountPoolLaunch(id, args.codexPoolAccountId || null, args.poolResumeOwnerId)
-        : accountPoolLaunch(id, args.codexPoolAccountId || null)) : null;
+      const modelArgs = ["codex", "claude"].includes(aiToolId) ? sessionModelArgs(args.modelSettings, args.launchOptions, aiToolId) : [];
+      const launchOptions = normalizeLaunchOptions(args.launchOptions);
+      const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id,
+        args.codexPoolAccountId || null, args.poolResumeOwnerId || null, {
+          env: { ...guiTerminalEnvironment(launchEnvironment), TERM: "xterm-256color", COLORTERM: "truecolor",
+            MULTIAGENT_AGENT_ID: id, MULTIAGENT_PORT: String(hookService.port || ""),
+            MULTIAGENT_TOKEN: hookService.token || "", MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath },
+          cwd, cliExecutable: launchOptions?.executable,
+          configArgs: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs],
+        }) : null;
       if (poolLaunch) {
+        poolRelease = poolLaunch.release ?? null;
         for (const key of Object.keys(launchEnvironment)) {
-          if (["ACEDIA_ACCOUNT_POOL_KEY"].includes(key.toUpperCase())) delete launchEnvironment[key];
+          if (["ACEDIA_ACCOUNT_POOL_KEY", "ACEDIA_CODEX_REMOTE_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_BASE_URL"].includes(key.toUpperCase())) delete launchEnvironment[key];
         }
         Object.assign(launchEnvironment, poolLaunch.env);
       }
       const initialPrompt = asString(args.initialPrompt);
-      const launchCommand = ssh ? "" : prepareLaunchCommand(asString(args.initCommand).trim(), args.launchOptions, {
+      const nativeArgs = poolLaunch?.native ? codexRemoteTuiArgs([
+        ...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs,
+      ]) : null;
+      const launchCommand = ssh ? "" : prepareLaunchCommand(nativeArgs ? "codex" : asString(args.initCommand).trim(), nativeArgs ? { ...launchOptions, args: [] } : args.launchOptions, {
         shell: executable, toolId: aiToolId, env: launchEnvironment, platform,
-        extraArgs: [...(poolLaunch?.args ?? []), ...(["codex", "claude"].includes(aiToolId) ? sessionModelArgs(args.modelSettings, args.launchOptions, aiToolId) : []), ...(initialPrompt ? [initialPrompt] : [])],
+        extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : modelArgs), ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
       return {
