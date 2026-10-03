@@ -1,17 +1,17 @@
 import path from 'node:path';
 import { PreferencesStore } from './preferences-store.mjs';
 
-export const NOTIFICATION_DEFAULTS = { revision: 0, completion: true, bell: false, suppressFocused: false, powerMode: 'off' };
+export const NOTIFICATION_DEFAULTS = { revision: 0, completion: true, question: true, bell: false, suppressFocused: false, powerMode: 'off' };
 export function notificationPreferences(directory) {
   return new PreferencesStore(path.join(directory, 'notification-policy.json'), NOTIFICATION_DEFAULTS, value => {
     if (!Number.isSafeInteger(value.revision) || value.revision < 0 || !['off', 'working', 'always'].includes(value.powerMode)
-      || ['completion', 'bell', 'suppressFocused'].some(key => typeof value[key] !== 'boolean')) throw new Error('Invalid notification settings');
+      || ['completion', 'question', 'bell', 'suppressFocused'].some(key => typeof value[key] !== 'boolean')) throw new Error('Invalid notification settings');
     return Object.fromEntries(Object.keys(NOTIFICATION_DEFAULTS).map(key => [key, value[key]]));
   });
 }
-export function allowNotification(settings, kind, focused) {
-  if (!['completion', 'bell'].includes(kind)) throw new Error('Invalid notification kind');
-  return settings[kind] && !(settings.suppressFocused && focused);
+export function allowNotification(settings, kind, focused, sessionEnabled = true) {
+  if (!['completion', 'question', 'bell'].includes(kind)) throw new Error('Invalid notification kind');
+  return sessionEnabled && settings[kind] && !(settings.suppressFocused && focused);
 }
 export class WorkPowerPolicy {
   constructor(blocker) { this.blocker = blocker; this.mode = 'off'; this.work = new Map(); this.live = new Set(); this.token = null; }

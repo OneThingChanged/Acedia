@@ -24,10 +24,18 @@ function agent(status: Agent["status"] = "running"): Agent {
 }
 
 describe("agent activity state v2", () => {
+  it('keeps a linked question visible until resolution without mislabeling the next permission request', () => {
+    const waiting = applyAgentHookEvent(agent(), { id:'agent-1', event:'waiting', tool_name:'request_user_input', interactive_question:'Choose?', question_id:'call-1' }, 100);
+    expect(deriveAgentStatus('running', waiting.activity, AGENT_ACTIVITY_STALE_AFTER_MS + 200)).toBe('question');
+    const working = applyAgentHookEvent(waiting, { id:'agent-1', event:'working' }, 200);
+    const permission = applyAgentHookEvent(working, { id:'agent-1', event:'waiting', hook_event_name:'PermissionRequest' }, 300);
+    expect(permission.status).toBe('waiting');
+    expect(permission.activity?.questionId).toBeUndefined();
+  });
   it("captures a namespaced Codex question and clears it when the tool completes", () => {
     const question = JSON.stringify({ questions: [{ question: "질문".repeat(1100), options: [{ label: "A" }, { label: "B" }] }] });
     const waiting = applyAgentHookEvent(agent(), { id: "agent-1", event: "tool-start", hook_event_name: "PreToolUse", tool_name: "functions.request_user_input", tool_input: question }, 100);
-    expect(waiting.status).toBe("waiting");
+    expect(waiting.status).toBe("question");
     expect(waiting.activity?.interactiveQuestion).toBe(question);
     const resumed = applyAgentHookEvent(waiting, { id: "agent-1", event: "tool-end", hook_event_name: "PostToolUse", tool_name: "functions.request_user_input", tool_input: question }, 200);
     expect(resumed.status).toBe("working");
@@ -101,7 +109,7 @@ describe("agent activity state v2", () => {
       { id: "agent-1", event: "blocked", hook_event_name: "StopFailure" },
       200
     );
-    expect(waiting.status).toBe("waiting");
+    expect(waiting.status).toBe("question");
     expect(waiting.activity?.interactiveQuestion).toBe("어느 옵션으로 할까요?");
     expect(blocked.status).toBe("blocked");
   });

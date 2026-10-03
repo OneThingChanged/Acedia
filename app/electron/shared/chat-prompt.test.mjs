@@ -13,11 +13,11 @@ describe("chat questions", () => {
   });
   it("preserves all questions, options and descriptions without flattening a Codex form", () => {
     const question = JSON.stringify({ questions: [
-      { question: "모델을 선택하세요", options: [{ label: "Codex", description: "코딩" }, { label: "Claude", description: "문서" }] },
-      { question: "어느 프로젝트인가요?" },
+      { id: "model", question: "모델을 선택하세요", options: [{ label: "Codex", description: "코딩" }, { label: "Claude", description: "문서" }] },
+      { id: "project", question: "어느 프로젝트인가요?", options: [{label: "Current"}, {label: "New"}] },
     ] });
     const prompt = parseChatPrompt("waiting", question, null, "codex");
-    expect(prompt).toMatchObject({ answerStyle: "terminal", options: [] });
+    expect(prompt).toMatchObject({ answerStyle: "codex-form", options: [], questions: [{id: "model"}, {id: "project"}] });
     expect(prompt.text).toContain("Codex — 코딩");
     expect(prompt.text).toContain("어느 프로젝트인가요?");
   });

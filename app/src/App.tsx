@@ -1683,19 +1683,19 @@ function App() {
     runtimeFlags,
   ]);
 
-  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "bell") => {
+  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "question" | "bell") => {
     if (isElectronRuntime() && !ownedAgentIdsRef.current.has(agent.id)) return;
     try {
-      if (isElectronRuntime() && !await invoke<boolean>("notification_policy_check", { kind })) return;
+      if (isElectronRuntime() && !await invoke<boolean>("notification_policy_check", { kind, id: agent.id })) return;
       const projectName = projectsRef.current.find(p => p.id === agent.projectId)?.name || "Unknown project";
-      const body = kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed");
+      const body = kind === "question" ? text("질문이 도착했습니다. 답변을 선택해 주세요.", "A question is waiting. Select your answer.") : kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed");
       const config = loadNotificationSound();
       void playNotificationSound(config, `${projectName} ${agent.name} ${body}`);
       pushToast(agent.id, `${projectName} / ${agent.name}`, body);
       if (config.osNotification !== false && !await getCurrentWindow().isFocused()) {
         void getCurrentWindow().requestUserAttention(UserAttentionType.Critical).catch(() => {});
         await notifyDone({ agentId: agent.id, projectName, sessionName: agent.name, body,
-          silent: shouldSilenceOsNotification(config), onActivate: () => selectAgentRef.current?.(agent.id) });
+          silent: shouldSilenceOsNotification(config), onActivate: () => { if (kind === "question") setChatModeAgents(previous => new Set(previous).add(agent.id)); selectAgentRef.current?.(agent.id); } });
       }
     } catch (error) { console.warn("Session notification unavailable", error); }
   }, [pushToast, text]);
@@ -1849,7 +1849,8 @@ function App() {
               ?.name || "Unknown project";
           beginAgentWork(id, sessionKey);
           if (nextWorkStatus === "waiting" || nextWorkStatus === "blocked") {
-            const kind: AttentionKind = nextWorkStatus;
+            const kind: AttentionKind = nextAgent.status === "question" ? "question" : nextWorkStatus;
+            if (kind === "question" && payload.question_notification) void notifySession(nextAgent, "question");
             const body =
               nextAgent.activity?.interactiveQuestion?.trim() ||
               nextAgent.activity?.lastPrompt?.trim() ||
@@ -1857,7 +1858,7 @@ function App() {
                 ? text("사용자 응답 또는 권한 승인을 기다리고 있습니다.", "Waiting for a user response or permission approval.")
                 : text("작업이 차단되었습니다. 세션을 확인해 주세요.", "Work is blocked. Check the session."));
             pushAttention({
-              dedupeKey: `${kind}:${sessionKey}`,
+              dedupeKey: `${kind}:${sessionKey}:${kind === "question" ? nextAgent.activity?.questionId || "" : ""}`,
               kind,
               agentId: id,
               sessionKey,
@@ -4458,7 +4459,7 @@ function App() {
         })()}
       <ToastContainer
         toasts={toasts}
-        onSelect={requestSelectAgent}
+        onSelect={id => { if (agentsRef.current.find(a => a.id === id)?.status === 'question') setChatModeAgents(previous => new Set(previous).add(id)); requestSelectAgent(id); }}
         onDismiss={dismissToast}
       />
       {quickOpen && (

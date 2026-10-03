@@ -4,6 +4,10 @@ import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
+import { SessionNotifications } from './services/session-notifications.mjs';
+import { ActiveQuestions } from './services/active-questions.mjs';
+import { QuestionResponder } from './services/question-responder.mjs';
+import { isQuestionTool } from './shared/chat-prompt.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
@@ -54,6 +58,7 @@ import {
 import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
 import { AccountPool } from "./services/account-pool.mjs";
+import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
@@ -456,6 +461,52 @@ const idlePolicy = new IdleSessionPolicy({
   suspend: id => terminalSessions.action(id, 'sleep'),
 });
 const notificationSettings = notificationPreferences(app.getPath('userData'));
+const sessionNotifications = new SessionNotifications(app.getPath('userData'));
+const activeQuestions = new ActiveQuestions();
+const questionResponder = new QuestionResponder({ entry: id => ptys.get(id), current: currentQuestion,
+  snapshot: id => ptys.get(id)?.filter.viewportText?.() || '' });
+const announcedQuestions = new Map();
+
+function sessionNotificationPreference(id, change) {
+  if (change && !ptys.has(id) && !(monitorService?.state?.agents || []).some(a => a.id === id)
+    && !(usageIndex?.catalog?.agents || []).some(a => a.id === id)) throw new Error('Session unavailable');
+  if (!change) return sessionNotifications.get(id);
+  const next = sessionNotifications.set(id, change.enabled, change.revision);
+  sendEventToAll('session:notifications', { id, ...next });
+  return next;
+}
+
+async function currentQuestion(id) {
+  const entry = ptys.get(id);
+  if (!entry || entry.ssh) return null;
+  const sessionId = agentSessionIds.get(id);
+  const root = accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
+  return activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
+    transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt });
+}
+
+let questionPollRunning = false;
+async function pollActiveQuestions() {
+  if (questionPollRunning || forceClosing) return;
+  questionPollRunning = true;
+  try {
+    activeQuestions.prune(ptys.keys());
+    for (const [id, entry] of ptys) {
+      const result = await currentQuestion(id);
+      if (ptys.get(id) !== entry || !result) continue;
+      const hook = monitorHooks.get(id);
+      if (result.question) {
+        const q = result.question;
+        if (hook?.question_id === q.id && hook.event === 'waiting') continue;
+        publishAgentHookEvent('agent:hook-event', { id, event: 'waiting', hook_event_name: 'TranscriptQuestion',
+          session_id: result.sessionId, tool_name: q.toolName, interactive_question: q.question, question_id: q.id, received_at: Date.now() });
+      } else if (hook?.question_id) {
+        publishAgentHookEvent('agent:hook-event', { id, event: result.lifecycle === 'idle' ? 'done' : 'working',
+          hook_event_name: 'QuestionResolved', session_id: result.sessionId, received_at: Date.now() });
+      }
+    }
+  } finally { questionPollRunning = false; }
+}
 const powerPolicy = new WorkPowerPolicy(powerSaveBlocker);
 const bellTimes = new Map();
 const savedCommands = new SavedCommands(app.getPath("userData"));
@@ -489,6 +540,19 @@ function publishAgentHookEvent(eventName, payload) {
       accountTranscriptRoot(binding.toolId, binding.accountId),
       hookTranscript,
     )) return;
+    if (isQuestionTool(payload.tool_name) && ['tool-start', 'waiting'].includes(payload.event)) {
+      payload = { ...payload, event: 'waiting', interactive_question: payload.interactive_question || payload.tool_input };
+    }
+    if (payload.event === 'waiting' && payload.interactive_question) {
+      const previous = announcedQuestions.get(payload.id);
+      const sameQuestion = previous?.sessionId === payload.session_id && previous?.raw === payload.interactive_question
+        && monitorHooks.get(payload.id)?.event === 'waiting' && (!previous?.id || !payload.question_id || previous.id === payload.question_id);
+      const questionId = payload.question_id || (sameQuestion ? previous?.id : undefined);
+      const knownCall = questionId && previous?.id === questionId && previous?.sessionId === payload.session_id;
+      payload = { ...payload, question_id: questionId, question_notification: !sameQuestion && !knownCall };
+      announcedQuestions.set(payload.id, { sessionId: payload.session_id, raw: payload.interactive_question, id: questionId });
+      if (announcedQuestions.size > 256) announcedQuestions.delete(announcedQuestions.keys().next().value);
+    } else if (['done', 'cancelled', 'session-start'].includes(payload.event)) announcedQuestions.delete(payload.id);
     powerPolicy.hook(payload);
     // Remote/monitor views only need concise state. Keep tool input and the
     // full assistant response inside the local renderer/pet contract.
@@ -500,6 +564,7 @@ function publishAgentHookEvent(eventName, payload) {
       prompt: payload.prompt,
       tool_name: payload.tool_name,
       interactive_question: payload.interactive_question,
+      question_id: payload.question_id,
       received_at: payload.received_at,
       lastTs: Date.now(),
     });
@@ -558,7 +623,8 @@ function publishAgentHookEvent(eventName, payload) {
       });
     } else if (
       payload.event === "waiting" &&
-      (payload.interactive_question || payload.tool_name === "AskUserQuestion")
+      payload.question_notification &&
+      (payload.interactive_question || isQuestionTool(payload.tool_name))
     ) {
       remoteService.notifyAgentQuestion(payload).catch((error) => {
         console.warn("[electron] remote question push failed", error?.message || error);
@@ -587,6 +653,7 @@ let browserReady = null;
 let hookMaintenanceTimer = null;
 let hookMaintenancePromise = null;
 let sessionCatalogTimer = null;
+let questionPollTimer = null;
 
 async function ensureBrowserIntegrationReady() {
   const backgroundRecord = backgroundBrowserTabId
@@ -643,6 +710,7 @@ async function repairActiveHooks() {
 }
 
 function liveOutputForAgents(agents, maxOutput = 80_000) {
+  const policy = notificationSettings.get();
   return (Array.isArray(agents) ? agents : []).map((agent) => {
     // A session with no live PTY (restored on launch, or its process exited) is
     // inactive — surface it as "offline" (비활성) rather than idle (대기), which
@@ -663,6 +731,8 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
     return {
       ...agent,
       ...projectSessionRuntime(agent, live),
+      notifications: sessionNotifications.get(agent.id),
+      notificationPolicy: { completion: policy.completion, question: policy.question },
       status: live ? completedWithoutHook ? "done" : agent.status : "offline",
       output: sanitizeTerminalOutput(
         ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? ""
@@ -751,6 +821,7 @@ function writeMiraControlAgentInput({
   }
   const entry = ptys.get(agent.id);
   const providerSessionId = asString(miraControlProviderSessionId(agent)).trim();
+  if (questionResponder.isBusy(agent.id)) return { ok: false, httpStatus: 409, error: 'An answer is being submitted' };
   const session = miraControlSnapshot().sessions.find(
     (candidate) => candidate.agentId === agent.id
   );
@@ -807,8 +878,8 @@ usageIndex.claudeAccounts = () => [
   ...claudeAccounts.accounts.map(account => ({ ...account, credentialsPath: path.join(claudeAccounts.home(account.id), ".credentials.json") })),
 ];
 
-async function browserUsageSummary(refresh = false, historySelection = null) {
-  return usageIndex.browserSummary(refresh, historySelection);
+async function browserUsageSummary(refresh = false, historySelection = null, access = {}) {
+  return usageIndex.browserSummary(refresh, historySelection, access);
 }
 
 function dispatchRemoteSessionCreate(payload) {
@@ -918,13 +989,17 @@ const sessionModels = new SessionModelService({
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  answerQuestion: (id, request) => questionResponder.answer(id, request),
+  sessionNotifications: sessionNotificationPreference,
+  notificationAllowed: (id, kind) => allowNotification(notificationSettings.get(), kind === 'done' ? 'completion' : kind, false, sessionNotifications.get(id).enabled),
   sessionModels,
   accountPoolApi: (...args) => accountPool.api(...args),
   usageProvider: browserUsageSummary,
-  usageProfileVisibility: (key, hidden) => usageIndex.setProfileVisibility(key, hidden),
+  usageProfileVisibility: (key, hidden, access) => usageIndex.setProfileVisibility(key, hidden, access),
   browserProvider: (request) => handleRemoteBrowser(request),
   writePty(id, data) {
     const agentId = asString(id).trim();
+    if (questionResponder.isBusy(agentId)) return false;
     const syncedAgent = (monitorService?.state?.agents || [])
       .find((agent) => agent.id === agentId);
     if (["starting", "recovering"].includes(asString(syncedAgent?.status).toLowerCase())) {
@@ -937,6 +1012,7 @@ const sessionProviders = {
   },
   async submitPty(id, message) {
     const agentId = asString(id).trim();
+    if (questionResponder.isBusy(agentId) || (await currentQuestion(agentId))?.question) return false;
     const value = asString(message);
     const syncedAgent = (monitorService?.state?.agents || [])
       .find((agent) => agent.id === agentId);
@@ -967,6 +1043,7 @@ const sessionProviders = {
   },
   cancelSession: (id) => {
     const agentId = asString(id).trim();
+    if (questionResponder.isBusy(agentId)) return false;
     const entry = ptys.get(agentId);
     if (!entry) return false;
     try {
@@ -1017,6 +1094,7 @@ monitorService = new LocalDashboardService({
   defaultPort: 4421,
   baseDir: hookBaseDir,
   configName: "monitor-config.json",
+  allowLan: !isCompanyBuild,
   stateProvider: dashboardPwaState,
   providers: sessionProviders,
   trashDocument: (file) => shell.trashItem(file),
@@ -3085,6 +3163,7 @@ const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-
       : { file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", "codex.cmd app-server -c cli_auth_credentials_store=file"] };
   },
 });
+usageIndex.codexUsageAccounts = new CodexUsageAccounts(codexAccounts, accountPool);
 const spawnPty = createTerminalLauncher({
   terminalSessions,
   hookService,
@@ -4779,6 +4858,7 @@ const terminalHandlers = createTerminalHandlers({
 
 async function invokeCommand(event, command, rawArgs) {
   const args = assertInvokeRequest(command, rawArgs);
+  if (command === 'write_pty' && questionResponder.isBusy(args.id)) throw new Error('An answer is being submitted');
   if (isCompanyBuild && COMPANY_DISABLED_COMMANDS.has(command)) {
     throw new Error("Company 빌드에서는 Remote와 Tunnel 기능을 사용할 수 없습니다.");
   }
@@ -4800,6 +4880,7 @@ async function invokeCommand(event, command, rawArgs) {
       throw new Error("이 세션은 다른 작업창에서 사용 중입니다.");
     }
     const result = await terminalHandlers.invoke(event, command, args);
+    if (command === 'attach_terminal' && monitorHooks.get(args.id)?.question_id) sendEventToWebContentsId(event.sender.id, 'agent:hook-event', { ...monitorHooks.get(args.id), question_notification: false });
     if (
       (command === "kill_pty" ||
         (command === "terminal_session_action" &&
@@ -4986,8 +5067,11 @@ async function invokeCommand(event, command, rawArgs) {
     case "power_policy_status": return powerPolicy.status();
     case "notification_policy_check": {
       const focused = BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
-      return allowNotification(notificationSettings.get(), args.kind, focused);
+      return allowNotification(notificationSettings.get(), args.kind, focused, args.id ? sessionNotifications.get(args.id).enabled : true);
     }
+    case "session_notifications_get": return sessionNotificationPreference(asString(args.id));
+    case "session_notifications_set": return sessionNotificationPreference(asString(args.id), args);
+    case "answer_question": return questionResponder.answer(asString(args.id), args);
     case "saved_commands_get": return savedCommands.store.get();
     case "saved_commands_set": return savedCommands.store.set(asObject(args.patch), args.revision);
     case "saved_command_resolve":
@@ -5753,6 +5837,10 @@ async function invokeCommand(event, command, rawArgs) {
       return monitorService.setConfig(asObject(args.config));
     case "monitor_server_status":
       return monitorService.status();
+    case "monitor_lan_set":
+      return monitorService.setLanEnabled(args.enabled === true);
+    case "monitor_lan_reset_code":
+      return monitorService.resetLanCode();
     case "start_monitor_server":
       return monitorService.start();
     case "stop_monitor_server":
@@ -5896,6 +5984,7 @@ app.on("before-quit", (event) => {
     tray = null;
   }
   updaterLifecycle.clearInstallWatchdog();
+  if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
   if (hookMaintenanceTimer) {
     clearInterval(hookMaintenanceTimer);
     hookMaintenanceTimer = null;
@@ -5973,6 +6062,8 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
     await maintainActiveHooks();
   }, 60_000);
   hookMaintenanceTimer.unref?.();
+  questionPollTimer = setInterval(() => { void pollActiveQuestions().catch(error => console.warn('[electron] question monitor unavailable', error.message)); }, 1500);
+  questionPollTimer.unref?.();
   if (!smokeMode) {
     void sessionService.refreshCatalog().then((catalog) => {
       console.log(`[electron] session catalog ready files=${catalog.files}`);

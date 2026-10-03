@@ -19,6 +19,8 @@ export type AgentHookEvent = {
   tool_name?: string | null;
   tool_input?: string | null;
   interactive_question?: string | null;
+  question_id?: string | null;
+  question_notification?: boolean;
   assistant_message?: string | null;
 };
 
@@ -61,9 +63,11 @@ export function deriveAgentStatus(
   now = Date.now()
 ): AgentStatus {
   if (runtimeStatus !== "running") return runtimeStatus;
+  if (activity?.workStatus === 'waiting' && activity.questionId) return 'question';
   if (!activity || now - activity.receivedAt > AGENT_ACTIVITY_STALE_AFTER_MS) {
     return "running";
   }
+  if (activity.workStatus === "waiting" && (activity.interactiveQuestion || isQuestionTool(activity.toolName))) return "question";
   if (
     activity.workStatus === "working" ||
     activity.workStatus === "waiting" ||
@@ -181,8 +185,9 @@ export function applyAgentHookEvent(
       providerSessionId: providerSessionId || previous?.providerSessionId,
       hookEventName: clean(event.hook_event_name, 200) || event.event,
       lastPrompt: prompt || previous?.lastPrompt,
-      toolName: toolName || previous?.toolName,
+      toolName: workStatus === 'waiting' ? toolName : toolName || previous?.toolName,
       toolInput: toolInput || previous?.toolInput,
+      questionId: workStatus === "waiting" ? clean(event.question_id, 200) : undefined,
       interactiveQuestion: workStatus === "waiting"
         ? question || (previous?.workStatus === "waiting" ? previous.interactiveQuestion : undefined)
         : undefined,
@@ -218,6 +223,7 @@ export function isAgentActivelyWorking(
 ) {
   return (
     agent.status === "working" ||
+    agent.status === "question" ||
     agent.status === "waiting" ||
     agent.status === "blocked" ||
     (!!agent.activity &&

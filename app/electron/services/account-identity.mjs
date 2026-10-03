@@ -9,6 +9,21 @@ function readObject(file) {
   } catch { return null; }
 }
 
+// Main-process-only matching key. Require both the workspace account and the
+// user subject; an email or a shared workspace alone cannot identify a login.
+export function storedCodexAccountKey(home) {
+  const tokens = readObject(path.join(home, "auth.json"))?.tokens;
+  if (typeof tokens?.account_id !== "string" || !tokens.account_id || tokens.account_id.length > 512
+    || typeof tokens.id_token !== "string" || tokens.id_token.length > 32768) return null;
+  const parts = tokens.id_token.split(".");
+  if (parts.length !== 3 || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return null;
+  try {
+    const subject = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))?.sub;
+    return typeof subject === "string" && subject && subject.length <= 512
+      ? `${tokens.account_id}:${subject}` : null;
+  } catch { return null; }
+}
+
 // Only an email from the selected CLI home may cross IPC. This is stored
 // metadata, not a server check or verification of a token's signature.
 export function storedAccountIdentity(provider, home) {

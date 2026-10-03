@@ -7,6 +7,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "browser_extensions_list", "browser_extensions_change",
   "idle_preferences_get", "idle_preferences_set", "idle_view_update", "idle_session_suspend",
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
+  "session_notifications_get", "session_notifications_set", "answer_question",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "prepare_worker_roles",
@@ -146,6 +147,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "monitor_config_get",
   "monitor_config_set",
   "monitor_server_status",
+  "monitor_lan_set", "monitor_lan_reset_code",
   "start_monitor_server",
   "stop_monitor_server",
   "ssh_password_set",
@@ -184,6 +186,7 @@ const DELIVERED_EVENTS = Object.freeze([
   "app:close-requested",
   "app:close-cancelled",
   "agent:hook-event",
+  "session:notifications",
   "native-notification:clicked",
   "update:progress",
   "session-detached",
@@ -257,6 +260,29 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "monitor_lan_set":
+      if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
+      break;
+    case "session_notifications_get":
+    case "session_notifications_set":
+      assertId(args);
+      if (command === "session_notifications_set") {
+        if (typeof args.enabled !== "boolean") throw new TypeError("Invalid session notification state");
+        assertNonNegativeInteger(args.revision, "notification revision", Number.MAX_SAFE_INTEGER);
+      }
+      break;
+    case "answer_question":
+      assertId(args);
+      for (const name of ["sessionId", "questionId"]) {
+        if (typeof args[name] !== "string" || !args[name] || args[name].length > 200) throw new TypeError("Invalid question identity");
+      }
+      if (!Array.isArray(args.answers) || !args.answers.length || args.answers.length > 32) throw new TypeError("Invalid question answers");
+      for (const answer of args.answers) {
+        if (!answer || typeof answer.id !== "string" || !answer.id || answer.id.length > 200) throw new TypeError("Invalid answer identity");
+        if (answer.optionIndex !== null) assertNonNegativeInteger(answer.optionIndex, "answer choice", 1000);
+        if (answer.text != null && (typeof answer.text !== "string" || answer.text.length > 2000 || /[\x00-\x1f\x7f]/.test(answer.text))) throw new TypeError("Invalid answer text");
+      }
+      break;
     case "account_session_status":
       assertId(args);
       if (!["codex", "claude"].includes(args.aiToolId)) throw new TypeError("Invalid account provider");

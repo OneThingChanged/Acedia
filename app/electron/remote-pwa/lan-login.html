@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Acedia LAN</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/pwa/styles.css" />
+  <script type="module" src="/pwa/lan-login.js"></script>
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-brand"><span class="brand-mark" aria-hidden="true">M</span><b>Acedia LAN</b></div>
+    <h1>로컬 네트워크 연결</h1>
+    <p class="login-copy">호스트 PC의 Acedia 설정 → 대시보드에 표시된 연결 코드를 입력하세요.</p>
+    <form id="lanForm">
+      <label class="device-label" for="lanCode">연결 코드</label>
+      <input class="lan-code-input" id="lanCode" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="0000 0000" maxlength="9" required autofocus />
+      <button class="login-start device-link" id="lanConnect" type="submit">연결</button>
+    </form>
+    <p class="login-error" id="lanError" role="alert" hidden></p>
+    <p class="login-foot">코드를 갱신하거나 Acedia를 재실행하면 다시 연결해야 합니다.</p>
+  </main>
+</body>
+</html>

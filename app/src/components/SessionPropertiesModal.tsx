@@ -44,7 +44,7 @@ export function SessionPropertiesModal({ agent, project, onUpdateAgent, onAccoun
   const sshHost = sshHostId ? findSshHost(sshHostId) : null;
   const folder = sshHostId ? agent.remoteFolder ?? project?.remoteFolder ?? "" : agent.folder || project?.folder || "";
   const formatDate = (ms?: number) => ms ? new Date(ms).toLocaleString(language) : "—";
-  const statuses: Record<string, string> = { idle: "대기", starting: "시작 중", recovering: "복구 중", running: "실행 중", working: "작업 중", waiting: "응답 대기", blocked: "확인 필요", exited: "종료됨", unreachable: "연결 끊김" };
+  const statuses: Record<string, string> = { idle: "대기", starting: "시작 중", recovering: "복구 중", running: "실행 중", working: "작업 중", question: "질문 · 답변 대기", waiting: "응답 대기", blocked: "확인 필요", exited: "종료됨", unreachable: "연결 끊김" };
   const status = (value: string) => text(statuses[value] ?? value, value);
   function edit<K extends keyof Options>(key: K, value: Options[K]) {
     setSaved(false); setError("");

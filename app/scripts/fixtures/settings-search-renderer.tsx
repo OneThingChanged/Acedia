@@ -24,7 +24,10 @@ window.multiAgentElectron = {
     if (command === "power_policy_status") return {active:false,workingCount:0};
     if (command === "saved_commands_get") return structuredClone(window.fixtureCommandConfig);
     if (command === "saved_commands_set") { window.fixtureCommandConfig = { ...window.fixtureCommandConfig, ...args.patch, revision: window.fixtureCommandConfig.revision + 1 }; return structuredClone(window.fixtureCommandConfig); }
-    if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
+    if (command === "browser_preferences_get") return { revision: 0, home: "https://example.com/", search: "google", zoom: 100, links: "external", compatibility: true, profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
+    if (command === "browser_extensions_list") return [];
+    if (command === "collector_sources") return [];
+    if (command === "collector_status") return { enrolled: false, enabled: false, roots: [], events: 0, pending: 0 };
     if (command === "check_tools") return Object.fromEntries(["codex", "claude", "qwen", "cline"].map(id => [id, { available: true, path: "C:/fixture/" + id + ".exe" }]));
     if (command === "account_pool_choices") return { enabled: true, accounts: [
       { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", label: "Work pool", available: true },

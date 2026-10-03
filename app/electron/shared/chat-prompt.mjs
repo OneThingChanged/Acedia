@@ -14,6 +14,7 @@ export function questionDetails(raw) {
     try { source = JSON.parse(source); } catch { /* a plain-text question */ }
   }
   const questions = Array.isArray(source?.questions) ? source.questions.slice(0, 6).map(q => ({
+    id: bounded(q?.id, 200),
     text: bounded(q?.question || q?.header, 2000),
     options: Array.isArray(q?.options) ? q.options.slice(0, 12).map(option => ({
       label: bounded(typeof option === "string" ? option : option?.label, 300),
@@ -37,9 +38,12 @@ export function parseChatPrompt(status, question, assistantMessage, provider) {
   const details = questionDetails(question);
   if (details.questions.length) {
     const first = details.questions[0];
-    // Claude's single-choice AskUserQuestion is an arrow selector. Codex and
-    // multiple/multi-select questions require the native form; don't flatten
-    // different questions into one menu or guess its key sequence.
+    if (provider === "codex" && details.questions.every(q => q.id && q.options.length && !q.multiSelect)
+      && new Set(details.questions.map(q => q.id)).size === details.questions.length) {
+      return { kind: "question", answerStyle: "codex-form", text: details.text, options: [], questions: details.questions };
+    }
+    // Claude's single-choice AskUserQuestion is an arrow selector. Unidentified
+    // Codex forms and Claude multi-select forms remain native terminal actions.
     const direct = provider === "claude" && details.questions.length === 1 && !first.multiSelect;
     return { kind: "question", answerStyle: direct && first.options.length ? "arrow" : "terminal",
       text: details.text, options: direct ? first.options.map((option, i) => ({ label: option.label, send: String(i + 1) })) : [] };
@@ -61,5 +65,5 @@ export function parseChatPrompt(status, question, assistantMessage, provider) {
 }
 
 export function promptSignature(prompt) {
-  return prompt ? JSON.stringify([prompt.kind, prompt.answerStyle, prompt.text, prompt.options]) : "";
+  return prompt ? JSON.stringify([prompt.kind, prompt.answerStyle, prompt.text, prompt.options, prompt.questions]) : "";
 }

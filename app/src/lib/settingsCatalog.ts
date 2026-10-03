@@ -64,6 +64,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("general.sound", "general", "알림음", "Notification sound", "app", "소리 sound TTS 음성 custom 파일 메시지 message"),
   entry("general.notifications", "general", "Windows 알림 표시", "Show Windows notifications", "app", "notification 알림 배너"),
   entry("general.completion", "general", "완료 알림", "Completion alerts", "saved", "notification done"),
+  entry("general.question", "general", "질문 알림", "Question alerts", "saved", "notification question cyan 답변 대기"),
   entry("general.bell", "general", "터미널 벨 알림", "Terminal bell alerts", "saved", "bell 알림"),
   entry("general.suppressFocused", "general", "앱 집중 중 알림 억제", "Suppress alerts while focused", "saved", "focus 집중 방해 금지"),
   entry("general.power", "general", "절전 방지", "Prevent sleep", "saved", "power awake 작업 중"),
@@ -110,6 +111,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("dashboard.server", "dashboard", "대시보드 서버", "Dashboard server", "action", "로컬 모니터링 시작 중지 local monitor"),
   entry("dashboard.port", "dashboard", "대시보드 포트", "Local dashboard port", "nextService", "서버 server"),
   entry("dashboard.autostart", "dashboard", "대시보드 자동 시작", "Start dashboard when Acedia starts", "nextApp", "autostart startup"),
+  entry("dashboard.lan", "dashboard", "LAN 접속 허용", "Allow LAN access", "action", "로컬 네트워크 공유기 다른 컴퓨터 연결 코드 내부망 local network router connection code"),
   entry("dashboard.usage", "dashboard", "사용량 데이터", "Usage data", "action", "토큰 통계 재수집 rescan ingest tokens"),
   ...[
     ["server", "리모트 서버", "Remote server", "action", "PWA 모바일 시작 중지 mobile"],
@@ -139,7 +141,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
 const byId = new Map(SETTINGS_CATALOG.map(item => [item.id, item]));
 export const settingById = (id: string) => byId.get(id);
 export const availableSettings = (context: SettingsContext) => SETTINGS_CATALOG.filter(item =>
-  !(context.buildVariant === "company" && item.category === "remote") &&
+  !(context.buildVariant === "company" && (item.category === "remote" || item.id === "dashboard.lan")) &&
   (!item.requiresWorkers || availableSessionWorkerOptions(context.disabledTools).length > 0));
 export function settingBreadcrumb(item: SettingDefinition, text: (ko: string, en: string) => string) {
   const category = text(...SETTINGS_CATEGORIES[item.category]);

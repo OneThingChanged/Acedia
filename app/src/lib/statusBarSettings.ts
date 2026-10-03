@@ -31,12 +31,27 @@ export function showUsageProvider(key: string, settings: StatusBarSettings) {
 export function canSelectStatusAccount(group: UsageProviderGroup, settings: StatusBarSettings) {
   return group.profile?.visible !== false && group.profile?.registered !== false && showUsageProvider(group.key, settings);
 }
+function canonicalAccountKey(groups: UsageProviderGroup[], key: string) {
+  if (groups.some(group => group.key === key)) return key;
+  const alias = key.includes(':') ? key : `${key}:default`;
+  return groups.find(group => group.profile?.aliases?.includes(alias))?.key ?? key;
+}
+// Persist identity aliases so a later change of the CLI's default login does
+// not silently move an explicitly selected status-bar account.
+export function migrateStatusAccountAliases(groups: UsageProviderGroup[]) {
+  const latest = loadStatusBar();
+  const selectedAccount = latest.selectedAccount === null ? null : canonicalAccountKey(groups, latest.selectedAccount);
+  const selectedAccounts = latest.selectedAccounts === null ? null : [...new Set(latest.selectedAccounts.map(key => canonicalAccountKey(groups, key)))];
+  if (selectedAccount === latest.selectedAccount && JSON.stringify(selectedAccounts) === JSON.stringify(latest.selectedAccounts)) return latest;
+  return updateStatusBar({ selectedAccount, selectedAccounts });
+}
 export function selectStatusAccount(groups: UsageProviderGroup[], settings: StatusBarSettings): UsageProviderGroup | null {
   const available = groups.filter(group => canSelectStatusAccount(group, settings));
-  const selected = available.find(group => group.key === settings.selectedAccount);
+  const selectedKey = settings.selectedAccount && canonicalAccountKey(groups, settings.selectedAccount);
+  const selected = available.find(group => group.key === selectedKey);
   if (selected) return selected;
   const previousProvider = settings.selectedAccount?.split(':')[0];
-  const isDefault = (group: UsageProviderGroup) => group.profile?.id === 'default' || !group.key.includes(':');
+  const isDefault = (group: UsageProviderGroup) => group.profile?.id === 'default' || !group.key.includes(':') || Boolean(group.profile?.aliases?.includes(`${group.profile.provider}:default`));
   return available.find(group => isDefault(group) && group.key.split(':')[0] === previousProvider)
     ?? available.find(isDefault) ?? available[0] ?? null;
 }
@@ -46,13 +61,13 @@ export function selectStatusAccounts(groups: UsageProviderGroup[], settings: Sta
     const initial = selectStatusAccount(groups, settings);
     return initial ? [initial] : [];
   }
-  return settings.selectedAccounts.flatMap(key => {
+  return [...new Set(settings.selectedAccounts.map(key => canonicalAccountKey(groups, key)))].flatMap(key => {
     const group = groups.find(group => group.key === key && canSelectStatusAccount(group, settings));
     return group ? [group] : [];
   });
 }
 export function toggleStatusAccount(groups: UsageProviderGroup[], key: string) {
-  const latest = loadStatusBar();
+  const latest = migrateStatusAccountAliases(groups);
   const keys = latest.selectedAccounts ?? selectStatusAccounts(groups, latest).map(group => group.key);
   return updateStatusBar({ selectedAccounts: keys.includes(key) ? keys.filter(value => value !== key) : [...keys, key] });
 }

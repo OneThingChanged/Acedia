@@ -10,8 +10,8 @@ const require = createRequire(import.meta.url);
 const appRoot = path.resolve(import.meta.dirname, "..");
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const questions = JSON.stringify({ questions: [
-  { question: "어느 모델을 사용할까요?", options: [{ label: "Codex", description: "코딩 작업" }, { label: "Claude", description: "문서 작업" }] },
-  { question: "어느 프로젝트에서 진행할까요?", options: [{ label: "현재 프로젝트" }, { label: "새 프로젝트" }] },
+  { id: 'model', question: "어느 모델을 사용할까요?", options: [{ label: "Codex", description: "코딩 작업" }, { label: "Claude", description: "문서 작업" }] },
+  { id: 'project', question: "어느 프로젝트에서 진행할까요?", options: [{ label: "현재 프로젝트" }, { label: "새 프로젝트" }] },
 ] });
 const singleQuestion = JSON.stringify({ questions: [{ question: "선택해 주세요", options: [{ label: "A" }, { label: "B" }] }] });
 const blocks = [
@@ -37,8 +37,8 @@ async function exerciseDesktop(win, directory) {
   await patch({ chat: baseChat, state: { question: "어떤 경로인가요?\n전체 경로를 알려주세요." } });
   await waitFor(win, "document.querySelector('.chat-prompt-text')?.textContent.includes('전체 경로')");
   await patch({ state: { question: questions, questionToken: 2 } });
-  await waitFor(win, "document.querySelector('.chat-prompt-text')?.textContent.includes('어느 프로젝트')");
-  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-text').textContent.includes('코딩 작업') && document.querySelectorAll('.chat-prompt-option').length===1"), "Codex question descriptions or native terminal action missing");
+  await waitFor(win, "document.querySelector('.question-form')?.textContent.includes('어느 프로젝트')");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.question-form').textContent.includes('코딩 작업') && document.querySelectorAll('.question-form input[type=radio]').length===6"), "Codex question fields or descriptions missing");
   await win.webContents.executeJavaScript("document.querySelector('.chat-scroll').scrollTop=0");
   const layout = await win.webContents.executeJavaScript(`(() => { const p=document.querySelector('.chat-prompt').getBoundingClientRect(); return { visible:p.top>=0 && p.bottom<=innerHeight, scroll:document.querySelector('.chat-scroll').scrollTop }; })()`);
   assert(layout.visible && layout.scroll === 0, "Desktop question was hidden while reading old messages");
@@ -47,7 +47,12 @@ async function exerciseDesktop(win, directory) {
   await patch({ state: { agentStatus: "working" } });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   await patch({ chat: { ...baseChat, pendingQuestion: { id: "native-1", toolName: "functions.request_user_input", question: questions } } });
-  await waitFor(win, "document.querySelector('.chat-prompt-text')?.textContent.includes('어느 프로젝트')");
+  await waitFor(win, "document.querySelector('.question-form') && !document.querySelector('.question-form input').disabled");
+  await win.webContents.executeJavaScript(`document.querySelectorAll('.question-form input')[1].click(); document.querySelectorAll('.question-form input')[5].click(); const input=document.querySelector('.question-form .question-text-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'직접 지정'); input.dispatchEvent(new Event('input',{bubbles:true}));`);
+  await waitFor(win, "!document.querySelector('.question-submit').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.question-submit').click()");
+  await waitFor(win, "window.questionFixture.answers.length===1");
+  assert(await win.webContents.executeJavaScript("window.questionFixture.answers[0].questionId==='native-1' && window.questionFixture.answers[0].answers[1].text==='직접 지정'"), 'Desktop structured answer or call identity lost');
   await patch({ chat: baseChat });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   await patch({ chat: { ...baseChat, unsupported: true }, state: { agentStatus: "waiting", question: null, questionToken: 3 } });
@@ -70,8 +75,12 @@ async function exerciseDesktop(win, directory) {
 
 async function exerciseRemote(BrowserWindow, directory) {
   let chat = baseChat;
-  const web = new RemoteDashboardService({ baseDir: path.join(directory, "remote"), chatProvider: async () => chat });
-  const agent = { id: "fixture", name: "Question fixture", projectId: "p", aiToolId: "codex", status: "waiting", hook: { event: "waiting", received_at: 1 } };
+  const answers = [];
+  let notifications = { enabled: true, revision: 0 };
+  const web = new RemoteDashboardService({ baseDir: path.join(directory, "remote"), chatProvider: async () => chat,
+    answerQuestion: async (id, answer) => { answers.push(answer); return { status: 'sent' }; },
+    sessionNotifications: (id, change) => { if (change) notifications = { enabled: change.enabled, revision: notifications.revision + 1 }; agent.notifications = notifications; sync(); return notifications; } });
+  const agent = { id: "fixture", name: "Question fixture", projectId: "p", aiToolId: "codex", status: "waiting", notifications, hook: { event: "waiting", received_at: 1 } };
   const sync = () => web.syncAgents([{ ...agent, hook: { ...agent.hook } }]);
   web.config.server_port = 0;
   web.syncView({ language: "ko", projects: [{ id: "p", name: "Question project", folder: directory }], agents: [{ id: "fixture", projectId: "p", aiToolId: "codex" }] });
@@ -94,16 +103,21 @@ async function exerciseRemote(BrowserWindow, directory) {
         agent.hook = { event: "waiting", received_at: 3, interactive_question: questions }; sync();
         await waitFor(win, "document.querySelector('#chatPrompt').textContent.includes('어느 프로젝트')");
         const layout = await win.webContents.executeJavaScript(`(() => { const p=document.querySelector('#chatPrompt').getBoundingClientRect(), b=document.querySelector('#chatPrompt button').getBoundingClientRect();return {visible:p.top>=0&&p.bottom<=innerHeight,actionVisible:b.top>=p.top&&b.bottom<=p.bottom+1,scroll:document.querySelector('#chatView').scrollTop,overflow:document.documentElement.scrollWidth>innerWidth+1,buttons:document.querySelectorAll('#chatPrompt button').length}; })()`);
-        assert(layout.visible && layout.actionVisible && layout.scroll === 0 && !layout.overflow && layout.buttons === 1, `Remote pinned question layout failed: ${JSON.stringify(layout)}`);
+        assert(layout.visible && layout.actionVisible && layout.scroll === 0 && !layout.overflow && layout.buttons === 2, `Remote pinned question layout failed: ${JSON.stringify(layout)}`);
         await new Promise(resolve => setTimeout(resolve, 300));
         await fs.writeFile(path.resolve(appRoot, `../output/chat-question-${width}.png`), (await win.webContents.capturePage()).toPNG());
-        await win.webContents.executeJavaScript("document.querySelector('#chatPrompt button').click()");
+        await win.webContents.executeJavaScript("[...document.querySelectorAll('#chatPrompt button')].at(-1).click()");
         await waitFor(win, "document.querySelector('.app-shell').dataset.sessionMode==='term' && document.querySelector('#chatPrompt').hidden");
         await win.webContents.executeJavaScript("document.querySelector('#sessionMode [data-mode=chat]').click()");
         agent.status = "working"; agent.hook = { event: "tool-end", interactive_question: questions }; sync();
         await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         chat = { ...baseChat, pendingQuestion: { id: "native-1", toolName: "functions.request_user_input", question: questions } };
         await waitFor(win, "!document.querySelector('#chatPrompt').hidden && document.querySelector('#chatPrompt').textContent.includes('어느 프로젝트')");
+        await win.webContents.executeJavaScript("document.querySelectorAll('#chatPrompt input[type=radio]')[1].click(); document.querySelectorAll('#chatPrompt input[type=radio]')[3].click(); document.querySelector('#chatPrompt .question-submit').click()");
+        await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt-hint').textContent.includes('답변을 보냈습니다')");
+        assert(answers.at(-1).answers[0].optionIndex === 1 && answers.at(-1).questionId === 'native-1', 'Remote answer changed choices or identity');
+        await win.webContents.executeJavaScript("document.querySelector('#sessionNotifications').click()");
+        await waitFor(win, `document.querySelector('#sessionNotifications').getAttribute('aria-pressed')==='${!notifications.enabled}'`);
         chat = baseChat;
         await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         chat = { ...baseChat, unsupported: true }; agent.status = "waiting"; agent.hook = { event: "waiting", received_at: 4 }; sync();
@@ -158,6 +172,6 @@ if (process.versions.electron) {
     if (code !== 0) throw new Error(`Question smoke failed: ${code}`);
   } finally {
     if (path.dirname(directory) !== path.resolve(os.tmpdir()) || !path.basename(directory).startsWith("acedia-question-smoke-")) throw new Error("Unexpected fixture path");
-    await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await fs.rm(directory, { recursive: true, maxRetries: 5, retryDelay: 200 });
   }
 }

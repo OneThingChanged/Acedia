@@ -688,7 +688,7 @@ export class UsageService {
     return this.transcriptRefresh;
   }
 
-  async browserSummary(refresh = false, historySelection = null) {
+  async browserSummary(refresh = false, historySelection = null, access = {}) {
     // Never put transcript discovery or a multi-GB backlog on the HTTP response
     // path. The client polls the stored aggregates while collection continues.
     void this.refreshTranscriptUsage(refresh).catch((error) => {
@@ -700,8 +700,8 @@ export class UsageService {
       });
     }
     return {
-      ...this.rateLimitSummary(),
-      refreshPending: Boolean(this.rateLimitRefresh),
+      ...this.rateLimitSummary(access),
+      refreshPending: Boolean(this.rateLimitRefresh || this.codexUsageAccounts?.refreshing),
       tokensUpdatedAt: this.transcriptUpdatedAt,
       tokensRefreshPending: Boolean(this.transcriptRefresh),
       tokensRefreshFailed: this.transcriptRefreshFailed,
@@ -906,7 +906,7 @@ export class UsageService {
 
   async refreshLiveCodexRateLimits() {
     if (!this.codexUsageFetcher) return;
-    await this.refreshAccounts("codex", this.codexAccounts?.() ?? [{ id: "default" }], async account => {
+    await this.refreshAccounts("codex", this.codexUsageAccounts?.localAccounts() ?? this.codexAccounts?.() ?? [{ id: "default" }], async account => {
       const result = await this.codexUsageFetcher(account);
       if (result?.status !== "success") return result?.status || "failed";
       const snapshot = codexUsageSnapshot(result.data, account);
@@ -919,6 +919,7 @@ export class UsageService {
   async refreshRateLimits() {
     if (this.rateLimitRefresh) return this.rateLimitRefresh;
     this.rateLimitRefresh = (async () => {
+      this.codexUsageAccounts?.refresh();
       await Promise.allSettled([
         // Cached transcripts remain a fallback even when the live request fails.
         this.refreshCodexRateLimits().catch(() => {}).then(() => this.refreshLiveCodexRateLimits()),
@@ -950,7 +951,7 @@ export class UsageService {
     } catch (error) { db.exec("ROLLBACK TO agy_quota; RELEASE agy_quota"); throw error; }
   }
 
-  usageProfile(limitId) {
+  usageProfile(limitId, codexRegistry = this.codexUsageAccounts?.snapshot(this.catalog.agents).accounts) {
     if (limitId === "agy" || limitId.startsWith("agy:")) return {
       key: "agy:default", provider: "agy", id: "default", label: "Antigravity", registered: true,
       current: true, archived: false, refresh: this.accountRefresh.get("agy:default"),
@@ -959,36 +960,66 @@ export class UsageService {
     if (!match) return null;
     if (match[1] === "codex" && limitId !== "codex" && !match[2]) return null;
     const provider = match[1], id = match[2] || "default";
-    const registry = this.accountProfiles?.(provider);
-    const account = registry?.find(account => account.id === id);
+    const registry = provider === "codex" && codexRegistry ? codexRegistry : this.accountProfiles?.(provider);
+    const account = registry?.find(account => account.id === id || account.aliases?.includes(`${provider}:${id}`));
+    const accountId = account?.id ?? id;
     return {
-      key: `${provider}:${id}`, provider, id,
+      key: `${provider}:${accountId}`, provider, id: accountId,
       label: account?.label || (id === "default" ? provider === "codex" ? "Codex" : "Claude" : id),
       // Recognize the exact legacy path-shaped label as a reversible display
       // hint only, never as proof of duplicate credentials.
       archived: /^(?:[a-z]:[\\/]|\\\\).+\s+\(Company 이전\)$/i.test(account?.label || ""),
       registered: id === "default" || !registry || !!account,
-      current: id === "default" || this.catalog.agents.some(agent => !agent.sshHostId && agent.aiToolId === provider && (agent[`${provider}AccountId`] || "default") === id),
-      refresh: this.accountRefresh.get(`${provider}:${id}`),
+      current: account?.current ?? (id === "default" || this.catalog.agents.some(agent => !agent.sshHostId && agent.aiToolId === provider && (agent[`${provider}AccountId`] || "default") === id)),
+      refresh: account?.refresh ?? this.accountRefresh.get(`${provider}:${id}`),
+      ...(account?.source ? { source: account.source, aliases: account.aliases || [], routing: account.routing } : {}),
     };
   }
 
-  setProfileVisibility(profileKey, hidden) {
+  setProfileVisibility(profileKey, hidden, access = {}) {
     if (typeof profileKey !== "string" || !/^(codex|claude|agy):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(profileKey) || typeof hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
     const [provider, accountId] = profileKey.split(":");
     if (provider === "agy" && accountId !== "default") throw new TypeError("Unknown usage profile");
-    const known = accountId === "default" || this.accountProfiles?.(provider)?.some(account => account.id === accountId) || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
+    const profile = this.usageProfile(accountId === "default" ? provider : profileKey);
+    const stored = this.db().prepare("SELECT source_path FROM usage_rate_limits WHERE limit_id=?").get(accountId === "default" ? provider : profileKey);
+    if (access.canManageAccounts === false && (profile?.source === "pool" || stored?.source_path === "codex:account-pool")) {
+      throw Object.assign(new Error("Account management permission required"), { status: 403 });
+    }
+    const known = accountId === "default" || (profile?.registered && (profile.source || this.accountProfiles?.(provider)?.some(account => account.id === accountId)))
+      || this.db().prepare("SELECT limit_id FROM usage_rate_limits").all().some(row => this.usageProfile(row.limit_id)?.key === profileKey);
     if (!known) throw new TypeError("Unknown usage profile");
-    this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profileKey, Number(hidden));
-    return this.rateLimitSummary();
+    this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO UPDATE SET hidden=excluded.hidden").run(profile?.key ?? profileKey, Number(hidden));
+    return this.rateLimitSummary(access);
   }
 
-  rateLimitSummary() {
+  rateLimitSummary({ canManageAccounts = true } = {}) {
     this.syncAntigravityQuota();
+    const codex = this.codexUsageAccounts?.snapshot(this.catalog.agents);
+    // Keep the last pool quota for removed profiles, without rewriting SQLite
+    // on every status-bar poll. Live pool data remains the authoritative source.
+    this.codexPoolSnapshots ??= new Map();
+    for (const snapshot of codex?.snapshots ?? []) {
+      const signature = JSON.stringify(snapshot);
+      if (this.codexPoolSnapshots.get(snapshot.limitId) === signature) continue;
+      this.writeRateLimitSnapshot(snapshot);
+      this.codexPoolSnapshots.set(snapshot.limitId, signature);
+    }
     const visibility = new Map(this.db().prepare("SELECT profile_key, hidden FROM usage_profile_visibility").all().map(row => [row.profile_key, !!row.hidden]));
-    const profileFor = limitId => {
-      const profile = this.usageProfile(limitId);
-      return profile ? { ...profile, hidden: visibility.get(profile.key) === true, visible: visibility.has(profile.key) ? !visibility.get(profile.key) : profile.registered && !profile.archived } : null;
+    const profileFor = (limitId, row = null) => {
+      const profile = this.usageProfile(limitId, codex?.accounts);
+      if (!profile) return null;
+      if (!profile.registered && row?.source_path === "codex:account-pool") {
+        profile.source = "pool";
+        profile.label = row.limit_name?.replace(/^Codex · /, "") || profile.label;
+      }
+      const aliases = (profile.aliases || []).filter(key => visibility.has(key));
+      if (!visibility.has(profile.key) && aliases.length) {
+        const inherited = aliases.every(key => visibility.get(key));
+        this.db().prepare("INSERT INTO usage_profile_visibility(profile_key,hidden) VALUES(?,?) ON CONFLICT(profile_key) DO NOTHING").run(profile.key, Number(inherited));
+        visibility.set(profile.key, inherited);
+      }
+      const hidden = visibility.get(profile.key);
+      return { ...profile, hidden: hidden === true, visible: hidden !== undefined ? !hidden : profile.registered && !profile.archived };
     };
     const freshAfter = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
     const rows = this.db().prepare(`SELECT * FROM usage_rate_limits
@@ -1017,13 +1048,21 @@ export class UsageService {
         balance: row.credit_balance ?? null,
       },
       updatedAt: Number(row.updated_at) * 1000,
-      profile: profileFor(row.limit_id),
-    }));
+      profile: profileFor(row.limit_id, row),
+    })).filter(limit => limit.profile?.source !== "pool" || !limit.profile.registered);
+    // Aliased local snapshots may belong to an older login. Never transfer
+    // those percentages to a registered pool account, even if they are newer.
+    for (const snapshot of codex?.snapshots ?? []) limits.push({
+      limitId: snapshot.limitId, limitName: snapshot.limitName, planType: snapshot.planType,
+      primary: snapshot.primary, secondary: snapshot.secondary,
+      credits: { hasCredits: snapshot.hasCredits, unlimited: snapshot.unlimited, balance: snapshot.creditBalance },
+      updatedAt: snapshot.updatedAt * 1000, profile: profileFor(snapshot.limitId),
+    });
     // Inventory is independent of snapshots: registering an account must not
     // require starting a paid model request just to appear in the UI.
     const profiles = new Map(limits.filter(limit => limit.profile).map(limit => [limit.profile.key, limit.profile]));
-    for (const provider of ["codex", "claude"]) for (const account of this.accountProfiles?.(provider) ?? []) {
-      const profile = profileFor(`${provider}:${account.id}`);
+    for (const provider of ["codex", "claude"]) for (const account of (provider === "codex" ? codex?.accounts : null) ?? this.accountProfiles?.(provider) ?? []) {
+      const profile = profileFor(account.id === "default" ? provider : `${provider}:${account.id}`);
       if (profile) profiles.set(profile.key, profile);
     }
     for (const provider of ["codex", "claude", "agy"]) {
@@ -1031,10 +1070,12 @@ export class UsageService {
       const profile = profileFor(provider);
       profiles.set(profile.key, profile);
     }
+    const visibleLimits = canManageAccounts ? limits : limits.filter(limit => limit.profile?.source !== "pool");
     return {
-      updatedAt: limits.reduce((latest, limit) => Math.max(latest, limit.updatedAt), 0),
-      limits,
-      profiles: [...profiles.values()],
+      updatedAt: visibleLimits.reduce((latest, limit) => Math.max(latest, limit.updatedAt), 0),
+      limits: visibleLimits,
+      profiles: [...profiles.values()].filter(profile => canManageAccounts || profile.source !== "pool"),
+      refreshing: codex?.refreshing ?? false,
     };
   }
 

@@ -192,8 +192,8 @@ export function deriveTurnLifecycle(text, tool) {
 // A native Codex question can be logged without a PermissionRequest hook.
 // Track its call identity, not the position of the next unrelated tool output.
 // Async questions don't pause the CLI and aren't native answer forms.
-export function derivePendingQuestion(text, tool) {
-  const pending = new Map();
+export function derivePendingQuestion(text, tool, previous = null) {
+  const pending = new Map(previous ? [[previous.id, previous]] : []);
   const add = (id, name, input) => {
     if (!id || !isQuestionTool(name)) return;
     pending.set(id, { id, toolName: name, question: typeof input === "string" ? input : JSON.stringify(input ?? {}) });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { settingTarget } from './SettingsSearch';
+import { SettingScope, settingTarget } from './SettingsSearch';
 type Extension = { id: string; name: string; version: string; directory: string; enabled: boolean; status: string; error: string };
 export function BrowserExtensionsPanel({ profiles }: { profiles: { id: string; label: string }[] }) {
   const { text } = useAppLanguage();
@@ -30,7 +30,7 @@ export function BrowserExtensionsPanel({ profiles }: { profiles: { id: string; l
     finally { setBusy(false); }
   };
   return <section className="agent-settings-card" style={{ marginTop: 16, padding: 16 }} {...settingTarget('browser.extensions')}>
-    <h4>{text('브라우저 확장 프로그램', 'Browser extensions')}</h4>
+    <h4>{text('브라우저 확장 프로그램', 'Browser extensions')}<SettingScope id="browser.extensions"/></h4>
     <p className="check-hint">{text('manifest.json이 들어 있는 압축 해제된 확장 폴더를 선택하세요. 신뢰하는 확장만 추가하세요. 확장은 허용된 사이트의 내용을 읽거나 변경할 수 있습니다.', 'Select an unpacked extension folder containing manifest.json. Add extensions you trust: they can read or change permitted sites.')}</p>
     <p className="check-hint">{text('웹스토어 직접 설치·CRX 파일은 지원하지 않습니다. Chrome API 일부만 지원하므로 확장에 따라 동작하지 않을 수 있습니다. 확장 버튼·팝업 UI는 현재 지원하지 않습니다.', 'Direct Web Store installation and CRX files are not supported. Some Chrome APIs are unavailable, so compatibility varies. Extension toolbar buttons and popups are not currently supported.')}</p>
     <fieldset disabled={busy} style={{ border: 0, padding: 0, minWidth: 0 }}>

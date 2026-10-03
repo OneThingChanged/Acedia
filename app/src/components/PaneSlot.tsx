@@ -30,6 +30,8 @@ import type { AppThemeId } from "../lib/appTheme";
 import { activeAgentInLeaf, pathEq } from "../lib/layout";
 import { SessionServerButton } from "./SessionServerButton";
 import { SessionAccountIndicator } from "./SessionAccountIndicator";
+import { SessionNotificationButton } from "./SessionNotificationButton";
+import { SessionToolbarIcon } from "./SessionToolbarIcon";
 import {
   docFileExtension,
   docTabBasename,
@@ -995,6 +997,7 @@ export function PaneSlot({
                 {tool.icon}
               </span>
               <span className="tab-name">{tabAgent.name}</span>
+              {tabAgent.status === "question" && <span className="status status-question" role="img" aria-label={text("질문 · 답변 대기", "Question · answer needed")} title={text("질문 · 답변 대기", "Question · answer needed")}/>}
               {tabAgent.deferredStart && tabAgent.resumeEligible && <span className="status status-standby"
                 title={text("대기 · 클릭하면 시작", "Standby · click to start")} />}
               {tabAgent.dangerous && (
@@ -1032,16 +1035,17 @@ export function PaneSlot({
         {activeAgent && !activeAgent.sshHostId && !ctx.projects.find(project => project.id === activeAgent.projectId)?.sshHostId && ["codex", "claude"].includes(activeAgent.aiToolId) && isElectronRuntime() && <SessionAccountIndicator agent={activeAgent} />}
         {activeAgent && isElectronRuntime() && <SessionServerButton agent={activeAgent} projects={ctx.projects} />}
         {activeAgentId && ctx.onRecoverSession && !activeAgent?.deferredStart && (
-          <button className="pane-chat-toggle" onClick={() => {
+          <button className="pane-chat-toggle session-icon-button" onClick={() => {
             setRecoveryError(""); setRecoveryOpen(!recoveryOpen);
-          }} title={text("응답 없는 세션 복구", "Recover an unresponsive session")}>
-            {text("세션 복구", "Recover session")}
+          }} data-tooltip={text("세션 복구", "Recover session")} aria-label={text("세션 복구", "Recover session")} aria-expanded={recoveryOpen}>
+            <SessionToolbarIcon name="recover"/>
           </button>
         )}
-        {activeAgentId && activeAgent?.aiToolId === "codex" && isElectronRuntime() && <button className="pane-chat-toggle" onClick={()=>setWorkersOpen(v=>!v)} aria-pressed={workersOpen}>{text("작업자", "Workers")}</button>}
+        {isElectronRuntime() && <SessionNotificationButton key={activeAgentId} agentId={activeAgentId}/>}
+        {activeAgentId && activeAgent?.aiToolId === "codex" && isElectronRuntime() && <button className="pane-chat-toggle session-icon-button" onClick={()=>setWorkersOpen(v=>!v)} aria-pressed={workersOpen} aria-label={text("작업자", "Workers")} data-tooltip={text("작업자", "Workers")}><SessionToolbarIcon name="workers"/></button>}
         {activeAgentId && toolSupportsChat(activeAgent?.aiToolId) && (
           <button
-            className={`pane-chat-toggle ${chatMode ? "on" : ""}`}
+            className={`pane-chat-toggle session-icon-button ${chatMode ? "on" : ""}`}
             onClick={(e) => {
               e.stopPropagation();
               // Focus this pane too — otherwise an inactive pane's chat view
@@ -1049,9 +1053,10 @@ export function PaneSlot({
               ctx.setActivePath(path);
               ctx.onToggleChat(activeAgentId);
             }}
-            title={chatMode ? text("터미널 뷰로 전환", "Switch to terminal view") : text("대화(채팅) 뷰로 전환", "Switch to conversation view")}
+            data-tooltip={chatMode ? text("터미널 뷰로 전환", "Switch to terminal view") : text("대화(채팅) 뷰로 전환", "Switch to conversation view")}
+            aria-label={chatMode ? text("터미널 뷰로 전환", "Switch to terminal view") : text("대화(채팅) 뷰로 전환", "Switch to conversation view")}
           >
-            {chatMode ? text("⌗ 터미널", "⌗ Terminal") : text("💬 대화", "💬 Chat")}
+            <SessionToolbarIcon name={chatMode ? "terminal" : "chat"}/>
           </button>
         )}
       </div>}

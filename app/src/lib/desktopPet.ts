@@ -107,6 +107,7 @@ export function buildDesktopPetUpdate(
       agent.status === "recovering" ||
       agent.status === "running" ||
       agent.status === "working" ||
+      agent.status === "question" ||
       agent.status === "waiting" ||
       agent.status === "blocked"
       )

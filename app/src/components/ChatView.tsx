@@ -18,6 +18,8 @@ import { mergeChatHistory } from "../lib/chatHistory";
 import type { ChatBlock, ChatBlocksResult, ChatDiffLine, ConversationArtifact } from "../platform/ipcContract";
 import type { AgentStatus } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
+import { QuestionForm } from './QuestionForm';
+import type { ChatAnswer } from '../../electron/shared/chat-prompt.mjs';
 
 // While the agent is working, composer sends are queued and drained one at a
 // time once it's ready for input (with a short cooldown so a message doesn't
@@ -684,6 +686,18 @@ export function ChatView({
     }
   };
 
+  const respondQuestions = async (answers: ChatAnswer[]) => {
+    if (!nativeQuestion || respondingRef.current || answeredPromptSig === promptSig) return;
+    respondingRef.current = true; setRespondingPromptSig(promptSig); setPromptError('');
+    try {
+      await invoke('answer_question', { id: agentId, sessionId, questionId: nativeQuestion.id, answers });
+      if (promptSigRef.current === promptSig) setAnsweredPromptSig(promptSig);
+      window.setTimeout(() => fetchRef.current(), 400);
+    } catch {
+      if (promptSigRef.current === promptSig) setPromptError(text('답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요.', 'Could not send the answer. Check the question in the terminal.'));
+    } finally { respondingRef.current = false; setRespondingPromptSig(''); }
+  };
+
   // Esc cancels the in-progress turn from anywhere in the focused chat pane
   // (not just when the composer has focus) while the agent is working.
   useEffect(() => {
@@ -758,7 +772,7 @@ export function ChatView({
     const value = raw.trim();
     if (!value) return;
     const cooled = Date.now() - lastDispatchRef.current >= QUEUE_COOLDOWN_MS;
-    if (alive && !busy && queue.length === 0 && cooled) dispatch(value);
+    if (alive && !busy && !prompt && queue.length === 0 && cooled) dispatch(value);
     else mutateQueue((q) => [...q, value]);
   };
 
@@ -840,12 +854,15 @@ export function ChatView({
       {prompt && (
         <div className={`chat-prompt ${prompt.kind}`} role="status" aria-live="polite">
           <strong className="chat-prompt-heading">{text("답변 대기 중", "Answer needed")}</strong>
-          <div className="chat-prompt-text">
+          {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
+            disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
+          : <div className="chat-prompt-text">
             {prompt.kind === "permission" ? "🔒 " : "❓ "}
             {prompt.text || text("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.", "The agent is waiting for a question or approval. Open the terminal to review and answer it.")}
-          </div>
+          </div>}
           <div className="chat-prompt-hint">{answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
+            : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
             : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
           {promptError && <div className="chat-prompt-error" role="alert">{promptError}</div>}
           <div className="chat-prompt-options">
@@ -886,7 +903,7 @@ export function ChatView({
         </div>
       )}
       {status !== "unsupported" && (
-        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy} tool={tool} folder={folder} />
+        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} tool={tool} folder={folder} />
       )}
     </div>
   );
@@ -902,12 +919,14 @@ function ChatComposer({
   storageKey,
   onSend,
   busy,
+  waitingForAnswer,
   tool,
   folder,
 }: {
   storageKey: string;
   onSend: (text: string) => void;
   busy: boolean;
+  waitingForAnswer: boolean;
   tool?: string;
   folder?: string;
 }) {
@@ -1201,7 +1220,7 @@ function ChatComposer({
           onDragOver={onDragOver}
           onDrop={onDrop}
           placeholder={
-            busy
+            waitingForAnswer ? localize('답변 대기 중 · 새 메시지는 예약됩니다', 'Waiting for an answer · new messages will be queued') : busy
               ? localize("작업 중 — Enter로 예약(대기열에 추가) · Ctrl+Enter 줄바꿈", "Working — Enter queues · Ctrl+Enter inserts a line break")
               : localize("이 세션으로 전송…  (Enter 전송 · Ctrl+Enter 줄바꿈 · /명령 @파일)", "Send to this session… (Enter sends · Ctrl+Enter line break · /command @file)")
           }

@@ -23,12 +23,13 @@ export function requestStatus(record) {
   return { completed: '완료', failed: '실패' }[record.status] || '처리 중…';
 }
 
-export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) {
+export function createAccountPoolView(root, { sessionLabel = (id) => id, onChange = () => {} } = {}) {
   const pageUrl = new URL(location.href);
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
   const dashboardUrl = new URL(location.pathname, location.origin); dashboardUrl.searchParams.set('usage', '1'); dashboardUrl.searchParams.set('accounts', '1');
   let returnTimer = null;
   let data = null, busy = false, visible = false, timer = null, entered = false, editingId = null;
+  let usageSignature = '';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text) node.textContent = t(text); if (className) node.className = className; return node; };
   const tabs = el('div', '', 'pool-tabs'); tabs.setAttribute('aria-label', t('사용량 보기'));
   const history = el('button', '사용량'); const accounts = el('button', '계정 관리·분산');
@@ -77,7 +78,11 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     busy = true; panel.setAttribute('aria-busy', 'true');
     if (!quiet) status.textContent = t('처리 중…');
     for (const node of panel.querySelectorAll('button,input')) node.disabled = true;
-    try { data = await task(); status.textContent = ''; }
+    try {
+      data = await task(); status.textContent = '';
+      const signature = JSON.stringify(data.accounts.map(account => [account.id, account.label, account.enabled, account.state, account.limitsAt]));
+      if (signature !== usageSignature) { usageSignature = signature; onChange(); }
+    }
     catch (error) { status.textContent = error.message; }
     finally { busy = false; panel.setAttribute('aria-busy', 'false'); render(); schedule(); }
   }
@@ -217,7 +222,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id } = {}) 
     history.setAttribute('aria-pressed', String(!value)); accounts.setAttribute('aria-pressed', String(value));
     if (value) void run(() => api()); else clearTimeout(timer);
   }
-  history.onclick = () => select(false); accounts.onclick = () => select(true);
+  history.onclick = () => { select(false); onChange(); }; accounts.onclick = () => select(true);
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     const account = data?.accounts.find(a => a.id === editingId);
     const result = await api(editingId ? { action: 'update', id: editingId, label: input.value, enabled: Boolean(account?.enabled) } : { action: 'create', label: input.value });

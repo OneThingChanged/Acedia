@@ -48,10 +48,10 @@ async function exercise() {
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
   const allowed = new Set(["idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
-    "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status", "account_pool_choices"]);
+    "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status", "account_pool_choices", "browser_extensions_list", "collector_status", "collector_sources"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
   await query("환경 변수");
-  check(document.querySelectorAll("[data-setting-result]").length === 4, "Expected four provider environment results");
+  check(document.querySelectorAll("[data-setting-result]").length === 5, "Expected five provider environment results");
   key(input(), "ArrowDown"); await wait();
   check(document.activeElement.dataset.settingResult === "agents.codex.env", "ArrowDown did not enter results");
   key(document.activeElement, "ArrowDown");
@@ -177,10 +177,10 @@ async function exerciseAccountLaunchDefaults() {
 
 async function exerciseStatusBar() {
   const wait = () => new Promise(resolve => setTimeout(resolve,100));
-  localStorage.setItem('multiagent.statusBar.v1',JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')||'{}'),selectedAccount:'codex:fixture'}));
+  localStorage.setItem('multiagent.statusBar.v1',JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')||'{}'),selectedAccount:'codex:fixture',selectedAccounts:['codex:fixture','claude']}));
   window.fixtureStatus(); await wait(); await wait();
   const check = (ok,message) => {if(!ok) throw Error(message);};
-  check(document.querySelectorAll('.usage-status-provider').length === 1 && document.querySelector('.usage-status-provider').dataset.profileKey === 'codex:fixture', 'Initial single account missing');
+  check(document.querySelectorAll('.usage-status-provider').length === 2 && document.querySelector('.usage-status-provider').dataset.profileKey === 'codex:fixture', 'Selected status accounts missing');
   check(document.querySelector('.usage-status-limit b').textContent.includes('90%'), 'Used percentage missing');
   document.querySelector('[aria-label="status.codex"]').click(); await wait();
   check(document.querySelectorAll('.usage-status-provider').length === 1 && document.querySelector('.usage-status-provider').dataset.profileKey === 'claude', 'Account provider filter fallback failed');
@@ -239,7 +239,7 @@ if (process.versions.electron) {
     await new Promise(resolve=>setTimeout(resolve,250));
     await peer.webContents.executeJavaScript(`if(document.querySelectorAll('.usage-status-provider').length!==1 || !document.querySelector('.usage-status-limit b').textContent.includes('10%'))throw Error('Status preferences did not restore'); document.querySelector('[aria-label="status.codex"]').click()`);
     await new Promise(resolve=>setTimeout(resolve,200));
-    await win.webContents.executeJavaScript("if(document.querySelectorAll('.usage-status-provider').length!==1 || document.querySelector('.usage-status-provider').dataset.profileKey!=='codex:fixture')throw Error('Status preferences did not sync across windows')");
+    await win.webContents.executeJavaScript("if(document.querySelectorAll('.usage-status-provider').length!==2 || document.querySelector('.usage-status-provider').dataset.profileKey!=='codex:fixture')throw Error('Status preferences did not sync across windows')");
     console.log('STATUS_BAR_RESTORE_AND_WINDOW_SYNC_OK');
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); } });

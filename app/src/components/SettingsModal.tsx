@@ -1,4 +1,5 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
+import { DashboardLanPanel, type DashboardStatus } from "./DashboardLanPanel";
 import { UsageCollectorPanel } from './UsageCollectorPanel';
 import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
 import { NotificationPolicyPanel } from './NotificationPolicyPanel';
@@ -122,11 +123,7 @@ type RemoteConfig = {
   client_secret: string;
 };
 
-type MonitorStatus = {
-  running: boolean;
-  url: string | null;
-  port: number | null;
-};
+type MonitorStatus = DashboardStatus;
 
 type MonitorConfig = {
   enabled: boolean;
@@ -1620,6 +1617,7 @@ export function SettingsModal({
           </div>
         </div>
 
+        {buildVariant !== "company" && <DashboardLanPanel status={monitor} onChange={setMonitor} />}
         <div className="app-settings-section">
           <div className="field-label" {...settingTarget("dashboard.usage")}>Usage data<SettingScope id="dashboard.usage" /></div>
           <div className="app-about-card">

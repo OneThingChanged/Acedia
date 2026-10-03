@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { DEFAULT_STATUS_BAR, displayUsagePercent, loadStatusBar, normalizeStatusBar, selectStatusAccount, selectStatusAccounts, toggleStatusAccount, showUsageProvider, updateStatusBar } from './statusBarSettings';
+import { DEFAULT_STATUS_BAR, displayUsagePercent, loadStatusBar, normalizeStatusBar, selectStatusAccount, selectStatusAccounts, toggleStatusAccount, showUsageProvider, updateStatusBar, migrateStatusAccountAliases } from './statusBarSettings';
 import type { UsageProviderGroup } from './usageRateLimits';
 afterEach(() => vi.unstubAllGlobals());
 it('filters all account groups of a provider and keeps quota colors independent of inversion', () => {
@@ -61,4 +61,22 @@ it('migrates a legacy choice and preserves multiple accounts, explicit empty and
   expect(loadStatusBar().selectedAccounts).toEqual([]);
   expect(selectStatusAccounts(groups,loadStatusBar())).toEqual([]);
   expect(normalizeStatusBar({selectedAccounts:['codex','codex',' ',23]}).selectedAccounts).toEqual(['codex']);
+});
+
+it('preserves and deduplicates explicit selections when a default login joins a registered pool account', () => {
+  const unified = account('codex', 'pool', { source: 'pool', aliases: ['codex:default', 'codex:old'], routing: { enabled: false, available: false } });
+  const groups = [unified, account('claude')];
+  let saved = JSON.stringify({ selectedAccount: 'codex', selectedAccounts: ['codex', 'codex:old', 'claude'], display: 'remaining' });
+  vi.stubGlobal('localStorage', { getItem: () => saved, setItem: (_key: string, value: string) => { saved = value; } });
+  vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+  expect(selectStatusAccounts(groups, loadStatusBar()).map(group => group.key)).toEqual(['codex:pool', 'claude']);
+  migrateStatusAccountAliases(groups);
+  expect(loadStatusBar()).toMatchObject({ selectedAccount: 'codex:pool', selectedAccounts: ['codex:pool', 'claude'], display: 'remaining' });
+  expect(selectStatusAccount(groups, DEFAULT_STATUS_BAR)).toBe(unified);
+  unified.profile!.aliases = [];
+  expect(selectStatusAccounts([...groups, account('codex')], loadStatusBar())[0]).toBe(unified);
+  toggleStatusAccount(groups, 'codex:pool');
+  expect(loadStatusBar().selectedAccounts).toEqual(['claude']);
+  updateStatusBar({ selectedAccounts: [] }); migrateStatusAccountAliases(groups);
+  expect(loadStatusBar().selectedAccounts).toEqual([]);
 });

@@ -395,7 +395,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v83');
+    expect(workerBody).toContain('multiagent-remote-v86');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js", "session-state.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
@@ -1457,7 +1457,8 @@ describe("Electron dashboard server", () => {
       },
       body: JSON.stringify({ id: "agent-9", data: "blocked\r" }),
     });
-    expect(lanInput.status).toBe(200);
+    // A forwarded Host must not grant LAN writes through the local owner path.
+    expect(lanInput.status).toBe(403);
     expect(crossSiteInput.status).toBe(403);
     const inactiveInput = await fetch(`${status.url}/api/input`, {
       method: "POST",
@@ -1468,7 +1469,6 @@ describe("Electron dashboard server", () => {
     await expect(inactiveInput.json()).resolves.toEqual({ error: "session is not active" });
     expect(writes).toEqual([
       { id: "agent-9", data: "go\r" },
-      { id: "agent-9", data: "lan\r" },
     ]);
   });
 

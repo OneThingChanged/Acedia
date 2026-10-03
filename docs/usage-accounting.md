@@ -108,6 +108,23 @@ input.
 
 ## Account limits
 
+The [1.8.1.46 account-unification change](release-1-8-1-46.md) uses the same Codex account names and
+quota snapshots in the desktop footer, Agent usage, Dashboard and owner Remote
+views as **Accounts & routing**. Matching local/default logins become aliases
+only when both their workspace account ID and user subject match exactly;
+unmatched direct logins remain available. Explicit footer selections migrate to
+the registered ID, and existing visibility preferences are copied on the first
+match unless a canonical preference already exists. Excluding an account from routing does
+not hide its quota. The usage dialog links to the existing account-management
+page. See [account usage unification](account-pool.md).
+
+Pool quotas come from the pool's encrypted credential workflow and shared
+background refresh job. The adapter never copies credentials or changes session
+owners, and never attributes an old default transcript quota to a pool account.
+Account registration appears before a quota exists. Account removal retains the
+last snapshot as an unregistered profile. Non-owner Remote viewers cannot see or
+change pool profile visibility through the usage API.
+
 Explicit refresh queries every registered Codex account through the CLI app-server's
 `account/rateLimits/read` RPC using that account's isolated login environment. No
 thread or model turn is started. Recent transcript `token_count` snapshots remain
@@ -124,7 +141,7 @@ last snapshot without overwriting another account. The transcript scan includes
 every managed Claude `projects/` root. See [Claude account profiles](claude-accounts.md).
 
 Footer Refresh and Agent usage → Refresh all accounts query idle and hidden accounts
-as well as active ones, with at most two simultaneous requests per provider. Duplicate
+as well as active ones, with at most two simultaneous requests per account registry. Duplicate
 refreshes share one job; a partial failure does not stop remaining account queries.
 Refresh failures preserve the last useful snapshot and its timestamp, with separate
 login-required, timeout, failure and unavailable states. A passive cache read cannot
@@ -133,8 +150,9 @@ discard a live refresh response. Codex helpers are stopped on completion or time
 Account-wide and model limits are grouped by provider and account ID. Registered
 Codex and Claude profiles appear separately even without linked sessions or quota
 snapshots. An independent profile inventory carries these accounts; missing quotas
-show a pending message instead of a made-up percentage. Default logins appear when
-they have a snapshot or a live lookup result, including missing authentication.
+show a pending message instead of a made-up percentage. An unmatched Codex default
+login also appears in the inventory; other default providers appear when they
+have a snapshot or a live lookup result, including missing authentication.
 Legacy folder-label profiles, unregistered accounts and manually
 hidden profiles live in a separate review area. The exact legacy label format is only
 a reversible display hint; an explicit visibility choice takes precedence. Users can

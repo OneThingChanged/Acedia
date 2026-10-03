@@ -37,6 +37,7 @@ export type AgentActivity = {
   toolName?: string;
   toolInput?: string;
   interactiveQuestion?: string;
+  questionId?: string;
   lastAssistantMessage?: string;
 };
 
@@ -45,6 +46,7 @@ export type AgentActivity = {
 export type AgentStatus =
   | AgentRuntimeStatus
   | "working"
+  | "question"
   | "waiting"
   | "blocked";
 

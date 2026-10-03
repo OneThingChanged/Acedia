@@ -1,10 +1,32 @@
 import { createRequire } from "node:module";
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("keeps renderer declarations aligned with the production preload allowlists", () => {
+    const source = fs.readFileSync(new URL("../src/platform/ipcContract.ts", import.meta.url), "utf8");
+    const names = type => new Set([...source.match(new RegExp(`export type ${type} =([\\s\\S]+?);`))[1].matchAll(/"([^"]+)"/g)].map(match => match[1]));
+    expect(names("RuntimeCommand")).toEqual(new Set(contract.INVOKE_COMMANDS));
+    expect(names("RuntimeEventName")).toEqual(new Set(contract.DELIVERED_EVENTS));
+  });
+  it("allows LAN controls and session notification synchronization with explicit values", () => {
+    expect(contract.assertInvokeRequest("monitor_lan_set", { enabled: true })).toEqual({ enabled: true });
+    expect(contract.assertInvokeRequest("monitor_lan_reset_code", {})).toEqual({});
+    expect(() => contract.assertInvokeRequest("monitor_lan_set", { enabled: "yes" })).toThrow();
+    expect(contract.assertInvokeRequest("session_notifications_get", { id: "session" })).toEqual({ id: "session" });
+    expect(contract.assertInvokeRequest("session_notifications_set", { id: "session", enabled: false, revision: 1 })).toMatchObject({ enabled: false });
+    expect(() => contract.assertInvokeRequest("session_notifications_set", { id: "session", enabled: false })).toThrow();
+    expect(() => contract.assertAllowed(contract.deliveredSet, "session:notifications", "event")).not.toThrow();
+  });
+  it("accepts native question answers and rejects missing identity or terminal controls", () => {
+    const args = { id: "session", sessionId: "cli-session", questionId: "call-1", answers: [{ id: "q1", optionIndex: 1, text: "선택" }] };
+    expect(contract.assertInvokeRequest("answer_question", args)).toEqual(args);
+    expect(() => contract.assertInvokeRequest("answer_question", { ...args, questionId: "" })).toThrow();
+    expect(() => contract.assertInvokeRequest("answer_question", { ...args, answers: [{ id: "q1", optionIndex: null, text: "first\nsecond" }] })).toThrow();
+  });
   it("validates extension management requests", () => {
     expect(contract.assertInvokeRequest('browser_extensions_list', { profileId: 'multiagent-browser' })).toBeTruthy();
     expect(() => contract.assertInvokeRequest('browser_extensions_change', { profileId: 'multiagent-browser', action: 'unknown' })).toThrow();

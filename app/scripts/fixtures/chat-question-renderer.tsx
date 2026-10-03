@@ -7,6 +7,7 @@ let chat = null;
 const pendingReads = [];
 const listeners = new Set();
 const writes = [];
+const answers = [];
 let failWrites = false;
 window.multiAgentElectron = {
   invoke: async (command, args) => {
@@ -15,6 +16,7 @@ window.multiAgentElectron = {
       writes.push(args.data);
       if (failWrites) throw new Error("fixture PTY write failure");
     }
+    if (command === 'answer_question') { answers.push(args); if (failWrites) throw new Error('fixture answer failure'); return { status: 'sent' }; }
     return null;
   },
   onEvent: (name, listener) => {
@@ -27,6 +29,7 @@ function Harness() {
   const [state, setState] = useState({ agentStatus: "waiting", provider: "codex", question: null, questionToken: 1 });
   window.questionFixture = {
     writes,
+    answers,
     patch: patch => {
       if (patch.state) setState(current => ({ ...current, ...patch.state }));
       if ("failWrites" in patch) failWrites = patch.failWrites;

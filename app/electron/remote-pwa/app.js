@@ -3,11 +3,12 @@ import { createSessionModelEditor } from './session-model.js';
 import { createAccountPoolView } from './account-pool.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
-import { text, make } from "./dom.js";
+import { text, make, copyText } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { parseChatPrompt, promptSignature } from "./chat-prompt.js";
+import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts } from "./session-state.js";
 
 bindShellTranslations(document);
@@ -159,6 +160,7 @@ const ui = {
   detailName: $("#detailName"),
   detailMeta: $("#detailMeta"),
   renameSessionButton: $("#renameSessionButton"),
+  sessionNotifications: $("#sessionNotifications"),
   sessionNavButton: $("#sessionNavButton"),
   backToScreenButton: $("#backToScreenButton"),
   chatPrompt: $("#chatPrompt"),
@@ -214,6 +216,7 @@ const ui = {
 const STATUS = {
   working: { get label() { return t("작업 중"); }, rank: 0 },
   attention: { get label() { return t("답변 필요"); }, rank: 1 },
+  question: { get label() { return t("질문 · 답변 대기"); }, rank: 1 },
   recovering: { get label() { return t("복구 중"); }, rank: 2 },
   starting: { get label() { return t("시작 중"); }, rank: 2 },
   done: { get label() { return t("완료"); }, rank: 3 },
@@ -227,6 +230,7 @@ const SESSION_FILTER_KEY = "multiagent.remote.sessionFilter.v1";
 
 let remoteState = { agents: [], view: { projects: [], agents: [], groups: [] } };
 const initialUrl = new URL(location.href);
+let openLinkedQuestionInChat = initialUrl.searchParams.has('agent');
 let routeDepth = Number.isSafeInteger(Number(history.state?.multiagentDepth))
   ? Math.max(0, Number(history.state.multiagentDepth))
   : 0;
@@ -246,6 +250,7 @@ function selectionFromUrl(url) {
 let selection = selectionFromUrl(initialUrl);
 const hosting = createHostingView(ui.hostingView);
 const accountPoolView = createAccountPoolView(document.querySelector('#accountPoolView'), {
+  onChange: () => { if (selection.type === "usage") void loadUsage(false); },
   sessionLabel: (id) => {
     const agent = agentMap().get(id);
     return agent ? `${projectName(agent)} · ${text(agent.name || agent.id)}` : id;
@@ -341,7 +346,7 @@ function pendingQuestionFor(agent, data) {
     || ["cancelled", "canceled", "interrupted", "aborted"].includes(agent.hook?.event)) return null;
   data ||= chatAgent === agent.id ? lastChatData : screenChatCache.get(agent.id)?.data;
   if (data?.sessionId && agent.hook?.session_id && data.sessionId !== agent.hook.session_id) return null;
-  return data?.pendingQuestion ?? null;
+  return data?.pendingQuestion ?? (agent.hook?.question_id && agent.hook?.event === 'waiting' ? { id: agent.hook.question_id, question: agent.hook.interactive_question } : null);
 }
 
 function promptFor(agent, data) {
@@ -357,8 +362,10 @@ function questionDetails(agent) {
 function questionOf(agent) { return questionDetails(agent).text; }
 
 const promptResponses = new Map();
+const questionDrafts = new Map();
 function promptKey(agent, prompt, data) {
-  return prompt ? `${agent.id}|${pendingQuestionFor(agent, data)?.id || agent.hook?.received_at || agent.hook?.lastTs || ""}|${promptSignature(prompt)}` : "";
+  data ||= chatAgent === agent.id ? lastChatData : screenChatCache.get(agent.id)?.data;
+  return prompt ? `${agent.id}|${agent.hook?.session_id || data?.sessionId || ''}|${pendingQuestionFor(agent, data)?.id || agent.hook?.received_at || agent.hook?.lastTs || ""}|${promptSignature(prompt)}` : "";
 }
 function refreshPromptViews(agentId) {
   if (selectedAgent()?.id === agentId) renderWaitingPrompt(selectedAgent(), lastChatData);
@@ -398,10 +405,27 @@ function promptCard(agent, prompt, data, openTerminal) {
   const card = make("div", `chat-prompt ${prompt.kind}`);
   card.setAttribute("role", "status");
   card.appendChild(make("strong", "chat-prompt-heading", t("답변 대기 중")));
-  card.appendChild(make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.")));
+  if (prompt.answerStyle === 'codex-form') {
+    let draft = questionDrafts.get(agent.id);
+    if (draft?.key !== key) { draft = { key, answers: prompt.questions.map(q => ({ id: q.id, optionIndex: q.options.length ? undefined : null, text: '' })) }; questionDrafts.set(agent.id, draft); }
+    card.appendChild(questionForm(prompt.questions, { disabled: !pendingQuestionFor(agent, data)?.id || !!(state?.sending || state?.sent || state?.error), answers: draft.answers,
+      onSubmit: async answers => {
+        const previous = promptResponses.get(agent.id);
+        if (previous?.key === key && (previous.sending || previous.sent)) return;
+        const responseState = { key, sending: true, sent: false, error: false };
+        promptResponses.set(agent.id, responseState); refreshPromptViews(agent.id);
+        try {
+          const result = await requestJson('/api/session/answer', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: agent.id, sessionId: agent.hook?.session_id || data?.sessionId, questionId: pendingQuestionFor(agent, data)?.id, answers }) }, 30000);
+          if (!result.response.ok) throw new Error('Answer unavailable');
+          responseState.sent = true; lastChatFetch = { id: null, at: 0 };
+        } catch { responseState.error = true; }
+        finally { responseState.sending = false; refreshPromptViews(agent.id); }
+      } }));
+  } else card.appendChild(make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.")));
   card.appendChild(make("div", "chat-prompt-hint", state?.sent
     ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
-    : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
+    : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
   if (state?.error) {
     const error = make("div", "chat-prompt-error", t("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요."));
     error.setAttribute("role", "alert");
@@ -449,6 +473,7 @@ function statusOf(agent) {
   if (["cancelled", "canceled", "interrupted", "aborted"].includes(hookEvent)) return "idle";
   if (rawStatus === "recovering") return "recovering";
   if (rawStatus === "starting") return "starting";
+  if (rawStatus === 'question' || hookEvent === 'question' || (hookEvent === 'waiting' && agent.hook?.interactive_question)) return 'question';
   if (["waiting", "question", "blocked", "permission-request"].includes(rawStatus)
     || ["waiting", "question", "blocked", "permission-request"].includes(hookEvent)) return "attention";
   if (rawStatus === "working"
@@ -685,14 +710,14 @@ function renderSummary() {
   const counts = Object.fromEntries(STATUS_ORDER.map((status) => [status, 0]));
   for (const agent of allAgents()) counts[displayStatusOf(agent)] += 1;
   ui.workingCount.textContent = String(counts.working);
-  ui.questionCount.textContent = String(counts.attention);
+  ui.questionCount.textContent = String(counts.attention + counts.question);
   ui.doneCount.textContent = String(counts.done);
   ui.idleCount.textContent = String(counts.idle);
   ui.offlineCount.textContent = String(counts.offline);
   ui.totalCount.textContent = String(allAgents().length);
   ui.documentProjectCount.textContent = String(localDocumentProjects().length);
   if ("setAppBadge" in navigator) {
-    if (counts.attention > 0) navigator.setAppBadge(counts.attention).catch(() => {});
+    if (counts.attention + counts.question > 0) navigator.setAppBadge(counts.attention + counts.question).catch(() => {});
     else navigator.clearAppBadge?.().catch(() => {});
   }
 }
@@ -1232,6 +1257,38 @@ function renderScreen() {
   updateScreenLive(screen);
 }
 
+function bellIcon(enabled) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('width', '18'); svg.setAttribute('height', '18');
+  svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.7'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(svg.namespaceURI, 'path');
+  path.setAttribute('d', `M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4${enabled ? '' : 'M3 3l18 18'}`);
+  svg.appendChild(path); return svg;
+}
+let savingNotifications = false;
+function renderSessionNotifications(agent) {
+  if (!ui.sessionNotifications) return;
+  const enabled = agent.notifications?.enabled !== false;
+  const label = t(enabled ? '세션 알림 켜짐 · 클릭하여 끄기' : '세션 알림 꺼짐 · 클릭하여 켜기');
+  ui.sessionNotifications.disabled = savingNotifications || !agent.notifications;
+  ui.sessionNotifications.setAttribute('aria-label', label);
+  ui.sessionNotifications.setAttribute('aria-pressed', String(enabled));
+  ui.sessionNotifications.dataset.tooltip = label;
+  ui.sessionNotifications.classList.toggle('muted', !enabled);
+  ui.sessionNotifications.replaceChildren(bellIcon(enabled));
+}
+ui.sessionNotifications?.addEventListener('click', async () => {
+  const agent = selectedAgent(); if (!agent?.notifications || savingNotifications) return;
+  savingNotifications = true; renderSessionNotifications(agent);
+  try {
+    const result = await requestJson('/api/session/notifications', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: agent.id, enabled: !agent.notifications.enabled, revision: agent.notifications.revision }) });
+    if (!result.response.ok) throw new Error('Preference changed');
+    agent.notifications = result.data;
+  } catch { showToast(t('알림 설정을 저장하지 못했습니다. 다시 시도해 주세요.')); }
+  finally { savingNotifications = false; if (selectedAgent()) renderSessionNotifications(selectedAgent()); }
+});
+
 function renderSession() {
   const agent = selectedAgent();
   if (!agent) {
@@ -1240,12 +1297,14 @@ function renderSession() {
   }
   const status = statusOf(agent);
   const displayStatus = displayStatusOf(agent);
+  if (openLinkedQuestionInChat) { openLinkedQuestionInChat = false; if (status === 'question') setSessionViewMode('chat'); }
   const question = questionDetails(agent);
   const prompt = text(agent.hook?.prompt);
   ui.detailStatus.className = `status-chip ${displayStatus}`;
   ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
   ui.detailMeta.textContent = `${projectName(agent)} · ${toolName(agent)}`;
+  renderSessionNotifications(agent);
   if (ui.sessionOffline) ui.sessionOffline.hidden = status !== "offline";
   ui.questionPanel.hidden = !question.text;
   ui.questionText.textContent = question.text;
@@ -1548,7 +1607,7 @@ function openDocumentMenu(projectId, file, trigger, x, y) {
 
 async function copyDocumentPath(value) {
   try {
-    await navigator.clipboard.writeText(value);
+    await copyText(value);
     showToast(t("경로를 복사했습니다."));
   } catch {
     showToast(t("경로를 복사하지 못했습니다."));
@@ -2646,8 +2705,8 @@ function renderUsage() {
     ? ""
     : `usage-summary-${usageToneClass(remaining)}`;
   ui.usageUpdatedSummary.textContent = formatUsageUpdated(updatedAt);
-  ui.refreshUsageButton.disabled = usageLoading || usageVisibilitySaving;
-  ui.refreshUsageButton.textContent = usageRefreshing ? t("갱신 중…") : t("새로고침");
+  ui.refreshUsageButton.disabled = usageLoading || usageVisibilitySaving || usageSummary?.refreshPending === true;
+  ui.refreshUsageButton.textContent = usageRefreshing || usageSummary?.refreshPending ? t("갱신 중…") : t("새로고침");
 
   if (usageError) {
     ui.usageMessage.hidden = false;
@@ -2702,6 +2761,17 @@ function renderUsage() {
     }
 
     const limitList = make("div", "usage-limit-list");
+    if (profile?.routing) {
+      const routing = make("p", "usage-profile-note", t(profile.routing.enabled ? "분산 참여" : "분산 제외 · 사용량 표시 유지"));
+      routing.dataset.routing = profile.routing.enabled ? "included" : "excluded";
+      limitList.append(routing);
+      const status = profile.refresh?.status;
+      if (status && status !== "success") limitList.append(make("p", "usage-profile-note", t(
+        status === "refreshing" ? "최신 한도 조회 중…"
+          : status === "login_required" ? "로그인이 필요합니다. 계정 관리·분산에서 다시 로그인하세요."
+          : status === "unavailable" ? "한도를 아직 조회하지 않았습니다."
+          : "한도 갱신에 실패했습니다. 이전 조회값을 유지합니다.")));
+    }
     if (!provider.limits.length) limitList.append(make("p", "usage-profile-note", t("한도 확인 전입니다. 등록된 계정의 한도가 수집되면 표시됩니다.")));
     const extras = make("details", "usage-extra-limits");
     extras.dataset.usageSection = provider.key;
@@ -3227,11 +3297,13 @@ function updateComposerSendState() {
     agent && ["recovering", "starting"].includes(statusOf(agent)) && sessionViewMode === "term"
   );
   ui.messageInput.disabled = inactiveTerminal;
+  const waitingForAnswer = sessionViewMode === 'chat' && !!promptFor(agent);
   ui.messageInput.placeholder = inactiveTerminal
     ? initializingTerminal
       ? t("세션 초기화가 끝나면 입력할 수 있습니다")
       : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : t("메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈");
+    : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다') : t("메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈");
+  ui.sendButton.textContent = t(waitingForAnswer ? '예약' : '전송');
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
@@ -3562,7 +3634,7 @@ const agentInitializing = (agent) => ["recovering", "starting"].includes(agent?.
 // is still busy. Work completion is a separate condition for draining input.
 const agentActivated = (agent) => !agentInitializing(agent) && statusOf(agent) !== "offline"
   && (!agent?.runtimeStatus || agent.runtimeStatus === "running");
-const agentReady = (agent) => agentActivated(agent) && !agentBusy(agent);
+const agentReady = (agent) => agentActivated(agent) && !agentBusy(agent) && !promptFor(agent);
 
 function renderComposerQueue() {
   const el = ui.composerQueue;
@@ -4458,6 +4530,7 @@ const storedSessionViewMode = localStorage.getItem("multiagent.remote.sessionMod
 let sessionViewMode = ["chat", "term", "browser"].includes(storedSessionViewMode)
   ? storedSessionViewMode
   : "chat";
+if (initialUrl.searchParams.get('view') === 'chat') sessionViewMode = 'chat';
 let chatRequestSeq = 0;
 
 const CHAT_PAGE = 10;
@@ -4821,14 +4894,17 @@ function processActivityNotifications(agents) {
   for (const agent of agents) {
     const status = statusOf(agent);
     const question = questionOf(agent);
-    const questionKey = question ? `${agent.hook?.received_at || ""}:${question}` : "";
+    const questionId = agent.hook?.question_id;
+    const questionKey = question ? `${questionId || agent.hook?.received_at || ""}:${question}` : "";
     const previous = previousActivity.get(agent.id);
-    next.set(agent.id, { status, questionKey });
-    if (firstSnapshot || !previous) continue;
+    const sameUnidentifiedQuestion = question && previous?.question === question && previous?.sessionId === agent.hook?.session_id
+      && (!questionId || !previous.questionId) && ['question', 'attention'].includes(previous.status);
+    next.set(agent.id, { status, questionKey, questionId, question, sessionId: agent.hook?.session_id });
+    if (firstSnapshot || !previous || agent.notifications?.enabled === false) continue;
     const title = `${projectName(agent)} / ${text(agent.name || agent.id)}`;
-    if (questionKey && questionKey !== previous.questionKey) {
+    if (questionKey && questionKey !== previous.questionKey && !sameUnidentifiedQuestion && agent.notificationPolicy?.question !== false) {
       void showNotification(title, question.split("\n")[0], `question:${agent.id}`, agent.id);
-    } else if (status === "done" && ["working", "attention"].includes(previous.status)) {
+    } else if (status === "done" && ["working", "attention", "question"].includes(previous.status) && agent.notificationPolicy?.completion !== false) {
       void showNotification(title, t("작업이 완료되었습니다."), `done:${agent.id}`, agent.id);
     }
   }
@@ -5676,7 +5752,7 @@ ui.copyOutputButton.addEventListener("click", async () => {
     ? (instance.term.getSelection() || terminalBufferText(instance))
     : (ui.outputText.textContent || "");
   try {
-    await navigator.clipboard.writeText(content);
+    await copyText(content);
     showToast(t("터미널 내용을 복사했습니다."));
   } catch { showToast(t("복사하지 못했습니다.")); }
 });
@@ -5743,7 +5819,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 navigator.serviceWorker?.addEventListener("message", (event) => {
-  if (event.data?.type === "open-agent" && event.data.agentId) selectSession(event.data.agentId);
+  if (event.data?.type === "open-agent" && event.data.agentId) { selectSession(event.data.agentId); setSessionViewMode('chat'); }
 });
 addEventListener("multiagent:native-monitor-state", (event) => {
   applyNativeMonitorState(event.detail);

@@ -1,26 +1,61 @@
 ---
 type: Feature
 title: 알림 조건과 절전 방지
-description: 완료·터미널 벨 알림의 조건과 작업 상태에 따른 시스템 절전 방지.
+description: 질문·완료·터미널 벨 알림, 세션별 알림 설정과 작업 상태에 따른 시스템 절전 방지.
 status: stable
 sources:
   - resource: ../app/src/components/NotificationPolicyPanel.tsx
   - resource: ../app/electron/services/notification-policy.mjs
   - resource: ../app/electron/services/notification-policy-smoke.mjs
   - resource: ../app/electron/services/terminal-session-service.mjs
+  - resource: ../app/electron/services/session-notifications.mjs
+  - resource: ../app/electron/services/active-questions.mjs
+  - resource: ../app/electron/services/question-responder.mjs
   - resource: ../app/src/App.tsx
 ---
 
 # 알림 조건과 절전 방지
 
-설정 → 일반의 ‘알림 조건과 절전’에서 편집한 뒤 저장한다. 완료 알림은 기본 켬,
+설정 → 일반의 ‘알림 조건과 절전’에서 편집한 뒤 저장한다. 질문과 완료 알림은 기본 켬,
 터미널 벨과 앱 집중 중 억제는 기본 끔이다. 소리와 Windows 알림의 종류는 기존 설정을
 사용한다. 조건은 앱 프로필에 저장하며 모든 작업창이 공유하고 오래된 창의 저장은 거부한다.
 
 집중 중 억제는 해당 세션을 소유한 작업창에 초점이 있을 때 소리·앱 팝업을 억제한다.
 완료 상태와 사이드바의 미확인 표시는 유지한다. 세션 소유 창만 알림을 처리해 중복을 막는다.
-Windows 알림은 기존처럼 소유 창에 초점이 없을 때 표시한다. 원격 접속 요청과 모바일
-푸시 조건은 별도다. ‘알림 테스트’는 조건을 우회해 선택한 소리·Windows 알림을 시험한다.
+Windows 알림은 기존처럼 소유 창에 초점이 없을 때 표시한다. 모바일 질문·완료 푸시에도
+전역 질문·완료 설정과 세션별 음소거를 적용한다. 원격 접속 요청은 별도다.
+‘알림 테스트’는 조건을 우회해 선택한 소리·Windows 알림을 시험한다.
+
+## 세션 알림과 상단 도구
+
+세션 상단은 복구, 알림, 작업자, Chat/터미널 전환 순서의 아이콘을 사용한다.
+마우스를 올리거나 키보드로 포커스를 옮기면 설명이 나타난다. 작업자는 Codex 세션에서만 표시한다.
+복구 아이콘은 기존의 복구 확인 패널을 연다.
+
+종 아이콘은 해당 세션의 알림을 켜고 끈다. 기본값은 켬이다. 끄면 질문·완료·벨의
+소리와 팝업, 모바일 질문·완료 알림을 억제한다. 화면의 상태 표시와 알림 센터 기록은 유지한다.
+설정은 앱 프로필의 `session-notifications.json`에 세션별로 저장하고 재실행 시 복원한다.
+다른 작업창과 Dashboard/Remote는 같은 설정을 공유한다. 다른 기기의 오래된 저장 요청은 거부한다.
+
+## Question 답변 대기
+
+Codex의 동기 `request_user_input`과 Claude 질문을 Cyan의 `Question · 답변 대기`로 표시한다.
+탭, 사이드바, Chat, Dashboard/Remote 세션 및 상태별 보드에 적용한다. 질문을 기다리는 동안
+작업 스피너를 멈추고 새 메시지는 대기열에 넣는다. 답변 후 CLI가 질문을 처리하면 상태를 해제한다.
+비동기 `request_user_input_async`는 실행을 멈추지 않으므로 대기 상태로 분류하지 않는다.
+
+질문 감시는 Chat 열기와 독립적으로 실행한다. 실행 중이며 계정·세션에 연결된 transcript만
+1.5초 간격으로 확인한다. 파일이 바뀐 경우 최대 256 KiB의 끝부분을 비동기로 읽고,
+질문 call ID와 해당 결과를 추적한다. 휴면 기록 전체를 읽거나 카탈로그를 다시 스캔하지 않는다.
+
+Codex의 식별 가능한 선택형 질문은 Chat에서 선택지와 설명을 보고 답할 수 있다.
+여러 질문과 ‘직접 입력’(CLI 메모란에 맞춘 단일행)을 지원하며, 모든 답을 고른 뒤 ‘답변 보내기’를 눌러야 전송한다.
+Electron의 공통 처리기가 세션·질문 ID와 실제 xterm 화면을 확인하여 원래 CLI 폼에 입력한다.
+다른 창·기기의 중복 답변, 바뀐 질문, 일부만 전송된 답변의 재전송을 차단한다.
+식별할 수 없는 폼, SSH 질문, 지원하지 않는 CLI 화면에서는 ‘터미널에서 답변’을 사용한다.
+
+새 질문은 한 번만 알린다. 알림을 클릭하면 해당 세션의 Chat을 연다. 같은 질문을
+훅과 transcript에서 모두 발견하거나 화면을 다시 연결해도 중복 팝업을 만들지 않는다.
 
 터미널 벨은 실제 PTY 출력에서 감지하며 제목·링크용 OSC 문자열의 종료 문자는 제외한다.
 같은 세션의 벨은 3초 간격으로 제한하고 저장된 화면 복원에서 다시 울리지 않는다.
@@ -37,7 +72,15 @@ Windows 알림은 기존처럼 소유 창에 초점이 없을 때 표시한다. 
 
 ## 검증
 
-556개 테스트와 빌드, 95개 설정 검색 대상·세 창 크기의 UI 검증을 통과했다.
+1.8.1.46 배포 소스는 2026-10-03 기준 150개 파일의 957개 테스트와 프로덕션 빌드를 통과했다.
+`electron-session-toolbar-smoke.mjs`에서 실제 PaneSlot의 아이콘·포커스/마우스 툴팁·세션 알림
+토글·Chat 전환을 밝은/어두운 테마와 390/900px에서 확인했다.
+`electron-chat-question-smoke.mjs`에서 데스크톱과 Remote 1024/390px의 질문·선택·직접 입력·전송 및 오류를 확인했다.
+`codex-question-cli-smoke.mjs`는 격리 프로필과 모의 모델 서버로 설치된 Codex CLI 0.160.0을 실행한다.
+단일/여러 질문을 Chat 열기 없이 transcript에서 감지하고, 선택지와 한국어 단일행 답변을
+네이티브 폼으로 전송하여 원래 턴이 재개되는 과정 및 중복 제출 방지를 확인했다.
+
+이전 검증에서는 95개 설정 검색 대상·세 창 크기의 UI 검증을 통과했다.
 조건별 허용 여부, OSC/BEL 분리, 여러 작업의 완료·취소·종료 시 해제와 앱 종료 정리를
 단위 테스트로 확인했다. 숨김 Electron의 실제 IPC와 운영체제 blocker를 사용해
 항상/작업 중/해제와 저장 충돌·입력 거부를 확인했다. 컴퓨터를 실제로 재우거나 사용자에게

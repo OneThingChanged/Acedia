@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { settingTarget } from './SettingsSearch';
+import { SettingScope, settingTarget } from './SettingsSearch';
 
 type Root = { path: string; provider: string; accountId: string; since?: number };
 type Status = { enrolled: boolean; enabled: boolean; server?: string; employee?: { name: string }; deviceId?: string; roots: Root[]; pending: number; events: number; lastSuccess?: number; error?: string; warnings?: string[] };
@@ -23,7 +23,7 @@ export function UsageCollectorPanel() {
   }, []);
   const action = async (fn: () => Promise<void>) => { if (busy) return; setBusy(true); setError(''); try { await fn(); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
   return <div className="app-settings-section usage-collector" {...settingTarget('collector.server')}>
-    <div className="field-label">{text('회사 사용량 수집 서버', 'Company usage collector')}</div>
+    <div className="field-label">{text('회사 사용량 수집 서버', 'Company usage collector')}<SettingScope id="collector.server"/></div>
     <div className="app-about-card">
       <p>{text('직원·AI 계정별 사용량과 남은 한도, 계정 이메일·식별자, PC 이름·Windows 계정명·로컬 IP를 전송합니다. 대화·코드·AI 인증 비밀은 전송하지 않습니다.', 'Send usage and remaining limits, account email/identifier, PC name, Windows username and local IP addresses. Conversations, code and AI authentication secrets are not sent.')}</p>
       {!status?.enrolled ? <>

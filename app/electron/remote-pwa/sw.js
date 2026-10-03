@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v83";
+const CACHE_NAME = "multiagent-remote-v86";
 const STATIC_ASSETS = [
   "/",
   "/pwa/styles.css",
@@ -15,6 +15,7 @@ const STATIC_ASSETS = [
   "/pwa/chat-render.js",
   "/pwa/chat-history.js",
   "/pwa/chat-prompt.js",
+  "/pwa/question-form.js",
   "/pwa/requests.js",
   "/pwa/xterm.js",
   "/pwa/xterm.css",
@@ -69,7 +70,8 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/pwa/chat-markup.js" ||
     url.pathname === "/pwa/chat-render.js" ||
     url.pathname === "/pwa/chat-history.js" ||
-    url.pathname === "/pwa/chat-prompt.js" ||
+     url.pathname === "/pwa/chat-prompt.js" ||
+     url.pathname === "/pwa/question-form.js" ||
     url.pathname === "/pwa/requests.js" ||
     url.pathname === "/pwa/styles.css" ||
     url.pathname === "/pwa/terminal-touch.js";
@@ -135,7 +137,7 @@ self.addEventListener("notificationclick", (event) => {
         existing.postMessage({ type: "open-agent", agentId });
         return;
       }
-      const target = agentId ? `/?agent=${encodeURIComponent(agentId)}` : "/";
+      const target = agentId ? `/?agent=${encodeURIComponent(agentId)}&view=chat` : "/";
       await self.clients.openWindow(target);
     })
   );

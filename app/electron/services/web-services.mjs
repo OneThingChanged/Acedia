@@ -1,4 +1,5 @@
 import { RemoteHosting } from './remote-hosting.mjs';
+import { LanAccess, dashboardSameOrigin } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { sendJson } from "./remote-http.mjs";
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
@@ -118,6 +119,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-prompt.js", { file: "../shared/chat-prompt.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/question-form.js", { file: "question-form.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -125,6 +127,8 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
+  ["/lan-login", { file: "lan-login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
+  ["/pwa/lan-login.js", { file: "lan-login.js", type: "text/javascript; charset=utf-8", cache: "no-store" }],
   ["/pwa/styles.css", { file: "styles.css", type: "text/css; charset=utf-8", cache: "no-cache" }],
   ["/pwa/terminal-touch.js", { file: "terminal-touch.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/app.js", { file: "app.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -438,7 +442,7 @@ async function serveRemoteBrowserApi(request, response, url, {
   return false;
 }
 
-async function serveUsageProfileVisibility(request, response, url, provider, allowed) {
+async function serveUsageProfileVisibility(request, response, url, provider, allowed, access = {}) {
   if (request.method !== "POST" || url.pathname !== "/api/usage/profile-visibility") return false;
   if (!allowed()) { sendJson(response, 403, { error: "cross-origin request blocked" }); return true; }
   if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) { sendJson(response, 415, { error: "application/json required" }); return true; }
@@ -446,8 +450,25 @@ async function serveUsageProfileVisibility(request, response, url, provider, all
     const body = await readJson(request, 2048);
     if (typeof body.profileKey !== "string" || !/^(codex|claude):(default|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/.test(body.profileKey) || typeof body.hidden !== "boolean") throw new TypeError("Invalid usage profile visibility");
     if (!provider) { sendJson(response, 503, { error: "Usage profile settings unavailable" }); return true; }
-    sendJson(response, 200, await provider(body.profileKey, body.hidden));
-  } catch (error) { sendJson(response, error instanceof TypeError ? 400 : 500, { error: error?.message || "Could not save usage profile visibility" }); }
+    sendJson(response, 200, await provider(body.profileKey, body.hidden, access));
+  } catch (error) { sendJson(response, error.status === 403 ? 403 : error instanceof TypeError ? 400 : 500, { error: error?.message || "Could not save usage profile visibility" }); }
+  return true;
+}
+
+async function serveSessionInteraction(request, response, url, providers, allowed) {
+  const preference = url.pathname === '/api/session/notifications';
+  const answer = url.pathname === '/api/session/answer';
+  if (!preference && !answer) return false;
+  if (!allowed()) { sendJson(response, 403, { error: 'cross-origin request blocked' }); return true; }
+  if (request.method !== 'POST' && !(preference && request.method === 'GET')) { sendJson(response, 405, { error: 'Method not allowed' }); return true; }
+  if (request.method === 'POST' && !String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) { sendJson(response, 415, { error: 'application/json required' }); return true; }
+  try {
+    const body = request.method === 'POST' ? await readJson(request, answer ? 64 * 1024 : 2048) : { id: url.searchParams.get('id') };
+    if (typeof body.id !== 'string' || !body.id.trim() || body.id.length > 200) throw new TypeError('Invalid session');
+    const provider = preference ? providers.sessionNotifications : providers.answerQuestion;
+    if (!provider) { sendJson(response, 503, { error: 'Session interaction unavailable' }); return true; }
+    sendJson(response, 200, preference ? await provider(body.id, request.method === 'POST' ? body : null) : await provider(body.id, body));
+  } catch (error) { sendJson(response, error instanceof TypeError ? 400 : 409, { error: error.message || 'Session changed' }); }
   return true;
 }
 
@@ -650,7 +671,7 @@ async function listen(server, desiredPort, host = "127.0.0.1") {
 }
 
 export class LocalDashboardService {
-  constructor({ title, defaultPort, baseDir, configName, stateProvider, providers = null, trashDocument = null }) {
+  constructor({ title, defaultPort, baseDir, configName, stateProvider, providers = null, trashDocument = null, allowLan = false, lanAccess = new LanAccess() }) {
     this.title = title;
     this.defaultPort = defaultPort;
     this.baseDir = baseDir;
@@ -667,27 +688,16 @@ export class LocalDashboardService {
     this.port = null;
     this.htmlPreviews = new Map();
     this.usageRefreshAt = 0;
+    this.allowLan = allowLan;
+    this.lanAccess = lanAccess;
+    this.lanActive = false;
+    this.lanChange = Promise.resolve();
     this.config = { enabled: false, serverPort: defaultPort };
     this.loadConfig();
   }
 
   isLocalOrigin(request) {
-    if (String(request.headers["sec-fetch-site"] || "").toLowerCase() === "cross-site") {
-      return false;
-    }
-    const origin = String(request.headers.origin || "").trim().toLowerCase();
-    if (!origin) return true;
-    const forwardedHost = String(
-      request.headers["x-forwarded-host"] || request.headers.host || ""
-    )
-      .split(",")[0]
-      .trim()
-      .toLowerCase();
-    if (!forwardedHost) return false;
-    return new Set([
-      `http://${forwardedHost}`,
-      `https://${forwardedHost}`,
-    ]).has(origin);
+    return dashboardSameOrigin(request);
   }
 
   loadConfig() {
@@ -696,6 +706,7 @@ export class LocalDashboardService {
       this.config = {
         enabled: Boolean(stored.enabled),
         serverPort: Number(stored.serverPort ?? stored.server_port) || this.defaultPort,
+        lanEnabled: this.allowLan && stored.lanEnabled === true,
       };
     } catch {}
   }
@@ -704,6 +715,9 @@ export class LocalDashboardService {
     this.config = {
       enabled: Boolean(config.enabled),
       serverPort: Number(config.serverPort ?? config.server_port) || this.defaultPort,
+      // LAN exposure is changed only by the desktop's dedicated action. A stale
+      // port/autostart form must not silently enable or disable access.
+      lanEnabled: this.allowLan && this.config.lanEnabled === true,
     };
     await fsPromises.mkdir(this.baseDir, { recursive: true });
     await fsPromises.writeFile(this.configPath, JSON.stringify(this.config, null, 2), "utf8");
@@ -724,15 +738,82 @@ export class LocalDashboardService {
       running: Boolean(this.server?.listening),
       url: this.port ? `http://127.0.0.1:${this.port}` : null,
       port: this.port,
+      lan: { available: this.allowLan, ...this.lanAccess.status(this.port, this.config.lanEnabled === true, this.lanActive) },
     };
   }
 
-  async start() {
+  setLanEnabled(enabled) {
+    const change = async () => {
+      if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
+      const running = Boolean(this.server?.listening);
+      const port = this.port;
+      const previous = this.config.lanEnabled;
+      this.config.lanEnabled = enabled === true;
+      try { await this.setConfig(this.config); }
+      catch (error) { this.config.lanEnabled = previous; throw error; }
+      await this.stop();
+      if (enabled || running) await this.start(port ?? this.config.serverPort);
+      return this.status();
+    };
+    const result = this.lanChange.then(change);
+    this.lanChange = result.catch(() => {});
+    return result;
+  }
+
+  resetLanCode() {
+    if (!this.allowLan || !this.lanActive) throw new Error("Start LAN access first.");
+    this.lanAccess.reset(true);
+    return this.status();
+  }
+
+  async serveLanAccess(request, response, url) {
+    const client = this.lanAccess.classify(request, this.port, this.lanActive);
+    if (client === "blocked") { sendJson(response, 403, { error: "Direct local network access required" }); return true; }
+    if (client === "local") return false;
+    if (request.method === "GET" && url.pathname === "/auth/mode") {
+      const snapshot = this.snapshot();
+      sendJson(response, 200, { lan: true, language: snapshot.language ?? snapshot.view?.language ?? "en" });
+      return true;
+    }
+    if (request.method === "POST" && ["/auth/lan", "/auth/logout"].includes(url.pathname)) {
+      if (!this.isLocalOrigin(request)) { sendJson(response, 403, { error: "blocked" }); return true; }
+      if (url.pathname === "/auth/logout") {
+        this.lanAccess.revoke(this.lanAccess.key(request), request.socket);
+        sendJson(response, 200, { ok: true }, { "set-cookie": this.lanAccess.cookie("", 0) });
+        return true;
+      }
+      if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+        sendJson(response, 415, { error: "application/json required" }); return true;
+      }
+      let body;
+      try { body = await readJson(request, 1024); }
+      catch { sendJson(response, 400, { error: "invalid request" }); return true; }
+      const result = this.lanAccess.pair(request, body?.code);
+      sendJson(response, result.status, result.error ? { error: result.error } : { ok: true }, {
+        ...(result.cookie ? { "set-cookie": result.cookie } : {}),
+        ...(result.status === 429 ? { "retry-after": "60" } : {}),
+      });
+      return true;
+    }
+    if (request.method === "GET" && ["/lan-login", "/login", "/pwa/lan-login.js", "/pwa/styles.css", "/pwa/i18n.js", "/pwa/translations.js", "/icon.svg"].includes(url.pathname)) {
+      return sendRemoteAsset(response, url.pathname === "/login" ? "/lan-login" : url.pathname);
+    }
+    if (this.lanAccess.authenticated(request)) return false;
+    if (request.method === "GET" && url.pathname === "/") {
+      response.writeHead(302, { location: `/lan-login${url.search}`, "cache-control": "no-store" }).end();
+    } else sendJson(response, 401, { error: "LAN connection code required" });
+    return true;
+  }
+
+  async start(desiredPort = this.config.serverPort) {
     if (this.server?.listening) return this.status();
+    this.lanActive = this.allowLan && this.config.lanEnabled === true;
+    this.lanAccess.reset(this.lanActive);
     const p = this.providers;
     this.server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url || "/", "http://127.0.0.1");
+        if (this.allowLan && await this.serveLanAccess(request, response, url)) return;
         if (await this.hosting.preview(request, response, url)) return;
         if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/preview/")) {
           if (await sendRemoteHtmlPreview(request, response, this.htmlPreviews, url.pathname)) return;
@@ -745,6 +826,7 @@ export class LocalDashboardService {
           if (await p.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request), admin: true, local: true })) return;
           if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isLocalOrigin(request) })) return;
           if (await serveUsageProfileVisibility(request, response, url, p.usageProfileVisibility, () => this.isLocalOrigin(request))) return;
+          if (await serveSessionInteraction(request, response, url, p, () => this.isLocalOrigin(request))) return;
           // Full Remote PWA on loopback (no login needed locally).
           if (await serveRemoteBrowserApi(request, response, url, {
             browserProvider: p.browserProvider,
@@ -916,7 +998,8 @@ export class LocalDashboardService {
         sendJson(response, 500, { error: error.message });
       }
     });
-    this.port = await listen(this.server, this.config.serverPort);
+    try { this.port = await listen(this.server, desiredPort, this.lanActive ? "0.0.0.0" : "127.0.0.1"); }
+    catch (error) { await this.stop(); throw error; }
     return this.status();
   }
 
@@ -924,6 +1007,8 @@ export class LocalDashboardService {
     const server = this.server;
     this.server = null;
     this.port = null;
+    this.lanActive = false;
+    this.lanAccess.reset(false);
     this.htmlPreviews.clear();
     this.hosting.tickets.clear();
     if (server) {
@@ -935,7 +1020,10 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    this.sessionNotifications = sessionNotifications;
+    this.answerQuestion = answerQuestion;
+    this.notificationAllowed = notificationAllowed ?? (() => true);
     this.sessionModels = sessionModels;
     this.accountPoolApi = accountPoolApi;
     this.trashDocument = trashDocument;
@@ -1046,6 +1134,7 @@ export class RemoteDashboardService {
   }
 
   async notifyAgentEvent(payload, kind) {
+    if (!this.notificationAllowed(payload.id, kind)) return null;
     const agent = this.agents.find((entry) => entry.id === payload.id) ?? null;
     const viewAgent = Array.isArray(this.view?.agents)
       ? this.view.agents.find((entry) => entry.id === payload.id)
@@ -1060,6 +1149,7 @@ export class RemoteDashboardService {
     const notification = {
       agentId: payload.id,
       sessionId: payload.session_id,
+      questionId: payload.question_id,
       title: `${projectName} / ${agentName}`,
     };
     const preview = kind === "done"
@@ -1462,8 +1552,9 @@ export class RemoteDashboardService {
           } else sendJson(response, 401, { error: "unauthorized", pending: Boolean(login) });
           return;
         }
+        const usageAccess = { canManageAccounts: this.isDirectLocal(request) || Boolean(login && login.toLowerCase() === String(this.config.owner).toLowerCase()) };
         if (await this.accountPoolApi?.(request, response, url, { readJson, allowed: () => this.isSameOrigin(request),
-          local: this.isDirectLocal(request), admin: this.isDirectLocal(request) || Boolean(login && login.toLowerCase() === String(this.config.owner).toLowerCase()) })) return;
+          local: this.isDirectLocal(request), admin: usageAccess.canManageAccounts })) return;
         if (await this.hosting.api(request, response, url, { readJson, allowed: () => this.isSameOrigin(request) })) return;
         if (await serveRemoteBrowserApi(request, response, url, {
           browserProvider: this.browserProvider,
@@ -1574,7 +1665,8 @@ export class RemoteDashboardService {
           });
           return;
         }
-        if (await serveUsageProfileVisibility(request, response, url, this.usageProfileVisibility, () => this.isSameOrigin(request))) return;
+        if (await serveUsageProfileVisibility(request, response, url, this.usageProfileVisibility, () => this.isSameOrigin(request), usageAccess)) return;
+        if (await serveSessionInteraction(request, response, url, this, () => this.isSameOrigin(request))) return;
         if (request.method === "GET" && url.pathname === "/api/usage") {
           const historyRequest = remoteUsageHistorySelection(url);
           if (historyRequest.error) {
@@ -1585,7 +1677,7 @@ export class RemoteDashboardService {
           const refresh = refreshRequested && Date.now() - this.usageRefreshAt >= 30_000;
           if (refresh) this.usageRefreshAt = Date.now();
           try {
-            const usage = await this.usageProvider(refresh, historyRequest.selection);
+            const usage = await this.usageProvider(refresh, historyRequest.selection, usageAccess);
             sendJson(response, 200, usage ?? { updatedAt: 0, limits: [], tokens: {} });
           } catch (error) {
             sendJson(response, error instanceof RangeError ? 400 : 500, {

@@ -138,12 +138,12 @@ export class RemoteDeviceMonitorService {
     if (this.devices.length !== before) this.save();
   }
 
-  publish({ type, agentId, sessionId, title, preview }) {
+  publish({ type, agentId, sessionId, questionId, title, preview }) {
     const id = clean(agentId);
     if (!id) return null;
     const safeType = type === "agent-question" ? "agent-question" : "agent-done";
     const now = this.now();
-    const eventKey = `${safeType}:${id}`;
+    const eventKey = `${safeType}:${id}${safeType === 'agent-question' && questionId ? ':' + clean(questionId) : ''}`;
     const previous = this.recentEvents.get(eventKey);
     if (
       previous &&

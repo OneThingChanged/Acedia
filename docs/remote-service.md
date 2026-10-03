@@ -540,8 +540,10 @@ account or changing the configured owner removes its device-monitor access.
 ## Network boundary
 
 Loopback HTTP is acceptable inside the desktop boundary. Public Remote access
-is expected to terminate TLS at the configured Cloudflare tunnel; direct
-plaintext LAN publication is not the preferred deployment.
+is expected to terminate TLS at the configured Cloudflare tunnel. For PCs on
+the same local subnet, the Dashboard has a separate opt-in connection-code flow;
+see [LAN setup](local-dashboard.md#같은-공유기의-다른-pc에서-접속). It does not change
+Remote's GitHub authentication or publish the Dashboard through a tunnel.
 
 Company runtime rejects external Remote and tunnel operations and does not
 package the downloadable APK. It retains only the loopback Dashboard.[^runtime-variant]

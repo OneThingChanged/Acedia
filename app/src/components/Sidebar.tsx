@@ -619,7 +619,7 @@ export function Sidebar({
       ? a.idleResumeSessionId
         ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
         : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
-      : text(a.status, a.status);
+      : a.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : text(a.status, a.status);
     return (
       <li
         key={a.id}
@@ -671,7 +671,7 @@ export function Sidebar({
             className={`status status-${sleeping ? "sleeping" : a.status}`}
             title={statusTitle}
             role="img"
-            aria-label={sleeping ? text("Sleeping", "Sleeping") : text(a.status, a.status)}
+            aria-label={statusTitle}
           />
           <span
             className="agent-tool-icon"

@@ -272,6 +272,10 @@ export class CodexScrollbackFilter {
     this.probe.resize(this.cols, this.rows);
   }
 
+  viewportText() {
+    return this.disposed ? '' : captureViewport(this.shadow).rows.map(row => row.text).join('\n');
+  }
+
   dispose() {
     if (this.disposed) return;
     this.disposed = true;

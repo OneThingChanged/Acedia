@@ -1,7 +1,7 @@
 ---
 type: Operational Model
 title: Local Dashboard
-description: "Loopback monitoring and control surface backed by the current Electron runtime."
+description: "Local monitoring and control, with optional code-paired access from the same LAN."
 tags:
   - dashboard
   - monitoring
@@ -21,13 +21,59 @@ sources:
   - id: session-create-broker
     resource: ../app/electron/services/remote-session-create-broker.mjs
     title: "Acknowledged session creation broker"
+  - id: lan-access
+    resource: ../app/electron/services/lan-access.mjs
+    title: "LAN interface validation and connection codes"
 ---
 
 # Local Dashboard
 
 The production Dashboard is `LocalDashboardService` in the Electron process.
-It binds to loopback and projects desktop-owned state into the shared web
-client.[^web-services]
+It binds to loopback by default and projects desktop-owned state into the shared
+web client. Standard and Store also offer explicit LAN access with a connection
+code; Company remains loopback-only.[^web-services][^lan-access]
+
+## 같은 공유기의 다른 PC에서 접속
+
+[1.8.1.46](release-1-8-1-46.md)부터 **설정 → 대시보드 → LAN 접속 허용**을 켜면
+대시보드 서버를 시작하고 연결된 네트워크별 접속 주소와 **8자리 연결 코드**를 표시한다.
+다른 PC의 브라우저에서 **주소 복사**로 복사한 URL을 열고 코드를 입력한다.
+GitHub OAuth나 Cloudflare 터널 설정은 필요 없다. 호스트의 Acedia는 실행 중이어야 한다.
+
+* 주소는 실제 수신 포트를 사용한다. 기본 포트는 4421이며 사용 중이면 빈 포트를 선택한다.
+* 주소에 `?agent=…` 또는 `?screen=…`가 있으면 로그인 후 해당 화면으로 돌아간다.
+* Chat·터미널·세션 조작·문서·사용량은 기존 Dashboard와 같은 기능을 사용한다.
+* 설정은 저장된다. 앱 실행 시 서버를 켜려면 기존 **Start dashboard when Acedia starts**도 켠다.
+* **코드 갱신 및 연결 해제**는 새 코드를 만들고 기존 로그인과 실시간 스트림을 해제한다.
+  Acedia나 대시보드 서버를 재시작한 경우에도 다시 연결해야 한다. 쿠키의 최대 유효 기간은 7일이다.
+* LAN 접속을 끄면 수신 주소를 loopback으로 되돌리고 연결을 해제한다.
+  설정 변경은 대시보드 서버에 적용하며 실행 중인 CLI 세션을 종료하지 않는다.
+
+연결되지 않으면 두 PC가 같은 네트워크인지 확인하고 Windows 방화벽에서 Acedia의
+**개인 네트워크** 접근을 허용한다. 수동 포트 규칙을 사용할 경우 화면에 표시된 실제 TCP
+포트를 해당 로컬 서브넷에 허용한다. 게스트 Wi-Fi의 기기 간 격리도 확인한다.
+앱은 방화벽이나 공유기 포트 포워딩을 자동 변경하지 않는다.
+
+LAN 접속은 사설 IPv4 인터페이스와 같은 서브넷의 직접 연결만 받는다. 전달된 Host/IP
+헤더나 다른 호스트 이름으로 로컬 소유자 권한을 얻을 수 없다. 코드 확인 전에는 세션,
+파일, 실시간 출력, 계정 API에 접근할 수 없다. 코드는 데스크톱 IPC에서만 표시하며
+웹 상태·URL·설정 파일에는 포함하지 않는다. 로그인 실패는 IP별·전체 요청 수로 제한하고
+변경 요청은 동일 출처 검사를 거친다.[^lan-access]
+
+LAN HTTP에서는 문서 경로·터미널 복사가 브라우저 선택 기반 복사로 동작한다.
+브라우저의 서비스 워커·Web Push·설치 기능에는 HTTPS가 필요하므로 기존 외부 Remote
+주소를 사용한다. 브라우저를 연 상태의 대시보드 사용은 LAN HTTP로 가능하다.
+
+검증: `lan-access.test.mjs`는 실제 사설 인터페이스를 통한 코드 인증, API 접근,
+설정 복원, 코드 갱신·로그아웃·비활성화와 출처·서브넷 검사를 확인한다.
+`node app/scripts/electron-lan-dashboard-smoke.mjs`는 실제 preload와 IPC 검사를 통해
+설정 토글·주소 복사·연결 해제를 실행하고, 일반 LAN HTTP 브라우저에서 1024px/390px
+로그인·Chat 전송·문서 열기·복사·로그아웃을 검증한다. 별도 PC의 방화벽 통과 여부는
+설치 후 해당 네트워크에서 확인한다.
+
+2026-10-03 전체 단위 테스트 **150개 파일 / 957개 테스트**와 TypeScript·Vite 빌드가
+통과했다. 설정 검색 **118개 항목**의 이동·포커스·배치, IPC 허용 목록 일치,
+기존 Remote의 PC·모바일 화면과 6개 표시 언어도 확인했다.
 
 ## Data and control surface
 
@@ -99,7 +145,7 @@ for sizing, translation fallback and user-content preservation rules.[^remote-cl
 
 ## Boundary
 
-Loopback Dashboard access is distinct from external Remote access. External
+Local Dashboard access, including its optional LAN connection code, is distinct from external Remote access. External
 authentication, account approval, Cloudflare tunnel assumptions, Android return
 tickets, and push/device monitoring belong to [Remote service](remote-service.md).
 
@@ -110,3 +156,4 @@ authenticated contract in [MiraControl integration](miracontrol-integration.md).
 [^web-tests]: Web-service contract tests
 [^remote-client]: Shared Dashboard and Remote client
 [^session-create-broker]: Acknowledged session creation broker
+[^lan-access]: LAN interface validation and connection codes

@@ -4,12 +4,14 @@ import type { AttentionItem, AttentionKind } from "../lib/attention";
 import { useAppLanguage, type ResolvedAppLanguage } from "../lib/appLanguage";
 
 const KIND_LABEL: Record<AttentionKind, string> = {
+  question: "질문 · 답변 대기",
   waiting: "응답 대기",
   blocked: "확인 필요",
   completed: "완료",
   stale: "상태 확인",
 };
 const KIND_LABEL_EN: Record<AttentionKind, string> = {
+  question: "Question · answer needed",
   waiting: "Waiting for response",
   blocked: "Needs attention",
   completed: "Completed",

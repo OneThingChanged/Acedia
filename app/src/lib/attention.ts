@@ -1,7 +1,7 @@
 export const LS_ATTENTION_ITEMS = "multiagent.attentionItems.v1";
 export const MAX_ATTENTION_ITEMS = 100;
 
-export type AttentionKind = "waiting" | "blocked" | "completed" | "stale";
+export type AttentionKind = "waiting" | "question" | "blocked" | "completed" | "stale";
 
 export type AttentionItem = {
   id: string;
@@ -28,7 +28,7 @@ export function upsertAttentionItem(
 export function removeSessionAttention(
   items: AttentionItem[],
   sessionKey: string,
-  kinds: AttentionKind[] = ["waiting", "blocked", "stale"]
+  kinds: AttentionKind[] = ["waiting", "question", "blocked", "stale"]
 ) {
   return items.filter(
     (item) => item.sessionKey !== sessionKey || !kinds.includes(item.kind)
@@ -111,7 +111,7 @@ function isAttentionItem(value: unknown): value is AttentionItem {
     typeof item.body === "string" &&
     typeof item.createdAt === "number" &&
     typeof item.read === "boolean" &&
-    ["waiting", "blocked", "completed", "stale"].includes(item.kind || "");
+    ["waiting", "question", "blocked", "completed", "stale"].includes(item.kind || "");
 }
 
 export function loadAttentionItems(): AttentionItem[] {

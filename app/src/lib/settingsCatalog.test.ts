@@ -23,6 +23,8 @@ describe("settings search catalog", () => {
   });
   it("filters unavailable channels and worker options without hiding disabled tools", () => {
     expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.category === "remote")).toBe(false);
+    expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.id === "dashboard.lan")).toBe(false);
+    expect(searchSettings("LAN", context).some(item => item.id === "dashboard.lan")).toBe(true);
     expect(availableSettings({ ...context, buildVariant: "store" }).some(item => item.category === "remote")).toBe(true);
     const disabled = availableSettings({ ...context, disabledTools: ["codex", "claude"] });
     expect(disabled.some(item => item.requiresWorkers)).toBe(false);

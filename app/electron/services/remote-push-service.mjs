@@ -153,9 +153,10 @@ export class RemotePushService {
     });
   }
 
-  async notifyQuestion({ agentId, sessionId, title }) {
+  async notifyQuestion({ agentId, sessionId, questionId, title }) {
     return this.notifyEvent({
       type: "agent-question",
+      questionId,
       agentId,
       sessionId,
       title,
@@ -163,13 +164,13 @@ export class RemotePushService {
     });
   }
 
-  async notifyEvent({ type, agentId, sessionId, title, urgency }) {
+  async notifyEvent({ type, agentId, sessionId, questionId, title, urgency }) {
     const id = clean(agentId);
     if (!id || this.subscriptions.length === 0) {
       return { sent: 0, removed: 0, duplicate: false };
     }
     const now = this.now();
-    const eventKey = `${clean(type)}:${id}`;
+    const eventKey = `${clean(type)}:${id}${type === 'agent-question' && questionId ? ':' + clean(questionId) : ''}`;
     const previous = this.recentEvents.get(eventKey);
     if (
       previous &&

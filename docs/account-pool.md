@@ -14,6 +14,9 @@ sources:
   - resource: ../app/electron/remote-pwa/styles.css
   - resource: ../app/scripts/account-pool-cli-smoke.mjs
   - resource: ../app/scripts/electron-account-pool-smoke.mjs
+  - resource: ../app/electron/services/codex-usage-accounts.mjs
+  - resource: ../app/electron/services/codex-usage-accounts.test.mjs
+  - resource: ../app/scripts/electron-unified-usage-smoke.mjs
 ---
 
 # Acedia 계정 분산
@@ -24,6 +27,30 @@ Python 런타임을 설치하지 않는다. 계정 로그인과 갱신은 설치
 
 계정 카드는 표시 영역 992px 이상에서 3열, 656px 이상에서 2열, 그보다 좁으면 1열로 표시한다.
 계정을 추가하면 다음 행으로 이어지며, 계정이 적어도 카드가 행 전체로 늘어나지 않는다.
+
+## 계정 사용량 통합 (1.8.1.46)
+
+하단 상태바와 **에이전트 사용량**, Dashboard/Remote의 **Usage**는
+**계정 관리·분산**에 등록한 Codex 계정 이름·한도·조회 상태를 함께 사용한다.
+분산 제외 계정도 목록에 남으며, 사용량 확인과 하단바 표시를 선택할 수 있다.
+계정 이름 변경과 참여·제외 상태는 다음 조회에 반영된다.
+하단 사용량 창의 **계정 관리·분산** 버튼은 같은 Dashboard 관리 화면을 연다.
+
+기존 로컬 CLI 로그인과 등록 계정의 workspace account ID 및 사용자 subject가
+모두 일치하면 기존 `Default`/로컬 프로필을 등록한 계정 하나로 표시한다.
+이름·이메일·사용률만으로 합치지 않으며 식별 정보가 없거나 다른 직접 로그인은 유지한다.
+기존 하단바 선택과 숨김 설정을 이어받고, 명시적 하단바 선택은 등록 계정 ID로 저장한다.
+표시 통합은 인증 파일을 복사하거나 세션의 계정 배정을 변경하지 않는다.
+
+통합된 계정의 한도는 분산 계정 저장소의 조회값을 사용한다. 기존 로컬 한도 스냅샷을
+다른 등록 계정의 값으로 옮기지 않는다. 어느 화면에서 새로고침하든 분산 계정 조회는
+하나의 백그라운드 작업을 공유하고, 분산 제외 계정도 조회한다. 실패하면 이전 한도와
+조회 시각을 유지한다. 원격의 일반 승인 사용자는 분산 계정 정보·표시 설정을 변경하거나
+볼 수 없으며, 소유자에게만 통합된 분산 계정 한도를 표시한다.
+
+검증: `codex-usage-accounts.test.mjs`, `statusBarSettings.test.ts`,
+`electron-unified-usage-smoke.mjs`에서 계정 일치/불일치, 선택 유지, 이름 변경,
+제외 상태, 중복 갱신, 권한과 Desktop/Dashboard/모바일 Remote 화면을 확인한다.
 
 ## 등록과 사용
 
