@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.51 parent and child session organization
 description: Organize real sessions as a project tree with folder, instruction and model inheritance while preserving independent conversations and creation provenance.
-status: candidate
+status: stable
 last_updated: 2026-10-04
 sources:
   - resource: session-organization.md
@@ -36,7 +36,28 @@ sources:
 - 전체 **157개 파일·1,021개 테스트**, TypeScript/Vite 프로덕션 빌드와 `git diff --check`를 통과했다.
 - 실제 App의 별도 임시 프로필에서 자식 생성, 부모 변경, 폴더·지침·모델 전달, 직접 모델 변경, 순환 방지와 기존 브라우저 이동을 검증했다.
 - 재실행 복원, 공유 작업창의 저장 이벤트, 상속 폴더가 바뀐 대화의 첫 복원과 후속 실행을 확인했다. 1600×1000, 1280×900, 800×640에서 배치를 검증했다.
-- EXE 패키징·설치 파일·공개 업데이터 검증과 게시 결과는 배포 완료 후 기록한다.
+- 세션·프로젝트 생성 창의 한국어·영어, 세 테마, 데스크톱·모바일 및 확장 설정 배치와 터미널 링크·native PTY 검증을 통과했다.
+- Standard 패키지의 내장 Git, bridge/Dashboard, 종료·트레이·보안 lifecycle 검사와 설치 파일·manifest·크기·SHA-256·blockmap 검증을 통과했다.
+- 공개 설치 파일에도 `publish-github-exe.ps1 -VerifyOnly`를 적용해 버전과 실제 다운로드의 일치를 확인했다. Authenticode는 **NotSigned**이며 기존 EXE 채널과 같은 서명 상태다.
+
+## 공개 배포
+
+2026-10-04 **21:27:01 KST**, [v1.8.1.51](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.51)를 최신 안정 EXE 릴리스로 게시했다.
+제품 태그와 릴리스 대상은 고정 소스 `8b12bb5f6685a354564a123cd986b6f5d8b0cd16`다.
+로컬에서 검증한 세 자산의 업로드 크기·GitHub SHA-256·소스 태그를 확인한 뒤 게시했다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.51-x64.exe` | 151,228,964 | `d57ab288090633ded18027d8ce9a59e499a15b408c863cab6875ed7dc5171d99` |
+| `Acedia-Setup-1.8.1.51-x64.exe.blockmap` | 159,129 | `bcedd712202f23d83e4a6668c47d23eebc0dc708d40ec24741ca8a6d53cf3a47` |
+| `latest-exe.json` | 256 | `bbf634bd3b55e4e085494f7116d35df411913a3fcc8ac0c3b4e19677bd58d9e4` |
+
+**21:28:22 KST**에 프로덕션 업데이터로 **1.8.1.49 및 1.8.1.50 → 1.8.1.51 감지**와
+**1.8.1.50 기준 실제 설치 파일 다운로드·설치 전 해시 검증**을 완료했다.
+세 공개 자산의 실제 다운로드 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다.
+
+EXE와 Git 소스 게시를 완료했다. 사용자 PC의 설치 프로그램은 실행하지 않았으며 앱의 Check → Update에서 적용한다.
+Microsoft Store와 새 APK 배포는 수행하지 않았다.
 
 ## 지원 범위
 
