@@ -92,6 +92,7 @@ const ui = {
   filePreviewDownload: $("#filePreviewDownload"),
   filePreviewClose: $("#filePreviewClose"),
   filePreviewMessage: $("#filePreviewMessage"),
+  filePreviewOpen: $("#filePreviewOpen"),
   filePreviewMarkdown: $("#filePreviewMarkdown"),
   filePreviewImageWrap: $("#filePreviewImageWrap"),
   filePreviewVideo: $("#filePreviewVideo"),
@@ -319,6 +320,7 @@ let filePreviewRequest = 0;
 let filePreviewObjectUrl = "";
 let filePreviewPreviousFocus = null;
 let filePreviewContext = null;
+let htmlPreviewLaunch = null;
 let sessionEditorMode = null;
 let sessionEditorAgentId = null;
 let sessionEditorPoolChoices = [];
@@ -1960,35 +1962,94 @@ async function downloadRemoteFile(file) {
 
 async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
   if (!projectId || !relativePath) return;
-  const query = remoteFileQuery(projectId, relativePath, agentId);
-  if (window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__ && window.ReactNativeWebView?.postMessage) {
-    query.set("format", "json");
+  const requestId = ++filePreviewRequest;
+  if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
+  resetFilePreviewContent();
+  filePreviewContext = { agentId, projectId, path: relativePath, kind: "html" };
+  syncFileDownloadButtons();
+  ui.filePreviewTitle.textContent = relativePath.split(/[\\/]/).pop() || relativePath;
+  ui.filePreviewPath.textContent = relativePath;
+  ui.filePreviewKind.textContent = "HTML";
+  ui.filePreviewMessage.textContent = t("HTML을 불러오는 중…");
+  ui.filePreviewMessage.setAttribute("aria-busy", "true");
+  ui.filePreviewOverlay.hidden = false;
+  document.documentElement.classList.add("file-preview-open");
+  ui.filePreviewClose.focus();
+
+  const nativeExternal = window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__ && window.ReactNativeWebView?.postMessage;
+  const launch = { controller: new AbortController(), popup: null };
+  htmlPreviewLaunch = launch;
+  // Reserve the browser tab during the original click, before awaiting fetch.
+  // If popups are blocked, a normal link remains available in the dialog.
+  if (!nativeExternal && !window.__MULTIAGENT_NATIVE_APP__) {
     try {
-      const response = await fetch(`/api/docs/preview?${query}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (!response.ok) throw new Error(await apiError(response));
-      const result = await response.json();
+      launch.popup = window.open("about:blank", "_blank");
+      if (launch.popup) {
+        launch.popup.opener = null;
+        launch.popup.document.title = t("HTML을 불러오는 중…");
+        launch.popup.document.body.textContent = t("HTML을 불러오는 중…");
+        launch.popup.document.body.style.cssText = "margin:0;padding:32px;background:#07111a;color:#dceaf4;font:16px system-ui";
+      }
+    } catch { launch.popup?.close(); launch.popup = null; }
+  }
+  const query = remoteFileQuery(projectId, relativePath, agentId);
+  query.set("format", "json");
+  try {
+    const response = await fetch(`/api/docs/preview?${query}`, {
+      cache: "no-store", credentials: "same-origin",
+      signal: AbortSignal.any([launch.controller.signal, AbortSignal.timeout(30000)]),
+    });
+    const result = await response.json();
+    if (requestId !== filePreviewRequest) return;
+    if (!response.ok) {
+      const error = new Error(result.error || String(response.status));
+      error.previewDetails = result;
+      throw error;
+    }
+    const previewUrl = new URL(result.url, window.location.origin);
+    if (previewUrl.origin !== window.location.origin || !/^\/preview\/[A-Za-z0-9_-]{43}\//.test(previewUrl.pathname)) {
+      throw new Error(t("올바른 미리보기 주소를 받지 못했습니다."));
+    }
+    if (nativeExternal) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: "multiagent:open-external-preview",
-        url: new URL(result.url, window.location.origin).href,
+        url: previewUrl.href,
       }));
-    } catch (error) {
-      showToast(t("HTML을 열지 못했습니다: {0}", [error.message || error]));
+    } else if (window.__MULTIAGENT_NATIVE_APP__) {
+      window.location.assign(previewUrl.href);
+    } else if (launch.popup && !launch.popup.closed) {
+      launch.popup.location.replace(previewUrl.href);
+    } else {
+      htmlPreviewLaunch = null;
+      ui.filePreviewMessage.setAttribute("aria-busy", "false");
+      ui.filePreviewMessage.textContent = t("미리보기가 준비되었습니다. 아래 버튼으로 새 창에서 여세요.");
+      ui.filePreviewOpen.href = previewUrl.href;
+      ui.filePreviewOpen.hidden = false;
+      ui.filePreviewOpen.focus();
+      return;
     }
-    return;
+    // The browser now owns the navigation; closing the dialog must not close it.
+    htmlPreviewLaunch = null;
+    closeFilePreview();
+  } catch (error) {
+    if (requestId !== filePreviewRequest) return;
+    launch.popup?.close();
+    htmlPreviewLaunch = null;
+    ui.filePreviewMessage.setAttribute("aria-busy", "false");
+    const details = error.previewDetails;
+    ui.filePreviewMessage.textContent = details?.code === "HTML_PREVIEW_TOO_LARGE"
+      ? t("HTML 미리보기는 {0}MiB까지 지원합니다. 이 파일은 다운로드해서 열어주세요.", [details.limitBytes / (1024 * 1024)])
+      : t("HTML을 열지 못했습니다: {0}", [error.message || error]);
   }
-  const anchor = document.createElement("a");
-  anchor.href = `/api/docs/preview?${query}`;
-  anchor.target = window.__MULTIAGENT_NATIVE_APP__ ? "_self" : "_blank";
-  anchor.rel = "noopener noreferrer";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
 }
 
 function resetFilePreviewContent() {
+  htmlPreviewLaunch?.controller.abort();
+  htmlPreviewLaunch?.popup?.close();
+  htmlPreviewLaunch = null;
+  ui.filePreviewOpen.hidden = true;
+  ui.filePreviewOpen.removeAttribute("href");
+  ui.filePreviewMessage.setAttribute("aria-busy", "false");
   ui.filePreviewVideo.pause();
   ui.filePreviewVideo.removeAttribute("src");
   ui.filePreviewVideo.load();

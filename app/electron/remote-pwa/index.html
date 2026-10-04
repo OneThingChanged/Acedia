@@ -433,7 +433,8 @@
           <button class="icon-button" id="filePreviewClose" type="button" title="미리보기 닫기" aria-label="미리보기 닫기">×</button>
         </header>
         <div class="file-preview-body">
-          <div class="file-preview-message" id="filePreviewMessage">파일을 불러오는 중…</div>
+          <div class="file-preview-message" id="filePreviewMessage" role="status" aria-live="polite" aria-busy="false">파일을 불러오는 중…</div>
+          <a class="small-button file-preview-open-link" id="filePreviewOpen" target="_blank" rel="noopener noreferrer" hidden>새 창에서 HTML 열기 ↗</a>
           <article class="document-markdown file-preview-markdown" id="filePreviewMarkdown" hidden></article>
           <video id="filePreviewVideo" class="remote-video" controls playsinline preload="metadata" hidden></video>
           <div class="file-preview-image-wrap" id="filePreviewImageWrap" hidden>

@@ -150,10 +150,43 @@ Full paths in chat can open files under registered project roots. When a registe
 Unreal plugin has a `.uproject` ancestor, its enclosing Unreal workspace is also
 allowed, so `Saved` images and JSON reports can be previewed from Remote. Other
 absolute paths remain blocked. JSON files open from chat links without being
-added to the Documents index. Remote PWA cache v80 is used for the 1.8.1.35 download UI.
+added to the Documents index. Remote PWA cache v87 includes the large HTML preview UI.
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
+
+## Large HTML previews (source implemented, publication pending)
+
+Remote·Dashboard의 채팅 HTML 링크와 Documents의 **새 창에서 HTML 열기**는
+일반 문서 읽기와 별도로 최대 **32MiB** HTML을 지원한다. 기존 2MiB 제한으로
+막히던 8MiB HTML도 열 수 있다. `/api/docs/read`와 Markdown·JSON·CSS·JS 등
+텍스트 자산의 2MiB 제한은 유지한다. 발급할 때와 실제 HTML을 제공할 때 크기를
+확인하고, 읽는 도중 파일이 커져도 32MiB를 넘으면 중단한다.
+
+미리보기 주소를 준비하는 동안 파일명·경로와 로딩 표시를 보여준다. 브라우저에서는
+클릭 시 새 탭을 먼저 확보하고 준비 완료 후 미리보기로 이동한다. 새 창이 차단되면
+**새 창에서 HTML 열기** 링크를 제공한다. Android는 기존 외부 미리보기 브리지를
+사용하며 주소 전달 후 문서 수신과 렌더링은 외부 브라우저가 관리한다. 준비 중 창을
+닫거나 다른 파일을 열면 요청을 취소하고, 늦게 응답한 주소로 창을 열지 않는다.
+
+32MiB를 초과하면 오류 토스트 대신 파일명과 한도를 표시한 창에서 **다운로드**를
+제공한다. 기존 `/api/docs/download` 스트리밍으로 원본을 저장한다. 오류 응답은
+`HTML_PREVIEW_TOO_LARGE`, `limitBytes`, `sizeBytes`를 포함해 안내를 번역할 수 있다.
+
+HTML 응답은 클라이언트의 `Accept-Encoding`에 따라 gzip을 스트리밍한다.
+압축 응답에는 원본 크기의 `Content-Length`를 사용하지 않으며 `Vary: Accept-Encoding`을
+포함한다. `gzip;q=0`이면 압축하지 않고, HEAD는 해당 전송 형식의 헤더만 반환한다.
+HTML의 루트 경로 보정은 크기를 제한한 본문을 메모리에서 처리하므로 압축이
+서버의 HTML 처리 메모리나 브라우저의 렌더링 비용까지 줄이는 것은 아니다.
+기존 인증, 프로젝트·실제 경로 검사, 15분 토큰, opaque-origin sandbox를 유지한다.
+
+검증: `remote-html-preview.test.mjs`는 Remote·Dashboard의 8MiB HTML, 실제 gzip
+바이트와 협상, 정확히 32MiB 경계, 발급 후 커진 파일, 한도 초과 원본 다운로드와
+인증을 확인한다. `npm --prefix app run electron:remote-html-smoke`는 375×812·844×375의
+로딩·다운로드 배치, 외부 미리보기 브리지, 이미지·상대 CSS·JS·버튼 동작과 격리,
+취소, 브라우저 새 창 차단 및 일반 새 창 열기를 확인한다. 실제 Android 기기 검증은
+별도이며 전체 소스 테스트 **154개 파일·993개 테스트**와 TypeScript·Vite 빌드도
+통과했다. 이 변경은 아직 EXE에 게시하지 않았다.
 
 ## Original file downloads
 
@@ -170,7 +203,8 @@ Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 
 
 클라이언트는 `HEAD`로 접근·존재 여부를 먼저 확인하고 브라우저의 파일 다운로드를
 시작한다. 준비 중 중복 요청을 막고 실패 후 버튼을 복구한다. 본문을 PWA 메모리에
-모으지 않고 서버에서 스트리밍하므로 2MB 미리보기 제한을 넘는 문서도 저장할 수 있다.
+모으지 않고 서버에서 스트리밍하므로 일반 문서 2MiB·HTML 32MiB 미리보기 제한을
+넘는 파일도 저장할 수 있다.
 준비 완료 안내는 다운로드 시작을 뜻하며 실제 저장 진행은 브라우저가 관리한다.
 
 소스 검증: 다운로드와 기존 웹 서비스 **22개 테스트**가 원본 바이트·한글 파일명·

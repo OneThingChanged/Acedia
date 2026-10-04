@@ -40,7 +40,7 @@ describe("Remote mobile document layout", () => {
     expect(html).toContain('id="documentOpenHtmlButton"');
     expect(html).not.toContain('id="documentHtml"');
     expect(script).toContain("async function openRemoteHtmlPreview(projectId, relativePath, agentId");
-    expect(script).toContain('anchor.href = `/api/docs/preview?${query}`');
+    expect(script).toContain('query.set("format", "json")');
     expect(script).not.toContain("srcdoc");
   });
 });

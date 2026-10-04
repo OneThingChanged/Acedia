@@ -17,6 +17,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.50 EXE release](release-1-8-1-50.md) - Restore Git changes with bundled Git, scoped ownership/long-path settings and persistent retry; improve large Remote HTML previews.
 * [Acedia 1.8.1.45 EXE release](release-1-8-1-45.md) - Open Dashboard usage from stored totals and collect large transcript histories in bounded background batches, prioritizing active sessions.
 * [Acedia 1.8.1.44 EXE release](release-1-8-1-44.md) - Recover automatically assigned sessions after account exclusion, refresh token usage and improve embedded verification-page compatibility.
 * [Acedia 1.8.1.43 EXE release](release-1-8-1-43.md) - Published highlighted terminal path boundaries; native clicks and public updater/assets verified.

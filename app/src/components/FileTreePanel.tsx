@@ -1604,7 +1604,10 @@ function SourceControlView({
   onError: (err: unknown) => void;
 }) {
   const { text } = useAppLanguage();
-  const [changes, setChanges] = useState<GitChangesResult | null>(null);
+  const [snapshot, setSnapshot] = useState<{ folder: string; changes: GitChangesResult } | null>(null);
+  const changes = snapshot?.folder === folder ? snapshot.changes : null;
+  const [loadFailure, setLoadFailure] = useState<{ folder: string; message: string } | null>(null);
+  const loadError = loadFailure?.folder === folder ? loadFailure.message : null;
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -1626,6 +1629,15 @@ function SourceControlView({
   const loadFolderRef = useRef(folder);
   loadFolderRef.current = folder;
 
+  useEffect(() => {
+    setSelected(new Set());
+    lastClickedRef.current = null;
+    setCtx(null);
+    setHistory(null);
+    setBranchOpen(false);
+    setBranchList(null);
+  }, [folder]);
+
   const load = useCallback(async () => {
     if (loadRunningRef.current) {
       loadPendingRef.current = true;
@@ -1638,7 +1650,8 @@ function SourceControlView({
         loadPendingRef.current = false;
         const targetFolder = loadFolderRef.current;
         if (!targetFolder) {
-          setChanges(null);
+          setSnapshot(null);
+          setLoadFailure(null);
           continue;
         }
         try {
@@ -1649,7 +1662,8 @@ function SourceControlView({
             loadPendingRef.current = true;
             continue;
           }
-          setChanges(result);
+          setSnapshot({ folder: targetFolder, changes: result });
+          setLoadFailure(null);
           // Drop selections for paths that are no longer changed.
           setSelected((current) => {
             if (current.size === 0) return current;
@@ -1661,7 +1675,10 @@ function SourceControlView({
             return next.size === current.size ? current : next;
           });
         } catch (err) {
-          if (loadFolderRef.current === targetFolder) onError(err);
+          if (loadFolderRef.current === targetFolder) {
+            setSnapshot(null);
+            setLoadFailure({ folder: targetFolder, message: err instanceof Error ? err.message : String(err) });
+          }
           else loadPendingRef.current = true;
         }
       } while (loadPendingRef.current);
@@ -1669,7 +1686,7 @@ function SourceControlView({
       setLoading(false);
       loadRunningRef.current = false;
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -1867,8 +1884,16 @@ function SourceControlView({
   }
   if (!changes) {
     return (
-      <div className="file-tree-body">
-        <div className="docs-empty">{loading ? "Loading..." : ""}</div>
+      <div className="file-tree-body scm-state" aria-busy={loading}>
+        {loadError ? (
+          <div className="scm-load-error" role="alert">
+            <strong>{text("Git 변경사항을 불러오지 못했습니다.", "Could not load Git changes.")}</strong>
+            <p>{loadError}</p>
+          </div>
+        ) : <div className="docs-empty" role="status">{text("Git 변경사항을 불러오는 중…", "Loading Git changes…")}</div>}
+        <button className="scm-retry" type="button" disabled={loading} onClick={() => void load()}>
+          {loading ? text("조회 중…", "Loading…") : text("새로고침", "Refresh")}
+        </button>
       </div>
     );
   }

@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { createGzip } from "node:zlib";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
@@ -37,6 +39,7 @@ const REMOTE_DOCUMENT_SKIPPED_DIRS = new Set([
 ]);
 const MAX_REMOTE_DOCUMENT_FILES = 500;
 const MAX_REMOTE_DOCUMENT_BYTES = 2 * 1024 * 1024;
+const MAX_REMOTE_HTML_PREVIEW_BYTES = 32 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const REMOTE_HTML_PREVIEW_TTL_MS = 15 * 60_000;
 const MAX_REMOTE_HTML_PREVIEWS = 128;
@@ -107,9 +110,10 @@ const REMOTE_MARKDOWN_PREVIEW_CSP = [
   "sandbox allow-downloads",
 ].join("; ");
 class RemoteDocumentError extends Error {
-  constructor(status, message) {
+  constructor(status, message, details = {}) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -561,8 +565,36 @@ function renderRemoteMarkdownPreview(token, resolved, source) {
 </style></head><body><header><small>MARKDOWN</small><strong>${title}</strong></header><main>${body}</main></body></html>`, token);
 }
 
+function remoteHtmlSizeError(sizeBytes) {
+  return new RemoteDocumentError(413, "32MiB보다 큰 HTML 문서는 다운로드해서 열어주세요.", {
+    code: "HTML_PREVIEW_TOO_LARGE", limitBytes: MAX_REMOTE_HTML_PREVIEW_BYTES, sizeBytes,
+  });
+}
+
+async function readRemoteHtmlSource(resolved) {
+  const chunks = [];
+  let size = 0;
+  // Check while reading as well: a document may grow after the initial stat.
+  for await (const chunk of fs.createReadStream(resolved)) {
+    size += chunk.length;
+    if (size > MAX_REMOTE_HTML_PREVIEW_BYTES) throw remoteHtmlSizeError(size);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size).toString("utf8");
+}
+
+function acceptsPreviewGzip(request) {
+  const encodings = new Map(String(request.headers["accept-encoding"] || "").split(",").map(value => {
+    const [name, ...parameters] = value.trim().toLowerCase().split(";");
+    const quality = parameters.map(value => value.trim()).find(value => value.startsWith("q="));
+    const q = quality ? Number(quality.slice(2)) : 1;
+    return [name, Number.isFinite(q) && q > 0 && q <= 1];
+  }));
+  return encodings.get("gzip") ?? encodings.get("*") ?? false;
+}
+
 async function prepareRemoteHtmlPreview(entry, token, resolved) {
-  const source = await fsPromises.readFile(resolved, "utf8");
+  const source = await readRemoteHtmlSource(resolved);
   const unrealReport = /<title>\s*Automation Test Results\s*<\/title>/i.test(source)
     && /dustjs-linkedin|\$\.getJSON\(["']index\.json["']/i.test(source);
   if (unrealReport) {
@@ -595,9 +627,7 @@ async function issueRemoteHtmlPreview(previews, snapshot, projectId, requestedPa
   if (![".html", ".htm"].includes(path.extname(resolved).toLowerCase())) {
     throw new RemoteDocumentError(415, "HTML 파일만 새 창에서 열 수 있습니다.");
   }
-  if (stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
-    throw new RemoteDocumentError(413, "2MB보다 큰 HTML 문서는 Remote에서 열 수 없습니다.");
-  }
+  if (stats.size > MAX_REMOTE_HTML_PREVIEW_BYTES) throw remoteHtmlSizeError(stats.size);
   pruneRemoteHtmlPreviews(previews);
   while (previews.size >= MAX_REMOTE_HTML_PREVIEWS) {
     previews.delete(previews.keys().next().value);
@@ -667,20 +697,24 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
     return true;
   }
   if (videoType(resolved)) { await sendVideo(request, response, resolved, stats, contentType); return true; }
-  const limit = [".html", ".htm", ".md", ".markdown", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".csv", ".xml"]
-    .includes(extension) ? MAX_REMOTE_DOCUMENT_BYTES : MAX_REMOTE_IMAGE_BYTES;
+  const html = extension === ".html" || extension === ".htm";
+  const limit = html ? MAX_REMOTE_HTML_PREVIEW_BYTES
+    : [".md", ".markdown", ".css", ".js", ".mjs", ".json", ".map", ".txt", ".csv", ".xml"]
+      .includes(extension) ? MAX_REMOTE_DOCUMENT_BYTES : MAX_REMOTE_IMAGE_BYTES;
   if (stats.size > limit) {
-    response.writeHead(413, { "cache-control": "no-store" }).end();
+    if (html) sendRemoteDocumentError(response, remoteHtmlSizeError(stats.size));
+    else response.writeHead(413, { "cache-control": "no-store" }).end();
     return true;
   }
-  const html = extension === ".html" || extension === ".htm";
   const markdown = extension === ".md" || extension === ".markdown";
   const htmlBody = html
     ? Buffer.from(await prepareRemoteHtmlPreview(entry, parsed.token, resolved))
     : markdown ? Buffer.from(renderRemoteMarkdownPreview(parsed.token, resolved, await fsPromises.readFile(resolved, "utf8"))) : null;
+  const gzip = html && acceptsPreviewGzip(request);
   response.writeHead(200, {
     "content-type": contentType,
-    "content-length": htmlBody?.length ?? stats.size,
+    ...(gzip ? { "content-encoding": "gzip" } : { "content-length": htmlBody?.length ?? stats.size }),
+    ...(html ? { vary: "Accept-Encoding" } : {}),
     "access-control-allow-origin": "null",
     "cache-control": "no-store",
     "content-security-policy": html ? REMOTE_HTML_PREVIEW_CSP
@@ -692,6 +726,7 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
     "x-content-type-options": "nosniff",
   });
   if (request.method === "HEAD") response.end();
+  else if (gzip) await pipeline(Readable.from([htmlBody]), createGzip({ level: 1 }), response);
   else if (htmlBody) response.end(htmlBody);
   else await pipeline(fs.createReadStream(resolved), response);
   return true;
@@ -699,7 +734,7 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
 
 function sendRemoteDocumentError(response, error) {
   const status = Number.isInteger(error?.status) ? error.status : 500;
-  sendJson(response, status, { error: error?.message || "문서를 불러오지 못했습니다." });
+  sendJson(response, status, { error: error?.message || "문서를 불러오지 못했습니다.", ...error?.details });
 }
 
 

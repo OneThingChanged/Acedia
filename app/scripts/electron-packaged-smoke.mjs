@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyBundledGit } from "./bundle-git-runtime.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
@@ -30,6 +31,7 @@ if (!fs.existsSync(executable)) {
 }
 
 const asarPath = path.join(path.dirname(executable), "resources", "app.asar");
+await verifyBundledGit(path.join(path.dirname(executable), "resources"));
 const asarEntries = new Set(listPackage(asarPath).map((entry) => entry.replaceAll("/", "\\")));
 for (const entry of [
   "\\electron\\remote-pwa\\index.html",
@@ -105,9 +107,10 @@ let output = "";
 let finished = false;
 let bridgeReady = false;
 let dashboardReady = false;
+let gitReady = false;
 
 function finishWhenReady() {
-  if (bridgeReady && dashboardReady) {
+  if (bridgeReady && dashboardReady && gitReady) {
     finish(0, `[electron-smoke] PACKAGED_DASHBOARD_OK port=${monitorPort}`);
   }
 }
@@ -117,19 +120,23 @@ function finish(code, message) {
   finished = true;
   clearTimeout(timeout);
   if (!child.killed) child.kill();
-  try {
-    fs.rmSync(userDataDir, { recursive: true, force: true });
-  } catch {
-    // Chromium can release cache files just after process exit.
-  }
   if (message) console.log(message);
   process.exitCode = code;
 }
+
+// Wait for Chromium to release the isolated profile before removing it.
+child.once("close", () => {
+  const relative = path.relative(fs.realpathSync(os.tmpdir()), fs.realpathSync(userDataDir));
+  if (!relative.startsWith("multiagent-electron-packaged-smoke-") || relative.includes(path.sep)) throw new Error("Unexpected smoke profile cleanup path.");
+  fs.rmSync(userDataDir, { recursive: true, maxRetries: 5, retryDelay: 100 });
+});
+child.once("error", error => finish(1, error.message));
 
 child.stdout.on("data", (chunk) => {
   const text = chunk.toString();
   output += text;
   process.stdout.write(text);
+  if (output.includes("MULTIAGENT_PACKAGED_GIT_QUERY_OK")) gitReady = true;
   if (output.includes(marker) && output.includes(variantMarker)) {
     bridgeReady = true;
     finishWhenReady();
@@ -139,8 +146,8 @@ child.stderr.on("data", (chunk) => process.stderr.write(chunk));
 child.on("exit", (code) => {
   if (!finished) {
     finish(
-      bridgeReady && dashboardReady ? 0 : 1,
-      `Packaged Electron exited before verification completed (bridge=${bridgeReady}, dashboard=${dashboardReady}, code=${code}).`,
+      bridgeReady && dashboardReady && gitReady ? 0 : 1,
+      `Packaged Electron exited before verification completed (bridge=${bridgeReady}, dashboard=${dashboardReady}, git=${gitReady}, code=${code}).`,
     );
   }
 });

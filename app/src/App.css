@@ -3950,6 +3950,11 @@ body.files-resizing .files-resizer::after {
 }
 
 /* ---- Source Control view ---- */
+.scm-state { padding: 12px; }
+.scm-load-error { color: var(--docs-error); font-size: 12px; overflow-wrap: anywhere; }
+.scm-load-error p { margin: 8px 0 12px; white-space: pre-wrap; }
+.scm-retry { padding: 7px 12px; border: 1px solid var(--docs-border); border-radius: 5px; background: var(--docs-bg-soft); color: var(--docs-heading); font: inherit; cursor: pointer; }
+.scm-retry:disabled { opacity: .6; cursor: wait; }
 .scm-view {
   flex: 1;
   min-height: 0;

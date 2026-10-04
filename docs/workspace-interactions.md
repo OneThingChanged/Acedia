@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-03
+last_updated: 2026-10-04
 stale_after: 2026-11-30
 sources:
   - id: session-workers
@@ -55,6 +55,15 @@ sources:
   - id: git-discovery
     resource: ../app/electron/services/git-submodules.mjs
     title: "Child Git repository discovery"
+  - id: git-runtime
+    resource: ../app/electron/services/git-runtime.mjs
+    title: "Installed and bundled Git executable selection"
+  - id: git-command
+    resource: ../app/electron/services/git-command.mjs
+    title: "Scoped Git commands and typed failures"
+  - id: git-bundle
+    resource: ../app/scripts/bundle-git-runtime.mjs
+    title: "Pinned Windows MinGit packaging"
   - id: document-viewer
     resource: ../app/src/components/DocViewer.tsx
     title: "Document viewer"
@@ -257,6 +266,35 @@ traverse directory symlinks, and is limited to 10,000 directories and 200 entrie
 Selecting a child scopes both files and Source Control to that repository; the
 selection is remembered per project.[^file-tree][^git-discovery]
 
+The pending source update resolves Git from installed executable paths before
+falling back to the Windows x64 package's bundled MinGit. Builds verify the
+official archive's pinned size and SHA256, include the complete runtime and
+licenses, and check that it runs without Git on PATH. The development tree can
+also use its local `.build-tools/mingit` cache; no Git binaries are committed.
+[^git-runtime][^git-bundle]
+
+Git commands trust the selected, canonical worktree only for that invocation,
+including submodule/worktree `.git` files and projects opened below the root.
+On Windows they enable `core.longpaths` for the same invocation. Acedia does not
+write either setting to the user's global Git configuration. Ownership errors,
+invalid metadata, missing executables, timeouts, and oversized output remain
+query failures instead of being presented as a non-repository.[^git-command]
+
+Source Control keeps query errors and a retry button visible until the next
+successful query. Loading disables retry. Switching project/repository removes
+the previous rows and selections; older results or errors cannot replace the
+new repository's state. The actual Electron Git panel smoke checks error
+persistence beyond five seconds, retry, slow queries, and project switching.
+[^file-tree]
+
+The pending update was verified on 2026-10-04: the Electron panel displayed all
+34 changes from an existing submodule project with different-owner Git metadata;
+the full suite passed 155 files / 1,002 tests, and TypeScript/Vite built
+successfully. A Standard unpacked build included verified MinGit and passed the
+packaged bridge/Dashboard smoke, including staged files with paths longer than
+260 characters and untracked files. This verification does not publish or
+install the pending update.
+
 Markdown renders in the React document viewer, images use the image viewer, and
 HTML opens in the isolated embedded browser. Document and Git tabs participate
 in the same Screen layout without becoming agents.[^document-viewer]
@@ -335,6 +373,9 @@ The domain invariants behind these interactions are documented in
 [^chat-view]: Persistent chat history and artifacts
 [^file-tree]: File tree panel
 [^git-discovery]: Child Git repository discovery
+[^git-runtime]: Installed and bundled Git executable selection
+[^git-command]: Scoped Git commands and typed failures
+[^git-bundle]: Pinned Windows MinGit packaging
 [^document-viewer]: Document viewer
 [^settings]: Settings surface
 [^app-language]: Application language preference

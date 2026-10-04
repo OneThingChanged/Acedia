@@ -1,6 +1,8 @@
 import type { TranslationRow } from "./catalog";
 
 export const WORKSPACE_TRANSLATIONS: readonly TranslationRow[] = [
+  ["Could not load Git changes.", "无法加载 Git 更改。", "無法載入 Git 變更。", "Git の変更を読み込めませんでした。", "No se pudieron cargar los cambios de Git."],
+  ["Loading Git changes…", "正在加载 Git 更改…", "正在載入 Git 變更…", "Git の変更を読み込み中…", "Cargando cambios de Git…"],
   ["Accounts & routing", "账户管理与路由", "帳戶管理與路由", "アカウント管理・分散", "Cuentas y enrutamiento"],
   ["Included in routing", "参与路由", "參與路由", "分散に参加", "Incluida en el enrutamiento"],
   ["Excluded from routing · quota still shown", "已排除路由 · 仍显示用量", "已排除路由 · 仍顯示用量", "分散から除外 · 使用量は表示", "Excluida del enrutamiento · cuota visible"],

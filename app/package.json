@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.49",
+  "multiAgentReleaseVersion": "1.8.1.50",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -27,6 +27,7 @@
     "electron:settings-search-smoke": "node scripts/electron-settings-search-smoke.mjs",
     "electron:workspace-layout-smoke": "node scripts/electron-workspace-layout-smoke.mjs",
     "electron:properties-smoke": "node scripts/electron-properties-smoke.mjs",
+    "electron:git-panel-smoke": "node scripts/electron-git-panel-smoke.mjs",
     "electron:terminal-colors-smoke": "node scripts/electron-terminal-colors-smoke.mjs",
     "electron:shared-profile-smoke": "node scripts/electron-shared-profile-smoke.mjs",
     "electron:remote-image-submit-smoke": "node scripts/electron-remote-image-submit-smoke.mjs",
@@ -40,6 +41,7 @@
     "electron:remote-session-filter-smoke": "electron scripts/electron-remote-session-filter-smoke.mjs",
     "electron:remote-queue-smoke": "electron scripts/electron-remote-queue-smoke.mjs",
     "electron:document-download-smoke": "electron scripts/electron-document-download-smoke.mjs",
+    "electron:remote-html-smoke": "node scripts/electron-remote-html-smoke.mjs",
     "electron:session-model-smoke": "electron scripts/electron-session-model-smoke.mjs",
     "electron:chat-question-smoke": "node scripts/electron-chat-question-smoke.mjs",
     "electron:lifecycle-smoke": "node scripts/electron-lifecycle-smoke.mjs",
@@ -98,6 +100,7 @@
   },
   "main": "electron/main.mjs",
   "build": {
+    "afterPack": "./scripts/bundle-git-runtime.mjs",
     "appId": "com.jintae.multiagent.electron",
     "productName": "Acedia",
     "executableName": "Acedia",
@@ -135,9 +138,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.49-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.50-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.49",
+      "uninstallDisplayName": "Acedia 1.8.1.50",
       "include": "electron/installer.nsh"
     },
     "publish": [

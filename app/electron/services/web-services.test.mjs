@@ -325,7 +325,7 @@ describe("Electron dashboard server", () => {
     expect(markupBody).toContain('if (/\\.(?:html|htm)$/i.test(path)) return "html";');
     expect(appScriptBody).toContain("async function openRemoteHtmlPreview(projectId, relativePath, agentId");
     expect(appScriptBody).toContain("window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__");
-    expect(appScriptBody).toContain('anchor.href = `/api/docs/preview?${query}`');
+    expect(appScriptBody).toContain('query.set("format", "json")');
     expect(appScriptBody).not.toContain("function inlineRemoteHtmlAssets(html, context)");
     expect(appScriptBody).toContain('fetch(`/api/files/image?${query}`');
     expect(appScriptBody).toContain('closest(".chat-file-link")');
@@ -395,7 +395,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v86');
+    expect(workerBody).toContain('multiagent-remote-v87');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js", "session-state.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
