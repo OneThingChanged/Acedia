@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.50 Git changes and large Remote HTML previews
 description: Show Git changes when Git is absent from PATH or repositories have ownership and long-path issues, and open large HTML previews from Remote with loading and download recovery.
-status: draft
+status: stable
 last_updated: 2026-10-04
 sources:
   - resource: workspace-interactions.md
@@ -41,4 +41,18 @@ sources:
 - 실제 Electron Remote 화면의 세로·가로 모바일 크기에서 8MiB 이상의 HTML, 상대 이미지·CSS·JS·버튼, 격리된 미리보기, 한도 초과 원본 다운로드·취소·팝업 복구를 검증했다.
 - 1.8.1.50 NSIS 설치 파일의 버전·manifest·크기·SHA-256과 `.blockmap`을 검증했다. 실제 packaged bridge/Dashboard 및 종료·트레이·보안 lifecycle 검사도 통과했다.
 - 설치 파일은 **151,218,362 bytes**, SHA-256은 `ee41524ed5cf7a68e2031e0d6f085f646f8b7a7216cbda665c9f8e72437a250d`다. Authenticode는 **NotSigned**이며 기존 EXE 채널과 같은 서명 상태다.
-- 공개 업데이트·다운로드 검증 결과는 게시 후 기록한다.
+- 공개 설치 파일에도 `publish-github-exe.ps1 -VerifyOnly`를 적용해 버전·manifest·크기·SHA-256 일치를 다시 확인했다.
+
+## 공개 배포
+
+2026-10-04 **11:13:45 KST**, [v1.8.1.50](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.50)를 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 고정 소스 `3e3e1b51faaede8e6921ceb47134dd8ed815bbc3`다. 로컬에서 검증한 빌드의 세 자산만 업로드했고, 초안의 크기·GitHub SHA-256·소스 태그를 확인한 후 게시했다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.50-x64.exe` | 151,218,362 | `ee41524ed5cf7a68e2031e0d6f085f646f8b7a7216cbda665c9f8e72437a250d` |
+| `Acedia-Setup-1.8.1.50-x64.exe.blockmap` | 159,116 | `0e8561db25bc9530c6ebf3d090dea28cea9c838382d83a0e655eccc743c93603` |
+| `latest-exe.json` | 256 | `06489c4d46f4f6365eb1e4fdf02c363e70ee3206f5f9e6611b8f28af651a488b` |
+
+**11:14:15 KST**에 프로덕션 업데이터로 **1.8.1.48 및 1.8.1.49 → 1.8.1.50 감지**와 **1.8.1.48 기준 실제 설치 파일 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 실제 다운로드 크기·SHA-256, 최신 안정 릴리스, 제품 소스 태그와 재사용 APK 버전도 확인했다.
+
+EXE와 Git 소스 게시, 문서 갱신을 완료했다. 사용자 PC의 설치 프로그램은 실행하지 않았으며 앱의 Check → Update에서 적용한다. Microsoft Store와 새 APK 배포는 수행하지 않았다. Git 런타임은 설치 파일에 포함하고 소스 Git 저장소에 바이너리나 LFS 객체를 추가하지 않았다.

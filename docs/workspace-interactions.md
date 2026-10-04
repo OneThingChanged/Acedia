@@ -266,7 +266,7 @@ traverse directory symlinks, and is limited to 10,000 directories and 200 entrie
 Selecting a child scopes both files and Source Control to that repository; the
 selection is remembered per project.[^file-tree][^git-discovery]
 
-The pending source update resolves Git from installed executable paths before
+The 1.8.1.50 EXE update resolves Git from installed executable paths before
 falling back to the Windows x64 package's bundled MinGit. Builds verify the
 official archive's pinned size and SHA256, include the complete runtime and
 licenses, and check that it runs without Git on PATH. The development tree can
@@ -287,13 +287,15 @@ new repository's state. The actual Electron Git panel smoke checks error
 persistence beyond five seconds, retry, slow queries, and project switching.
 [^file-tree]
 
-The pending update was verified on 2026-10-04: the Electron panel displayed all
+The 1.8.1.50 update was verified on 2026-10-04: the Electron panel displayed all
 34 changes from an existing submodule project with different-owner Git metadata;
 the full suite passed 155 files / 1,002 tests, and TypeScript/Vite built
 successfully. A Standard unpacked build included verified MinGit and passed the
 packaged bridge/Dashboard smoke, including staged files with paths longer than
-260 characters and untracked files. This verification does not publish or
-install the pending update.
+260 characters and untracked files. The EXE was published and the public updater
+verified detection from 1.8.1.48/49, actual downloads, and all asset hashes; see
+[the release record](release-1-8-1-50.md). Installation on a running PC uses the
+app's Check → Update action.
 
 Markdown renders in the React document viewer, images use the image viewer, and
 HTML opens in the isolated embedded browser. Document and Git tabs participate

@@ -155,7 +155,7 @@ The client modules are individually allowlisted as JavaScript assets and include
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
 
-## Large HTML previews (source implemented, publication pending)
+## Large HTML previews (1.8.1.50 EXE)
 
 Remote·Dashboard의 채팅 HTML 링크와 Documents의 **새 창에서 HTML 열기**는
 일반 문서 읽기와 별도로 최대 **32MiB** HTML을 지원한다. 기존 2MiB 제한으로
@@ -186,7 +186,8 @@ HTML의 루트 경로 보정은 크기를 제한한 본문을 메모리에서 �
 로딩·다운로드 배치, 외부 미리보기 브리지, 이미지·상대 CSS·JS·버튼 동작과 격리,
 취소, 브라우저 새 창 차단 및 일반 새 창 열기를 확인한다. 실제 Android 기기 검증은
 별도이며 전체 소스 테스트 **154개 파일·993개 테스트**와 TypeScript·Vite 빌드도
-통과했다. 이 변경은 아직 EXE에 게시하지 않았다.
+통과했다. 이 변경은 [1.8.1.50 EXE](release-1-8-1-50.md)에 게시됐으며 기존 서명 APK
+1.8.1.39를 재사용한다. 공개 업데이트 감지·다운로드·해시 검증 결과도 릴리스 문서에 기록했다.
 
 ## Original file downloads
 
