@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acedia · 세션 조직도 초안</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --card: #161d27;
+      --line: #2b3441;
+      --text: #dae2ed;
+      --muted: #8c9aac;
+      --blue: #72afff;
+      --green: #56ceaa;
+      --purple: #ac98ed;
+      --amber: #e6bb6a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--text); background: var(--bg); font: 12px/1.5 "Segoe UI", "Malgun Gothic", sans-serif; overflow: hidden; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; color: inherit; }
+    input, select, textarea { color: var(--text); background: #10151d; border: 1px solid var(--line); border-radius: 5px; }
+    input, select { height: 32px; padding: 0 10px; }
+    input::placeholder, textarea::placeholder { color: #69788b; }
+    select { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    button:disabled { opacity: .4; cursor: default; }
+    h1, h2, h3, p { margin: 0; }
+    [hidden] { display: none !important; }
+    .icon { width: 17px; height: 17px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+    .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .quiet { color: var(--muted); }
+    .mono { font-family: "Cascadia Code", Consolas, monospace; }
+    .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+    .dot.wait { background: var(--amber); }
+    .dot.done { background: #7794b6; }
+    .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 5px; background: #1a222e; white-space: nowrap; }
+    .button:hover { background: #243040; border-color: #44556b; }
+    .button.primary { background: #2860a5; border-color: #3a79c9; color: #f1f6ff; }
+    .button.primary:hover { background: #3475bf; }
+    .button.ghost { background: transparent; }
+    .icon-button { border: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; color: var(--muted); }
+    .icon-button:hover { color: var(--text); background: #25303e; }
+    .app-bar { display: flex; align-items: center; height: 32px; padding: 0 13px 0 20px; border-bottom: 1px solid #282f39; background: #161b22; gap: 12px; user-select: none; }
+    .brand { font-size: 12px; font-weight: 650; letter-spacing: -.3px; color: #d8e6f9; }
+    .app-bar .icon { width: 14px; height: 14px; color: #6b9fd9; }
+    .app-bar-center { display: flex; align-items: center; gap: 7px; margin: 0 auto; color: #7e8ea3; font-size: 10px; border: 1px solid #303a47; padding: 2px 11px; border-radius: 4px; }
+    .app-bar-center kbd { font: 9px Consolas, monospace; margin-left: 18px; color: #9aaabd; }
+    .window-controls { display: flex; gap: 21px; color: #768497; }
+    .shell { display: grid; grid-template-columns: 212px minmax(0, 1fr); height: calc(100dvh - 56px); }
+    .sidebar { background: #161b22; border-right: 1px solid #2a3441; display: flex; flex-direction: column; min-height: 0; }
+    .hub-navigation { padding: 8px 8px 11px; border-bottom: 1px solid #28313c; }
+    .nav-row { width: 100%; height: 37px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 1px solid transparent; background: transparent; border-radius: 5px; text-align: left; color: #a7b4c5; }
+    .nav-row:hover { background: #202936; }
+    .nav-row.active { background: #1b2c40; border-color: #2a4666; color: #d5e7ff; box-shadow: inset 2px 0 #6aa8f4; }
+    .nav-row.active .icon { color: var(--blue); }
+    .web-badge { border: 1px solid #476b94; border-radius: 3px; color: #8fb8ed; font: 8px/13px "Segoe UI", sans-serif; padding: 0 2px; }
+    .nav-count { margin-left: auto; color: #8393a8; background: #232c38; border-radius: 4px; padding: 0 5px; font-size: 10px; }
+    .new-badge { color: #8bafd9; font-size: 9px; margin-left: auto; letter-spacing: .7px; }
+    .sidebar-title { display: flex; align-items: center; justify-content: space-between; color: #738398; font-size: 9px; font-weight: 650; letter-spacing: .8px; padding: 9px 12px 3px; }
+    .sidebar-search { position: relative; margin: 1px 10px 7px; }
+    .sidebar-search input { width: 100%; height: 29px; font-size: 11px; padding-left: 27px; }
+    .sidebar-search .icon { width: 13px; height: 13px; position: absolute; top: 8px; left: 8px; color: #6c7b8f; }
+    .sidebar-filters { display: flex; gap: 4px; padding: 0 10px 12px; }
+    .sidebar-filters button { border: 1px solid #2a3441; background: #1c232d; padding: 3px 6px; border-radius: 4px; color: #8190a3; font-size: 10px; }
+    .sidebar-filters button.active { color: #b7d8ff; background: #22364c; border-color: #38628f; }
+    .screen-link { margin: 1px 10px 8px; padding: 7px; color: #afc5de; background: #202a37; border-left: 2px solid #6baafc; font-size: 11px; }
+    .screen-link small { color: #77899f; margin-left: 5px; font-size: 9px; }
+    .project-tree { flex: 1; min-height: 0; overflow-y: auto; padding: 5px 0 15px; scrollbar-width: thin; scrollbar-color: #344152 transparent; }
+    .tree-category { margin: 6px 12px 5px; color: #738397; font-size: 10px; display: flex; gap: 6px; align-items: center; }
+    .tree-project { margin: 0 6px 3px; }
+    .tree-project-row { height: 29px; display: flex; align-items: center; gap: 5px; }
+    .tree-project-row .icon-button { width: 18px; height: 22px; }
+    .tree-project-row .icon { width: 11px; height: 11px; }
+    .tree-project.collapsed .tree-project-row .icon { transform: rotate(-90deg); }
+    .tree-project.collapsed .tree-session-list { display: none; }
+    .project-name { background: transparent; border: 0; text-align: left; padding: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bbc9da; font-size: 11px; font-weight: 600; flex: 1; }
+    .tree-project-row small { color: #708094; font-size: 9px; padding-right: 8px; }
+    .tree-project.selected { background: #1b2b3e; border-radius: 4px; }
+    .tree-session { width: calc(100% - 15px); margin-left: 13px; padding: 0 9px 0 13px; height: 30px; border: 0; border-left: 1px solid #303e50; background: transparent; display: flex; align-items: center; gap: 8px; color: #8fa4be; font-size: 11px; text-align: left; }
+    .tree-session:hover { background: #253449; color: #dce8f7; }
+    .tree-session span:nth-child(2) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .tree-session .provider-mini { margin-left: auto; color: #7191b7; font-size: 9px; }
+    .sidebar-footer { border-top: 1px solid #29323e; padding: 11px 13px; display: flex; align-items: center; gap: 7px; font-size: 10px; color: #7e91a7; }
+    .sidebar-footer span:last-child { margin-left: auto; }
+    .workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .workspace-tabs { display: flex; flex-shrink: 0; align-items: stretch; height: 36px; border-bottom: 1px solid var(--line); background: #10151c; }
+    .workspace-tab { display: flex; align-items: center; gap: 8px; padding: 0 16px; border: 0; border-right: 1px solid #26303c; border-top: 2px solid transparent; color: #7e8fa5; background: transparent; font-size: 11px; }
+    .workspace-tab.active { border-top-color: #69a8ff; color: #d5e4f7; background: #151c26; }
+    .workspace-tab .icon { width: 14px; height: 14px; }
+    .draft-tag { align-self: center; margin-left: auto; margin-right: 15px; display: flex; align-items: center; gap: 6px; color: #8594a8; font-size: 10px; }
+    .draft-tag b { font-weight: 500; padding: 1px 5px; color: #bcacf0; background: #28223b; border: 1px solid #46385e; border-radius: 3px; }
+    .workspace-layout { display: grid; grid-template-columns: minmax(0, 1fr) 304px; flex: 1; min-height: 0; }
+    .board { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .board-header { padding: 22px 26px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #111720; }
+    .eyebrow { color: #72839a; font-size: 10px; letter-spacing: .4px; margin-bottom: 3px; }
+    h1 { font-size: 21px; font-weight: 650; letter-spacing: -.6px; }
+    .board-subtitle { margin-top: 5px; color: #8a9bb1; font-size: 11px; }
+    .header-actions { display: flex; gap: 7px; align-items: center; }
+    .header-actions select { width: 145px; background: #18212e; }
+    .inspector-toggle { display: inline-flex; }
+    .workspace-layout.inspector-closed { grid-template-columns: minmax(0, 1fr); }
+    .workspace-layout.inspector-closed .inspector { display: none; }
+    .board-toolbar { min-height: 48px; padding: 0 26px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #202a36; border-bottom: 1px solid var(--line); background: #111720; }
+    .view-switch { display: flex; padding: 3px; border: 1px solid #2c3746; border-radius: 5px; background: #0e141d; gap: 3px; }
+    .view-switch button { height: 25px; padding: 0 10px; background: transparent; border: 0; border-radius: 3px; color: #8092a9; font-size: 11px; white-space: nowrap; }
+    .view-switch button.active { color: #dce9fc; background: #2a3c53; }
+    .view-switch button span { margin-left: 5px; font-size: 10px; color: #8facd2; }
+    .toolbar-right { display: flex; align-items: center; gap: 14px; }
+    .chart-count { white-space: nowrap; color: #73869f; font-size: 10px; }
+    .chart-count strong { color: #bdcee5; font-weight: 500; }
+    .chart-search { position: relative; }
+    .chart-search input { width: 148px; height: 27px; font-size: 11px; padding-left: 28px; }
+    .chart-search .icon { position: absolute; width: 13px; height: 13px; left: 9px; top: 7px; color: #7388a2; }
+    .chart-area { position: relative; flex: 1; min-height: 0; background-color: #0e141d; background-image: radial-gradient(#263140 1px, transparent 1px); background-size: 24px 24px; }
+    .chart-viewport { height: 100%; overflow: auto; padding: 32px 32px 86px; scrollbar-width: thin; scrollbar-color: #354254 #131b26; cursor: grab; }
+    .chart-viewport.dragging { cursor: grabbing; user-select: none; }
+    .chart-stage { position: relative; margin: 0 auto; }
+    .chart-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+    .edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 1; }
+    .edges path { stroke: #3b4a5e; stroke-width: 1.5; fill: none; }
+    .edges path.example { stroke-dasharray: 5 5; stroke: #675b88; }
+    .edges path.selected { stroke: #78adf4; stroke-width: 1.8; }
+    .group-background { position: absolute; border: 1px solid #222e3e; background: #111925b3; border-radius: 10px; pointer-events: none; }
+    .project-node { position: absolute; display: flex; align-items: center; gap: 11px; padding: 0 15px; height: 62px; border: 1px solid #39475a; border-radius: 7px; background: #1a2432; box-shadow: 0 4px 14px #0002; z-index: 2; }
+    .project-node > .icon { color: #89a8d0; width: 22px; height: 22px; }
+    .project-node h3 { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 167px; }
+    .project-node p { font-size: 10px; color: #7d92ad; margin-top: 1px; }
+    .session-node { position: absolute; width: 264px; height: 144px; padding: 15px 15px 12px; border: 1px solid #3b485b; border-radius: 8px; background: #18212e; box-shadow: 0 5px 19px #0003; cursor: pointer; transition: border-color .15s, box-shadow .15s, opacity .15s; z-index: 2; }
+    .session-node:hover { border-color: #6985a7; background: #1c2939; }
+    .session-node.parent { background: #1b2434; border-color: #53607a; }
+    .session-node.example { border-style: dashed; }
+    .session-node.selected { border: 1px solid #6ca9fa; background: #192c43; box-shadow: 0 0 0 3px #609ae91a, 0 8px 22px #0003; }
+    .session-node.dimmed { opacity: .25; }
+    .node-top { display: flex; align-items: center; gap: 8px; }
+    .provider-logo { display: flex; justify-content: center; align-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 7px; background: #1d333a; color: #8bddcb; font-size: 11px; font-weight: 700; border: 1px solid #36545b; }
+    .provider-logo.claude { background: #3b2e29; border-color: #624c40; color: #dda788; }
+    .node-name { flex: 1; min-width: 0; }
+    .node-name h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: #e2eaf5; }
+    .node-name p { color: #859ab5; font-size: 10px; }
+    .example-label { color: #b3a2dc; background: #2d2840; border: 1px solid #4e4269; border-radius: 3px; padding: 0 4px; font-size: 9px; }
+    .node-description { color: #9cadc3; font-size: 11px; margin: 11px 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node-bottom { padding-top: 9px; border-top: 1px solid #354356; display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 10px; }
+    .node-state { color: #74ceb6; display: flex; align-items: center; gap: 5px; }
+    .node-state.wait { color: #d5b676; }
+    .node-state.done { color: #8faacb; }
+    .inherit-chip { color: #b4a3df; display: flex; align-items: center; gap: 4px; }
+    .inherit-chip .icon { width: 12px; height: 12px; }
+    .collapse-button { position: absolute; background: #263448; border: 1px solid #51657f; color: #adc4e4; border-radius: 50%; height: 24px; width: 24px; padding: 0; display: grid; place-items: center; font-size: 14px; z-index: 3; }
+    .collapse-button:hover { background: #385377; }
+    .graph-caption { position: absolute; text-align: center; color: #617891; font-size: 11px; width: 100%; pointer-events: none; }
+    .graph-caption span { color: #8c83b1; }
+    .empty-search { position: absolute; top: 17px; left: 50%; transform: translateX(-50%); color: #c7d6e9; border: 1px solid #455871; border-radius: 5px; padding: 7px 12px; background: #1b2839; z-index: 2; font-size: 11px; }
+    .canvas-tools { position: absolute; bottom: 17px; right: 22px; display: flex; align-items: center; background: #1a2432; border: 1px solid #3a485a; border-radius: 6px; padding: 3px; box-shadow: 0 4px 15px #0003; }
+    .canvas-tools .icon-button { width: 29px; height: 27px; }
+    .zoom-value { min-width: 47px; text-align: center; color: #aabed8; font: 10px "Cascadia Code", Consolas, monospace; cursor: pointer; background: transparent; border: 0; height: 27px; }
+    .tool-separator { width: 1px; height: 16px; background: #3c495b; margin: 0 4px; }
+    .canvas-legend { position: absolute; bottom: 20px; left: 24px; display: flex; align-items: center; gap: 17px; color: #788da8; font-size: 10px; padding: 6px 9px; border: 1px solid #293649; background: #111b28ec; border-radius: 5px; pointer-events: none; }
+    .canvas-legend span { display: flex; align-items: center; gap: 6px; }
+    .legend-line { display: inline-block; width: 17px; height: 0; border-top: 1px solid #879ab4; }
+    .legend-line.dashed { border-top: 1px dashed #a896cf; }
+    .board-note { min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 7px 22px; color: #788aa2; font-size: 10px; border-top: 1px solid #263142; background: #111822; }
+    .board-note .icon { width: 13px; height: 13px; color: #889cbb; }
+    .board-note .note-tail { margin-left: auto; color: #60748f; white-space: nowrap; }
+    .inspector { background: #141b25; border-left: 1px solid #2d394b; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .inspector-heading { height: 43px; flex-shrink: 0; padding: 0 17px; display: flex; align-items: center; gap: 7px; font-size: 11px; color: #94a7c0; border-bottom: 1px solid #283448; }
+    .inspector-heading .icon { width: 14px; height: 14px; }
+    .inspector-heading .icon-button { margin-left: auto; }
+    .inspector-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #354254 transparent; }
+    .selected-summary { padding: 19px 18px 16px; }
+    .breadcrumb { display: flex; align-items: center; gap: 5px; color: #7185a1; font-size: 10px; margin-bottom: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .breadcrumb .icon { width: 10px; height: 10px; }
+    .selected-identity { display: flex; align-items: center; gap: 10px; }
+    .selected-identity .provider-logo { width: 36px; height: 36px; border-radius: 9px; font-size: 13px; }
+    .selected-identity h2 { font-size: 17px; font-weight: 600; letter-spacing: -.4px; overflow-wrap: anywhere; }
+    .selected-identity p { font-size: 10px; color: #8ba0bc; margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+    .inspector-tabs { display: flex; border-bottom: 1px solid #2d394b; padding: 0 17px; gap: 21px; }
+    .inspector-tabs button { border: 0; border-bottom: 2px solid transparent; color: #7c91ad; padding: 8px 0; background: transparent; font-size: 11px; }
+    .inspector-tabs button.active { color: #b7d8ff; border-bottom-color: #6baafa; }
+    .detail-section { padding: 16px 18px; border-bottom: 1px solid #283448; }
+    .section-label { font-size: 10px; font-weight: 600; color: #a4b4ca; display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; gap: 4px; }
+    .section-label .icon { width: 13px; height: 13px; color: #829abd; }
+    .section-label > span { display: flex; align-items: center; gap: 6px; }
+    .text-button { padding: 0; border: 0; color: #89b8f7; background: transparent; font-size: 10px; }
+    .text-button:hover { color: #bfdbff; }
+    .parent-value { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #1c2736; border: 1px solid #35445a; border-radius: 5px; color: #c6d6eb; font-size: 11px; }
+    .parent-value .icon { color: #93afd5; width: 14px; height: 14px; }
+    .parent-value small { margin-left: auto; color: #8c9fb9; font-size: 9px; }
+    .detail-help { color: #71859f; font-size: 10px; margin-top: 8px; line-height: 1.65; }
+    .inherit-label { font-weight: 400; font-size: 9px; color: #b09cdd; display: inline-flex; gap: 4px; align-items: center; }
+    .inherit-label.custom { color: #91a2b9; }
+    .field-value { font-size: 11px; color: #b8c9df; padding: 9px 10px; background: #111923; border: 1px solid #2e3e52; border-radius: 5px; overflow-wrap: anywhere; line-height: 1.65; }
+    .folder-input { width: 100%; height: 61px; padding: 8px; resize: vertical; font: 10px/1.55 "Cascadia Code", Consolas, monospace; }
+    .inherit-switch { display: flex; align-items: center; gap: 7px; color: #869bb7; font-size: 10px; margin-top: 9px; cursor: pointer; }
+    .inherit-switch input { appearance: none; width: 24px; height: 14px; padding: 0; margin: 0; background: #28374b; border-color: #40516a; border-radius: 20px; position: relative; cursor: pointer; flex-shrink: 0; }
+    .inherit-switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; background: #8a9ab0; border-radius: 50%; transition: left .15s; }
+    .inherit-switch input:checked { background: #365885; border-color: #507eb5; }
+    .inherit-switch input:checked::after { left: 12px; background: #cce3ff; }
+    .inherit-switch input:disabled { opacity: .4; cursor: default; }
+    .instruction-item { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #9db0c9; margin: 6px 0; }
+    .instruction-item .icon { width: 12px; height: 12px; color: #a390d0; }
+    .child-instructions { display: block; width: 100%; resize: vertical; height: 56px; min-height: 46px; padding: 8px; color: #95aac6; font-size: 10px; line-height: 1.6; margin-top: 10px; }
+    .detail-message { padding: 12px; border: 1px solid #38415a; background: #222339; border-radius: 5px; color: #a8a6c7; font-size: 10px; line-height: 1.8; }
+    .detail-message strong { font-weight: 500; color: #c0b7e2; }
+    .relation-row { margin-bottom: 15px; }
+    .relation-row:last-child { margin-bottom: 0; }
+    .inspector-footer { padding: 12px 17px 14px; border-top: 1px solid #2d394b; background: #18202b; display: flex; gap: 7px; }
+    .inspector-footer .button { flex: 1; font-size: 11px; padding: 0 9px; }
+    .status-bar { height: 24px; display: flex; align-items: center; padding: 0 13px; gap: 7px; background: #161d26; border-top: 1px solid #303a48; color: #8398b1; font-size: 9px; }
+    .status-bar .dot { width: 5px; height: 5px; }
+    .status-bar .right { margin-left: auto; color: #71849b; }
+    .alternate-view { grid-column: 1 / -1; padding: 34px; overflow-y: auto; background: #101722; }
+    .alternate-view h1 { margin-bottom: 7px; }
+    .browser-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 28px; max-width: 970px; }
+    .browser-card { border: 1px solid #334359; border-radius: 7px; padding: 20px; background: #182333; }
+    .browser-card .icon { color: #8aafe0; margin-bottom: 12px; width: 23px; height: 23px; }
+    .browser-card h3 { font-size: 13px; margin-bottom: 5px; }
+    .browser-card p { color: #8197b4; font-size: 11px; }
+    .conversation { max-width: 820px; margin: 35px auto; }
+    .conversation-message { border: 1px solid #304159; background: #172436; border-radius: 8px; padding: 22px; margin: 18px 0; }
+    .conversation-message p { line-height: 1.9; color: #a4b9d3; margin-top: 8px; }
+    dialog { background: #192331; border: 1px solid #4a5c74; border-radius: 10px; color: var(--text); width: min(450px, calc(100vw - 32px)); padding: 0; box-shadow: 0 25px 100px #0009; }
+    dialog::backdrop { background: #050a12b3; backdrop-filter: blur(3px); }
+    .dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 17px 21px; border-bottom: 1px solid #334359; }
+    .dialog-header h2 { font-size: 16px; font-weight: 600; }
+    .dialog-body { padding: 20px 22px; }
+    .dialog-body > label { display: block; font-size: 11px; color: #a7bbd5; margin-bottom: 16px; }
+    .dialog-body > label input, .dialog-body > label select { display: block; width: 100%; margin-top: 6px; height: 36px; }
+    .dialog-context { display: flex; align-items: center; gap: 8px; color: #94b1d7; background: #243348; border: 1px solid #3a516e; border-radius: 5px; padding: 10px; margin-bottom: 18px; }
+    .dialog-description { color: #869fbe; font-size: 11px; line-height: 1.8; }
+    .dialog-inherit { padding: 12px; margin-top: 13px; border: 1px solid #334359; border-radius: 5px; background: #141d29; }
+    .dialog-inherit .inherit-switch { margin: 8px 0; font-size: 11px; }
+    .dialog-footer { border-top: 1px solid #334359; padding: 14px 21px; display: flex; justify-content: flex-end; gap: 8px; background: #17202d; }
+    .toast { position: fixed; left: 50%; bottom: 42px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; color: #d7e8fd; background: #263e5a; border: 1px solid #5a7ba4; border-radius: 6px; padding: 10px 17px; font-size: 12px; transition: opacity .18s, transform .18s; z-index: 20; box-shadow: 0 6px 25px #0006; max-width: calc(100vw - 30px); }
+    .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    @media (max-width: 1420px) {
+      .shell { grid-template-columns: 190px minmax(0, 1fr); }
+      .workspace-layout { grid-template-columns: minmax(0, 1fr) 282px; }
+      .board-header { padding: 18px 20px; }
+      .board-toolbar { padding: 0 20px; }
+      .board-subtitle { max-width: 230px; }
+      .chart-count { display: none; }
+      .header-actions select { width: 123px; }
+      .canvas-legend { gap: 10px; }
+      .note-tail { display: none; }
+    }
+    @media (max-width: 1100px) {
+      .shell { grid-template-columns: 180px minmax(0, 1fr); }
+      .workspace-layout { grid-template-columns: minmax(0, 1fr); position: relative; }
+      .inspector { display: none; position: absolute; right: 0; top: 0; bottom: 0; width: 304px; z-index: 5; box-shadow: -15px 0 40px #0005; }
+      .workspace-layout.inspector-open .inspector { display: flex; }
+      .inspector-toggle { display: inline-flex; }
+      .board-subtitle { max-width: none; }
+      .canvas-legend { gap: 15px; }
+    }
+    @media (max-width: 720px) {
+      .shell { grid-template-columns: 58px minmax(0, 1fr); }
+      .app-bar-center { display: none; }
+      .window-controls { margin-left: auto; }
+      .sidebar { align-items: stretch; }
+      .hub-navigation { padding: 7px 5px; }
+      .nav-row { padding: 0; justify-content: center; height: 41px; }
+      .nav-row > .nav-label, .nav-count, .new-badge, .sidebar > :not(.hub-navigation) { display: none; }
+      .web-badge { font-size: 7px; }
+      .board-header { padding: 15px; align-items: flex-start; flex-wrap: wrap; }
+      h1 { font-size: 18px; }
+      .board-subtitle { font-size: 10px; }
+      .header-actions { width: 100%; }
+      .header-actions select { flex: 1; }
+      .header-actions .button { font-size: 11px; }
+      .board-toolbar { padding: 7px 12px; gap: 7px; flex-wrap: wrap; }
+      .toolbar-right { flex: 1; }
+      .chart-search, .chart-search input { width: 100%; }
+      .chart-viewport { padding: 18px 14px 92px; }
+      .view-switch { flex-shrink: 0; }
+      .view-switch button { padding: 0 7px; font-size: 10px; }
+      .canvas-legend { left: 12px; bottom: 59px; font-size: 9px; gap: 11px; }
+      .canvas-tools { right: 12px; bottom: 14px; }
+      .board-note { font-size: 9px; padding: 7px 12px; }
+      .workspace-tab { padding: 0 10px; }
+      .draft-tag { margin-right: 8px; font-size: 9px; }
+      .draft-tag > span { display: none; }
+      .status-bar .right { display: none; }
+      .alternate-view { padding: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true"><defs>
+    <symbol id="i-network" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="5" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+    <symbol id="i-inherit" viewBox="0 0 24 24"><path d="M6 4v9a3 3 0 0 0 3 3h11m-4-4 4 4-4 4"/><circle cx="6" cy="4" r="2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 4h16v13H8l-4 4z"/><path d="M8 9h8M8 13h5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="10" cy="18" r="2" fill="currentColor"/></symbol>
+  </defs></svg>
+  <header class="app-bar">
+    <span class="brand">Acedia</span><svg class="icon" aria-hidden="true"><use href="#i-panel"/></svg>
+    <div class="app-bar-center"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>Quick Open<kbd>Ctrl+K</kbd></div>
+    <div class="window-controls" aria-hidden="true"><span>−</span><span>□</span><span>×</span></div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar" aria-label="프로젝트와 허브">
+      <nav class="hub-navigation" aria-label="허브">
+        <button class="nav-row" id="browser-nav"><span class="web-badge">WEB</span><span class="nav-label">Browser hub</span><span class="nav-count">5</span></button>
+        <button class="nav-row active" id="organization-nav" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg><span class="nav-label">조직도</span><span class="new-badge">NEW</span></button>
+      </nav>
+      <div class="sidebar-title">PROJECTS<button class="icon-button" id="sidebar-add" aria-label="자식 세션 추가"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button></div>
+      <div class="sidebar-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="sidebar-search" aria-label="프로젝트와 세션 검색" placeholder="프로젝트, 세션 검색"></div>
+      <div class="sidebar-filters"><button data-snapshot-info>All 22</button><button class="active" id="active-filter">Active 8</button><button data-snapshot-info>Sleeping 11</button></div>
+      <div class="sidebar-title">SCREENS</div>
+      <div class="screen-link">Screen 1<small>현재 작업 화면</small></div>
+      <div class="project-tree" id="project-tree"></div>
+      <div class="sidebar-footer"><span class="dot"></span><span>활성 세션 8</span><span>7 프로젝트</span></div>
+    </aside>
+    <main class="workspace">
+      <div class="workspace-tabs" role="tablist" aria-label="작업 화면">
+        <button class="workspace-tab active" id="organization-tab" role="tab" aria-selected="true"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg>조직도</button>
+        <button class="workspace-tab" id="session-tab" role="tab" aria-selected="false"><span class="dot"></span><span id="session-tab-name">Session 1</span></button>
+        <div class="draft-tag"><b>HTML 초안</b><span>예시 관계 포함</span></div>
+      </div>
+      <div class="workspace-layout" id="workspace-layout">
+        <section class="board" id="organization-board" aria-label="세션 조직도">
+          <header class="board-header">
+            <div><div class="eyebrow">프로젝트 / 세션 관리</div><h1>세션 조직도</h1><p class="board-subtitle">작업을 묶고, 필요한 설정을 이어받습니다.</p></div>
+            <div class="header-actions">
+              <select id="project-select" aria-label="조직도 프로젝트"></select>
+              <button class="button primary" id="add-child"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>자식 세션</button>
+              <button class="icon-button inspector-toggle" id="inspector-toggle" aria-label="선택한 세션 정보 보기"><svg class="icon" aria-hidden="true"><use href="#i-panel"/></svg></button>
+            </div>
+          </header>
+          <div class="board-toolbar">
+            <div class="view-switch" role="group" aria-label="조직도 데이터">
+              <button class="active" id="design-view" aria-pressed="true">설계 예시</button>
+              <button id="live-view" aria-pressed="false">현재 활성 세션<span>8</span></button>
+            </div>
+            <div class="toolbar-right"><span class="chart-count" id="chart-count"></span><div class="chart-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="chart-search" placeholder="세션 찾기" aria-label="조직도 세션 찾기"></div></div>
+          </div>
+          <div class="chart-area">
+            <div class="chart-viewport" id="chart-viewport" aria-label="세션 관계 캔버스">
+              <div class="chart-stage" id="chart-stage"><div class="chart-content" id="chart-content"></div></div>
+            </div>
+            <div class="empty-search" id="empty-search" hidden>일치하는 세션이 없습니다.</div>
+            <div class="canvas-legend"><span><i class="legend-line"></i>부모·자식</span><span><i class="legend-line dashed"></i>예시 관계</span><span><i class="dot"></i>작업 중</span></div>
+            <div class="canvas-tools" aria-label="캔버스 확대와 축소">
+              <button class="icon-button" id="zoom-out" aria-label="축소"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
+              <button class="zoom-value" id="zoom-value" title="100%로 보기" aria-label="100%로 보기">100%</button>
+              <button class="icon-button" id="zoom-in" aria-label="확대"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+              <span class="tool-separator"></span>
+              <button class="icon-button" id="fit-chart" aria-label="전체 조직도 맞춤"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
+            </div>
+          </div>
+          <div class="board-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span id="board-note-text"></span><span class="note-tail">빈 공간을 드래그해 이동</span></div>
+        </section>
+        <aside class="inspector" id="inspector" aria-label="선택한 세션 정보">
+          <div class="inspector-heading"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>세션 정보<button class="icon-button" id="close-inspector" aria-label="세션 정보 닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+          <div class="inspector-body" id="inspector-body"></div>
+          <div class="inspector-footer"><button class="button" id="open-chat"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>대화 열기</button><button class="button" id="inspector-add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>자식 추가</button></div>
+        </aside>
+        <section class="alternate-view" id="alternate-view" hidden></section>
+      </div>
+    </main>
+  </div>
+  <footer class="status-bar"><span class="dot"></span><span>Acedia</span><span style="color:#42516a;padding:0 6px">│</span><span>조직도 UI 초안</span><span class="right">변경은 이 페이지에서만 유지됩니다.</span></footer>
+  <dialog id="child-dialog" aria-labelledby="child-dialog-title">
+    <form id="child-form">
+      <div class="dialog-header"><h2 id="child-dialog-title">자식 세션 만들기</h2><button type="button" class="icon-button" data-close-dialog aria-label="닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+      <div class="dialog-body">
+        <div class="dialog-context" id="child-parent-context"></div>
+        <label>세션 이름<input id="child-name" maxlength="48" required placeholder="예: API 연동" autocomplete="off"></label>
+        <label>제공자<select id="child-provider"><option value="Codex">Codex</option><option value="Claude">Claude</option></select></label>
+        <p class="dialog-description">부모의 작업 폴더와 공통 지침을 이어받습니다.<br>대화는 새 세션에서 시작합니다.</p>
+        <div class="dialog-inherit">
+          <label class="inherit-switch"><input type="checkbox" id="new-inherit-folder" checked>작업 폴더 상속</label>
+          <label class="inherit-switch"><input type="checkbox" id="new-inherit-instructions" checked>공통 지침 상속</label>
+          <label class="inherit-switch"><input type="checkbox" id="new-inherit-model" checked>모델·effort 기본값 상속</label>
+        </div>
+      </div>
+      <div class="dialog-footer"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">초안에 추가</button></div>
+    </form>
+  </dialog>
+  <dialog id="parent-dialog" aria-labelledby="parent-dialog-title">
+    <form id="parent-form">
+      <div class="dialog-header"><h2 id="parent-dialog-title">부모 세션 변경</h2><button type="button" class="icon-button" data-close-dialog aria-label="닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+      <div class="dialog-body"><label>이동할 위치<select id="parent-target"></select></label><p class="dialog-description">폴더·지침 상속 기준이 새 부모로 바뀝니다.<br>작업을 시작한 세션과 대화 기록은 그대로 유지됩니다.</p></div>
+      <div class="dialog-footer"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">관계 변경</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const icon = (name) => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+    // Labels come from the inspected active sessions. Relationships below are draft data only.
+    // This file deliberately makes no requests to Acedia or a provider.
+    const projects = [
+      { name: 'Acedia', folder: 'G:\\AI\\03_Development\\Tools\\Acedia\\source', category: 'Uncategorized' },
+      { name: 'ProjectA', folder: 'G:\\AI\\01_GameDev\\Unreal\\Sub5tudioProject\\ProjectA', category: 'Unreal' },
+      { name: 'ProjectWitch', folder: 'G:\\AI\\01_GameDev\\Unreal\\Sub5tudioProject\\ProjectWitch', category: 'Unreal' },
+      { name: 'AXRecorder', folder: 'G:\\AI\\01_GameDev\\Unreal\\Sub5tudioProject\\ProjectA\\UnrealTF\\Plugins\\AXRecorder', category: 'Uncategorized' },
+      { name: 'AXEnvironment (UnrealPure3)', folder: 'G:\\AI\\01_GameDev\\Unreal\\PureProject\\UnrealPure3\\Plugins\\AXEnvironment', category: 'Uncategorized' },
+      { name: 'Sub5torage', folder: 'G:\\AI\\03_Development\\GitHub\\Sub5torage', category: 'Uncategorized' },
+      { name: 'AIHub', folder: 'G:\\AI', category: 'Uncategorized' }
+    ];
+    const liveNodes = [
+      { id: 'acedia', name: 'Session 1', project: 'Acedia', status: 'work', description: '조직도와 세션 구조 검토' },
+      { id: 'toon', name: 'ToonShader', project: 'ProjectA', status: 'done' },
+      { id: 'witch', name: 'ProjectWitch', project: 'ProjectWitch', status: 'done' },
+      { id: 'recorder', name: 'AXRecorder', project: 'AXRecorder', status: 'wait' },
+      { id: 'environment', name: 'Session 1', project: 'AXEnvironment (UnrealPure3)', status: 'work' },
+      { id: 'storage-1', name: 'Sub5torage', project: 'Sub5torage', status: 'wait' },
+      { id: 'storage-2', name: 'Sub5torage', project: 'Sub5torage', status: 'done' },
+      { id: 'hub', name: 'AIHub', project: 'AIHub', status: 'work' }
+    ].map((n) => ({ provider: 'Codex', parent: null, createdBy: null, example: false, description: '확인한 활성 세션', inheritFolder: true, inheritInstructions: true, inheritModel: true, instructions: '', ...n }));
+    const draftNodes = liveNodes.map((n) => ({ ...n }));
+    draftNodes.push(
+      { id: 'example-ui', name: 'UI 구현', project: 'Acedia', parent: 'acedia', createdBy: 'acedia', provider: 'Codex', status: 'work', description: '조직도 화면과 상속 설정 UI', example: true, inheritFolder: true, inheritInstructions: true, inheritModel: true, instructions: 'UI 컴포넌트와 접근성 흐름을 확인합니다.' },
+      { id: 'example-docs', name: '문서 정리', project: 'Acedia', parent: 'acedia', createdBy: 'acedia', provider: 'Claude', status: 'wait', description: '부모·자식 세션 사용 가이드', example: true, inheritFolder: true, inheritInstructions: true, inheritModel: false, instructions: '관계와 상속 규칙을 문서로 정리합니다.' },
+      { id: 'example-check', name: '동작 검증', project: 'Acedia', parent: 'acedia', createdBy: 'acedia', provider: 'Codex', status: 'done', description: '독립 실행과 설정 상속 확인', example: true, inheritFolder: true, inheritInstructions: true, inheritModel: true, instructions: '부모 변경 후 상속과 실행 관계를 확인합니다.' }
+    );
+    const state = { view: 'design', project: 'Acedia', selected: 'example-ui', page: 'organization', detailTab: 'inherit', collapsed: new Set(), query: '', zoom: 1, width: 920, height: 570, dialogNode: null };
+    const statusNames = { work: '작업 중', wait: '대기', done: '완료' };
+    let toastTimer;
+    const pool = () => state.view === 'live' ? liveNodes : draftNodes;
+    const findDraft = (id) => draftNodes.find((n) => n.id === id);
+    const selected = () => pool().find((n) => n.id === state.selected) || pool()[0];
+    const projectFor = (name) => projects.find((p) => p.name === name);
+    const inScope = () => pool().filter((n) => state.project === 'all' || n.project === state.project);
+    const childrenOf = (id, nodes = pool()) => nodes.filter((n) => n.parent === id);
+    function folderOf(node, visited = new Set()) {
+      if (!node || visited.has(node.id)) return '';
+      visited.add(node.id);
+      if (!node.inheritFolder && node.folder) return node.folder;
+      if (node.parent) return folderOf(findDraft(node.parent), visited);
+      return projectFor(node.project)?.folder || '';
+    }
+    function notify(message) {
+      $('toast').textContent = message;
+      $('toast').classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 3000);
+    }
+    function renderSidebar() {
+      const query = $('sidebar-search').value.trim().toLowerCase();
+      let html = '';
+      ['Unreal', 'Uncategorized'].forEach((category) => {
+        const group = projects.filter((p) => p.category === category && (!query || p.name.toLowerCase().includes(query) || liveNodes.some((n) => n.project === p.name && n.name.toLowerCase().includes(query))));
+        if (!group.length) return;
+        html += `<div class="tree-category">${icon('down')}${esc(category)}<span style="margin-left:auto">${group.length}</span></div>`;
+        group.forEach((p) => {
+          const sessions = liveNodes.filter((n) => n.project === p.name);
+          html += `<div class="tree-project ${state.project === p.name ? 'selected' : ''}"><div class="tree-project-row"><button class="icon-button" data-toggle-project aria-label="${esc(p.name)} 접기 또는 펼치기">${icon('down')}</button><button class="project-name" data-project="${esc(p.name)}" title="${esc(p.name)}">${esc(p.name)}</button><small>${sessions.length}</small></div><div class="tree-session-list">${sessions.map((n) => `<button class="tree-session" data-session="${n.id}"><span class="dot ${n.status}"></span><span>${esc(n.name)}</span><span class="provider-mini">C</span></button>`).join('')}</div></div>`;
+        });
+      });
+      $('project-tree').innerHTML = html || '<p class="quiet" style="padding:15px">검색 결과가 없습니다.</p>';
+    }
+    function projectHtml(project, x, y) {
+      return `<div class="project-node" style="left:${x}px;top:${y}px;width:220px" title="${esc(project.name)}">${icon('folder')}<div><h3>${esc(project.name)}</h3><p>프로젝트 · 기본 설정</p></div></div>`;
+    }
+    function nodeHtml(node, x, y) {
+      const children = childrenOf(node.id);
+      const isMatch = !state.query || `${node.name} ${node.provider} ${node.description} ${node.project}`.toLowerCase().includes(state.query);
+      const inheritanceCount = [node.inheritFolder, node.inheritInstructions, node.inheritModel].filter(Boolean).length;
+      return `<article class="session-node ${node.example ? 'example' : ''} ${children.length ? 'parent' : ''} ${state.selected === node.id ? 'selected' : ''} ${isMatch ? '' : 'dimmed'}" style="left:${x}px;top:${y}px" data-node="${node.id}" tabindex="0" role="button" aria-label="${esc(node.name)}, ${node.provider}, ${statusNames[node.status]}${node.example ? ', 예시 세션' : ''}" aria-pressed="${state.selected === node.id}">
+        <div class="node-top"><span class="provider-logo ${node.provider === 'Claude' ? 'claude' : ''}">${node.provider === 'Claude' ? '✳' : 'C'}</span><div class="node-name"><h3>${esc(node.name)}</h3><p>${node.provider}${children.length ? ` · 자식 ${children.length}개` : ' · 독립 대화'}</p></div>${node.example ? '<span class="example-label">예시</span>' : ''}</div>
+        <p class="node-description">${esc(node.description)}</p><div class="node-bottom"><span class="node-state ${node.status}"><i class="dot ${node.status}"></i>${statusNames[node.status]}</span><span class="inherit-chip">${icon(node.parent ? 'inherit' : 'folder')}${node.parent ? `설정 상속 ${inheritanceCount}/3` : '프로젝트 직속'}</span></div>
+      </article>${children.length ? `<button class="collapse-button" style="left:${x + 120}px;top:${y + 132}px" data-collapse="${node.id}" aria-label="${esc(node.name)} 자식 ${state.collapsed.has(node.id) ? '펼치기' : '접기'}" aria-expanded="${!state.collapsed.has(node.id)}">${state.collapsed.has(node.id) ? '+' : '−'}</button>` : ''}`;
+    }
+    function buildTree(project, nodes) {
+      if (window.innerWidth <= 720) return buildCompactTree(project, nodes);
+      const visibleChildren = (node) => state.collapsed.has(node.id) ? [] : nodes.filter((n) => n.parent === node.id);
+      const leafCount = (node) => { const children = visibleChildren(node); return children.length ? children.reduce((sum, child) => sum + leafCount(child), 0) : 1; };
+      const roots = nodes.filter((n) => !n.parent || !nodes.some((candidate) => candidate.id === n.parent));
+      const leaves = roots.reduce((sum, node) => sum + leafCount(node), 0);
+      const width = Math.max(620, leaves * 296 + 32);
+      let markup = projectHtml(project, (width - 220) / 2, 28);
+      const edges = [];
+      let maxDepth = 0;
+      function place(node, left, depth) {
+        maxDepth = Math.max(maxDepth, depth);
+        const span = leafCount(node) * 296;
+        const x = left + span / 2 - 132;
+        const y = 152 + depth * 220;
+        markup += nodeHtml(node, x, y);
+        let cursor = left;
+        const children = visibleChildren(node);
+        children.forEach((child) => {
+          const position = place(child, cursor, depth + 1);
+          edges.push({ d: `M${x + 132} ${y + 144} V${y + 179} H${position.x + 132} V${position.y}`, example: child.example, selected: child.id === state.selected });
+          cursor += leafCount(child) * 296;
+        });
+        return { x, y };
+      }
+      let cursor = (width - leaves * 296) / 2;
+      roots.forEach((node) => {
+        const position = place(node, cursor, 0);
+        edges.push({ d: `M${width / 2} 90 V120 H${position.x + 132} V${position.y}`, example: node.example, selected: node.id === state.selected });
+        cursor += leafCount(node) * 296;
+      });
+      const height = 152 + maxDepth * 220 + 198;
+      if (nodes.some((n) => n.parent)) markup += `<p class="graph-caption" style="top:${height - 21}px">작업 폴더 <span>·</span> 공통 지침 <span>·</span> 모델 기본값을 부모에서 상속</p>`;
+      return { width, height, markup, edges };
+    }
+    function buildCompactTree(project, nodes) {
+      const roots = nodes.filter((n) => !n.parent || !nodes.some((candidate) => candidate.id === n.parent));
+      const placed = [];
+      const positions = new Map();
+      let markup = projectHtml(project, 50, 18);
+      const edges = [];
+      function place(node, depth) {
+        const position = { x: 18 + Math.min(depth, 2) * 14, y: 110 + placed.length * 166 };
+        placed.push(node);
+        positions.set(node.id, position);
+        markup += nodeHtml(node, position.x, position.y);
+        if (!state.collapsed.has(node.id)) nodes.filter((child) => child.parent === node.id).forEach((child) => place(child, depth + 1));
+      }
+      roots.forEach((node) => place(node, 0));
+      placed.forEach((node) => {
+        const target = positions.get(node.id);
+        const parent = positions.get(node.parent);
+        const d = parent ? `M${parent.x + 132} ${parent.y + 144} V${parent.y + 155} H8 V${target.y + 72} H${target.x}` : `M160 80 V94 H${target.x + 132} V${target.y}`;
+        edges.push({ d, example: node.example, selected: node.id === state.selected });
+      });
+      return { width: 320, height: 110 + placed.length * 166, markup, edges };
+    }
+    function buildForest(nodes) {
+      const groups = projects.filter((p) => nodes.some((n) => n.project === p.name));
+      const columns = window.innerWidth <= 720 ? 1 : 3;
+      const width = columns * 324 + 8;
+      let y = 22;
+      let markup = '';
+      const edges = [];
+      for (let row = 0; row < groups.length; row += columns) {
+        const current = groups.slice(row, row + columns);
+        // A compact forest shows the existing flat sessions, without inventing parents.
+        const rowHeight = Math.max(...current.map((p) => nodes.filter((n) => n.project === p.name).length * 166 + 104));
+        current.forEach((p, col) => {
+          const x = 16 + col * 324;
+          markup += `<div class="group-background" style="left:${x}px;top:${y}px;width:300px;height:${rowHeight - 12}px"></div>`;
+          const projectX = x + 40;
+          markup += projectHtml(p, projectX, y + 17);
+          const groupNodes = nodes.filter((n) => n.project === p.name);
+          groupNodes.forEach((n, index) => {
+            const nodeX = x + 18;
+            const nodeY = y + 102 + index * 166;
+            markup += nodeHtml(n, nodeX, nodeY);
+            const d = index === 0 ? `M${projectX + 110} ${y + 79} V${nodeY}` : `M${projectX + 110} ${y + 79} V${y + 90} H${x + 9} V${nodeY + 72} H${nodeX}`;
+            edges.push({ d, example: false, selected: n.id === state.selected });
+          });
+        });
+        y += rowHeight + 20;
+      }
+      return { width, height: y, markup, edges };
+    }
+    function renderChart(autoFit = false) {
+      const nodes = inScope();
+      if (!nodes.some((n) => n.id === state.selected)) state.selected = nodes[0]?.id;
+      const layout = state.project === 'all' ? buildForest(nodes) : buildTree(projectFor(state.project), nodes);
+      state.width = layout.width;
+      state.height = layout.height;
+      $('chart-content').style.width = `${layout.width}px`;
+      $('chart-content').style.height = `${layout.height}px`;
+      $('chart-content').innerHTML = `<svg class="edges" width="${layout.width}" height="${layout.height}" aria-hidden="true">${layout.edges.map((edge) => `<path d="${edge.d}" class="${edge.example ? 'example' : ''} ${edge.selected ? 'selected' : ''}"/>`).join('')}</svg>${layout.markup}`;
+      const examples = nodes.filter((n) => n.example).length;
+      $('chart-count').innerHTML = `<strong>${nodes.length}</strong> 세션${examples ? ` · 예시 <strong>${examples}</strong>` : ''}`;
+      $('empty-search').hidden = !state.query || nodes.some((n) => `${n.name} ${n.provider} ${n.description} ${n.project}`.toLowerCase().includes(state.query));
+      $('board-note-text').textContent = state.view === 'live' ? '확인한 활성 세션 8개입니다. 감지된 부모·자식 관계는 없습니다.' : `실제 세션을 바탕으로 구성한 설계 예시입니다.${examples ? ` 자식 ${examples}개는 예시입니다.` : ''}`;
+      if (autoFit) fitChart(state.project !== 'all');
+      else updateZoom();
+      renderInspector();
+    }
+    function updateZoom() {
+      $('chart-content').style.transform = `scale(${state.zoom})`;
+      $('chart-stage').style.width = `${state.width * state.zoom}px`;
+      $('chart-stage').style.height = `${state.height * state.zoom}px`;
+      $('zoom-value').textContent = `${Math.round(state.zoom * 100)}%`;
+      $('zoom-out').disabled = state.zoom <= .35;
+      $('zoom-in').disabled = state.zoom >= 1.5;
+    }
+    function fitChart(includeHeight = true) {
+      const viewport = $('chart-viewport');
+      const padding = getComputedStyle(viewport);
+      const widthScale = (viewport.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight) - 1) / state.width;
+      const heightScale = (viewport.clientHeight - parseFloat(padding.paddingTop) - parseFloat(padding.paddingBottom) - 1) / state.height;
+      includeHeight = includeHeight && window.innerWidth > 720;
+      state.zoom = Math.max(.35, Math.min(1, widthScale, includeHeight ? heightScale : 1));
+      updateZoom();
+      viewport.scrollTo(0, 0);
+    }
+    function changeZoom(delta) { state.zoom = Math.max(.35, Math.min(1.5, state.zoom + delta)); updateZoom(); }
+    function parentName(node) { return node.parent ? (findDraft(node.parent)?.name || '부모 세션') : node.project; }
+    function folderHtml(node) { return esc(folderOf(node)).replace(/\\/g, '\\<wbr>'); }
+    function inheritanceLabel(enabled) { return `<span class="inherit-label ${enabled ? '' : 'custom'}">${enabled ? icon('inherit') : ''}${enabled ? '부모에서 상속' : '직접 지정'}</span>`; }
+    function renderInspector() {
+      const node = selected();
+      if (!node) return;
+      const isDraft = state.view === 'design';
+      const hasParent = Boolean(node.parent);
+      const sourceName = hasParent ? parentName(node) : '프로젝트 기본값';
+      const switchHtml = (property, label, enabled = true) => `<label class="inherit-switch"><input type="checkbox" data-inherit="${property}" ${node[property] ? 'checked' : ''} ${!isDraft || !enabled ? 'disabled' : ''}>${label}</label>`;
+      const summary = `<div class="selected-summary"><div class="breadcrumb">${esc(node.project)}${icon('right')}${hasParent ? `${esc(parentName(node))}${icon('right')}` : ''}${esc(node.name)}</div><div class="selected-identity"><span class="provider-logo ${node.provider === 'Claude' ? 'claude' : ''}">${node.provider === 'Claude' ? '✳' : 'C'}</span><div><h2>${esc(node.name)}</h2><p><i class="dot ${node.status}"></i>${statusNames[node.status]}<span style="color:#455571">·</span>${node.provider}${node.example ? '<span class="example-label">예시</span>' : ''}</p></div></div></div>`;
+      const tabs = `<div class="inspector-tabs" role="tablist" aria-label="세션 정보"><button role="tab" data-detail-tab="inherit" class="${state.detailTab === 'inherit' ? 'active' : ''}" aria-selected="${state.detailTab === 'inherit'}">설정 상속</button><button role="tab" data-detail-tab="relation" class="${state.detailTab === 'relation' ? 'active' : ''}" aria-selected="${state.detailTab === 'relation'}">관계·실행</button></div>`;
+      const parentSection = `<section class="detail-section"><div class="section-label"><span>${icon('network')}부모 ${hasParent ? '세션' : '프로젝트'}</span><button class="text-button" id="change-parent">변경</button></div><div class="parent-value">${icon(hasParent ? 'chat' : 'folder')}${esc(sourceName)}<small>${hasParent ? '상속 기준' : '직속'}</small></div><p class="detail-help">작업 폴더와 공통 설정을 이어받는 기준입니다.</p></section>`;
+      let details;
+      if (state.detailTab === 'inherit') {
+        const sameProvider = !node.parent || findDraft(node.parent)?.provider === node.provider;
+        details = `${parentSection}
+          <section class="detail-section"><div class="section-label"><span>${icon('folder')}작업 폴더</span>${inheritanceLabel(node.inheritFolder)}</div>${node.inheritFolder || !isDraft ? `<div class="field-value mono" title="${esc(folderOf(node))}">${folderHtml(node)}</div>` : `<textarea class="folder-input" id="custom-folder" aria-label="직접 지정할 작업 폴더">${esc(folderOf(node))}</textarea>`}${switchHtml('inheritFolder', '부모의 작업 폴더 사용')}</section>
+          <section class="detail-section"><div class="section-label"><span>${icon('inherit')}공통 지침</span>${inheritanceLabel(node.inheritInstructions)}</div>${node.inheritInstructions ? `<div class="instruction-item">${icon('check')}프로젝트 공통 지침</div>${hasParent ? `<div class="instruction-item">${icon('check')}${esc(parentName(node))}의 추가 지침</div>` : ''}` : '<p class="quiet" style="font-size:10px">이 세션의 지침만 사용합니다.</p>'}<textarea class="child-instructions" id="child-instructions" aria-label="세션에 추가할 지침" placeholder="이 세션에 필요한 지침 추가" ${isDraft ? '' : 'disabled'}>${esc(node.instructions)}</textarea>${switchHtml('inheritInstructions', '상위 지침에 내 지침 추가')}</section>
+          <section class="detail-section"><div class="section-label"><span>${icon('settings')}모델 · effort</span>${inheritanceLabel(node.inheritModel)}</div><div class="field-value">${esc(node.provider)} · ${node.inheritModel ? '부모 기본 설정' : '세션 기본 설정'}</div>${switchHtml('inheritModel', sameProvider ? '같은 제공자의 기본값 상속' : '제공자가 달라 개별 설정 사용', sameProvider)}<p class="detail-help">상속 설정 변경은 다음 실행부터 반영됩니다.</p></section>`;
+      } else {
+        const creator = node.createdBy ? findDraft(node.createdBy) : null;
+        details = `${parentSection}<section class="detail-section"><div class="relation-row"><div class="section-label"><span>${icon('arrow')}작업을 시작한 세션</span></div><div class="field-value">${creator ? esc(creator.name) : '사용자가 직접 시작'}<span class="quiet" style="display:block;font-size:10px">${creator ? '결과를 전달할 실행 관계' : '자동 위임 관계 없음'}</span></div></div><div class="relation-row"><div class="section-label"><span>${icon('chat')}대화 기록</span></div><div class="field-value">독립 대화<span class="quiet" style="display:block;font-size:10px">필요한 내용은 요약 전달 또는 명시적 분기</span></div></div></section><section class="detail-section"><div class="detail-message"><strong>폴더 관계와 실행 관계를 따로 관리합니다.</strong><br>부모를 옮겨도 작업을 시작한 세션은 유지됩니다. 각 세션은 독립적으로 실행하고 종료합니다.</div></section>`;
+      }
+      $('inspector-body').innerHTML = summary + tabs + details;
+    }
+    function renderControls() {
+      $('project-select').value = state.project;
+      ['design', 'live'].forEach((view) => {
+        $(`${view}-view`).classList.toggle('active', state.view === view);
+        $(`${view}-view`).setAttribute('aria-pressed', String(state.view === view));
+      });
+      renderSidebar();
+    }
+    function showPage(page) {
+      state.page = page;
+      $('organization-board').hidden = page !== 'organization';
+      $('inspector').hidden = page !== 'organization';
+      $('alternate-view').hidden = page === 'organization';
+      $('organization-nav').classList.toggle('active', page === 'organization');
+      $('browser-nav').classList.toggle('active', page === 'browser');
+      $('organization-nav').setAttribute('aria-current', page === 'organization' ? 'page' : 'false');
+      $('browser-nav').setAttribute('aria-current', page === 'browser' ? 'page' : 'false');
+      $('organization-tab').classList.toggle('active', page === 'organization');
+      $('organization-tab').setAttribute('aria-selected', String(page === 'organization'));
+      $('session-tab').classList.toggle('active', page === 'chat');
+      $('session-tab').setAttribute('aria-selected', String(page === 'chat'));
+      if (page === 'browser') {
+        $('alternate-view').innerHTML = `<div class="eyebrow">WEB / Browser hub</div><h1>Browser hub</h1><p class="quiet">브라우저 탭과 작업 페이지를 모아 봅니다.</p><div class="browser-cards"><div class="browser-card">${icon('globe')}<h3>브라우저 허브</h3><p>기존 허브 화면 위치를 유지합니다.</p></div><div class="browser-card">${icon('network')}<h3>세션 조직도</h3><p>왼쪽의 조직도 탭에서 세션 구조를 확인합니다.</p><button class="button" style="margin-top:18px" data-back-to-chart>조직도 열기${icon('arrow')}</button></div></div>`;
+      } else if (page === 'chat') {
+        const node = selected();
+        $('session-tab-name').textContent = node.name;
+        $('alternate-view').innerHTML = `<div class="eyebrow">${esc(node.project)} / ${esc(node.provider)}</div><h1>${esc(node.name)}</h1><p class="quiet">세션 대화 화면 예시</p><div class="conversation"><div class="conversation-message"><div class="section-label">${icon('chat')}독립된 세션에서 작업을 이어갑니다.</div><p>이 세션의 작업 폴더와 공통 설정은 ${esc(parentName(node))}에서 이어받습니다. 대화 기록은 세션별로 관리합니다.</p></div><button class="button" data-back-to-chart>${icon('network')}조직도로 돌아가기</button></div>`;
+      } else {
+        requestAnimationFrame(() => fitChart(state.project !== 'all'));
+      }
+    }
+    function setView(view, project = view === 'live' ? 'all' : 'Acedia') {
+      state.view = view;
+      state.project = project;
+      state.query = '';
+      $('chart-search').value = '';
+      showPage('organization');
+      renderControls();
+      renderChart(true);
+    }
+    function selectNode(id) {
+      state.selected = id;
+      renderChart();
+      if (window.innerWidth <= 1100) { $('workspace-layout').classList.remove('inspector-closed'); $('workspace-layout').classList.add('inspector-open'); }
+    }
+    function prepareDraft() {
+      const node = selected();
+      if (state.view === 'live') {
+        state.view = 'design';
+        state.project = node.project;
+        state.selected = node.id;
+        renderControls();
+        renderChart(true);
+      }
+      showPage('organization');
+      return findDraft(state.selected);
+    }
+    function openChildDialog() {
+      const parent = prepareDraft();
+      state.dialogNode = parent.id;
+      $('child-form').reset();
+      $('child-provider').value = parent.provider;
+      $('child-parent-context').innerHTML = `${icon('network')}<span>${esc(parent.project)} / <strong>${esc(parent.name)}</strong> 아래에 추가</span>`;
+      syncNewProvider();
+      $('child-dialog').showModal();
+      $('child-name').focus();
+    }
+    function syncNewProvider() {
+      const parent = findDraft(state.dialogNode);
+      const sameProvider = parent?.provider === $('child-provider').value;
+      $('new-inherit-model').disabled = !sameProvider;
+      $('new-inherit-model').checked = sameProvider;
+    }
+    function isDescendant(candidateId, ancestorId) {
+      let node = findDraft(candidateId);
+      const visited = new Set();
+      while (node?.parent && !visited.has(node.id)) {
+        if (node.parent === ancestorId) return true;
+        visited.add(node.id);
+        node = findDraft(node.parent);
+      }
+      return false;
+    }
+    function openParentDialog() {
+      const node = prepareDraft();
+      state.dialogNode = node.id;
+      const candidates = draftNodes.filter((n) => n.project === node.project && n.id !== node.id && !isDescendant(n.id, node.id));
+      $('parent-target').innerHTML = `<option value="">${esc(node.project)} · 프로젝트 직속</option>${candidates.map((n) => `<option value="${n.id}">${esc(n.name)} · ${n.provider}</option>`).join('')}`;
+      $('parent-target').value = node.parent || '';
+      $('parent-dialog').showModal();
+    }
+    $('project-select').innerHTML = `<option value="all">전체 프로젝트</option>${projects.map((p) => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('')}`;
+    $('project-select').addEventListener('change', (event) => {
+      const project = event.target.value;
+      // The overview always uses the inspected snapshot; edited structures stay in the project draft.
+      if (project === 'all') setView('live', 'all');
+      else { state.project = project; renderControls(); renderChart(true); }
+    });
+    $('design-view').addEventListener('click', () => setView('design', state.project === 'all' ? 'Acedia' : state.project));
+    $('live-view').addEventListener('click', () => setView('live'));
+    $('active-filter').addEventListener('click', () => setView('live'));
+    document.querySelectorAll('[data-snapshot-info]').forEach((button) => button.addEventListener('click', () => notify('이 초안에는 확인한 활성 세션 8개를 담았습니다.')));
+    $('sidebar-search').addEventListener('input', renderSidebar);
+    $('project-tree').addEventListener('click', (event) => {
+      const toggle = event.target.closest('[data-toggle-project]');
+      if (toggle) { toggle.closest('.tree-project').classList.toggle('collapsed'); return; }
+      const project = event.target.closest('[data-project]');
+      if (project) { state.project = project.dataset.project; showPage('organization'); renderControls(); renderChart(true); return; }
+      const session = event.target.closest('[data-session]');
+      if (session) { const node = liveNodes.find((n) => n.id === session.dataset.session); state.project = node.project; state.selected = node.id; showPage('organization'); renderControls(); renderChart(true); }
+    });
+    $('chart-content').addEventListener('click', (event) => {
+      const collapse = event.target.closest('[data-collapse]');
+      if (collapse) { const id = collapse.dataset.collapse; if (!state.collapsed.has(id) && isDescendant(state.selected, id)) state.selected = id; state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id); renderChart(true); return; }
+      const node = event.target.closest('[data-node]');
+      if (node) selectNode(node.dataset.node);
+    });
+    $('chart-content').addEventListener('keydown', (event) => {
+      if (event.target.matches('[data-node]') && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectNode(event.target.dataset.node); document.querySelector(`[data-node="${state.selected}"]`)?.focus(); }
+    });
+    $('chart-search').addEventListener('input', (event) => { state.query = event.target.value.trim().toLowerCase(); if (state.query) state.collapsed.clear(); renderChart(); });
+    $('zoom-out').addEventListener('click', () => changeZoom(-.1));
+    $('zoom-in').addEventListener('click', () => changeZoom(.1));
+    $('zoom-value').addEventListener('click', () => { state.zoom = 1; updateZoom(); });
+    $('fit-chart').addEventListener('click', () => fitChart(true));
+    $('browser-nav').addEventListener('click', () => showPage('browser'));
+    $('organization-nav').addEventListener('click', () => showPage('organization'));
+    $('organization-tab').addEventListener('click', () => showPage('organization'));
+    $('session-tab').addEventListener('click', () => showPage('chat'));
+    $('open-chat').addEventListener('click', () => showPage('chat'));
+    $('alternate-view').addEventListener('click', (event) => { if (event.target.closest('[data-back-to-chart]')) showPage('organization'); });
+    ['add-child', 'inspector-add', 'sidebar-add'].forEach((id) => $(id).addEventListener('click', openChildDialog));
+    $('inspector-toggle').addEventListener('click', () => {
+      if (window.innerWidth <= 1100) { $('workspace-layout').classList.remove('inspector-closed'); $('workspace-layout').classList.toggle('inspector-open'); }
+      else { $('workspace-layout').classList.toggle('inspector-closed'); requestAnimationFrame(() => fitChart(state.project !== 'all')); }
+    });
+    $('close-inspector').addEventListener('click', () => {
+      if (window.innerWidth <= 1100) $('workspace-layout').classList.remove('inspector-open');
+      else { $('workspace-layout').classList.add('inspector-closed'); requestAnimationFrame(() => fitChart(state.project !== 'all')); }
+    });
+    $('inspector-body').addEventListener('click', (event) => {
+      const tab = event.target.closest('[data-detail-tab]');
+      if (tab) { state.detailTab = tab.dataset.detailTab; renderInspector(); }
+      if (event.target.closest('#change-parent')) openParentDialog();
+    });
+    $('inspector-body').addEventListener('change', (event) => {
+      if (state.view !== 'design') return;
+      const node = findDraft(state.selected);
+      if (event.target.matches('[data-inherit]')) {
+        const property = event.target.dataset.inherit;
+        if (property === 'inheritFolder' && !event.target.checked) node.folder = folderOf(node);
+        node[property] = event.target.checked;
+        renderChart();
+        notify('상속 설정을 초안에 반영했습니다.');
+      } else if (event.target.id === 'custom-folder') { node.folder = event.target.value.trim() || projectFor(node.project).folder; }
+      else if (event.target.id === 'child-instructions') { node.instructions = event.target.value; }
+    });
+    $('child-provider').addEventListener('change', syncNewProvider);
+    $('child-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const name = $('child-name').value.trim();
+      if (!name) { $('child-name').setCustomValidity('세션 이름을 입력해 주세요.'); $('child-name').reportValidity(); return; }
+      const parent = findDraft(state.dialogNode);
+      const id = `example-${Date.now()}-${draftNodes.length}`;
+      draftNodes.push({ id, name, project: parent.project, parent: parent.id, createdBy: parent.id, provider: $('child-provider').value, status: 'wait', description: '새 작업을 위한 자식 세션', example: true, inheritFolder: $('new-inherit-folder').checked, folder: folderOf(parent), inheritInstructions: $('new-inherit-instructions').checked, inheritModel: !$('new-inherit-model').disabled && $('new-inherit-model').checked, instructions: '' });
+      state.selected = id;
+      state.collapsed.delete(parent.id);
+      $('child-dialog').close();
+      renderChart(true);
+      notify(`${name} 세션을 설계 예시에 추가했습니다.`);
+    });
+    $('child-name').addEventListener('input', () => $('child-name').setCustomValidity(''));
+    $('parent-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const node = findDraft(state.dialogNode);
+      const target = $('parent-target').value || null;
+      if (target === node.id || (target && isDescendant(target, node.id))) { notify('자신이나 자식 아래로 이동할 수 없습니다.'); return; }
+      node.parent = target;
+      if (target && findDraft(target).provider !== node.provider) node.inheritModel = false;
+      if (target) state.collapsed.delete(target);
+      $('parent-dialog').close();
+      renderChart(true);
+      notify('설계 예시에 부모 관계를 반영했습니다.');
+    });
+    document.querySelectorAll('[data-close-dialog]').forEach((button) => button.addEventListener('click', () => button.closest('dialog').close()));
+    let drag = null;
+    $('chart-viewport').addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.target.closest('[data-node], button')) return;
+      drag = { x: event.clientX, y: event.clientY, left: $('chart-viewport').scrollLeft, top: $('chart-viewport').scrollTop };
+      $('chart-viewport').setPointerCapture(event.pointerId);
+      $('chart-viewport').classList.add('dragging');
+    });
+    $('chart-viewport').addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      $('chart-viewport').scrollLeft = drag.left - event.clientX + drag.x;
+      $('chart-viewport').scrollTop = drag.top - event.clientY + drag.y;
+    });
+    const stopDrag = () => { drag = null; $('chart-viewport').classList.remove('dragging'); };
+    $('chart-viewport').addEventListener('pointerup', stopDrag);
+    $('chart-viewport').addEventListener('pointercancel', stopDrag);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === '/' && !event.target.matches('input, textarea, select') && !document.querySelector('dialog[open]')) { event.preventDefault(); showPage('organization'); $('chart-search').focus(); }
+    });
+    let resizeTimer;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.page === 'organization') renderChart(true); }, 100); });
+    renderControls();
+    renderChart();
+    requestAnimationFrame(() => fitChart(true));
+  </script>
+</body>
+</html>

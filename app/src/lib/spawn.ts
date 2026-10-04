@@ -1,12 +1,16 @@
 import { invoke } from "../platform/runtime";
 import { toolForId } from "../types";
-import type { Agent, SshHost } from "../types";
+import type { Agent, Project, SessionResumeContext, SshHost } from "../types";
+import { resolveSessionSettings } from "./sessionHierarchy";
 import { findSshHost } from "./sshHosts";
 import { addSessionWorkerArgs, workerRoles } from "./sessionWorkers";
 import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
 import { handoffPromptForAccount } from "./accountHandoff";
 
 export type SpawnArgs = {
+  resumeContext?: SessionResumeContext;
+  sessionInstructions?: string;
+  modelSettings?: Agent["modelSettings"];
   launchOptions?: LaunchOptions;
   initCommand: string | null;
   ssh: {
@@ -77,11 +81,14 @@ export function resolveLocalToolCommand(
 // the ssh descriptor for remote hosts. Shared by the visible-pane spawn
 // (PaneSlot) and the background reopen-all spawn (App), so both behave the same.
 export async function buildSpawnArgs(
-  agent: Agent,
+  inputAgent: Agent,
   sessionPins: Record<string, string> | null,
   setAgentSessionId: (id: string, sessionId: string | null) => void,
-  options: { resumeSessionId?: string } = {}
+  options: { resumeSessionId?: string; agents?: readonly Agent[]; projects?: readonly Project[] } = {}
 ): Promise<SpawnArgs> {
+  const settings = resolveSessionSettings(inputAgent, options.agents ?? [inputAgent], options.projects);
+  if (settings.instructions.length > 20000 || settings.instructions.includes("\0")) throw new Error("상속을 포함한 추가 지침은 20,000자 이내여야 합니다. Inherited instructions must be within 20,000 characters.");
+  const agent = { ...inputAgent, folder: settings.folder, remoteFolder: settings.remoteFolder, modelSettings: settings.modelSettings };
   const exactResumeId = options.resumeSessionId || agent.idleResumeSessionId;
   if (agent.aiToolId === "gemini") throw new Error("Gemini CLI는 제거되었습니다. 새 Antigravity CLI 세션을 만드세요. Gemini CLI was removed; create a new Antigravity CLI session.");
   if (exactResumeId && (agent.sshHostId || !agent.folder || !["codex","claude"].includes(agent.aiToolId) || (sessionPins?.[agent.id] && sessionPins[agent.id] !== exactResumeId))) throw new Error("세션의 복원 대상이 변경되었습니다. 확인 후 다시 여세요.");
@@ -97,6 +104,7 @@ export async function buildSpawnArgs(
   }
   let initCommand: string | null = agent.aiToolId === "none" ? agent.shellCommand || null : null;
   let initialPrompt: string | undefined;
+  let resumeContext: SessionResumeContext | undefined;
 
   if (tool.command) {
     let cmd = sshHost
@@ -119,6 +127,9 @@ export async function buildSpawnArgs(
     } else {
       const pinnedSessionId = sessionPins?.[agent.id] ?? null;
       const candidateSessionId = pinnedSessionId ?? agent.lastSessionId ?? null;
+      const remembered = inputAgent.sessionHierarchy?.resumeContext;
+      const resumeFolder = remembered?.sessionId === (exactResumeId || candidateSessionId)
+        ? remembered.folder : inputAgent.folder || agent.folder;
       const accountId = agent.aiToolId === "claude" ? agent.claudeAccountId : agent.codexAccountId;
       const managedAccount = accountId && accountId !== "default";
       let sessionId: string | null = null;
@@ -129,7 +140,8 @@ export async function buildSpawnArgs(
         try {
           const resolved = await invoke<string | null>("resolve_cli_session", {
             aiToolId: agent.aiToolId,
-            folder: agent.folder,
+            // Verify the child's own transcript before applying a different inherited cwd.
+            folder: resumeFolder,
             agentId: agent.id,
             codexAccountId: agent.codexAccountId,
             claudeAccountId: agent.claudeAccountId,
@@ -155,8 +167,11 @@ export async function buildSpawnArgs(
       }
       if (sessionId) {
         if (agent.aiToolId === "codex") {
+          resumeContext = { sessionId, folder: resumeFolder };
           cmd = `${cmd} resume ${sessionId}`;
+          if (resumeFolder !== agent.folder) cmd += ' -c \'tui.resume_cwd="current"\'';
         } else if (agent.aiToolId === "claude") {
+          resumeContext = { sessionId, folder: resumeFolder };
           cmd = `${cmd} --resume ${sessionId}`;
         }
       } else if (agent.aiToolId === "codex" || agent.aiToolId === "claude") {
@@ -212,8 +227,12 @@ export async function buildSpawnArgs(
       agent.aiToolId,
       cmd,
       agent.workerSettings,
-      roleFiles
+      roleFiles,
+      settings.instructions
     );
+    if (agent.aiToolId === "claude" && settings.instructions) {
+      if (sshHost) throw new Error("SSH Claude 세션의 추가 지침은 아직 지원하지 않습니다. Additional instructions for SSH Claude sessions are not supported.");
+    }
     if (agent.dangerous && tool.dangerousFlag) {
       cmd = `${cmd} ${tool.dangerousFlag}`;
     }
@@ -244,5 +263,6 @@ export async function buildSpawnArgs(
     : null;
 
   return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null,
-    launchOptions, initialPrompt };
+    launchOptions, initialPrompt, modelSettings: settings.modelSettings, resumeContext,
+    ...(agent.aiToolId === "claude" && settings.instructions ? { sessionInstructions: settings.instructions } : {}) };
 }

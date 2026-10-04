@@ -58,9 +58,13 @@ async function run(name, envName, marker, timeoutMs = 12_000, terminateAfterMark
       }
     });
     child.stderr.on("data", (chunk) => { output += chunk; process.stderr.write(chunk); });
-    child.on("exit", (code) => {
+    child.on("close", (code) => {
       clearTimeout(timeout);
-      try { fs.rmSync(userData, { recursive: true, force: true }); } catch {}
+      try {
+        const relative = path.relative(fs.realpathSync(os.tmpdir()), fs.realpathSync(userData));
+        if (path.isAbsolute(relative) || !relative.startsWith(`multiagent-${name}-`) || relative.includes(path.sep)) throw new Error("Unexpected lifecycle cleanup path.");
+        fs.rmSync(userData, { recursive: true, maxRetries: 5, retryDelay: 100 });
+      } catch {}
       const variantMarker = `variant=${variant}`;
       const packagedResourcesHealthy = !output.includes("[electron] tray init failed");
       if (

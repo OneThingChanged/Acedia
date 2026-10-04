@@ -78,10 +78,10 @@ export function sessionWorkerDeveloperInstructions(settings: SessionWorkerSettin
   lines.push("Do not delegate trivial edits where coordination costs more than the work.");
   return lines.join("\n");
 }
-export function addSessionWorkerArgs(aiToolId: string, command: string, value: SessionWorkerSettings | undefined, roleFiles: Partial<Record<keyof SessionWorkerSettings, string>> = {}): string {
+export function addSessionWorkerArgs(aiToolId: string, command: string, value: SessionWorkerSettings | undefined, roleFiles: Partial<Record<keyof SessionWorkerSettings, string>> = {}, instructions = ""): string {
   if (aiToolId !== "codex") return command;
   const settings = normalizeSessionWorkerSettings(value);
-  if (!settings) return command;
+  if (!settings) return instructions ? `${command} -c 'developer_instructions=${tomlString(instructions)}'` : command;
   const overrides = ["features.multi_agent=true", "agents.enabled=true", "agents.max_concurrent_threads_per_session=2"];
   const configs = Object.values(workerRoles(settings));
   if (configs.length && configs.every(config => config.model === configs[0].model && config.effort === configs[0].effort)) {
@@ -94,6 +94,6 @@ export function addSessionWorkerArgs(aiToolId: string, command: string, value: S
     overrides.push(`agents.${ROLE_NAMES[kind]}.description=${tomlString(description)}`);
     if (config.provider === "codex" && roleFiles[kind]) overrides.push(`agents.${ROLE_NAMES[kind]}.config_file=${tomlString(roleFiles[kind]!)}`);
   }
-  overrides.push(`developer_instructions=${tomlString(sessionWorkerDeveloperInstructions(settings))}`);
+  overrides.push(`developer_instructions=${tomlString([sessionWorkerDeveloperInstructions(settings), instructions].filter(Boolean).join("\n\n"))}`);
   return `${command} ${overrides.map(item => `-c '${item}'`).join(" ")}`;
 }

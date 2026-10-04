@@ -15,6 +15,50 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("inherited session launch", () => {
+  it("resolves inherited folder and model at spawn without changing own settings or resume ownership", async () => {
+    invokeMock.mockResolvedValue(null);
+    const parent = { id: "parent", projectId: "p", folder: "C:/parent", aiToolId: "codex", modelSettings: { model: "parent-model", effort: "high" }, sessionHierarchy: { instructions: "Parent's rules\nStay in scope" } } as Agent;
+    const child = { id: "child", projectId: "p", folder: "C:/old", aiToolId: "codex", modelSettings: { model: "own-model" }, sessionHierarchy: { parentId: "parent", inheritModel: true, instructions: "Child rules" } } as Agent;
+    const result = await buildSpawnArgs(child, null, vi.fn(), { agents: [parent, child] });
+    expect(result.cwd).toBe("C:/parent");
+    expect(result.modelSettings).toEqual(parent.modelSettings);
+    expect(result.initCommand).toContain("developer_instructions=");
+    expect(result.initCommand).toContain("Child rules");
+    expect(child.modelSettings).toEqual({ model: "own-model" });
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ agentId: "child", folder: "C:/old" }));
+    expect(result.initCommand).not.toContain("resume parent");
+  });
+  it.each(["codex", "claude"])("keeps the owned %s conversation across inherited folder changes and subsequent launches", async aiToolId => {
+    const parent = { id: "parent", projectId: "p", folder: "C:/next", aiToolId } as Agent;
+    const child = { id: "child", projectId: "p", folder: "C:/original", aiToolId, lastSessionId: "own-chat", sessionHierarchy: { parentId: "parent" } } as Agent;
+    invokeMock.mockImplementation(async (_command, args) => args.folder === "C:/original" ? "own-chat" : null);
+    const first = await buildSpawnArgs(child, null, vi.fn(), { agents: [parent, child] });
+    expect(first).toMatchObject({ cwd: "C:/next", resumeContext: { sessionId: "own-chat", folder: "C:/original" } });
+    expect(first.initCommand).toContain(aiToolId === "codex" ? "resume own-chat" : "--resume own-chat");
+    if (aiToolId === "codex") expect(first.initCommand).toContain('tui.resume_cwd="current"');
+    const relaunched = { ...child, folder: "C:/next", sessionHierarchy: { ...child.sessionHierarchy, resumeContext: first.resumeContext } };
+    const save = vi.fn();
+    const second = await buildSpawnArgs(relaunched, null, save, { agents: [parent, relaunched], resumeSessionId: "own-chat" });
+    expect(second.initCommand).toContain("own-chat");
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("ignores an old lookup folder when switching to a different conversation", async () => {
+    invokeMock.mockResolvedValue("new-chat");
+    const child = { id: "child", folder: "C:/new", aiToolId: "codex", lastSessionId: "new-chat", sessionHierarchy: { resumeContext: { sessionId: "old-chat", folder: "C:/old" } } } as Agent;
+    const result = await buildSpawnArgs(child, null, vi.fn());
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ folder: "C:/new", preferredSessionId: "new-chat" }));
+    expect(result.resumeContext).toEqual({ sessionId: "new-chat", folder: "C:/new" });
+  });
+  it("passes multiline Claude guidance separately from user launch arguments", async () => {
+    invokeMock.mockResolvedValue(null);
+    const child = { id: "child", folder: "C:/project", aiToolId: "claude", sessionHierarchy: { instructions: "First line\nSecond line" } } as Agent;
+    const result = await buildSpawnArgs(child, null, vi.fn());
+    expect(result.sessionInstructions).toBe("First line\nSecond line");
+    expect(result.launchOptions).toBeUndefined();
+  });
+});
+
 describe("Antigravity terminal sessions", () => {
   it("resumes only the resolved conversation and propagates missing-session errors", async () => {
     const id = "11111111-1111-4111-8111-111111111111";

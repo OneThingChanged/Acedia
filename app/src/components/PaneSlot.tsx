@@ -24,6 +24,7 @@ import type {
   LeafNode,
   Path,
   Project,
+  SessionResumeContext,
   TerminalEntry,
 } from "../types";
 import type { AppThemeId } from "../lib/appTheme";
@@ -97,6 +98,7 @@ export type RenderCtx = {
   termsRef: React.MutableRefObject<Map<string, TerminalEntry>>;
   setAgentStatus: (id: string, status: AgentStatus) => void;
   setAgentSessionId: (id: string, sessionId: string | null) => void;
+  onSessionLaunch?: (id: string, folder: string | null, remoteFolder?: string | null, resumeContext?: SessionResumeContext) => void;
   setActivePath: (path: Path | null) => void;
   onCloseTab: (path: Path, agentId: string) => void;
   onSelectTab: (path: Path, agentId: string) => void;
@@ -206,6 +208,8 @@ export function PaneSlot({
   // Latest-agent ref read inside the spawn effect; lets that effect depend
   // only on agent.id (not on status, which flips often).
   const activeAgentRef = useRef<Agent | null>(activeAgent);
+  const latestContextRef = useRef(ctx);
+  latestContextRef.current = ctx;
   useEffect(() => {
     activeAgentRef.current = activeAgent;
   }, [activeAgent]);
@@ -287,18 +291,20 @@ export function PaneSlot({
         const cur = activeAgentRef.current;
         if (!cur || cur.id !== agentId) return;
         target.spawnPromise = (async () => {
-          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, resumeContext } = await buildSpawnArgs(
             cur,
             ctx.sessionPins,
-            setAgentSessionId
+            setAgentSessionId,
+            { agents: latestContextRef.current.agents, projects: latestContextRef.current.projects }
           );
-          return invoke<SpawnTerminalResult>("spawn_pty", {
+          const result = await invoke<SpawnTerminalResult>("spawn_pty", {
             id: agentId,
             shell: null,
             cwd,
             initCommand,
             launchOptions,
-            modelSettings: cur.modelSettings,
+            modelSettings,
+            sessionInstructions,
             initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
@@ -308,6 +314,8 @@ export function PaneSlot({
             cols,
             rows,
           });
+          if (!result.reattached && !result.cancelled) latestContextRef.current.onSessionLaunch?.(agentId, cwd, ssh?.remoteFolder, resumeContext);
+          return result;
         })();
       }
       if (target.spawnPromise) {
@@ -391,18 +399,20 @@ export function PaneSlot({
           setAgentStatus(agentId, "starting");
         }
         const spawn = async () => {
-          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, resumeContext } = await buildSpawnArgs(
             cur,
             ctx.sessionPins,
-            setAgentSessionId
+            setAgentSessionId,
+            { agents: latestContextRef.current.agents, projects: latestContextRef.current.projects }
           );
-          invoke("spawn_pty", {
+          const result = await invoke<SpawnTerminalResult>("spawn_pty", {
             id: agentId,
             shell: null,
             cwd,
             initCommand,
             launchOptions,
-            modelSettings: cur.modelSettings,
+            modelSettings,
+            sessionInstructions,
             initialPrompt,
             aiToolId: cur.aiToolId,
             codexAccountId: cur.codexAccountId,
@@ -411,12 +421,13 @@ export function PaneSlot({
             ssh,
             cols,
             rows,
-          }).catch((err) => {
-            e.term.write(`\r\n\x1b[31mspawn failed: ${err}\x1b[0m\r\n`);
-            setAgentStatus(agentId, "exited");
           });
+          if (!result.reattached && !result.cancelled) latestContextRef.current.onSessionLaunch?.(agentId, cwd, ssh?.remoteFolder, resumeContext);
         };
-        void spawn();
+        void spawn().catch((err) => {
+          e.term.write(`\r\n\x1b[31mspawn failed: ${err}\x1b[0m\r\n`);
+          setAgentStatus(agentId, "exited");
+        });
       } else if (cols !== lastCols || rows !== lastRows) {
         lastCols = cols;
         lastRows = rows;

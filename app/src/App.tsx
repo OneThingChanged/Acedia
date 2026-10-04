@@ -1,6 +1,8 @@
 import { markIdleSuspended } from './lib/idleSessions';
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
+import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
+import { SessionOrganization } from "./components/SessionOrganization";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { normalizeSessionModel, sessionModelArgs, type SessionModel } from "../electron/shared/session-model.mjs";
 import { switchProviderAccount } from "./lib/codexAccounts";
@@ -48,6 +50,8 @@ import type {
   ProjectFolder,
   ProjectFolderContextMenuState,
   SessionContextAction,
+  SessionHierarchy,
+  SessionResumeContext,
   StoredAgent,
   StoredProject,
   StoredProjectFolder,
@@ -299,6 +303,7 @@ function storedProjectFolderFromProjectFolder(
 
 function storedAgentFromAgent(agent: Agent): StoredAgent {
   return {
+    sessionHierarchy: normalizeSessionHierarchy(agent.sessionHierarchy),
     id: agent.id,
     projectId: agent.projectId,
     name: agent.name,
@@ -436,8 +441,9 @@ function agentFromStored(
   return {
     id: stored.id,
     projectId: project.id,
+    sessionHierarchy: normalizeSessionHierarchy(stored.sessionHierarchy),
     name: stored.name || existing?.name || "Session",
-    folder: project.folder,
+    folder: stored.sessionHierarchy ? stored.folder || project.folder : project.folder,
     aiToolId,
     aiLabel: toolForId(aiToolId).label,
     codexAccountId: stored.codexAccountId,
@@ -494,7 +500,7 @@ function mergeAgentsFromStorage(
     merged.map(storedAgentFromAgent)
   )
     ? current
-    : merged;
+    : repairSessionHierarchy(merged);
 }
 
 function clampFilesWidth(width: number) {
@@ -632,7 +638,7 @@ function App() {
   const [activePath, setActivePath] = useState<Path | null>(
     workspace.restore || workspace.resumeLive ? boot.activePath : null
   );
-  const [workspaceMode, setWorkspaceMode] = useState<"sessions" | "browser-hub">(
+  const [workspaceMode, setWorkspaceMode] = useState<"sessions" | "browser-hub" | "organization">(
     "sessions"
   );
   const [browserCatalog, setBrowserCatalog] = useState<DocumentBrowserSnapshot[]>([]);
@@ -640,6 +646,8 @@ function App() {
 
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [newSessionParentId, setNewSessionParentId] = useState<string | null>(null);
+  const [organizationSelectedId, setOrganizationSelectedId] = useState<string | null>(null);
   const [pendingSessionAccountLaunch, setPendingSessionAccountLaunch] = useState<PendingSessionAccountLaunch | null>(null);
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
@@ -1258,6 +1266,10 @@ function App() {
         lastSessionId: a.lastSessionId ?? null,
         sshHostId: a.sshHostId ?? null,
         modelSettings: a.modelSettings,
+        sessionHierarchy: a.sessionHierarchy ? {
+          parentId: a.sessionHierarchy.parentId,
+          createdById: a.sessionHierarchy.createdById,
+        } : undefined,
         codexAccountId: a.codexAccountId,
         codexPoolAccountId: a.codexPoolAccountId,
         claudeAccountId: a.claudeAccountId,
@@ -2821,6 +2833,27 @@ function App() {
     [applyGroupOp, text, catalogConfirmation.confirm, flushTransientInteractionState, restoreWorkspaceFocus]
   );
 
+  const onSessionLaunch = useCallback((id: string, folder: string | null, remoteFolder?: string | null, resumeContext?: SessionResumeContext) => {
+    setAgents((current) => current.map((agent) => agent.id !== id ? agent : {
+      ...agent,
+      ...(folder ? { folder } : {}),
+      ...(remoteFolder ? { remoteFolder } : {}),
+      ...(agent.sessionHierarchy ? { sessionHierarchy: { ...agent.sessionHierarchy, resumeContext } } : {}),
+    }));
+  }, []);
+
+  const updateSessionHierarchy = useCallback((id: string, hierarchy: SessionHierarchy) => {
+    const current = agentsRef.current;
+    const target = current.find((agent) => agent.id === id);
+    if (!target) throw new Error(text("세션을 찾을 수 없습니다.", "Session not found."));
+    const normalized = normalizeSessionHierarchy(hierarchy);
+    if (!canParentSession(current, id, normalized?.parentId)) throw new Error(text("같은 프로젝트의 세션을 선택하세요. 자신이나 자식 아래로 이동할 수 없습니다.", "Choose a session in the same project. A session cannot move below itself or its descendants."));
+    // Creation provenance is immutable; moving this node changes only its organization.
+    const next = current.map((agent) => agent.id !== id ? agent : { ...agent, sessionHierarchy: { ...normalized, createdById: agent.sessionHierarchy?.createdById } });
+    agentsRef.current = next;
+    setAgents(next);
+  }, [text]);
+
   const createAgent = useCallback(
     async (
       payload: NewAgentPayload,
@@ -2832,6 +2865,12 @@ function App() {
       if (!project) {
         return { created: false, error: text("세션을 생성할 프로젝트를 찾을 수 없습니다.", "Could not find a project for the new session.") };
       }
+      const hierarchy = normalizeSessionHierarchy(payload.sessionHierarchy);
+      const parent = hierarchy?.parentId ? agentsRef.current.find((agent) => agent.id === hierarchy.parentId) : undefined;
+      if (hierarchy?.parentId && (!parent || parent.projectId !== project.id)) {
+        return { created: false, error: text("부모 세션이 없거나 다른 프로젝트에 있습니다.", "The parent is unavailable or belongs to another project.") };
+      }
+      const inherited = parent ? resolveSessionSettings(parent, agentsRef.current, projectsRef.current) : undefined;
       const id = options.agentId ?? crypto.randomUUID();
       const tool = toolForId(payload.aiToolId);
       const hasExplicitWorkerSettings = Object.prototype.hasOwnProperty.call(
@@ -2843,9 +2882,10 @@ function App() {
           ...agentsRef.current,
           {
             id,
+            sessionHierarchy: hierarchy,
             projectId: project.id,
             name: payload.name.trim() || `Session ${agentsRef.current.length + 1}`,
-            folder: project.folder,
+            folder: hierarchy?.inheritFolder !== false && inherited ? inherited.folder : !project.sshHostId && hierarchy?.folderOverride ? hierarchy.folderOverride : project.folder,
             aiToolId: tool.id,
             aiLabel: tool.label,
             shellCommand: tool.id === "none" ? payload.shellCommand : undefined,
@@ -2868,7 +2908,7 @@ function App() {
             runtimeStatus: "starting",
             createdAt: Date.now(),
             sshHostId: project.sshHostId,
-            remoteFolder: project.remoteFolder,
+            remoteFolder: hierarchy?.inheritFolder !== false && inherited ? inherited.remoteFolder : hierarchy?.folderOverride && project.sshHostId ? hierarchy.folderOverride : project.remoteFolder,
           },
         ];
         agentsRef.current = next;
@@ -2971,6 +3011,7 @@ function App() {
       // transient menu first so a stale transparent backdrop cannot intercept
       // the new-session form after a session was deleted.
       dismissTransientMenus();
+      setNewSessionParentId(null);
       if (projectId) selectProject(projectId);
       setShowModal(true);
     },
@@ -3620,19 +3661,20 @@ function App() {
           const group = groupsRef.current.find((g) =>
             collectAgentIds(g.layout).has(agentId)
           );
-          const { initCommand, ssh, cwd, launchOptions, initialPrompt } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, resumeContext } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId,
-            { resumeSessionId: options.resumeSessionId }
+            { resumeSessionId: options.resumeSessionId, agents: agentsRef.current, projects: projectsRef.current }
           );
-          return invoke<SpawnTerminalResult>("spawn_pty", {
+          const result = await invoke<SpawnTerminalResult>("spawn_pty", {
             id: agentId,
             shell: null,
             cwd,
             initCommand,
             launchOptions,
-            modelSettings: agent.modelSettings,
+            modelSettings,
+            sessionInstructions,
             poolResumeOwnerId: options.poolResumeOwnerId,
             initialPrompt,
             aiToolId: agent.aiToolId,
@@ -3643,6 +3685,8 @@ function App() {
             cols: 120,
             rows: 30,
           });
+          if (!result.reattached && !result.cancelled) onSessionLaunch(agentId, cwd, ssh?.remoteFolder, resumeContext);
+          return result;
         })();
         const pendingSpawn = entry.spawnPromise;
         const result = await pendingSpawn;
@@ -3681,6 +3725,7 @@ function App() {
       clearAgentStartupReadyTimer,
       setAgentStatus,
       setAgentSessionId,
+      onSessionLaunch,
       text,
     ]
   );
@@ -3734,6 +3779,7 @@ function App() {
       aiToolId: string;
       dangerous: boolean;
       codexPoolAccountId?: string;
+      sessionHierarchy?: SessionHierarchy;
       project?: { name: string; folder: string };
       workspaceManaged?: boolean;
     }>("remote:create-session", (event) => {
@@ -3786,11 +3832,16 @@ function App() {
           aiToolId: payload.aiToolId,
           dangerous: Boolean(payload.dangerous),
           codexPoolAccountId: payload.codexPoolAccountId,
+          sessionHierarchy: payload.sessionHierarchy,
         },
         { projectId: payload.projectId, agentId: payload.id }
       );
       void creation.then(async result => {
         if (!result.created) return complete({ ok: false, error: result.error, statusCode: 409 });
+        if (payload.project && payload.sessionHierarchy) {
+          agentsRef.current = agentsRef.current.map(agent => agent.id !== result.id ? agent : { ...agent, sessionHierarchy: normalizeSessionHierarchy(payload.sessionHierarchy) });
+          setAgents(agentsRef.current);
+        }
         if (!payload.workspaceManaged) return complete({ ok: true });
         // MCP callers need an acknowledged durable result, not just delivery
         // of a UI event. Keep the created items if a CLI launch fails.
@@ -3834,13 +3885,13 @@ function App() {
         if (payload.settings && !settings) throw new Error("Invalid model settings.");
         sessionModelArgs(settings, agent.launchOptions, agent.aiToolId);
         // Acknowledge only after the durable workspace snapshot includes this change.
-        const next = agentsRef.current.map(item => item.id === agent.id ? { ...item, modelSettings: settings } : item);
+        const next = agentsRef.current.map(item => item.id === agent.id ? withSessionModelOverride(item, settings) : item);
         const stored = mergeStoredByIdForWrite(next.map(storedAgentFromAgent),
           parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
         const json = JSON.stringify(stored);
         localStorage.setItem(LS_AGENTS, json);
         storedAgentsJsonRef.current = json;
-        agentsRef.current = agentsRef.current.map(item => item.id === agent.id ? { ...item, modelSettings: settings } : item);
+        agentsRef.current = agentsRef.current.map(item => item.id === agent.id ? withSessionModelOverride(item, settings) : item);
         setAgents(agentsRef.current);
         await persistStorageSnapshot(true);
         if (!payload.restart) return complete({ ok: true });
@@ -4255,6 +4306,8 @@ function App() {
         dragState={dragState}
         browserHubActive={workspaceMode === "browser-hub"}
         browserCount={browserCatalog.length}
+        organizationActive={workspaceMode === "organization"}
+        onOpenOrganization={() => setWorkspaceMode("organization")}
         onOpenBrowserHub={
           isElectronRuntime() ? () => setWorkspaceMode("browser-hub") : undefined
         }
@@ -4287,6 +4340,24 @@ function App() {
           onCreateBrowser={createBrowserFromHub}
           onCloseBrowser={closeBrowserFromHub}
         />
+      ) : workspaceMode === "organization" ? (
+        <SessionOrganization
+          agents={agents}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          selectedId={organizationSelectedId}
+          onSelect={setOrganizationSelectedId}
+          onOpenSession={requestSelectAgent}
+          onOpenProperties={setPropertiesAgentId}
+          onUpdateHierarchy={updateSessionHierarchy}
+          onCreateChild={(parentId) => {
+            const parent = agentsRef.current.find((agent) => agent.id === parentId);
+            if (!parent) return;
+            setActiveProjectId(parent.projectId);
+            setNewSessionParentId(parentId);
+            setShowModal(true);
+          }}
+        />
       ) : (
         <TerminalArea
           agents={agents}
@@ -4300,6 +4371,7 @@ function App() {
           termsRef={termsRef}
           setAgentStatus={setAgentStatus}
           setAgentSessionId={setAgentSessionId}
+          onSessionLaunch={onSessionLaunch}
           setActivePath={setActivePathForPane}
           onCloseTab={closeTab}
           onSelectTab={setActiveTabInPane}
@@ -4321,7 +4393,7 @@ function App() {
           onOpenTerminalPath={handleOpenTerminalPath}
         />
       )}
-      {filesOpen && (
+      {filesOpen && workspaceMode !== "organization" && (
         <aside className="files-shell" style={{ width: filesWidth + 7 }}>
           <div
             className="files-resizer"
@@ -4432,10 +4504,20 @@ function App() {
           project={activeProject}
           defaultName={`Session ${projectAgents.length + 1}`}
           disabledTools={disabledTools}
-          onCancel={() => setShowModal(false)}
-          onCreate={(payload) => {
+          parentAgent={newSessionParentId ? agents.find((agent) => agent.id === newSessionParentId) : undefined}
+          onCancel={() => { setShowModal(false); setNewSessionParentId(null); }}
+          onCreate={async (payload) => {
             setShowModal(false);
-            createAgent(payload);
+            const parent = newSessionParentId ? agentsRef.current.find((agent) => agent.id === newSessionParentId) : undefined;
+            if (newSessionParentId && !parent) { setNewSessionParentId(null); pushToast("", activeProject?.name || "", text("부모 세션이 삭제되어 자식을 만들 수 없습니다.", "The parent was deleted; the child could not be created.")); return; }
+            setNewSessionParentId(null);
+            const result = await createAgent(payload, parent ? { projectId: parent.projectId } : {});
+            if (!result.created || !result.id) { if (result.error) pushToast("", activeProject?.name || "", result.error); return; }
+            if (parent) {
+              setOrganizationSelectedId(result.id);
+              const started = await spawnAgentInBackground(result.id);
+              if (!started.ok) pushToast(result.id, payload.name, started.error || text("세션을 시작하지 못했습니다.", "Could not start the session."));
+            }
           }}
         />
       )}

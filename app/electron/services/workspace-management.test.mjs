@@ -50,6 +50,16 @@ it('rejects missing folders, relative paths, unsupported tools, stale callers an
   f.active.clear(); await expect(f.call('list')).rejects.toMatchObject({ statusCode: 409 });
   expect(f.create).not.toHaveBeenCalled();
 });
+it('records the caller and parents a created session only within its own project', async () => {
+  const f = fixture();
+  f.catalog.projects.push({ id: 'own', name: 'Own', folder: f.root }, { id: 'other', name: 'Other', folder: f.root });
+  f.catalog.agents.push({ id: 'caller', projectId: 'own', aiToolId: 'codex' });
+  await f.call('create-session', { projectId: 'own', requestKey: 'child' });
+  expect(f.create.mock.calls[0][0].sessionHierarchy).toEqual({ parentId: 'caller', createdById: 'caller', inheritFolder: true, inheritInstructions: true, inheritModel: true });
+  await f.call('create-session', { projectId: 'other', requestKey: 'peer' });
+  expect(f.create.mock.calls[1][0].sessionHierarchy).toEqual({ createdById: 'caller' });
+});
+
 it('retains a timeout result so a retry cannot create another session, and reports registered sessions whose launch failed', async () => {
   const f = fixture(); const first = await f.call('create-project', { folder: f.root });
   f.create.mockRejectedValueOnce(Object.assign(new Error('acknowledgement timeout'), { statusCode: 504 }));

@@ -231,5 +231,5 @@ try {
   process.exitCode = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", code => resolve(code ?? 1)); });
 } finally {
   if (path.dirname(temporary) !== path.resolve(os.tmpdir()) || !path.basename(temporary).startsWith("acedia-new-session-ui-")) throw new Error("Unexpected cleanup path");
-  await fs.rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
+  await fs.rm(temporary, { recursive: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
 }

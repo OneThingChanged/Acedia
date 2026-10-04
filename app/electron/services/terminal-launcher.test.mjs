@@ -62,6 +62,18 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it('appends multiline Claude instructions and refreshes the prompt on resumed conversations', async () => {
+    const f = fixture();
+    vi.useFakeTimers();
+    await f.launch({ ...f.args, aiToolId: 'claude', initCommand: 'claude --resume own-conversation', sessionInstructions: "Parent's rules\nChild rules" });
+    await vi.advanceTimersByTimeAsync(600);
+    const command = f.processes[0].write.mock.calls[0][0];
+    expect(command).toContain('--append-system-prompt');
+    expect(command).toContain('Child rules');
+    expect(command).toContain('--system-prompt-snapshot');
+    expect(command).toContain("'off'");
+    expect(command).toContain('own-conversation');
+  });
   it('retains generated MCP and worker settings for the native routed server and releases it with the terminal', async () => {
     const f = fixture(); const release = vi.fn();
     const accountPoolLaunch = vi.fn(async () => ({ env: { ACEDIA_CODEX_REMOTE_TOKEN: 'fixture' }, args: ['--remote', 'ws://127.0.0.1:12345'], release }));

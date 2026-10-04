@@ -118,6 +118,7 @@ export type TerminalReplay = Required<
 export type SpawnTerminalResult = { reattached: boolean; cancelled?: boolean };
 
 export type SpawnTerminalArgs = {
+  sessionInstructions?: string;
   poolResumeOwnerId?: string;
   modelSettings?: import("../../electron/shared/session-model.mjs").SessionModel;
   launchOptions?: import("../lib/launchOptions").LaunchOptions;

@@ -143,6 +143,8 @@ export function Sidebar({
   browserHubActive = false,
   browserCount = 0,
   onOpenBrowserHub,
+  organizationActive = false,
+  onOpenOrganization,
   onSelectProject,
   onSelect,
   onSelectScreen,
@@ -175,6 +177,8 @@ export function Sidebar({
   browserHubActive?: boolean;
   browserCount?: number;
   onOpenBrowserHub?: () => void;
+  organizationActive?: boolean;
+  onOpenOrganization?: () => void;
   onSelectProject: (id: string) => void;
   onSelect: (id: string) => void;
   onSelectScreen: (groupId: string, agentId: string) => void;
@@ -1175,6 +1179,14 @@ export function Sidebar({
               <span className="browser-hub-sidebar-icon" aria-hidden="true">WEB</span>
               <span className="browser-hub-sidebar-label">{text("브라우저 모아보기", "Browser hub")}</span>
               <span className="browser-hub-sidebar-count">{browserCount}</span>
+            </button>
+          </div>
+        )}
+        {!sessionPickerMode && onOpenOrganization && (
+          <div className="organization-sidebar-slot">
+            <button className={`browser-hub-sidebar-btn${organizationActive ? " is-active" : ""}`} onClick={onOpenOrganization} aria-pressed={organizationActive} title={text("부모·자식 세션과 설정 상속 보기", "View session hierarchy and inherited settings")}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="8" y="3" width="8" height="5" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/></svg>
+              <span className="browser-hub-sidebar-label">{text("조직도", "Organization")}</span>
             </button>
           </div>
         )}

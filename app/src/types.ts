@@ -173,7 +173,23 @@ export type SshHost = {
   preferCmdShim?: boolean;
 };
 
+export type SessionResumeContext = { sessionId: string; folder: string };
+
+export type SessionHierarchy = {
+  // Transcript lookup stays tied to the conversation's original folder.
+  resumeContext?: SessionResumeContext;
+  parentId?: string;
+  // Provenance stays unchanged when the organizational parent moves.
+  createdById?: string;
+  inheritFolder?: boolean;
+  inheritInstructions?: boolean;
+  inheritModel?: boolean;
+  folderOverride?: string;
+  instructions?: string;
+};
+
 export type Agent = {
+  sessionHierarchy?: SessionHierarchy;
   terminalEpoch?: number;
   modelSettings?: import("../electron/shared/session-model.mjs").SessionModel;
   idleResumeSessionId?: string;
@@ -216,6 +232,7 @@ export type Agent = {
 };
 
 export type StoredAgent = {
+  sessionHierarchy?: SessionHierarchy;
   modelSettings?: import("../electron/shared/session-model.mjs").SessionModel;
   idleResumeSessionId?: string;
   shellCommand?: string;
@@ -289,6 +306,7 @@ export type TerminalEntry = {
 };
 
 export type NewAgentPayload = {
+  sessionHierarchy?: SessionHierarchy;
   shellCommand?: string;
   launchOptions?: LaunchOptions;
   useAltScreen?: boolean;

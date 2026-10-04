@@ -122,12 +122,16 @@ export function createTerminalLauncher({
         Object.assign(launchEnvironment, poolLaunch.env);
       }
       const initialPrompt = asString(args.initialPrompt);
+      const instructions = asString(args.sessionInstructions).trim();
+      if (instructions && aiToolId !== "claude") throw new Error("Session instruction arguments require Claude.");
+      if (instructions && ssh) throw new Error("Session instruction arguments require a local session.");
+      const instructionArgs = instructions ? ["--append-system-prompt", instructions, "--system-prompt-snapshot", "off"] : [];
       const nativeArgs = poolLaunch?.native ? codexRemoteTuiArgs([
         ...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs,
       ]) : null;
       const launchCommand = ssh ? "" : prepareLaunchCommand(nativeArgs ? "codex" : asString(args.initCommand).trim(), nativeArgs ? { ...launchOptions, args: [] } : args.launchOptions, {
         shell: executable, toolId: aiToolId, env: launchEnvironment, platform,
-        extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : modelArgs), ...(initialPrompt ? [initialPrompt] : [])],
+        extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : modelArgs), ...instructionArgs, ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
       return {

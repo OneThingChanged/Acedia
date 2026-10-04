@@ -141,5 +141,5 @@ try {
   if (code !== 0) throw new Error("Terminal links smoke failed: " + code);
 } finally {
   if (path.dirname(temporary) !== path.resolve(os.tmpdir()) || !path.basename(temporary).startsWith("acedia-terminal-links-")) throw new Error("Unexpected smoke cleanup path");
-  await fs.rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await fs.rm(temporary, { recursive: true, maxRetries: 5, retryDelay: 200 });
 }

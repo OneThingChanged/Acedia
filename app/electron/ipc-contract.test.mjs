@@ -201,6 +201,11 @@ describe("Electron IPC contract", () => {
       id: "agent", cols: 80, rows: 24, initialPrompt: "x".repeat(4097),
     })).toThrow("handoff prompt");
   });
+  it("bounds multiline session instructions without permitting NUL or invalid types", () => {
+    const args = { id: "agent", cols: 80, rows: 24 };
+    expect(contract.assertInvokeRequest("spawn_pty", { ...args, sessionInstructions: "Parent rules\nChild rules" }).sessionInstructions).toContain("\n");
+    for (const sessionInstructions of [false, "\0", "x".repeat(20001)]) expect(() => contract.assertInvokeRequest("spawn_pty", { ...args, sessionInstructions })).toThrow("session instructions");
+  });
 
   it("validates embedded document browser bounds", () => {
     expect(contract.assertInvokeRequest("document_browser_bounds", {

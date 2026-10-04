@@ -22,7 +22,7 @@ export class WorkspaceManagement {
     const catalog = this.catalog();
     return {
       projects: (catalog.projects || []).map(p => ({ id: p.id, name: p.name, folder: p.folder, local: !p.sshHostId })),
-      sessions: (catalog.agents || []).map(a => ({ id: a.id, projectId: a.projectId, name: a.name, aiToolId: a.aiToolId, active: this.isActive(a.id) })),
+      sessions: (catalog.agents || []).map(a => ({ id: a.id, projectId: a.projectId, name: a.name, aiToolId: a.aiToolId, active: this.isActive(a.id), ...(a.sessionHierarchy?.parentId ? { parentSessionId: a.sessionHierarchy.parentId } : {}), ...(a.sessionHierarchy?.createdById ? { createdBySessionId: a.sessionHierarchy.createdById } : {}) })),
       availableTools: (catalog.availableTools || []).map(t => ({ id: t.id, label: t.label })),
     };
   }
@@ -75,7 +75,11 @@ export class WorkspaceManagement {
     if (!this.snapshot().availableTools.some(t => t.id === aiToolId) || aiToolId === 'none') throw fail('사용 가능한 AI 도구를 선택하세요.', 409);
     // Retain an uncertain/failed acknowledgement too: retrying a timeout must
     // not silently create a second session. The list operation can reconcile it.
-    const promise = Promise.resolve().then(() => this.create({ projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, dangerous: false, workspaceManaged: true }))
+    const caller = (this.catalog().agents || []).find(a => a.id === agentId);
+    const parentId = action === 'create-session' && caller?.projectId === projectId ? agentId : undefined;
+    const promise = Promise.resolve().then(() => this.create({ projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, dangerous: false, workspaceManaged: true,
+      sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: caller.aiToolId === aiToolId } : {}) },
+    }))
       .then(result => ({ created: true, projectId, sessionId: result.id, active: this.isActive(result.id), ...(result.startError ? { startError: result.startError } : {}) }));
     this.results.set(key, { signature, promise });
     if (this.results.size > 200) this.results.delete(this.results.keys().next().value);

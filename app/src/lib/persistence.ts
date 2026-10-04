@@ -7,6 +7,7 @@ import {
   LS_VIEW,
   toolForId,
 } from "../types";
+import { normalizeSessionHierarchy, repairSessionHierarchy } from "./sessionHierarchy";
 import type {
   Agent,
   AgentStatus,
@@ -145,15 +146,16 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
   const byId = new Map(projects.map((project) => [project.id, project]));
   const byFolder = new Map(projects.map((project) => [project.folder, project]));
 
-  return rawAgents.flatMap((c) => {
+  return repairSessionHierarchy(rawAgents.flatMap((c) => {
     const project = (c.projectId && byId.get(c.projectId)) || byFolder.get(c.folder);
     if (!project) return [];
     return [
       {
         id: c.id,
+        sessionHierarchy: normalizeSessionHierarchy(c.sessionHierarchy),
         projectId: project.id,
         name: c.name,
-        folder: project.folder,
+        folder: c.sessionHierarchy ? c.folder || project.folder : project.folder,
         aiToolId: c.aiToolId,
         aiLabel: toolForId(c.aiToolId).label,
         codexAccountId: c.codexAccountId,
@@ -184,7 +186,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         remoteFolder: project.remoteFolder,
       },
     ];
-  });
+  }));
 }
 
 export function loadStoredGroups(

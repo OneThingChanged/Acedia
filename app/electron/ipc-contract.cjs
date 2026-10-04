@@ -333,6 +333,7 @@ function assertInvokeRequest(command, rawArgs) {
     case "spawn_pty":
       assertId(args);
       if (args.initialPrompt != null && (typeof args.initialPrompt !== "string" || !args.initialPrompt.trim() || args.initialPrompt.length > 4096 || args.initialPrompt.includes("\0"))) throw new TypeError("Invalid initial handoff prompt");
+      if (args.sessionInstructions != null && (typeof args.sessionInstructions !== "string" || !args.sessionInstructions.trim() || args.sessionInstructions.length > 20000 || args.sessionInstructions.includes("\0"))) throw new TypeError("Invalid session instructions");
       if (args.codexAccountId != null && (typeof args.codexAccountId !== "string" || (args.codexAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.codexAccountId)))) throw new TypeError("Invalid Codex account id");
       if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolAccountId))) throw new TypeError("Invalid routed account id");
       if (args.claudeAccountId != null && (typeof args.claudeAccountId !== "string" || (args.claudeAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.claudeAccountId)))) throw new TypeError("Invalid Claude account id");

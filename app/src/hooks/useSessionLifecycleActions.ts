@@ -10,6 +10,7 @@ import { applyAgentRuntimeStatus } from "../lib/agentActivity";
 import { clearScrollback, saveScrollback } from "../lib/scrollback";
 import { invoke } from "../platform/runtime";
 import { isElectronRuntime } from "../platform/electronBridge";
+import { removeSessionFromHierarchy } from "../lib/sessionHierarchy";
 
 type RefValue<T> = { current: T };
 type ApplyGroupOp = (
@@ -196,7 +197,7 @@ export function useSessionLifecycleActions({
         groupOps.removeAgentFromLayout(state, agentId)
       );
       setAgents((current) =>
-        current.filter((agent) => agent.id !== agentId)
+        removeSessionFromHierarchy(current, agentId)
       );
     } finally {
       deletingRef.current = false;

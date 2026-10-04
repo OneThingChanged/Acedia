@@ -222,6 +222,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run electron:new-session-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run electron:organization-smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run electron:terminal-links-smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run electron:smoke
