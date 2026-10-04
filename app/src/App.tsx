@@ -1235,6 +1235,15 @@ function App() {
         sshHostId: a.sshHostId,
         lastSessionId: a.lastSessionId ?? null,
         runtimeStatus: runtimeStatusOf(a),
+        deferredStart: a.deferredStart,
+        resumeEligible: a.resumeEligible,
+        idleResumeSessionId: a.idleResumeSessionId,
+        codexAccountSessions: a.codexAccountSessions,
+        claudeAccountSessions: a.claudeAccountSessions,
+        sessionHierarchy: a.sessionHierarchy ? {
+          parentId: a.sessionHierarchy.parentId,
+          resumeContext: a.sessionHierarchy.resumeContext ? { sessionId: a.sessionHierarchy.resumeContext.sessionId } : undefined,
+        } : undefined,
       })),
     };
     const json = JSON.stringify(payload);

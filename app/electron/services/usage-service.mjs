@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { codexUsageSnapshot } from "./codex-usage.mjs";
+import { sessionUsageOwners, sessionUsageSummary } from './usage-session-summary.mjs';
 
 const RATE_LIMIT_TAIL_BYTES = 1024 * 1024;
 const RATE_LIMIT_TRANSCRIPT_LIMIT = 32;
@@ -226,6 +227,8 @@ export class UsageService {
       );
     `);
     this.ensureUsageSourceStateColumns(this.database);
+    const eventColumns = new Set(this.database.prepare('PRAGMA table_info(usage_events)').all().map(column => column.name));
+    if (!eventColumns.has('owner_kind')) this.database.exec('ALTER TABLE usage_events ADD COLUMN owner_kind TEXT');
     this.migrateUsageEventParser(this.database);
     return this.database;
   }
@@ -378,16 +381,19 @@ export class UsageService {
       projects: Array.isArray(projects) ? projects : [],
       agents: Array.isArray(agents) ? agents : [],
     };
+    this.usageOwners = sessionUsageOwners(this.catalog.agents);
   }
 
   ownerFor(entry, tool) {
     const agents = this.catalog.agents.filter((agent) => agent.aiToolId === tool);
-    const agent = agents.find((candidate) =>
-      candidate.lastSessionId && candidate.lastSessionId === entry.sessionId
-    ) ?? agents.find((candidate) => sameFolder(candidate.folder, entry.cwd));
+    const hookAgent = entry.agentId && (!entry.ownerSessionId || entry.ownerSessionId === entry.sessionId)
+      && agents.find(candidate => candidate.id === entry.agentId);
+    this.usageOwners ??= sessionUsageOwners(this.catalog.agents);
+    const agent = hookAgent || this.usageOwners.get(JSON.stringify([tool, entry.sessionId]));
+    const folderProjects = this.catalog.projects.filter(candidate => sameFolder(candidate.folder, entry.cwd));
     const project = agent
       ? this.catalog.projects.find((candidate) => candidate.id === agent.projectId)
-      : null;
+      : folderProjects.length === 1 ? folderProjects[0] : null;
     return {
       agent: agent ?? {
         id: `${tool}:${entry.sessionId || entry.path}`,
@@ -396,6 +402,7 @@ export class UsageService {
         aiToolId: tool,
       },
       project,
+      ownerKind: hookAgent ? 'hook' : agent ? 'session' : 'unknown',
     };
   }
 
@@ -588,12 +595,11 @@ export class UsageService {
       codexLastCumulative,
       codexCumulativeSegment,
     };
-    const { agent, project } = this.ownerFor(entry, tool);
     const insert = db.prepare(`INSERT OR IGNORE INTO usage_events (
       source_key,ts,project_id,project_name,agent_id,agent_name,session_id,tool,model,cwd,
       source_path,source_offset,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,
-      reasoning_output_tokens,total_tokens,raw_kind
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      reasoning_output_tokens,total_tokens,raw_kind,owner_kind
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const checkpoint = db.prepare(`INSERT INTO usage_sources(source_path,tool,session_id,last_offset,last_size,updated_at,
       last_cumulative,cumulative_segment,model,cwd)
       VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET tool=excluded.tool,
@@ -612,11 +618,12 @@ export class UsageService {
           this.captureRateLimits(item, entry.path);
           const event = this.eventFromItem(item, context, offset);
           if (!event) continue;
+          const { agent, project, ownerKind } = this.ownerFor({ ...entry, sessionId: event.sessionId }, tool);
           const result = insert.run(
             event.sourceKey, event.ts, project?.id ?? null, project?.name ?? null,
             agent.id, agent.name, event.sessionId ?? null, tool, event.model ?? null,
             event.cwd ?? agent.folder ?? null, entry.path, offset, event.input, event.output,
-            event.cacheRead, event.cacheWrite, event.reasoning, event.total, event.rawKind
+            event.cacheRead, event.cacheWrite, event.reasoning, event.total, event.rawKind, ownerKind
           );
           inserted += Number(result.changes);
         }
@@ -1088,14 +1095,35 @@ export class UsageService {
     const agent = this.catalog.agents.find((candidate) => candidate.id === agentId);
     const tool = agent?.aiToolId;
     if (tool !== "codex" && tool !== "claude") return 0;
-    return this.ingestFile(
-      { path: transcriptPath, sessionId: sessionId || agent.lastSessionId || null, cwd: cwd || agent.folder },
+    const ownerSessionId = sessionId || agent.lastSessionId || null;
+    const inserted = await this.ingestFile(
+      { path: transcriptPath, agentId, ownerSessionId, sessionId: ownerSessionId, cwd: cwd || agent.folder },
       tool
     );
+    // A background scan may have indexed this file before the first hook arrived.
+    // Persist the confirmed link without re-counting or moving trusted ownership.
+    if (ownerSessionId) {
+      const project = this.catalog.projects.find(candidate => candidate.id === agent.projectId);
+      this.db().prepare(`UPDATE usage_events SET agent_id=?,agent_name=?,project_id=?,project_name=?,owner_kind='hook'
+        WHERE tool=? AND session_id=? AND source_path=? AND (owner_kind IS NULL OR owner_kind='unknown')`)
+        .run(agent.id, agent.name, project?.id ?? null, project?.name ?? null, tool, ownerSessionId, transcriptPath);
+    }
+    return inserted;
   }
 
   dashboardSummary() {
     return this.tokenTotals();
+  }
+
+  async browserSessionUsage(refresh = false, selection = {}) {
+    // Reuse the bounded collector; never scan transcript files on the response path.
+    void this.refreshTranscriptUsage(refresh).catch(() => {});
+    this.sessionUsageCache ??= new Map();
+    return { ...sessionUsageSummary(this.db(), this.catalog, selection, {
+      cache: this.sessionUsageCache,
+      activeIds: (this.activeSessions?.() || []).map(session => session.id).filter(Boolean),
+    }), tokensUpdatedAt: this.transcriptUpdatedAt, tokensRefreshPending: Boolean(this.transcriptRefresh),
+      tokensRefreshFailed: this.transcriptRefreshFailed };
   }
 
   poolTranscriptUsage(periods) {

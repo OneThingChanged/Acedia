@@ -371,7 +371,7 @@ void app.whenReady().then(async () => {
           } finally { window.fetch = originalFetch; }
         })()`);
         assert(routedChoice.automatic && routedChoice.requestBody?.codexPoolAccountId === '11111111-1111-4111-8111-111111111111', "Remote session creation lost the routed account choice");
-        await win.webContents.executeJavaScript("document.querySelector('#accountPoolView .pool-tabs button:nth-child(2)').click()");
+        await win.webContents.executeJavaScript("document.querySelector('#accountPoolView [data-usage-view=accounts]').click()");
         await waitFor(win, "document.querySelector('#accountPoolView .pool-records p')?.textContent.includes('Fixture project · Fixture session')");
         assert(await win.webContents.executeJavaScript("!document.querySelector('#accountPoolView .pool-records p').textContent.includes('agent-1')"), "Routed request exposed the session ID instead of its project and name");
         assert(await win.webContents.executeJavaScript("document.querySelector('#accountPoolView').textContent.includes('Token usage unavailable') && document.querySelector('#accountPoolView').textContent.includes('1,800 historical failed/cancelled') && document.querySelector('#accountPoolView .pool-records p').textContent.includes('No per-request token data') && document.querySelector('#accountPoolView .pool-records p').textContent.includes('Disconnected (completion unknown)')"), "Routed request presented missing tokens as measured zero or ambiguous legacy disconnects as confirmed cancellations");

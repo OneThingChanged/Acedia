@@ -123,6 +123,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/usage-sessions.js", { file: "usage-sessions.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-state.js", { file: "../shared/session-state.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -469,6 +470,25 @@ async function serveSessionInteraction(request, response, url, providers, allowe
     if (!provider) { sendJson(response, 503, { error: 'Session interaction unavailable' }); return true; }
     sendJson(response, 200, preference ? await provider(body.id, request.method === 'POST' ? body : null) : await provider(body.id, body));
   } catch (error) { sendJson(response, error instanceof TypeError ? 400 : 409, { error: error.message || 'Session changed' }); }
+  return true;
+}
+
+async function serveSessionUsage(request, response, url, provider, service) {
+  if (request.method !== 'GET' || url.pathname !== '/api/usage/sessions') return false;
+  const range = url.searchParams.get('range') || 'today';
+  const tool = url.searchParams.get('provider') || 'all';
+  if (!['today', 'week', 'month', 'all'].includes(range) || !['all', 'codex', 'claude'].includes(tool)) {
+    sendJson(response, 400, { error: 'Invalid session usage selection' }); return true;
+  }
+  if (!provider) { sendJson(response, 503, { error: 'Session usage unavailable' }); return true; }
+  try {
+    const refresh = url.searchParams.get('refresh') === '1' && Date.now() - (service.usageRefreshAt || 0) >= 30_000;
+    if (refresh) service.usageRefreshAt = Date.now();
+    const result = await provider(refresh, { range, provider: tool });
+    sendJson(response, 200, result, { 'cache-control': 'no-store' });
+  } catch (error) {
+    sendJson(response, error instanceof RangeError ? 400 : 500, { error: 'Session usage unavailable' });
+  }
   return true;
 }
 
@@ -832,6 +852,7 @@ export class LocalDashboardService {
             browserProvider: p.browserProvider,
             mutationAllowed: () => this.isLocalOrigin(request),
           })) return;
+          if (await serveSessionUsage(request, response, url, p.usageSessionProvider, this)) return;
           if (request.method === "GET" && url.pathname === "/api/usage") {
             const historyRequest = remoteUsageHistorySelection(url);
             if (historyRequest.error) {
@@ -1020,7 +1041,7 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
     this.notificationAllowed = notificationAllowed ?? (() => true);
@@ -1046,6 +1067,7 @@ export class RemoteDashboardService {
     this.createSession = createSession ?? (() => null);
     this.renameSession = renameSession ?? (() => false);
     this.usageProvider = usageProvider ?? (() => ({ updatedAt: 0, limits: [], tokens: {} }));
+    this.usageSessionProvider = usageSessionProvider;
     this.usageProfileVisibility = usageProfileVisibility;
     this.browserProvider = browserProvider ?? (() => null);
     this.usageRefreshAt = 0;
@@ -1666,6 +1688,7 @@ export class RemoteDashboardService {
           return;
         }
         if (await serveUsageProfileVisibility(request, response, url, this.usageProfileVisibility, () => this.isSameOrigin(request), usageAccess)) return;
+        if (await serveSessionUsage(request, response, url, this.usageSessionProvider, this)) return;
         if (await serveSessionInteraction(request, response, url, this, () => this.isSameOrigin(request))) return;
         if (request.method === "GET" && url.pathname === "/api/usage") {
           const historyRequest = remoteUsageHistorySelection(url);

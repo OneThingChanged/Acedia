@@ -1,6 +1,7 @@
 import { createHostingView } from './hosting.js';
 import { createSessionModelEditor } from './session-model.js';
 import { createAccountPoolView } from './account-pool.js';
+import { createSessionUsageView } from './usage-sessions.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
@@ -250,7 +251,12 @@ function selectionFromUrl(url) {
 }
 let selection = selectionFromUrl(initialUrl);
 const hosting = createHostingView(ui.hostingView);
+const sessionUsageView = createSessionUsageView(document.querySelector('#sessionUsageView'), {
+  isPageActive: () => nativePageActive,
+  toast: message => showToast(message),
+});
 const accountPoolView = createAccountPoolView(document.querySelector('#accountPoolView'), {
+  onViewChange: view => sessionUsageView.setVisible(view === 'sessions'),
   onChange: () => { if (selection.type === "usage") void loadUsage(false); },
   sessionLabel: (id) => {
     const agent = agentMap().get(id);
@@ -2869,7 +2875,7 @@ function renderUsage() {
 }
 
 function scheduleUsageRefresh() {
-  if (selection.type !== "usage" || document.hidden || !nativePageActive) {
+  if (selection.type !== "usage" || accountPoolView.view() === 'sessions' || document.hidden || !nativePageActive) {
     window.clearTimeout(usageRefreshPollTimer);
     usageRefreshPollTimer = 0;
     return;
@@ -2949,6 +2955,7 @@ function renderSelection() {
   syncFileDownloadButtons();
   hosting.translate();
   accountPoolView.translate();
+  sessionUsageView.translate();
   ui.appShell.dataset.view = selection.type;
   document.documentElement.classList.toggle(
     "remote-workspace-locked",
@@ -2960,6 +2967,7 @@ function renderSelection() {
   if (ui.documentsView.hidden) ui.documentMarkdown.querySelectorAll("video").forEach(video => video.pause());
   ui.usageView.hidden = selection.type !== "usage";
   if (selection.type !== "usage") accountPoolView.leave(); else accountPoolView.enter();
+  if (selection.type !== 'usage') sessionUsageView.leave(); else sessionUsageView.enter();
   ui.hostingView.hidden = selection.type !== "hosting";
   if (selection.type === "hosting" && !hostingLoaded) { hostingLoaded = true; void hosting.load(); }
   ui.sessionView.hidden = selection.type !== "session";
@@ -2969,7 +2977,7 @@ function renderSelection() {
   if (selection.type === "documents") renderDocuments();
   if (selection.type === "usage") {
     renderUsage();
-    if (!usageLoadAttempted) void loadUsage(true);
+    if (!usageLoadAttempted && accountPoolView.view() !== 'sessions') void loadUsage(true);
   }
   scheduleUsageRefresh();
   if (selection.type === "session") renderSession();
@@ -5872,6 +5880,7 @@ addEventListener("popstate", (event) => {
   }
 });
 document.addEventListener("visibilitychange", () => {
+  sessionUsageView.activityChanged();
   scheduleUsageRefresh();
   if (!document.hidden && nativePageActive) {
     void fetchState({ quiet: true });
@@ -5896,6 +5905,7 @@ addEventListener("multiagent:native-visibility", (event) => {
   const active = event.detail?.active !== false;
   if (nativePageActive === active) return;
   nativePageActive = active;
+  sessionUsageView.activityChanged();
   scheduleUsageRefresh();
   document.documentElement.dataset.nativeActive = active ? "true" : "false";
   if (!active) {

@@ -23,17 +23,20 @@ export function requestStatus(record) {
   return { completed: '완료', failed: '실패' }[record.status] || '처리 중…';
 }
 
-export function createAccountPoolView(root, { sessionLabel = (id) => id, onChange = () => {} } = {}) {
+export function createAccountPoolView(root, { sessionLabel = (id) => id, onChange = () => {}, onViewChange = () => {} } = {}) {
   const pageUrl = new URL(location.href);
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
   const dashboardUrl = new URL(location.pathname, location.origin); dashboardUrl.searchParams.set('usage', '1'); dashboardUrl.searchParams.set('accounts', '1');
   let returnTimer = null;
   let data = null, busy = false, visible = false, timer = null, entered = false, editingId = null;
   let usageSignature = '';
+  let selectedView = 'history';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text) node.textContent = t(text); if (className) node.className = className; return node; };
   const tabs = el('div', '', 'pool-tabs'); tabs.setAttribute('aria-label', t('사용량 보기'));
-  const history = el('button', '사용량'); const accounts = el('button', '계정 관리·분산');
-  history.type = accounts.type = 'button'; tabs.append(history, accounts);
+  const history = el('button', '사용량'); const sessions = el('button', '세션별 사용량'); const accounts = el('button', '계정 관리·분산');
+  history.type = sessions.type = accounts.type = 'button'; tabs.append(history, sessions, accounts);
+  history.dataset.usageView = 'history'; sessions.dataset.usageView = 'sessions'; accounts.dataset.usageView = 'accounts';
+  sessions.dataset.usageSessionsTab = 'true';
   const panel = el('section', '', 'pool-panel'); panel.hidden = true;
   const intro = el('p', '분산 전용 계정을 등록하면 새로 시작하는 Codex 세션에 적용됩니다. 진행 중인 세션은 다시 열어야 합니다.');
   const status = el('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -219,11 +222,16 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
     }
   }
   function select(value) {
-    visible = value; panel.hidden = !value; root.parentElement.classList.toggle('pool-mode', value);
-    history.setAttribute('aria-pressed', String(!value)); accounts.setAttribute('aria-pressed', String(value));
-    if (value) void run(() => api()); else clearTimeout(timer);
+    selectedView = typeof value === 'boolean' ? value ? 'accounts' : 'history' : value;
+    visible = selectedView === 'accounts'; panel.hidden = !visible; root.parentElement.classList.toggle('pool-mode', selectedView !== 'history');
+    history.setAttribute('aria-pressed', String(selectedView === 'history'));
+    sessions.setAttribute('aria-pressed', String(selectedView === 'sessions'));
+    accounts.setAttribute('aria-pressed', String(visible));
+    onViewChange(selectedView);
+    if (visible) void run(() => api()); else clearTimeout(timer);
   }
   history.onclick = () => { select(false); onChange(); }; accounts.onclick = () => select(true);
+  sessions.onclick = () => select('sessions');
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     const account = data?.accounts.find(a => a.id === editingId);
     const result = await api(editingId ? { action: 'update', id: editingId, label: input.value, enabled: Boolean(account?.enabled) } : { action: 'create', label: input.value });
@@ -232,6 +240,6 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   cancelEdit.onclick = () => { editingId = null; input.value = ''; render(); input.focus(); };
   refresh.onclick = () => { refresh.textContent = t('갱신 중…'); void run(() => api({ action: 'refresh_all' })); };
   toggle.onclick = () => void run(() => api({ action: 'configure', enabled: !data.enabled }));
-  select(Boolean(loginAccountId) || pageUrl.searchParams.get('accounts') === '1');
-  return { translate, enter: () => { if (entered) return; entered = true; if (visible) void run(() => api()); }, leave: () => { entered = false; clearTimeout(timer); clearTimeout(returnTimer); returnTimer = null; } };
+  select(Boolean(loginAccountId) || pageUrl.searchParams.get('accounts') === '1' ? 'accounts' : pageUrl.searchParams.get('sessions') === '1' ? 'sessions' : 'history');
+  return { translate, view: () => selectedView, enter: () => { if (entered) return; entered = true; if (visible) void run(() => api()); }, leave: () => { entered = false; clearTimeout(timer); clearTimeout(returnTimer); returnTimer = null; } };
 }

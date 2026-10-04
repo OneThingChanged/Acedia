@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v87";
+const CACHE_NAME = "multiagent-remote-v88";
 const STATIC_ASSETS = [
   "/",
   "/pwa/styles.css",
@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   "/pwa/hosting.js",
   "/pwa/session-model.js",
   "/pwa/account-pool.js",
+  "/pwa/usage-sessions.js",
   "/pwa/session-state.js",
   "/pwa/dom.js",
   "/pwa/i18n.js",
@@ -62,6 +63,7 @@ self.addEventListener("fetch", (event) => {
      url.pathname === "/pwa/session-model.js" ||
     url.pathname === "/pwa/hosting.js" ||
     url.pathname === "/pwa/account-pool.js" ||
+    url.pathname === "/pwa/usage-sessions.js" ||
     url.pathname === "/pwa/session-state.js" ||
     url.pathname === "/pwa/app.js" ||
     url.pathname === "/pwa/dom.js" ||

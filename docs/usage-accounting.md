@@ -171,3 +171,7 @@ identity. See [profile display management](properties-and-usage.md).[^usage-serv
 ## API baseline cost comparison
 
 [API 단가 기준 환산액](usage-cost-comparison.md) documents the shared pricing snapshot, USD display, unsupported-record coverage and separate observed subscription quotas. Central and Remote totals use different datasets. This is a comparison baseline, not provider billing or a monetary weekly allowance.
+
+## Per-session usage
+
+Usage → **Session usage** adds today, rolling seven-day, calendar-month and all-history views with project/provider/status/search filters, parent/child grouping, token details and CSV export. [Session usage](session-usage.md) documents exact conversation and hook ownership, legacy unresolved history, durable attribution, pricing coverage and independent family totals. Shared folders do not establish session ownership. The original period-history and account views remain available.

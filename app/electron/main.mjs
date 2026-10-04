@@ -854,6 +854,7 @@ function writeMiraControlAgentInput({
 const usageIndex = new UsageService(path.join(hookBaseDir, "usage.db"), sessionService, {
   antigravityQuotaFile: antigravityQuotaPath(),
   activeSessions: () => [...ptys.entries()].map(([id, session]) => ({
+    id,
     aiToolId: session.aiToolId,
     sessionId: agentSessionIds.get(id) || usageIndex.catalog.agents.find(agent => agent.id === id)?.lastSessionId,
   })),
@@ -1005,6 +1006,7 @@ const sessionProviders = {
   sessionModels,
   accountPoolApi: (...args) => accountPool.api(...args),
   usageProvider: browserUsageSummary,
+  usageSessionProvider: (refresh, selection) => usageIndex.browserSessionUsage(refresh, selection),
   usageProfileVisibility: (key, hidden, access) => usageIndex.setProfileVisibility(key, hidden, access),
   browserProvider: (request) => handleRemoteBrowser(request),
   writePty(id, data) {

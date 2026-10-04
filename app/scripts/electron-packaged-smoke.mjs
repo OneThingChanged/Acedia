@@ -38,6 +38,8 @@ for (const entry of [
   "\\electron\\remote-pwa\\app.js",
   "\\electron\\remote-pwa\\styles.css",
   "\\electron\\remote-pwa\\account-pool.js",
+  "\\electron\\remote-pwa\\usage-sessions.js",
+  "\\electron\\services\\usage-session-summary.mjs",
   "\\electron\\services\\account-pool.mjs",
   "\\electron\\services\\account-pool-rpc.mjs",
   "\\electron\\remote-pwa\\vendor\\xterm.js",

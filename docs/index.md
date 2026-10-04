@@ -18,6 +18,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.52 EXE release](release-1-8-1-52.md) - Session token usage and API baseline costs with exact conversation ownership, parent/child totals and CSV export.
 * [Acedia 1.8.1.51 EXE release](release-1-8-1-51.md) - Organize real parent/child sessions with setting inheritance, independent conversations and persisted creation provenance.
 * [Acedia 1.8.1.50 EXE release](release-1-8-1-50.md) - Restore Git changes with bundled Git, scoped ownership/long-path settings and persistent retry; improve large Remote HTML previews.
 * [Acedia 1.8.1.45 EXE release](release-1-8-1-45.md) - Open Dashboard usage from stored totals and collect large transcript histories in bounded background batches, prioritizing active sessions.
@@ -95,6 +96,7 @@ configuration that supports it.
 * [Remote service](remote-service.md) - Remote/PWA/Android access, desktop-equivalent All/Active/Sleeping filters, original downloads, session model/effort editing, waiting questions and authentication boundaries.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
+* [세션별 사용량](session-usage.md) - 세션별 토큰·USD 환산액, 정확한 대화 연결, 부모·자식 합계, 미산정 기록과 CSV.
 * [Central usage collector](central-usage-collector.md) - Employee/account attribution, company receiver, Acedia and standalone collection, plugin scope and ordinary-chat limitations.
 * [Embedded browser MCP](embedded-browser-mcp.md) - Always-on shared browser tabs, managed MCP startup, annotations, and isolation rules.
 * [Embedded browser form automation plan](browser-form-automation-plan.md) - Implemented state-aware targeting and safe form controls, with remaining hardening and rollout tests.
