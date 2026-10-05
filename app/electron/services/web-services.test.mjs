@@ -5,6 +5,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { LocalDashboardService, RemoteDashboardService, TunnelService } from "./web-services.mjs";
+import { AsyncQuestionNotifier } from "./active-questions.mjs";
 
 const services = [];
 const roots = [];
@@ -1163,6 +1164,44 @@ describe("Electron dashboard server", () => {
     expect(mobileRejected.status).toBe(401);
     expect(revoked.status).toBe(200);
     expect(rejected.status).toBe(401);
+  });
+
+  it("delivers async questions to the phone once while preserving working state and notification settings", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-native-async-api-"));
+    roots.push(root);
+    const agent = { id: 'agent-1', name: 'Build', project: 'ProjectA', status: 'working', hook: { event: 'working' } };
+    let allowed = true;
+    const browserNotifications = [];
+    const service = new RemoteDashboardService({ baseDir: root, stateProvider: () => ({ agents: [agent] }),
+      writePty: () => false, notificationAllowed: (id, kind) => id === agent.id && kind === 'question' && allowed,
+      pushService: { async notifyQuestion(value) { browserNotifications.push(value); return { sent: 0 }; } } });
+    services.push(service);
+    service.config.server_port = 0;
+    service.syncAgents([agent]);
+    const status = await service.start();
+    const issued = await fetch(`${status.url}/api/monitor/device`, {
+      method: 'POST', headers: { origin: status.url, 'content-type': 'application/json' }, body: '{}',
+    }).then(r => r.json());
+    const notifier = new AsyncQuestionNotifier(payload => service.notifyAgentQuestion(payload));
+    const result = { sessionId: 'session-1', question: { async: true, id: 'call-1',
+      toolName: 'functions.request_user_input_async', question: '{"questions":[{"title":"SECRET prompt?","options":["Yes","No"]}]}' } };
+    await notifier.publish(agent.id, result);
+    await notifier.publish(agent.id, { ...result, question: { ...result.question, answeredIndices: [0] } });
+    const events = await fetch(`${status.url}/api/monitor/device?cursor=${issued.cursor}`, {
+      headers: { authorization: `Bearer ${issued.token}` },
+    }).then(r => r.json());
+    expect(events.events).toHaveLength(1);
+    expect(events.events[0]).toMatchObject({ type: 'agent-question', agentId: agent.id,
+      title: 'ProjectA / Build', body: '응답이 필요합니다.' });
+    expect(JSON.stringify(events)).not.toContain('SECRET');
+    expect(browserNotifications).toHaveLength(1);
+    expect(browserNotifications[0].questionId).toBe('call-1');
+    const state = await fetch(`${status.url}/api/state`).then(r => r.json());
+    expect(state.agents[0]).toMatchObject({ status: 'working', hook: { event: 'working' } });
+    allowed = false;
+    await notifier.publish(agent.id, { ...result, question: { ...result.question, id: 'call-muted' } });
+    expect(service.deviceMonitorService.eventsAfter(events.cursor).events).toEqual([]);
+    expect(browserNotifications).toHaveLength(1);
   });
 
   it("delivers hook and matching-session reply previews through the native monitor API", async () => {

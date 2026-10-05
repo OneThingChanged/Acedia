@@ -354,6 +354,11 @@ question text before writing choices. A changed or unsupported form keeps the
 terminal answer action available. Async questions preserve the real working
 state and do not block ordinary queued messages. Remote cache v89 includes this
 change, published in [Acedia 1.8.1.53](release-1-8-1-53.md).
+The phone alert for each async question is added in [1.8.1.54](release-1-8-1-54.md):
+it uses the existing authenticated native monitor and browser push transports,
+honors question/session notification settings, and deduplicates by conversation
+and call ID without changing the session's working hook. Partial answers do not
+send another alert.
 `npm --prefix app run electron:chat-question-smoke` verifies the actual desktop
 Chat component and Remote client at 1024px and 390px using an isolated profile,
 including fallback visibility, scrolling, terminal navigation, stale-state

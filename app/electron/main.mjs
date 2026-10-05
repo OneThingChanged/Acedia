@@ -5,7 +5,7 @@ import { idlePreferences, IdleSessionPolicy } from './services/idle-session-poli
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SessionNotifications } from './services/session-notifications.mjs';
-import { ActiveQuestions } from './services/active-questions.mjs';
+import { ActiveQuestions, AsyncQuestionNotifier } from './services/active-questions.mjs';
 import { QuestionResponder, hasQueuedCodexQuestion, codexQuestionFrame } from './services/question-responder.mjs';
 import { isQuestionTool } from './shared/chat-prompt.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
@@ -466,6 +466,7 @@ const idlePolicy = new IdleSessionPolicy({
 const notificationSettings = notificationPreferences(app.getPath('userData'));
 const sessionNotifications = new SessionNotifications(app.getPath('userData'));
 const activeQuestions = new ActiveQuestions();
+const asyncQuestionNotifier = new AsyncQuestionNotifier(payload => remoteService.notifyAgentQuestion(payload));
 const questionResponder = new QuestionResponder({ entry: id => ptys.get(id), current: currentQuestion,
   snapshot: id => ptys.get(id)?.filter.viewportText?.() || '' });
 const announcedQuestions = new Map();
@@ -501,6 +502,7 @@ async function pollActiveQuestions() {
   questionPollRunning = true;
   try {
     activeQuestions.prune(ptys.keys());
+    asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
       const result = await currentQuestion(id);
@@ -512,6 +514,9 @@ async function pollActiveQuestions() {
           announcedAsyncQuestions.set(id, identity);
           sendEventToAll('chat:changed', { agentId: id });
         }
+        void asyncQuestionNotifier.publish(id, result).catch(error => {
+          console.warn('[electron] remote async question push failed', error?.message || error);
+        });
         continue; // Async questions leave the actual work status unchanged.
       }
       if (announcedAsyncQuestions.delete(id)) sendEventToAll('chat:changed', { agentId: id });

@@ -4,6 +4,36 @@ import { isTranscriptInsideRoot } from './transcript-path.mjs';
 
 export const QUESTION_TAIL_BYTES = 256 * 1024;
 
+// Async questions need an alert without publishing a blocking waiting hook.
+// Remember call identities across partial answers and other queued questions.
+export class AsyncQuestionNotifier {
+  constructor(notify) { this.notify = notify; this.seen = new Map(); }
+  prune(ids) {
+    const live = new Set(ids);
+    for (const id of this.seen.keys()) if (!live.has(id)) this.seen.delete(id);
+  }
+  async publish(id, result) {
+    const q = result?.question;
+    if (!id || !result?.sessionId || !q?.async || !q.id || !q.question) return false;
+    let record = this.seen.get(id);
+    if (record?.sessionId !== result.sessionId) {
+      record = { sessionId: result.sessionId, calls: new Set() };
+      this.seen.set(id, record);
+    }
+    if (record.calls.has(q.id)) return false;
+    record.calls.add(q.id);
+    try {
+      await this.notify({ id, event: 'waiting', session_id: result.sessionId,
+        question_id: q.id, tool_name: q.toolName, interactive_question: q.question });
+    } catch (error) {
+      record.calls.delete(q.id);
+      throw error;
+    }
+    if (record.calls.size > 256) record.calls.delete(record.calls.values().next().value);
+    return true;
+  }
+}
+
 // Only live, account-scoped transcripts. No catalog scan or whole-file read.
 export class ActiveQuestions {
   constructor() { this.cache = new Map(); this.pending = new Map(); }
