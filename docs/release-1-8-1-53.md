@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.53 project board and Codex questions
 description: Connect project parents and folder references on a movable board and retain Codex async questions during ongoing work.
-status: draft
+status: stable
 last_updated: 2026-10-05
 sources:
   - resource: session-organization.md
@@ -41,11 +41,21 @@ sources:
 - 데스크톱 채팅과 Remote 1024px·390px에서 진행 중 비동기 질문, 선택지·직접 입력, 로딩·지원하지 않는 질문·실패한 쓰기·터미널 이동을 확인했다. 실사용 세션이나 외부 모델에 질문을 전송하지 않았다.
 - 제품 버전 검사, 프로젝트·세션 생성 창의 실제 Electron 상호작용과 22개 화면 배치, native PTY 검증을 통과했다.
 - Standard EXE 생성과 packaged bridge·Dashboard·내장 Git·종료·트레이·보안 lifecycle 검증을 통과했다. 패키지의 변경된 Electron 소스 8개와 renderer 파일 3개가 빌드 원본과 일치하며 보드·비동기 질문 코드와 재사용 APK가 포함됐다.
-- 설치 파일 FileVersion **1.8.1.53**, manifest 버전·크기·SHA-256과 blockmap을 확인했다. `publish-github-exe.ps1 -VerifyOnly`를 통과했으며 Authenticode는 기존 채널과 같은 **NotSigned**다.
+- 설치 파일 FileVersion **1.8.1.53**, manifest 버전·크기·SHA-256과 blockmap을 확인했다. 로컬 산출물과 공개 다운로드 모두 `publish-github-exe.ps1 -VerifyOnly`를 통과했으며 Authenticode는 기존 채널과 같은 **NotSigned**다.
 
-## 배포 상태
+## 공개 배포
 
-Standard EXE 빌드·패키지 검증을 완료했다. 검증한 소스 커밋을 기준으로 EXE·blockmap·`latest-exe.json`을 공개하고 실제 업데이터 감지·다운로드를 확인한다. 사용자 설치는 별도다.
+2026-10-05 **15:04:23 KST**, [v1.8.1.53](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.53)을 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 검증한 소스 `9fa3f37acb31794a03a5f117a7abc6279e9694a6`이다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.53-x64.exe` | 151,255,906 | `e26ee5e1078bd5ab367981693fd63b72da5e02716273e0f1a9ac0d4459b48d2f` |
+| `Acedia-Setup-1.8.1.53-x64.exe.blockmap` | 159,306 | `83fa1654d7af6bd16b3b8b4ca8cf46f1540ee9079f976902652e9d868a0ea3c0` |
+| `latest-exe.json` | 256 | `32951155992fc02ee17e3b9c86cbd9a64b13b9481c8871b6dd7ce53f5a8a1202` |
+
+**15:05:03 KST**에 프로덕션 업데이터로 **1.8.1.51 및 1.8.1.52 → 1.8.1.53 감지**와 **1.8.1.52 기준 실제 EXE 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 실제 크기·SHA-256, 최신 안정 릴리스, 고정 소스 태그와 번들 APK 버전 **1.8.1.39**도 일치했다.
+
+Git 소스와 EXE 게시를 완료했다. 사용자 PC의 설치 프로그램은 실행하지 않았으며 설정의 Check → Update로 적용한다. Microsoft Store와 새 APK 배포는 수행하지 않았다.
 
 ## 지원 범위
 

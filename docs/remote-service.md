@@ -353,7 +353,7 @@ exists. Structured answers open the queued form with Shift+Up and verify the
 question text before writing choices. A changed or unsupported form keeps the
 terminal answer action available. Async questions preserve the real working
 state and do not block ordinary queued messages. Remote cache v89 includes this
-change; these are source changes pending a new release.
+change, published in [Acedia 1.8.1.53](release-1-8-1-53.md).
 `npm --prefix app run electron:chat-question-smoke` verifies the actual desktop
 Chat component and Remote client at 1024px and 390px using an isolated profile,
 including fallback visibility, scrolling, terminal navigation, stale-state
