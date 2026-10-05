@@ -6,6 +6,7 @@ export type RuntimeCommand =
   | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"
   | "session_notifications_get" | "session_notifications_set" | "answer_question"
   | "capacity_retry_get" | "capacity_retry_cancel"
+  | "session_deliveries_get"
   | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
   | "browser_preferences_get" | "browser_preferences_set"
   | "browser_extensions_list" | "browser_extensions_change"
@@ -81,7 +82,7 @@ export type RuntimeCommand =
 
 export type RuntimeEventName =
   | "accounts:changed"
-  | "pty:data" | "agent:idle-suspended" | "agent:capacity-retry" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
+  | "pty:data" | "agent:idle-suspended" | "agent:capacity-retry" | "agent:session-delivery" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
   | "desktop-pet:position-reset" | "desktop-pet:activate"
   | "desktop-pet:close-requested" | "remote:access-request"
   | "remote:restart-session" | "remote:create-session" | "remote:rename-session"

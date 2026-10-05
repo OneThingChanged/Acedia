@@ -63,7 +63,8 @@ import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
-import { submitPtyMessage } from "./services/pty-submit.mjs";
+import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs";
+import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
@@ -530,12 +531,14 @@ async function pollActiveQuestions() {
   try {
     activeQuestions.prune(ptys.keys());
     capacityRetry.prune(ptys.keys());
+    sessionDeliveries.poll();
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
       const result = await currentQuestion(id);
       if (ptys.get(id) !== entry || !result) continue;
       capacityRetry.observe(id, entry, result);
+      sessionDeliveries.observe(id, entry, result);
       const hook = monitorHooks.get(id);
       if (result.question?.async) {
         const identity = JSON.stringify([result.sessionId, result.question.id, result.question.answeredIndices]);
@@ -958,10 +961,34 @@ const remoteSessionCreateBroker = new RemoteSessionCreateBroker({
   dispatch: dispatchRemoteSessionCreate,
   timeoutMs: 45_000,
 });
+function deliveryContext(id) {
+  const agent = miraControlAgent(id);
+  if (!agent) return null;
+  const state = miraControlSnapshot().sessions.find(s => s.agentId === id);
+  return { entry: ptys.get(id), conversationId: miraControlProviderSessionId(agent), name: monitorService?.state?.agents?.find(a => a.id === id)?.name || agent.name,
+    projectName: monitorService?.state?.projects?.find(p => p.id === agent.projectId)?.name,
+    state: state?.state, reason: state?.reason };
+}
+const sessionDeliveries = new SessionDeliveries({
+  file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
+  ready: target => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
+    && ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason) && deliveryComposerReady(target.entry),
+  submit: (id, entry, message, isCurrent) => {
+    capacityRetry.cancel(id);
+    return submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
+      encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined });
+  },
+  publish: payload => sendEventToAll('agent:session-delivery', payload),
+});
 const workspaceManagement = new WorkspaceManagement({
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
+  deliveries: sessionDeliveries,
+  sessionState: id => {
+    const target = deliveryContext(id);
+    return { conversationId: target?.conversationId || null, state: target?.state || 'OFFLINE', reason: target?.reason || 'inactive' };
+  },
 });
 
 function dispatchRemoteSessionActivation(payload) {
@@ -4850,6 +4877,8 @@ async function invokeCommand(event, command, rawArgs) {
     return result;
   }
   switch (command) {
+    case 'session_deliveries_get':
+      return sessionDeliveries.list(args.id);
     case 'capacity_retry_get':
       return capacityRetry.get(args.id);
     case 'capacity_retry_cancel': {
@@ -5950,6 +5979,7 @@ app.on("before-quit", (event) => {
   updaterLifecycle.clearInstallWatchdog();
   if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
   capacityRetry.dispose();
+  sessionDeliveries.dispose();
   if (hookMaintenanceTimer) {
     clearInterval(hookMaintenanceTimer);
     hookMaintenanceTimer = null;

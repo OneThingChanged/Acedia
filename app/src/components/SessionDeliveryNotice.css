@@ -1,0 +1,7 @@
+.session-delivery-notice { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 38px 10px 12px; background: color-mix(in srgb, var(--app-accent, #58a6ff) 8%, var(--app-bg, #0d1117)); border-bottom: 1px solid var(--app-border, #30363d); color: var(--app-text, #c9d1d9); font-size: 12px; }
+.session-delivery-summary { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
+.session-delivery-notice ol { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; }
+.session-delivery-notice li { color: var(--app-text-dim, #8b949e); }
+.session-delivery-notice li.confirmed { color: var(--app-success, #3fb950); }
+.session-delivery-notice.unconfirmed, .session-delivery-notice.failed { border-left: 3px solid #d29922; background: color-mix(in srgb, #d29922 12%, var(--app-bg, #0d1117)); }
+.session-delivery-notice > button { position: absolute; top: 8px; right: 8px; border: 0; padding: 2px 6px; background: transparent; color: inherit; cursor: pointer; font-size: 16px; }

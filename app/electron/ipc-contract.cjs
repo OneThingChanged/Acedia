@@ -9,6 +9,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
   "session_notifications_get", "session_notifications_set", "answer_question",
   "capacity_retry_get", "capacity_retry_cancel",
+  "session_deliveries_get",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "prepare_worker_roles",
@@ -173,7 +174,7 @@ const INVOKE_COMMANDS = Object.freeze([
 const DELIVERED_EVENTS = Object.freeze([
   "accounts:changed",
   "pty:data",
-  "agent:idle-suspended", "agent:capacity-retry", "terminal:bell", "pty:exit",
+  "agent:idle-suspended", "agent:capacity-retry", "agent:session-delivery", "terminal:bell", "pty:exit",
   "desktop-pet:update",
   "desktop-pet:position-reset",
   "desktop-pet:activate",
@@ -267,6 +268,7 @@ function assertInvokeRequest(command, rawArgs) {
     case "session_notifications_get":
     case "capacity_retry_get":
     case "capacity_retry_cancel":
+    case "session_deliveries_get":
     case "session_notifications_set":
       assertId(args);
       if (command === "session_notifications_set") {

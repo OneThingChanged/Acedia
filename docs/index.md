@@ -18,6 +18,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.56 EXE release](release-1-8-1-56.md) - Deliver tasks between live Codex sessions through MCP with verified receipt/start stages and persistent duplicate prevention.
 * [Acedia 1.8.1.55 EXE release](release-1-8-1-55.md) - Retry Codex capacity failures with the same model and conversation; show countdown, cancellation and final failure alerts.
 * [Acedia 1.8.1.54 EXE release](release-1-8-1-54.md) - Send Codex async question alerts to the phone while work continues, with call deduplication and existing notification preferences.
 * [Acedia 1.8.1.53 EXE release](release-1-8-1-53.md) - Project parents and folder references on a movable board; Codex async questions in desktop and Remote chat.
@@ -96,6 +97,7 @@ configuration that supports it.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents and downloads, usage, session model/effort editing and visible waiting questions.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
+* [Workspace MCP](workspace-mcp.md) - Project/session creation and verified task delivery between live Codex sessions.
 * [Remote service](remote-service.md) - Remote/PWA/Android access, desktop-equivalent All/Active/Sleeping filters, original downloads, session model/effort editing, waiting questions and authentication boundaries.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.

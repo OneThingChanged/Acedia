@@ -27,7 +27,7 @@ const targetSchema = {
 const tools = [
   {
     name: 'acedia_projects',
-    description: 'List registered Acedia projects, sessions, active status and available AI tools on this host PC. Use IDs from this result to create additional sessions.',
+    description: 'List registered Acedia projects, sessions, active status, current conversationId/state/reason and available AI tools on this host PC. Use session IDs and the current conversationId for acedia_session_send.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
@@ -42,6 +42,18 @@ const tools = [
     description: 'Create an additional AI session in a registered local Acedia project. Use a new requestKey (letters, digits, _ or -) for each intended session and reuse it when retrying the same request in this running app. Codex is the default. Check active and startError in the result. Does not submit a prompt.',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string', maxLength: 120 }, aiToolId: { type: 'string', default: 'codex' }, requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' } }, required: ['projectId', 'requestKey'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'acedia_session_send',
+    description: 'Send a user-authorized task to a DIFFERENT existing active local Codex session. First read acedia_projects and use the exact session id and current conversationId. Rejects busy sessions, drafts and questions. Use a new requestKey per intended task and reuse it for retries: the same key never sends twice, including after app restart. Returns sending/sent/received/started/failed/unconfirmed with evidence timestamps. Only started confirms a new task_started for the exact delivered user message; sent is NOT task acceptance. On unconfirmed, inspect acedia_session_delivery and the receiving session; do not resend with another key or press Enter blindly. Do not delegate without user authorization.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' }, expectedConversationId: { type: 'string' }, message: { type: 'string', description: 'Task context and instructions to forward (up to 8 KiB); no terminal control characters.' }, requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' }, waitMs: { type: 'integer', minimum: 0, maximum: 10000, default: 8000 } }, required: ['sessionId', 'expectedConversationId', 'message', 'requestKey'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'acedia_session_delivery',
+    description: 'Read a delivery receipt created by this calling Acedia session, using its original requestKey. Does not type, resend, activate or interrupt the receiving session. Reports explicit sent/received/started timestamps, or failure/unconfirmed reason. Optional waitMs waits up to 10 seconds for confirmation.',
+    inputSchema: { type: 'object', properties: { requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' }, waitMs: { type: 'integer', minimum: 0, maximum: 10000, default: 0 } }, required: ['requestKey'], additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "browser_tabs",
@@ -211,10 +223,10 @@ async function callBrowser(action, body = {}, method = "POST") {
 
 async function callTool(name, args) {
   const body = args && typeof args === "object" ? { ...args } : {};
-  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create'].includes(name)) {
+  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
-    const endpoint = name === 'acedia_session_create' ? 'sessions' : 'projects';
+    const endpoint = name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
     const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
       method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),

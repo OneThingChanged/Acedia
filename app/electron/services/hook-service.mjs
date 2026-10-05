@@ -543,7 +543,9 @@ export class HookService {
     if (url.pathname.startsWith('/integration/v1/workspace/')) {
       const action = request.method === 'GET' && url.pathname === '/integration/v1/workspace/projects' ? 'list'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/projects' ? 'create-project'
-        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session' : null;
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/send' ? 'send'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/delivery' ? 'delivery' : null;
       try {
         if (!action) throw Object.assign(new Error('not found'), { statusCode: 404 });
         if (!this.workspaceProvider) throw Object.assign(new Error('workspace unavailable'), { statusCode: 503 });

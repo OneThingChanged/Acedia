@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   preparePtySubmission,
+  encodeConptyUnicode,
   PTY_SUBMIT_DELAY_MS,
   PTY_SUBMIT_QUIET_MS,
   PTY_SUBMIT_TIMEOUT_MS,
@@ -8,6 +9,13 @@ import {
 } from "./pty-submit.mjs";
 
 describe("PTY message submission", () => {
+  it("preserves Unicode as unmodified UTF-16 key records while keeping paste controls intact", async () => {
+    const writes = [];
+    await submitPtyMessage({ ptyProcess: { write: s => writes.push(s) }, message: 'A·→🚀\n한',
+      encodeInput: encodeConptyUnicode, wait: async () => {} });
+    expect(writes).toEqual(['\x1b[200~A\x1b[0;0;183;1;0;1_\x1b[0;0;8594;1;0;1_'
+      + '\x1b[0;0;55357;1;0;1_\x1b[0;0;56960;1;0;1_\r\x1b[0;0;54620;1;0;1_\x1b[201~', '\r']);
+  });
   it("keeps a single-line message as ordinary terminal input", () => {
     expect(preparePtySubmission("상태 확인해줘")).toBe("상태 확인해줘");
   });

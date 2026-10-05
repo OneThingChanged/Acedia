@@ -118,6 +118,7 @@ import {
 } from "./lib/attention";
 import { useAttentionState } from "./hooks/useAttentionState";
 import { capacityRetryMessage, type CapacityRetryState } from "./lib/capacityRetry";
+import { deliveryStatusMessage, type SessionDelivery } from './lib/sessionDelivery';
 import { useSessionLifecycleActions } from "./hooks/useSessionLifecycleActions";
 import { useNativeViewOcclusion } from "./hooks/useNativeViewOcclusion";
 import { canAutoFocusTerminal, scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
@@ -1853,6 +1854,12 @@ function App() {
       if (cancelled || e.payload.status !== 'failed' || !ownedAgentIdsRef.current.has(e.payload.id)) return;
       const agent = agentsRef.current.find(item => item.id === e.payload.id);
       if (agent) void notifySession(agent, 'question', text(capacityRetryMessage(e.payload, false), capacityRetryMessage(e.payload, true)));
+    }).then(track);
+
+    listen<SessionDelivery>('agent:session-delivery', e => {
+      if (cancelled || !['failed', 'unconfirmed'].includes(e.payload.status) || !ownedAgentIdsRef.current.has(e.payload.sourceId)) return;
+      const agent = agentsRef.current.find(item => item.id === e.payload.sourceId);
+      if (agent) void notifySession(agent, 'question', text(deliveryStatusMessage(e.payload, false), deliveryStatusMessage(e.payload, true)));
     }).then(track);
 
     listen<AgentHookEvent>(

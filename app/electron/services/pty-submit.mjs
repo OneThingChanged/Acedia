@@ -8,6 +8,13 @@ export const PTY_SUBMIT_QUIET_MS = 250;
 export const PTY_SUBMIT_TIMEOUT_MS = 3000;
 const pending = new WeakSet();
 
+// ConPTY's character-to-key translation can assign modifiers to Unicode
+// punctuation. Codex then treats it as a shortcut. Explicit UTF-16 key records
+// preserve those characters without changing the user's clipboard or text.
+export function encodeConptyUnicode(input) {
+  return input.replace(/[^\x00-\x7f]/g, char => `\x1b[0;0;${char.charCodeAt(0)};1;0;1_`);
+}
+
 export function preparePtySubmission(message) {
   const value = String(message ?? "");
   if (!/[\r\n]/.test(value)) return value;
@@ -18,6 +25,7 @@ export function preparePtySubmission(message) {
 export async function submitPtyMessage({
   ptyProcess,
   message,
+  encodeInput = value => value,
   isCurrent = () => true,
   wait = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
   now = () => performance.now(),
@@ -34,7 +42,7 @@ export async function submitPtyMessage({
     subscription = ptyProcess.onData?.(() => { lastOutput = now(); sawOutput = true; });
     // A terminal paste is one ordered input event. The explicit closing marker
     // lets Codex/Claude finish a multiline paste before the discrete Enter.
-    ptyProcess.write(preparePtySubmission(value));
+    ptyProcess.write(encodeInput(preparePtySubmission(value)));
     const started = now();
     await wait(PTY_SUBMIT_DELAY_MS);
     // A single-line prompt can be held by the TUI without repainting until

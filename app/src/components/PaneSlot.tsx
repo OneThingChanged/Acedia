@@ -52,6 +52,7 @@ import { GitHistoryView } from "./GitHistoryView";
 import { SubagentMonitor } from "./SubagentMonitor";
 import { ChatView } from "./ChatView";
 import { CapacityRetryNotice } from "./CapacityRetryNotice";
+import { SessionDeliveryNotice } from './SessionDeliveryNotice';
 import { TerminalContextMenu } from "./Menus";
 import {
   clampTerminalFontSize,
@@ -1091,6 +1092,7 @@ export function PaneSlot({
         </div>
       )}
       {activeAgentId && activeAgent?.aiToolId === 'codex' && isElectronRuntime() && <CapacityRetryNotice key={activeAgentId} agentId={activeAgentId} />}
+      {activeAgentId && isElectronRuntime() && <SessionDeliveryNotice key={'delivery-' + activeAgentId} agentId={activeAgentId} />}
       <div className="pane-workspace-content"><div className="pane-workspace-main">
       {/* Keep the xterm host mounted even while a doc tab or chat view is active
           so the terminal attach/detach lifecycle and buffered DOM stay intact. */}

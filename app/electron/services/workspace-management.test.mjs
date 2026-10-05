@@ -93,9 +93,16 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   });
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
-  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'browser_open']));
+  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
+  for (const action of ['send', 'delivery']) {
+    const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
+    expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
+    expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
+    expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'x-acedia-agent-id': 'inactive' }, body: '{}' })).status).toBe(409);
+    expect((await fetch(endpoint, { method: 'POST', headers, body: '{}' })).status).toBe(503);
+  }
 });

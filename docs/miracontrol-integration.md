@@ -51,8 +51,8 @@ tool, state, reason, active flag, and last hook timestamp.
 
 * `GET /integration/v1/health` - API version and process health.
 * `GET /integration/v1/sessions` - application metadata and session snapshot.
-* `POST /integration/v1/agents/:agentId/activate` - activate the configured session.
-* `POST /integration/v1/agents/:agentId/input` - guarded input and optional submit.
+* `POST /integration/v1/sessions/:agentId/activate` - activate the configured session.
+* `POST /integration/v1/sessions/:agentId/input` - guarded raw terminal input and optional submit.
 * `/integration/v1/browser/...` - the fixed embedded-browser actions used by the
   managed browser MCP.[^hook-service]
 
@@ -65,6 +65,11 @@ UTF-8 payload exceeds 8 KiB. Submission appends Enter unless `submit` is false.[
 
 The expected-ID check is mandatory: callers must refresh the session snapshot
 after activation or any conflict before retrying.
+
+This raw-input contract confirms a terminal write, not a provider receipt or task
+start. AI task delegation uses [Workspace MCP](workspace-mcp.md)'s
+`acedia_session_send` and `acedia_session_delivery`, which separate sent,
+received and started evidence and never replay an uncertain request.
 
 [^integration-model]: MiraControl state and input model
 [^hook-service]: Authenticated integration HTTP service
