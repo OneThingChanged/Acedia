@@ -117,6 +117,7 @@ import {
   type AttentionKind,
 } from "./lib/attention";
 import { useAttentionState } from "./hooks/useAttentionState";
+import { capacityRetryMessage, type CapacityRetryState } from "./lib/capacityRetry";
 import { useSessionLifecycleActions } from "./hooks/useSessionLifecycleActions";
 import { useNativeViewOcclusion } from "./hooks/useNativeViewOcclusion";
 import { canAutoFocusTerminal, scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
@@ -1709,12 +1710,12 @@ function App() {
     runtimeFlags,
   ]);
 
-  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "question" | "bell") => {
+  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "question" | "bell", message?: string) => {
     if (isElectronRuntime() && !ownedAgentIdsRef.current.has(agent.id)) return;
     try {
       if (isElectronRuntime() && !await invoke<boolean>("notification_policy_check", { kind, id: agent.id })) return;
       const projectName = projectsRef.current.find(p => p.id === agent.projectId)?.name || "Unknown project";
-      const body = kind === "question" ? text("질문이 도착했습니다. 답변을 선택해 주세요.", "A question is waiting. Select your answer.") : kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed");
+      const body = message || (kind === "question" ? text("질문이 도착했습니다. 답변을 선택해 주세요.", "A question is waiting. Select your answer.") : kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed"));
       const config = loadNotificationSound();
       void playNotificationSound(config, `${projectName} ${agent.name} ${body}`);
       pushToast(agent.id, `${projectName} / ${agent.name}`, body);
@@ -1846,6 +1847,12 @@ function App() {
       if (cancelled) return;
       const agent = agentsRef.current.find(item => item.id === e.payload.id);
       if (agent) void notifySession(agent, "bell");
+    }).then(track);
+
+    listen<CapacityRetryState>('agent:capacity-retry', e => {
+      if (cancelled || e.payload.status !== 'failed' || !ownedAgentIdsRef.current.has(e.payload.id)) return;
+      const agent = agentsRef.current.find(item => item.id === e.payload.id);
+      if (agent) void notifySession(agent, 'question', text(capacityRetryMessage(e.payload, false), capacityRetryMessage(e.payload, true)));
     }).then(track);
 
     listen<AgentHookEvent>(

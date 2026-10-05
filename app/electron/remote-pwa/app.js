@@ -1085,8 +1085,46 @@ function screenChatRenderKey(data, agent) {
   ]);
 }
 
+function capacityRetryLabel(retry) {
+  const ko = getLanguage() === 'ko';
+  if (retry.status === 'scheduled') {
+    const seconds = Math.max(0, Math.ceil((retry.nextRetryAt - Date.now()) / 1000));
+    return ko ? `모델 용량 부족 · ${seconds}초 후 같은 모델로 재시도 ${retry.attempt + 1}/${retry.maxAttempts}`
+      : `Model at capacity · retry ${retry.attempt + 1}/${retry.maxAttempts} in ${seconds}s with the same model`;
+  }
+  if (retry.status === 'failed') return ko ? `자동 재시도를 멈췄습니다 (${retry.attempt}/${retry.maxAttempts}). 세션을 확인해 주세요.`
+    : `Automatic retries stopped (${retry.attempt}/${retry.maxAttempts}). Check this session.`;
+  return ko ? `같은 모델로 이어서 진행 중 · 재시도 ${retry.attempt}/${retry.maxAttempts}`
+    : `Continuing with the same model · retry ${retry.attempt}/${retry.maxAttempts}`;
+}
+function capacityRetryCard(agent) {
+  const retry = agent.capacityRetry;
+  if (!retry || !['scheduled', 'retrying', 'working', 'failed'].includes(retry.status)) return null;
+  const card = make('div', `capacity-retry-notice ${retry.status}`);
+  card.setAttribute('role', retry.status === 'failed' ? 'alert' : 'status');
+  card.appendChild(make('span', '', capacityRetryLabel(retry)));
+  if (retry.status === 'scheduled') {
+    const cancel = make('button', '', getLanguage() === 'ko' ? '재시도 취소' : 'Cancel retry');
+    cancel.type = 'button'; cancel.addEventListener('click', () => { void cancelSession(agent.id); }); card.appendChild(cancel);
+  }
+  return card;
+}
+function updateCapacityRetryCard(container, agent) {
+  if (!container || !agent) return;
+  const previous = container.querySelector('.capacity-retry-notice');
+  const retry = agent.capacityRetry;
+  if (!retry || !['scheduled', 'retrying', 'working', 'failed'].includes(retry.status)) { previous?.remove(); return; }
+  if (previous?.dataset.agentId === agent.id && previous.dataset.retryStatus === retry.status) {
+    previous.querySelector('span').textContent = capacityRetryLabel(retry); return;
+  }
+  const card = capacityRetryCard(agent);
+  card.dataset.agentId = agent.id; card.dataset.retryStatus = retry.status;
+  if (previous) previous.replaceWith(card); else container.appendChild(card);
+}
+
 function renderScreenChat(container, data, agent) {
   if (!container || !agent) return;
+  updateCapacityRetryCard(container, agent);
   const key = screenChatRenderKey(data, agent);
   if (container.dataset.renderKey === key) return;
   container.dataset.renderKey = key;
@@ -1144,6 +1182,8 @@ function renderScreenChat(container, data, agent) {
     }
   }
 
+  const retryCard = capacityRetryCard(agent);
+  if (retryCard) fragment.appendChild(retryCard);
   const chatStatus = statusOf(agent);
   if (!data?.unsupported && chatStatus === "working" && data?.lifecycle !== "idle" && !blockingPrompt(agent, data)) {
     const thinking = make("div", "chat-thinking");
@@ -1310,7 +1350,9 @@ function renderSession() {
   const displayStatus = displayStatusOf(agent);
   if (openLinkedQuestionInChat) { openLinkedQuestionInChat = false; if (status === 'question') setSessionViewMode('chat'); }
   const question = questionDetails(agent);
-  const prompt = text(agent.hook?.prompt);
+  const retry = agent.capacityRetry;
+  const retryVisible = retry && ['scheduled', 'retrying', 'working', 'failed'].includes(retry.status);
+  const prompt = retryVisible ? capacityRetryLabel(retry) : text(agent.hook?.prompt);
   ui.detailStatus.className = `status-chip ${displayStatus}`;
   ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
@@ -1335,6 +1377,7 @@ function renderSession() {
   ui.questionOptions.replaceChildren(optionFragment);
   ui.promptPanel.hidden = !prompt;
   ui.promptText.textContent = prompt;
+  updateCapacityRetryCard(ui.chatView, agent);
   // The live xterm owns the terminal area; only feed the fallback <pre> when
   // xterm is unavailable (very old browser).
   if (!terminalSupported) {
@@ -4773,6 +4816,8 @@ function renderChat(data) {
   // Suppress it when the transcript says the turn finished (stale hook status).
   if (!data?.unsupported) {
     const agent = selectedAgent();
+    const retryCard = agent && capacityRetryCard(agent);
+    if (retryCard) frag.appendChild(retryCard);
     const chatStatus = agent ? statusOf(agent) : "offline";
     if (agent && chatStatus === "working" && data?.lifecycle !== "idle" && !blockingPrompt(agent, data)) {
       const think = make("div", "chat-thinking");

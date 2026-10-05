@@ -10,6 +10,9 @@ sources:
   - resource: ../app/electron/services/terminal-session-service.mjs
   - resource: ../app/electron/services/session-notifications.mjs
   - resource: ../app/electron/services/active-questions.mjs
+  - resource: ../app/electron/services/codex-capacity-retry.mjs
+  - resource: ../app/src/components/CapacityRetryNotice.tsx
+  - resource: ../app/scripts/codex-capacity-retry-smoke.mjs
   - resource: ../app/electron/services/question-responder.mjs
   - resource: ../app/src/App.tsx
 ---
@@ -63,6 +66,28 @@ Electron의 공통 처리기가 세션·질문 ID와 실제 xterm 화면을 확�
 
 터미널 벨은 실제 PTY 출력에서 감지하며 제목·링크용 OSC 문자열의 종료 문자는 제외한다.
 같은 세션의 벨은 3초 간격으로 제한하고 저장된 화면 복원에서 다시 울리지 않는다.
+
+## Codex 모델 용량 부족 재시도
+
+로컬 Codex의 현재 턴이 `Selected model is at capacity. Please try a different model.` 또는
+`server_overloaded` 오류로 종료되면 30초·60초·120초 간격으로 최대 3회 이어서 진행한다.
+Codex 자체 재연결이 끝나고 턴 종료가 기록된 뒤 Acedia의 재시도가 시작된다. 기존 PTY와
+대화·계정·모델·effort를 유지하고, 완료한 작업을 확인한 뒤 이어가라는 메시지를 보낸다.
+실행한 도구나 사용자 요청 전체를 자동으로 재전송하지 않는다.
+
+터미널과 Chat 상단에 대기 시간·횟수·취소 버튼을 표시하고 Dashboard/Remote에서도
+진행 상황을 확인한다. 3회 후에도 실패하면 자동 재시도를 멈추고 세션에 경고를 남긴다.
+데스크톱 알림 센터에도 기록하며, 소유 창의 팝업·소리·Windows 알림은 기존 응답 필요
+알림 조건과 세션 음소거를 따른다. 이 실패 안내는 모바일 시스템 푸시로 전송하지 않는다.
+
+사용자의 터미널 입력·메시지 전송·중단·세션 종료 및 재시작, 새 대화와 질문은 예약을
+취소한다. 복원한 과거 실패와 채팅·도구 출력에 인용된 오류는 자동 재시도 대상이 아니다.
+계정 한도·인증 오류·일반 네트워크 오류·SSH는 이 정책에 포함하지 않는다. 현재 대화와
+실제 Codex 입력 화면을 확인할 수 없거나 전송 결과가 불확실하면 추가 입력 없이 안내한다.
+
+검증: `codex-capacity-retry.test.mjs`와 완료·입력 처리 테스트, `electron:capacity-retry-smoke`
+화면 검증, `ACEDIA_CODEX_BINARY`로 설치 CLI 경로를 지정한 `codex:capacity-retry-smoke`의
+로컬 응답 fixture로 같은 모델·effort·계정·대화 유지, 성공 복구와 3회 실패 종료를 확인한다.
 
 | 절전 방지 | 동작 |
 |---|---|

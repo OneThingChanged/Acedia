@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { isTranscriptInsideRoot } from "./transcript-path.mjs";
+import { isCodexCapacityError } from './codex-capacity-retry.mjs';
 
 const TAIL_BYTES = 256 * 1024;
 const MAX_CACHED_FILES = 128;
@@ -40,7 +41,9 @@ export class CodexTurnCompletion {
         try {
           const record = JSON.parse(line);
           const type = record?.payload?.type ?? record?.type;
-          if (["task_started", "task_complete", "turn_aborted"].includes(type)) lastTurnEvent = type;
+          if (["task_started", "task_complete", "turn_aborted"].includes(type)) {
+            lastTurnEvent = type === 'task_complete' && isCodexCapacityError(record.payload?.error) ? 'capacity_failed' : type;
+          }
         } catch {
           // A rollout may be appended while the tail is being read.
         }

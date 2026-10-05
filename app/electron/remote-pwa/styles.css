@@ -2018,3 +2018,6 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .lan-code-input { display: block; box-sizing: border-box; width: 100%; margin: 8px 0 18px; padding: 14px; color: #e9f2f8; background: #07131c; border: 1px solid #294251; border-radius: 10px; font: 600 26px ui-monospace, monospace; letter-spacing: 4px; text-align: center; }
 .lan-code-input:focus-visible { outline: 2px solid #49d7d1; outline-offset: 2px; }
 #lanConnect { width: 100%; justify-content: center; }
+.capacity-retry-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; margin: 8px 0; background: var(--panel); border: 1px solid #4283ba; border-radius: 7px; font-size: 12px; }
+.capacity-retry-notice.failed { border-color: #d29922; }
+.capacity-retry-notice button { flex-shrink: 0; padding: 6px 8px; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }

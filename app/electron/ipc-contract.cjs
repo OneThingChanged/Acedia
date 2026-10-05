@@ -8,6 +8,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "idle_preferences_get", "idle_preferences_set", "idle_view_update", "idle_session_suspend",
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
   "session_notifications_get", "session_notifications_set", "answer_question",
+  "capacity_retry_get", "capacity_retry_cancel",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "prepare_worker_roles",
@@ -172,7 +173,7 @@ const INVOKE_COMMANDS = Object.freeze([
 const DELIVERED_EVENTS = Object.freeze([
   "accounts:changed",
   "pty:data",
-  "agent:idle-suspended", "terminal:bell", "pty:exit",
+  "agent:idle-suspended", "agent:capacity-retry", "terminal:bell", "pty:exit",
   "desktop-pet:update",
   "desktop-pet:position-reset",
   "desktop-pet:activate",
@@ -264,6 +265,8 @@ function assertInvokeRequest(command, rawArgs) {
       if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
       break;
     case "session_notifications_get":
+    case "capacity_retry_get":
+    case "capacity_retry_cancel":
     case "session_notifications_set":
       assertId(args);
       if (command === "session_notifications_set") {

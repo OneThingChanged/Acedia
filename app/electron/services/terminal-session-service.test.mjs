@@ -56,6 +56,15 @@ it("buffers hidden output and replays it only to an attached view", () => {
   }]);
 });
 
+it('reports manual input and quit before writing so an automatic retry can be cancelled', () => {
+  const inputs = [], service = new TerminalSessionService({ onInput: id => inputs.push(id) });
+  const process = register(service, 'agent-1');
+  service.write('agent-1', 'manual prompt'); service.action('agent-1', 'quit');
+  expect(inputs).toEqual(['agent-1', 'agent-1']);
+  expect(process.write.mock.calls.map(([data]) => data)).toEqual(['manual prompt', '/quit\r']);
+  service.closeAll();
+});
+
 it("moves a view without losing or duplicating output", () => {
   const deliveries = [];
   const service = new TerminalSessionService({

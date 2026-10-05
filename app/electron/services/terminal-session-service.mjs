@@ -11,12 +11,14 @@ const TERMINATING_ACTIONS = new Set(["sleep", "close", "restart"]);
 export class TerminalSessionService {
   constructor({
     onBell = () => {},
+    onInput = () => {},
     sendDataToView,
     broadcastExit,
     onSessionsChanged = () => {},
     sessions,
   } = {}) {
     this.onBell = onBell;
+    this.onInput = onInput;
     this.sessions = sessions ?? new Map();
     this.generations = new Map();
     this.sendDataToView = sendDataToView ?? (() => {});
@@ -131,6 +133,7 @@ export class TerminalSessionService {
     const entry = this.sessions.get(id);
     if (!entry) throw new Error("활성 PTY를 찾을 수 없습니다.");
     const value = String(data ?? "");
+    this.onInput(id);
     entry.lastInputAt = Date.now();
     entry.process.write(value);
   }
@@ -147,7 +150,7 @@ export class TerminalSessionService {
     if (action === "quit") {
       const entry = this.sessions.get(id);
       if (!entry) return false;
-      entry.process.write(entry.quitCommand ?? "/quit\r");
+      this.write(id, entry.quitCommand ?? "/quit\r");
       return true;
     }
     if (!TERMINATING_ACTIONS.has(action)) {

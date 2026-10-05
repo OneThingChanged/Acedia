@@ -64,6 +64,7 @@ import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage } from "./services/pty-submit.mjs";
+import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -258,6 +259,7 @@ const detachedAgents = new Map();
 const ptys = new Map();
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
+  onInput: id => capacityRetry.cancel(id),
   onBell(id) {
     const now = Date.now();
     if (now - (bellTimes.get(id) ?? 0) < 3000) return;
@@ -276,6 +278,7 @@ const terminalSessions = new TerminalSessionService({
   },
   onSessionsChanged({ reason, ids }) {
     powerPolicy.sessions(ids);
+    capacityRetry.prune(ids);
     // Preserve the last live set across app shutdown. Normal per-session exits
     // keep the journal current; app-quit closes must not erase the reopen set.
     // Provider `/quit` may also produce a fast natural exit while the renderer
@@ -496,17 +499,43 @@ async function currentQuestion(id) {
   return result;
 }
 
+const capacityRetry = new CodexCapacityRetry({
+  entryFor: id => ptys.get(id),
+  read: currentQuestion,
+  ready: entry => !forceClosing && !questionResponder.isBusy(entry.id)
+    && codexRetryPromptReady(entry.filter.viewportText?.()),
+  submit: (_id, entry, message, isCurrent) => submitPtyMessage({ ptyProcess: entry.process, message, isCurrent }),
+  publish: payload => {
+    sendEventToAll('agent:capacity-retry', payload);
+    if ((payload.status === 'resolved' && payload.reason === 'completed' && monitorHooks.get(payload.id)?.event !== 'done')
+      || payload.status === 'cancelled') publishAgentHookEvent('agent:hook-event', {
+      id: payload.id, event: payload.status === 'cancelled' ? 'cancelled' : 'done',
+      hook_event_name: payload.status === 'cancelled' ? 'CapacityRetryCancelled' : 'CapacityRetryCompleted',
+      session_id: payload.sessionId, received_at: payload.at,
+    });
+    if (payload.status === 'failed') publishAgentHookEvent('agent:hook-event', {
+      id: payload.id, event: 'blocked', hook_event_name: 'CapacityRetryFailed',
+      session_id: payload.sessionId, received_at: payload.at,
+      prompt: payload.reason === 'exhausted'
+        ? `모델 용량 부족으로 같은 모델에 ${payload.attempt}회 재시도했지만 계속 실패했습니다. 세션을 확인해 주세요.`
+        : '모델 용량 부족 후 자동 재시도를 안전하게 완료하지 못했습니다. 세션을 확인해 주세요.',
+    });
+  },
+});
+
 let questionPollRunning = false;
 async function pollActiveQuestions() {
   if (questionPollRunning || forceClosing) return;
   questionPollRunning = true;
   try {
     activeQuestions.prune(ptys.keys());
+    capacityRetry.prune(ptys.keys());
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
       const result = await currentQuestion(id);
       if (ptys.get(id) !== entry || !result) continue;
+      capacityRetry.observe(id, entry, result);
       const hook = monitorHooks.get(id);
       if (result.question?.async) {
         const identity = JSON.stringify([result.sessionId, result.question.id, result.question.answeredIndices]);
@@ -559,6 +588,9 @@ const browserMcpScriptPath = app.isPackaged
 
 function publishAgentHookEvent(eventName, payload) {
   if (eventName === "agent:hook-event" && payload?.id) {
+    if (payload.event === 'done' && capacityRetry.isActive(payload.id)) {
+      payload = { ...payload, event: 'working', hook_event_name: 'CapacityRetry' };
+    }
     const binding = accountBindings.get(payload.id);
     const hookTranscript = normalizeTranscriptPath(payload.transcript_path);
     if (binding && hookTranscript && !isTranscriptInsideRoot(
@@ -759,11 +791,13 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
       ...projectSessionRuntime(agent, live),
       notifications: sessionNotifications.get(agent.id),
       notificationPolicy: { completion: policy.completion, question: policy.question },
-      status: live ? completedWithoutHook ? "done" : agent.status : "offline",
+      capacityRetry: live ? capacityRetry.get(agent.id) : null,
+      status: live ? capacityRetry.isActive(agent.id) ? 'working' : completedWithoutHook ? "done" : agent.status : "offline",
       output: sanitizeTerminalOutput(
         ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? ""
       ),
-      hook: completedWithoutHook ? { ...hook, event: "done", hook_event_name: "TranscriptComplete" } : hook,
+      hook: capacityRetry.isActive(agent.id) ? { ...hook, event: 'working', hook_event_name: 'CapacityRetry' }
+        : completedWithoutHook ? { ...hook, event: "done", hook_event_name: "TranscriptComplete" } : hook,
     };
   });
 }
@@ -862,7 +896,7 @@ function writeMiraControlAgentInput({
   });
   if (!prepared.ok) return prepared;
   try {
-    entry.process.write(prepared.data);
+    terminalSessions.write(agent.id, prepared.data);
   } catch {
     return { ok: false, httpStatus: 409, error: "session exited before input" };
   }
@@ -1041,11 +1075,12 @@ const sessionProviders = {
     }
     const entry = ptys.get(agentId);
     if (!entry || data.length > 8 * 1024) return false;
-    entry.process.write(data);
+    terminalSessions.write(agentId, data);
     return true;
   },
   async submitPty(id, message) {
     const agentId = asString(id).trim();
+    capacityRetry.cancel(agentId);
     const pending = (await currentQuestion(agentId))?.question;
     if (questionResponder.isBusy(agentId) || (pending && !pending.async)) return false;
     const value = asString(message);
@@ -1078,11 +1113,12 @@ const sessionProviders = {
   },
   cancelSession: (id) => {
     const agentId = asString(id).trim();
+    capacityRetry.cancel(agentId);
     if (questionResponder.isBusy(agentId)) return false;
     const entry = ptys.get(agentId);
     if (!entry) return false;
     try {
-      entry.process.write("\x1b");
+      terminalSessions.write(agentId, "\x1b");
     } catch {
       return false;
     }
@@ -3508,6 +3544,9 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
   ensureChatWatch(transcriptPath); // push a refresh when the file changes
   const result = { ...await readChatTranscript(tool, transcriptPath) };
   const liveQuestion = await currentQuestion(id);
+  const liveEntry = ptys.get(id);
+  if (liveEntry && liveQuestion) capacityRetry.observe(id, liveEntry, liveQuestion);
+  if (capacityRetry.isActive(id)) result.lifecycle = 'working';
   if (liveQuestion?.sessionId === sessionId) result.pendingQuestion = liveQuestion.question;
   else if (result.pendingQuestion?.async) result.pendingQuestion = null;
   try {
@@ -4811,6 +4850,12 @@ async function invokeCommand(event, command, rawArgs) {
     return result;
   }
   switch (command) {
+    case 'capacity_retry_get':
+      return capacityRetry.get(args.id);
+    case 'capacity_retry_cancel': {
+      if (!claimAgentForWindow(args.id, event.sender.id)) throw new Error('다른 작업창에서 사용 중인 세션입니다.');
+      return capacityRetry.cancel(args.id);
+    }
     case "prepare_worker_roles":
       return prepareWorkerRoleFiles(hookBaseDir, args.roles);
     case "runtime_flags":
@@ -5904,6 +5949,7 @@ app.on("before-quit", (event) => {
   }
   updaterLifecycle.clearInstallWatchdog();
   if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
+  capacityRetry.dispose();
   if (hookMaintenanceTimer) {
     clearInterval(hookMaintenanceTimer);
     hookMaintenanceTimer = null;

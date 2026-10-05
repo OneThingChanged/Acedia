@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 import { CodexTurnCompletion } from "./codex-turn-completion.mjs";
 
 describe("CodexTurnCompletion", () => {
+  it('does not report a capacity failure as completed while recovery is pending', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-capacity-completion-'));
+    try {
+      const sessionId = 'fixture-capacity', transcriptPath = path.join(root, `rollout-${sessionId}.jsonl`);
+      fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete',
+        error: { message: 'Selected model is at capacity. Please try a different model.', codex_error_info: 'server_overloaded' } } }) + '\n');
+      expect(new CodexTurnCompletion().isComplete({ root, transcriptPath, sessionId, lastHookAt: 1 })).toBe(false);
+    } finally { fs.rmSync(root, { recursive: true }); }
+  });
   it("recognizes a finished turn after a stale working hook and rejects a newer hook", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-turn-"));
     try {

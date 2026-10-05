@@ -18,6 +18,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.55 EXE release](release-1-8-1-55.md) - Retry Codex capacity failures with the same model and conversation; show countdown, cancellation and final failure alerts.
 * [Acedia 1.8.1.54 EXE release](release-1-8-1-54.md) - Send Codex async question alerts to the phone while work continues, with call deduplication and existing notification preferences.
 * [Acedia 1.8.1.53 EXE release](release-1-8-1-53.md) - Project parents and folder references on a movable board; Codex async questions in desktop and Remote chat.
 * [Acedia 1.8.1.52 EXE release](release-1-8-1-52.md) - Session token usage and API baseline costs with exact conversation ownership, parent/child totals and CSV export.

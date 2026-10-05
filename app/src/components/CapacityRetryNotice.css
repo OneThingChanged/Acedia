@@ -1,0 +1,4 @@
+.capacity-retry-notice { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 9px 12px; background: color-mix(in srgb, var(--app-accent, #58a6ff) 10%, var(--app-bg, #0d1117)); color: var(--app-text, #c9d1d9); border-bottom: 1px solid var(--app-border, #30363d); font-size: 12px; }
+.capacity-retry-notice span { min-width: 0; overflow-wrap: anywhere; }
+.capacity-retry-notice.failed { background: color-mix(in srgb, #d29922 14%, var(--app-bg, #0d1117)); border-left: 3px solid #d29922; }
+.capacity-retry-notice button { flex-shrink: 0; padding: 4px 8px; border: 1px solid var(--app-border, #30363d); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }

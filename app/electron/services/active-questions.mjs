@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { derivePendingQuestions, deriveTurnLifecycle } from './chat-transcript.mjs';
 import { isTranscriptInsideRoot } from './transcript-path.mjs';
+import { codexRetryTurn } from './codex-capacity-retry.mjs';
 
 export const QUESTION_TAIL_BYTES = 256 * 1024;
 
@@ -69,7 +70,8 @@ export class ActiveQuestions {
       const question = questions.find(q => !q.async) || questions.find(q => q.async) || null;
       const hasTurnMarker = /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
       const lifecycle = tool === 'codex' && !hasTurnMarker ? same ? previous.result.lifecycle : 'working' : deriveTurnLifecycle(text, tool);
-      const result = { question, lifecycle, sessionId };
+      const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : null;
+      const result = { question, lifecycle, sessionId, turn };
       this.cache.set(id, { path: transcriptPath, startedAt, size: stat.size, mtime: stat.mtimeMs, questions, result });
       return result;
     } catch { return null; } finally { await handle?.close(); }
