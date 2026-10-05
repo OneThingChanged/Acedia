@@ -8,7 +8,7 @@ import { text, make, copyText } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
-import { parseChatPrompt, promptSignature } from "./chat-prompt.js";
+import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts } from "./session-state.js";
 
@@ -360,8 +360,11 @@ function pendingQuestionFor(agent, data) {
 function promptFor(agent, data) {
   if (!agent) return null;
   const pending = pendingQuestionFor(agent, data);
-  return parseChatPrompt(pending ? "attention" : statusOf(agent), pending?.question || agent.hook?.interactive_question, agent.hook?.assistant_message, agent.aiToolId);
+  const raw = pending?.answeredIndices?.length ? JSON.stringify({ questions: parseQuestionDetails(pending.question).questions.filter((_, i) => !pending.answeredIndices.includes(i)).map(q => ({ id: q.id, question: q.text, options: q.options })) }) : pending?.question || agent.hook?.interactive_question;
+  return parseChatPrompt(pending ? "attention" : statusOf(agent), raw, agent.hook?.assistant_message, agent.aiToolId);
 }
+
+function blockingPrompt(agent, data) { return !pendingQuestionFor(agent, data)?.async && !!promptFor(agent, data); }
 
 function questionDetails(agent) {
   const prompt = promptFor(agent);
@@ -1142,7 +1145,7 @@ function renderScreenChat(container, data, agent) {
   }
 
   const chatStatus = statusOf(agent);
-  if (!data?.unsupported && chatStatus === "working" && data?.lifecycle !== "idle" && !promptFor(agent, data)) {
+  if (!data?.unsupported && chatStatus === "working" && data?.lifecycle !== "idle" && !blockingPrompt(agent, data)) {
     const thinking = make("div", "chat-thinking");
     const dots = make("span", "chat-thinking-dots");
     dots.append(make("i", ""), make("i", ""), make("i", ""));
@@ -3366,7 +3369,7 @@ function updateComposerSendState() {
     agent && ["recovering", "starting"].includes(statusOf(agent)) && sessionViewMode === "term"
   );
   ui.messageInput.disabled = inactiveTerminal;
-  const waitingForAnswer = sessionViewMode === 'chat' && !!promptFor(agent);
+  const waitingForAnswer = sessionViewMode === 'chat' && blockingPrompt(agent);
   ui.messageInput.placeholder = inactiveTerminal
     ? initializingTerminal
       ? t("세션 초기화가 끝나면 입력할 수 있습니다")
@@ -3703,7 +3706,7 @@ const agentInitializing = (agent) => ["recovering", "starting"].includes(agent?.
 // is still busy. Work completion is a separate condition for draining input.
 const agentActivated = (agent) => !agentInitializing(agent) && statusOf(agent) !== "offline"
   && (!agent?.runtimeStatus || agent.runtimeStatus === "running");
-const agentReady = (agent) => agentActivated(agent) && !agentBusy(agent) && !promptFor(agent);
+const agentReady = (agent) => agentActivated(agent) && !agentBusy(agent) && !blockingPrompt(agent);
 
 function renderComposerQueue() {
   const el = ui.composerQueue;
@@ -3783,7 +3786,7 @@ async function drainQueues() {
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
-      if (statusOf(agent) === "offline" || agentInitializing(agent) || agentBusy(agent) || promptFor(agent) || !agentReady(agent)) continue;
+      if (statusOf(agent) === "offline" || agentInitializing(agent) || agentBusy(agent) || blockingPrompt(agent) || !agentReady(agent)) continue;
       const lastSendAt = sessionLastSendAt.get(agentId) || 0;
       if (Date.now() - lastSendAt < QUEUE_COOLDOWN_MS) continue;
       sessionLastSendAt.set(agentId, Date.now());
@@ -4771,7 +4774,7 @@ function renderChat(data) {
   if (!data?.unsupported) {
     const agent = selectedAgent();
     const chatStatus = agent ? statusOf(agent) : "offline";
-    if (agent && chatStatus === "working" && data?.lifecycle !== "idle" && !promptFor(agent, data)) {
+    if (agent && chatStatus === "working" && data?.lifecycle !== "idle" && !blockingPrompt(agent, data)) {
       const think = make("div", "chat-thinking");
       const dots = make("span", "chat-thinking-dots");
       dots.append(make("i", ""), make("i", ""), make("i", ""));

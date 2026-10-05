@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { derivePendingQuestion, deriveTurnLifecycle } from './chat-transcript.mjs';
+import { derivePendingQuestions, deriveTurnLifecycle } from './chat-transcript.mjs';
 import { isTranscriptInsideRoot } from './transcript-path.mjs';
 
 export const QUESTION_TAIL_BYTES = 256 * 1024;
@@ -35,11 +35,12 @@ export class ActiveQuestions {
       if (stat.size > length) text = text.slice(text.indexOf('\n') + 1);
       // An append in progress must not erase a question or fabricate an answer.
       text = text.slice(0, text.lastIndexOf('\n') + 1);
-      const question = derivePendingQuestion(text, tool, same && stat.size >= previous.size ? previous.result.question : null);
+      const questions = derivePendingQuestions(text, tool, same && stat.size >= previous.size ? previous.questions : []);
+      const question = questions.find(q => !q.async) || questions.find(q => q.async) || null;
       const hasTurnMarker = /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
       const lifecycle = tool === 'codex' && !hasTurnMarker ? same ? previous.result.lifecycle : 'working' : deriveTurnLifecycle(text, tool);
       const result = { question, lifecycle, sessionId };
-      this.cache.set(id, { path: transcriptPath, startedAt, size: stat.size, mtime: stat.mtimeMs, result });
+      this.cache.set(id, { path: transcriptPath, startedAt, size: stat.size, mtime: stat.mtimeMs, questions, result });
       return result;
     } catch { return null; } finally { await handle?.close(); }
   }

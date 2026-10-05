@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.1.45-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.1.53-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -16,6 +16,7 @@
 
 ### 세션 & 레이아웃
 - **프로젝트 우선 워크플로** — 프로젝트 폴더를 등록하고, 접이식 사이드바 트리 아래에 별명 세션 생성
+- **프로젝트 관계 보드** — 프로젝트의 부모를 연결·해제하고 다른 가지의 폴더를 참조합니다. 카드 드래그·보드 이동·확대·축소·실행 취소를 지원하며, 공통 설정은 다음 실행에 적용하고 대화는 각각 유지합니다. [Organization 사용법](docs/session-organization.md)을 참고하세요.
 - **세션 상태 필터** — 사이드바 검색 아래에서 전체·Active·Sleeping을 선택합니다. 파란 Sleeping은 시작·복원 대기 상태이며, 검색도 저장한 필터 안에서 적용하고 결과 없는 프로젝트는 숨깁니다. [사이드바 사용법](docs/workspace-interactions.md#navigation-and-visibility)을 참고하세요.
 - **짧은 프로젝트·세션 생성 창** — 기본 설정은 가로로 배치하고 작업자·고급 설정은 필요할 때 펼칩니다. 작은 화면에서도 취소·만들기 버튼은 항상 보입니다. [새 세션 사용법](docs/session-creation.md)을 참고하세요.
 - **탭 & 중첩 분할** — 가로/세로 패널, 5존 드래그 앤 드롭(가운데=탭 합치기, 가장자리=분할), 크기 조절 스플리터
@@ -33,6 +34,7 @@
 - 원시 터미널 옆에서 쓰는 가독성 높은 대화 뷰(transcript 기반 도구 전용): 프로바이더별 응답 카드, 상태가 보이는 시간순 도구 그룹, 구조화된 Markdown, 최신 대화 이동 버튼
 - 세션별 SQLite 이력으로 재시작 후 이전 대화를 복원하고, 오래된 대화를 나눠 불러오며, 에이전트 간 혼합 없이 참조된 산출물 파일을 관리
 - 컴포저에 `/` 명령·`@` 파일 자동완성, 클립보드 이미지 붙여넣기, 대용량 붙여넣기 칩 축소, 작업 중 메시지 큐잉, Esc로 취소
+- Codex가 작업 중 질문한 선택지·직접 입력 항목을 채팅에 계속 표시하고, 실제 터미널 질문을 확인한 뒤 답변을 전달합니다.
 
 ### 세션 Resume
 - `SessionStart` hook이 각 도구의 세션 ID를 캡처. 세션을 다시 열면 `codex resume <id>` / `claude --resume <id>`가 자동 실행

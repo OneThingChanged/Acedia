@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LS_SSH_HOSTS, type Agent } from "../types";
+import { LS_SSH_HOSTS, type Agent, type Project } from "../types";
 import {
   addTerminalCompatibilityArgs,
   buildSpawnArgs,
   resolveLocalToolCommand,
   resolveRemoteToolCommand,
 } from "./spawn";
+import { applyAgentHookEvent } from "./agentActivity";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("../platform/runtime", () => ({ invoke: invokeMock }));
@@ -16,6 +17,37 @@ beforeEach(() => {
 });
 
 describe("inherited session launch", () => {
+  it("keeps the original conversation folder for fresh project-inherited sessions across later cwd changes", async () => {
+    invokeMock.mockImplementation(async (_command, args) => args?.preferredSessionId || null);
+    const projects: Project[] = [
+      { id: "parent", name: "Parent", folder: "C:/original-parent", createdAt: 1 },
+      { id: "child", name: "Child", folder: "C:/registered-child", createdAt: 1, hierarchy: { parentId: "parent", inheritFolder: true } },
+    ];
+    const initial = { id: "a", projectId: "child", folder: "C:/registered-child", aiToolId: "codex", runtimeStatus: "running", status: "running" } as Agent;
+    const first = await buildSpawnArgs(initial, null, vi.fn(), { projects, agents: [initial] });
+    const launched = applyAgentHookEvent({ ...initial, folder: first.cwd! }, { id: "a", event: "working", session_id: "fresh-owned-chat" });
+    expect(launched.sessionHierarchy?.resumeContext).toEqual({ sessionId: "fresh-owned-chat", folder: "C:/original-parent" });
+    const changed = projects.map(p => p.id === "parent" ? { ...p, folder: "C:/new-parent" } : p);
+    const resumed = await buildSpawnArgs(launched, null, vi.fn(), { projects: changed, agents: [launched] });
+    expect(resumed.cwd).toBe("C:/new-parent");
+    expect(resumed.initCommand).toContain("resume fresh-owned-chat");
+    expect(invokeMock).toHaveBeenLastCalledWith("resolve_cli_session", expect.objectContaining({ folder: "C:/original-parent", preferredSessionId: "fresh-owned-chat" }));
+  });
+  it("delivers project instructions, references and write-folder requests to the owned Codex launch", async () => {
+    invokeMock.mockResolvedValue(null);
+    const agent = { id: "a", projectId: "child", folder: "C:/child", aiToolId: "codex" } as Agent;
+    const projects: Project[] = [
+      { id: "parent", name: "Parent", folder: "C:/parent", createdAt: 1, hierarchy: { instructions: "Project parent rules" } },
+      { id: "child", name: "Child", folder: "C:/child", createdAt: 1, hierarchy: { parentId: "parent", references: [{ projectId: "resources", path: "Client", scopes: ["code"], access: "write" }] } },
+      { id: "resources", name: "Resources", folder: "C:/resources", createdAt: 1 },
+    ];
+    const result = await buildSpawnArgs(agent, null, vi.fn(), { projects, agents: [agent] });
+    expect(result.cwd).toBe("C:/child");
+    expect(result.initCommand).toContain("Project parent rules");
+    expect(result.initCommand).toContain("C:/resources/Client");
+    expect(result.sessionReferenceFolders).toEqual([{ path: "C:/resources/Client", access: "write" }]);
+    expect(invokeMock).toHaveBeenCalledWith("resolve_cli_session", expect.objectContaining({ agentId: "a", folder: "C:/child" }));
+  });
   it("resolves inherited folder and model at spawn without changing own settings or resume ownership", async () => {
     invokeMock.mockResolvedValue(null);
     const parent = { id: "parent", projectId: "p", folder: "C:/parent", aiToolId: "codex", modelSettings: { model: "parent-model", effort: "high" }, sessionHierarchy: { instructions: "Parent's rules\nStay in scope" } } as Agent;

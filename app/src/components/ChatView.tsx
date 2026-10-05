@@ -20,6 +20,7 @@ import type { AgentStatus } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { QuestionForm } from './QuestionForm';
 import type { ChatAnswer } from '../../electron/shared/chat-prompt.mjs';
+import { questionDetails } from '../../electron/shared/chat-prompt.mjs';
 
 // While the agent is working, composer sends are queued and drained one at a
 // time once it's ready for input (with a short cooldown so a message doesn't
@@ -641,12 +642,13 @@ export function ChatView({
   const initializing = agentStatus === "starting" || agentStatus === "recovering";
   const alive = !DEAD_STATUSES.includes(agentStatus);
   const nativeQuestion = alive && !initializing && agentStatus !== "idle" && !stoppedHere ? pendingQuestion : null;
-  const prompt = parseChatPrompt(nativeQuestion ? "waiting" : agentStatus, nativeQuestion?.question || question, assistantMessage, provider || tool);
+  const questionRaw = nativeQuestion?.answeredIndices?.length ? JSON.stringify({ questions: questionDetails(nativeQuestion.question).questions.filter((_, i) => !nativeQuestion.answeredIndices!.includes(i)).map(q => ({ id: q.id, question: q.text, options: q.options })) }) : nativeQuestion?.question || question;
+  const prompt = parseChatPrompt(nativeQuestion ? "waiting" : agentStatus, questionRaw, assistantMessage, provider || tool);
   const promptSig = prompt ? `${storeKey}|${nativeQuestion?.id || questionToken || ""}|${promptSignature(prompt)}` : "";
   promptSigRef.current = promptSig;
   useEffect(() => { setAnsweredPromptSig(""); setPromptError(""); }, [promptSig]);
   const busy = initializing || (
-    BUSY_STATUSES.includes(agentStatus) && lifecycle !== "idle" && !stoppedHere && !prompt
+    BUSY_STATUSES.includes(agentStatus) && lifecycle !== "idle" && !stoppedHere && (!prompt || nativeQuestion?.async)
   );
 
   // Cancel the in-progress turn by sending Esc to the PTY — same as pressing
@@ -853,7 +855,7 @@ export function ChatView({
       )}
       {prompt && (
         <div className={`chat-prompt ${prompt.kind}`} role="status" aria-live="polite">
-          <strong className="chat-prompt-heading">{text("답변 대기 중", "Answer needed")}</strong>
+          <strong className="chat-prompt-heading">{nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
           {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
@@ -862,6 +864,7 @@ export function ChatView({
           </div>}
           <div className="chat-prompt-hint">{answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
+            : nativeQuestion?.async ? text('작업은 계속 진행됩니다. 보내기를 누르면 Codex 질문에 답합니다.', 'Work continues. Send your answers to the queued Codex question.')
             : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
             : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
           {promptError && <div className="chat-prompt-error" role="alert">{promptError}</div>}

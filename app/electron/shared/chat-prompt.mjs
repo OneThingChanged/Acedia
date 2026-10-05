@@ -13,9 +13,9 @@ export function questionDetails(raw) {
   if (typeof source === "string") {
     try { source = JSON.parse(source); } catch { /* a plain-text question */ }
   }
-  const questions = Array.isArray(source?.questions) ? source.questions.slice(0, 6).map(q => ({
-    id: bounded(q?.id, 200),
-    text: bounded(q?.question || q?.header, 2000),
+  const questions = Array.isArray(source?.questions) ? source.questions.slice(0, 6).map((q, i) => ({
+    id: bounded(q?.id, 200) || (q?.title ? `async-${i}` : ""),
+    text: bounded(q?.question || q?.title || q?.header, 2000),
     options: Array.isArray(q?.options) ? q.options.slice(0, 12).map(option => ({
       label: bounded(typeof option === "string" ? option : option?.label, 300),
       description: bounded(option?.description, 700),
@@ -38,7 +38,7 @@ export function parseChatPrompt(status, question, assistantMessage, provider) {
   const details = questionDetails(question);
   if (details.questions.length) {
     const first = details.questions[0];
-    if (provider === "codex" && details.questions.every(q => q.id && q.options.length && !q.multiSelect)
+    if (provider === "codex" && details.questions.every(q => q.id && !q.multiSelect)
       && new Set(details.questions.map(q => q.id)).size === details.questions.length) {
       return { kind: "question", answerStyle: "codex-form", text: details.text, options: [], questions: details.questions };
     }

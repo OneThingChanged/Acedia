@@ -3,6 +3,7 @@ import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
 import { SessionOrganization } from "./components/SessionOrganization";
+import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { normalizeSessionModel, sessionModelArgs, type SessionModel } from "../electron/shared/session-model.mjs";
 import { switchProviderAccount } from "./lib/codexAccounts";
@@ -279,6 +280,8 @@ function parseStoredArray<T>(raw: string | null): T[] {
 
 function storedProjectFromProject(project: Project): StoredProject {
   return {
+    hierarchy: normalizeProjectHierarchy(project.hierarchy),
+    boardPosition: normalizeBoardPosition(project.boardPosition),
     id: project.id,
     name: project.name,
     folder: project.folder,
@@ -358,6 +361,8 @@ function projectFromStored(
   if (!stored.folder && !stored.sshHostId) return null;
   const folder = stored.folder || "";
   return {
+    hierarchy: normalizeProjectHierarchy(stored.hierarchy),
+    boardPosition: normalizeBoardPosition(stored.boardPosition),
     id: stored.id,
     name: stored.name || existing?.name || "Project",
     folder,
@@ -2831,7 +2836,7 @@ function App() {
           }
           return state;
         });
-        setProjects((prev) => prev.filter((p) => p.id !== projectId));
+        setProjects((prev) => removeProjectRelationships(prev, projectId));
         if (activeProjectIdRef.current === projectId) {
           setActiveProjectId(null);
           setActiveGroupId(null);
@@ -2847,7 +2852,7 @@ function App() {
       ...agent,
       ...(folder ? { folder } : {}),
       ...(remoteFolder ? { remoteFolder } : {}),
-      ...(agent.sessionHierarchy ? { sessionHierarchy: { ...agent.sessionHierarchy, resumeContext } } : {}),
+      ...(agent.sessionHierarchy || resumeContext ? { sessionHierarchy: { ...agent.sessionHierarchy, resumeContext: resumeContext || agent.sessionHierarchy?.resumeContext } } : {}),
     }));
   }, []);
 
@@ -3670,7 +3675,7 @@ function App() {
           const group = groupsRef.current.find((g) =>
             collectAgentIds(g.layout).has(agentId)
           );
-          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, resumeContext } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, sessionReferenceFolders, resumeContext } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId,
@@ -3684,6 +3689,7 @@ function App() {
             launchOptions,
             modelSettings,
             sessionInstructions,
+            sessionReferenceFolders,
             poolResumeOwnerId: options.poolResumeOwnerId,
             initialPrompt,
             aiToolId: agent.aiToolId,
@@ -4359,6 +4365,16 @@ function App() {
           onOpenSession={requestSelectAgent}
           onOpenProperties={setPropertiesAgentId}
           onUpdateHierarchy={updateSessionHierarchy}
+          onUpdateProjects={(changes) => {
+            let next = projectsRef.current;
+            for (const change of changes) {
+              if (!next.some(project => project.id === change.id)) continue;
+              if (change.hierarchy !== undefined) next = updateProjectHierarchy(next, change.id, change.hierarchy);
+              if (change.boardPosition) next = next.map(project => project.id === change.id ? { ...project, boardPosition: normalizeBoardPosition(change.boardPosition) } : project);
+            }
+            projectsRef.current = next;
+            setProjects(next);
+          }}
           onCreateChild={(parentId) => {
             const parent = agentsRef.current.find((agent) => agent.id === parentId);
             if (!parent) return;

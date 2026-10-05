@@ -14,10 +14,11 @@ configuration that supports it.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
-* [Session organization](session-organization.md) - Parent/child session trees, setting inheritance, independent execution, and persisted creation provenance.
+* [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
 
 ## Settings and review
 
+* [Acedia 1.8.1.53 EXE release](release-1-8-1-53.md) - Project parents and folder references on a movable board; Codex async questions in desktop and Remote chat.
 * [Acedia 1.8.1.52 EXE release](release-1-8-1-52.md) - Session token usage and API baseline costs with exact conversation ownership, parent/child totals and CSV export.
 * [Acedia 1.8.1.51 EXE release](release-1-8-1-51.md) - Organize real parent/child sessions with setting inheritance, independent conversations and persisted creation provenance.
 * [Acedia 1.8.1.50 EXE release](release-1-8-1-50.md) - Restore Git changes with bundled Git, scoped ownership/long-path settings and persistent retry; improve large Remote HTML previews.

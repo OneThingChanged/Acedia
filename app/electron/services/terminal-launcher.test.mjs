@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTerminalLauncher } from "./terminal-launcher.mjs";
+import { createTerminalLauncher, referenceFolderArgs } from "./terminal-launcher.mjs";
 import { TerminalSessionService } from "./terminal-session-service.mjs";
 
 const fixtures = [];
@@ -62,6 +62,16 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it('grants additional CLI folders only for explicit write references', async () => {
+    expect(referenceFolderArgs([{ path: os.tmpdir(), access: 'read' }], 'codex')).toEqual([]);
+    expect(referenceFolderArgs([{ path: os.tmpdir(), access: 'write' }], 'codex')).toEqual(['--add-dir', path.resolve(os.tmpdir())]);
+    expect(() => referenceFolderArgs([{ path: '../relative', access: 'write' }], 'codex')).toThrow('Invalid reference');
+    expect(() => referenceFolderArgs([{ path: os.tmpdir(), access: 'write' }], 'codex', true)).toThrow('Unsupported');
+    const f = fixture();vi.useFakeTimers();
+    await f.launch({ ...f.args, initCommand: 'codex', sessionReferenceFolders: [{ path: os.tmpdir(), access: 'write' }] });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(f.processes[0].write.mock.calls[0][0]).toContain('--add-dir');
+  });
   it('appends multiline Claude instructions and refreshes the prompt on resumed conversations', async () => {
     const f = fixture();
     vi.useFakeTimers();

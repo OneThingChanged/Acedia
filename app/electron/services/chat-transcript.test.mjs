@@ -4,6 +4,10 @@ import { parseChatTranscript, deriveTurnLifecycle, derivePendingQuestion } from 
 describe("pending native questions", () => {
   const serialize = records => records.map(payload => JSON.stringify({ type: "response_item", payload })).join("\n");
   const question = { type: "function_call", call_id: "question-1", name: "functions.request_user_input", arguments: '{"questions":[{"question":"Choose"}]}' };
+  it("renders asynchronous answers as readable user messages", () => {
+    const reply = `<send_user_message_question_reply>\n${JSON.stringify([{ question: "Which folder?", answer: "Current", questionItemId: '["request_user_input_async","call-1",0]' }])}\n</send_user_message_question_reply>`;
+    expect(parseChatTranscript(serialize([{ type: "message", role: "user", content: [{ text: reply }] }]), "codex")).toEqual([{ role: "user", kind: "text", text: "Which folder?\nCurrent" }]);
+  });
   it("finds a question even without hooks and ignores unrelated tool output", () => {
     const text = serialize([question, { type: "function_call_output", call_id: "other-tool", output: "done" }]);
     expect(derivePendingQuestion(text, "codex")).toEqual({ id: "question-1", toolName: question.name, question: question.arguments });
@@ -12,9 +16,17 @@ describe("pending native questions", () => {
   it.each(["task_started", "task_complete", "turn_aborted"])("clears the question on %s", type => {
     expect(derivePendingQuestion(serialize([question]) + "\n" + JSON.stringify({ type: "event_msg", payload: { type } }), "codex")).toBeNull();
   });
-  it("doesn't resurrect an old question after a new user message or an async question", () => {
+  it("doesn't resurrect an old synchronous question after a new user message", () => {
     expect(derivePendingQuestion(serialize([question, { type: "message", role: "user", content: [{ text: "continue" }] }]), "codex")).toBeNull();
-    expect(derivePendingQuestion(serialize([{ ...question, name: "functions.request_user_input_async" }]), "codex")).toBeNull();
+  });
+  it("keeps accepted async questions through ongoing work and completes only the matching reply", () => {
+    const async = { ...question, name: "request_user_input_async", arguments: JSON.stringify({ questions: [{ title: "Which folder?", options: ["Current", "Other"] }] }) };
+    const accepted = { type: "function_call_output", call_id: async.call_id, output: '{"accepted":true}' };
+    const text = serialize([async, accepted]) + '\n' + JSON.stringify({ type: "event_msg", payload: { type: "task_complete" } });
+    expect(derivePendingQuestion(text, "codex")).toMatchObject({ id: async.call_id, async: true });
+    const reply = id => ({ type: "message", role: "user", content: [{ text: `<send_user_message_question_reply>\n${JSON.stringify([{ questionItemId: JSON.stringify(["request_user_input_async", id, 0]), answer: "Current" }])}\n</send_user_message_question_reply>` }] });
+    expect(derivePendingQuestion(text + '\n' + serialize([reply('other-call')]), 'codex')).not.toBeNull();
+    expect(derivePendingQuestion(text + '\n' + serialize([reply(async.call_id)]), 'codex')).toBeNull();
   });
   it("correlates Claude answers by tool_use_id", () => {
     const input = { questions: [{ question: "Choose" }] };

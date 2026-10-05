@@ -209,6 +209,12 @@ export function applyAgentHookEvent(
   return {
     ...agent,
     lastSessionId: providerSessionId || agent.lastSessionId,
+    // The registered project folder may differ from a launched inherited cwd.
+    // Bind new conversations to their original transcript lookup folder.
+    ...(!agent.sshHostId && providerSessionId && ["codex", "claude"].includes(agent.aiToolId) && agent.folder ? {
+      sessionHierarchy: { ...agent.sessionHierarchy, resumeContext: agent.sessionHierarchy?.resumeContext?.sessionId === providerSessionId
+        ? agent.sessionHierarchy.resumeContext : { sessionId: providerSessionId, folder: agent.folder } },
+    } : {}),
     pendingAccountHandoff: providerSessionId ? undefined : agent.pendingAccountHandoff,
     resumeEligible: runtimeStatus === "running" ? true : agent.resumeEligible,
     runtimeStatus,

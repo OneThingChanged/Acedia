@@ -11,10 +11,10 @@ describe("organization sessions", () => {
   });
   it("renders actual relationships without mock sessions", () => {
     const catalog = [agent("Parent", { status: "running" }), agent("Real child", { status: "running", sessionHierarchy: { parentId: "Parent", createdById: "Parent", inheritFolder: true } })];
-    const html = renderToStaticMarkup(<SessionOrganization agents={catalog} projects={[{ id: "p", name: "Project", folder: "C:/project", createdAt: 1 }]} activeProjectId="p" selectedId="Real child" onSelect={() => {}} onOpenSession={() => {}} onOpenProperties={() => {}} onCreateChild={() => {}} onUpdateHierarchy={() => {}}/>);
+    const html = renderToStaticMarkup(<SessionOrganization agents={catalog} projects={[{ id: "p", name: "Project", folder: "C:/project", createdAt: 1 }]} activeProjectId="p" selectedId="Real child" onSelect={() => {}} onOpenSession={() => {}} onOpenProperties={() => {}} onCreateChild={() => {}} onUpdateHierarchy={() => {}} onUpdateProjects={() => {}}/>);
     expect(html).toContain("Real child");
-    expect(html).toContain("독립 대화");
-    expect(html).toContain("부모의 작업 폴더 사용");
+    expect(html).toContain("프로젝트 관계 보드");
+    expect(html).toContain("세션 트리 보기");
     expect(html).not.toContain("UI 구현");
     expect(html).not.toContain("HTML 초안");
   });

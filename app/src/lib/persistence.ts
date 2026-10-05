@@ -8,6 +8,7 @@ import {
   toolForId,
 } from "../types";
 import { normalizeSessionHierarchy, repairSessionHierarchy } from "./sessionHierarchy";
+import { normalizeBoardPosition, normalizeProjectHierarchy } from "./projectHierarchy";
 import type {
   Agent,
   AgentStatus,
@@ -70,6 +71,8 @@ function loadStoredProjects(rawAgents: StoredAgent[]): Project[] {
           sshHostId: project.sshHostId || undefined,
           remoteFolder: project.remoteFolder || undefined,
           projectFolderId: project.projectFolderId || undefined,
+          hierarchy: normalizeProjectHierarchy(project.hierarchy),
+          boardPosition: normalizeBoardPosition(project.boardPosition),
         });
       }
     }

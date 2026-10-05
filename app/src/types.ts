@@ -261,7 +261,25 @@ export type StoredAgent = {
   lastClaudeSessionId?: string;
 };
 
+export type ProjectReference = {
+  projectId: string;
+  path?: string;
+  scopes: Array<"instructions" | "code" | "docs">;
+  access: "read" | "write";
+};
+export type ProjectHierarchy = {
+  parentId?: string;
+  folderOverride?: string;
+  inheritFolder?: boolean;
+  inheritInstructions?: boolean;
+  inheritModel?: boolean;
+  instructions?: string;
+  models?: Partial<Record<"codex" | "claude", Agent["modelSettings"]>>;
+  references?: ProjectReference[];
+};
 export type Project = {
+  hierarchy?: ProjectHierarchy;
+  boardPosition?: { x: number; y: number };
   id: string;
   name: string;
   folder: string;

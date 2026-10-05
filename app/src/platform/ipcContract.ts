@@ -119,6 +119,7 @@ export type SpawnTerminalResult = { reattached: boolean; cancelled?: boolean };
 
 export type SpawnTerminalArgs = {
   sessionInstructions?: string;
+  sessionReferenceFolders?: { path: string; access: "read" | "write" }[];
   poolResumeOwnerId?: string;
   modelSettings?: import("../../electron/shared/session-model.mjs").SessionModel;
   launchOptions?: import("../lib/launchOptions").LaunchOptions;
@@ -254,7 +255,7 @@ export type ChatBlocksResult = {
   unsupported?: boolean;
   tool?: string;
   lifecycle?: "working" | "idle";
-  pendingQuestion?: { id: string; toolName: string; question: string } | null;
+  pendingQuestion?: { id: string; toolName: string; question: string; async?: boolean; answeredIndices?: number[] } | null;
   sessionId?: string;
   conversationId?: string | null;
   hasOlder?: boolean;

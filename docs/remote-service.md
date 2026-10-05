@@ -340,11 +340,20 @@ Native Codex `request_user_input` calls are recovered from the bounded live
 transcript tail when their hook omitted the question. Tool call IDs identify
 answers, so an unrelated tool result cannot clear the question. New turns,
 completion and cancellation clear pending questions. All question text, choices
-and descriptions remain visible; multi-question forms and Codex structured forms
-are answered in the terminal. Existing single-choice Claude and explicit
+and descriptions remain visible; identified Codex structured forms support
+guarded answers from Chat. Other native forms remain terminal actions. Existing single-choice Claude and explicit
 numbered menus keep their buttons. Failed writes stop the remaining key sequence
 and leave the terminal action available. Scheduled messages pause while an
-answer is needed. Async input tools are not treated as blocking native forms.
+answer is needed. Codex `request_user_input_async` questions now appear while
+work continues: `title`, string choices and free-text answers are decoded, and
+the immediate `{accepted:true}` tool result does not dismiss them. Matching
+`send_user_message_question_reply` identities resolve the actual question.
+The live terminal queue confirms that a resumed log's old question still
+exists. Structured answers open the queued form with Shift+Up and verify the
+question text before writing choices. A changed or unsupported form keeps the
+terminal answer action available. Async questions preserve the real working
+state and do not block ordinary queued messages. Remote cache v89 includes this
+change; these are source changes pending a new release.
 `npm --prefix app run electron:chat-question-smoke` verifies the actual desktop
 Chat component and Remote client at 1024px and 390px using an isolated profile,
 including fallback visibility, scrolling, terminal navigation, stale-state

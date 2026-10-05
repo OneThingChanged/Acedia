@@ -2,12 +2,14 @@ import { invoke } from "../platform/runtime";
 import { toolForId } from "../types";
 import type { Agent, Project, SessionResumeContext, SshHost } from "../types";
 import { resolveSessionSettings } from "./sessionHierarchy";
+import { resolveProjectSettings } from "./projectHierarchy";
 import { findSshHost } from "./sshHosts";
 import { addSessionWorkerArgs, workerRoles } from "./sessionWorkers";
 import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
 import { handoffPromptForAccount } from "./accountHandoff";
 
 export type SpawnArgs = {
+  sessionReferenceFolders?: { path: string; access: "read" | "write" }[];
   resumeContext?: SessionResumeContext;
   sessionInstructions?: string;
   modelSettings?: Agent["modelSettings"];
@@ -87,6 +89,8 @@ export async function buildSpawnArgs(
   options: { resumeSessionId?: string; agents?: readonly Agent[]; projects?: readonly Project[] } = {}
 ): Promise<SpawnArgs> {
   const settings = resolveSessionSettings(inputAgent, options.agents ?? [inputAgent], options.projects);
+  const project = options.projects?.find(item => item.id === inputAgent.projectId);
+  const references = project ? resolveProjectSettings(project, options.projects!).references : [];
   if (settings.instructions.length > 20000 || settings.instructions.includes("\0")) throw new Error("상속을 포함한 추가 지침은 20,000자 이내여야 합니다. Inherited instructions must be within 20,000 characters.");
   const agent = { ...inputAgent, folder: settings.folder, remoteFolder: settings.remoteFolder, modelSettings: settings.modelSettings };
   const exactResumeId = options.resumeSessionId || agent.idleResumeSessionId;
@@ -263,6 +267,7 @@ export async function buildSpawnArgs(
     : null;
 
   return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null,
+    ...(!sshHost && references.length && ["codex", "claude"].includes(agent.aiToolId) ? { sessionReferenceFolders: references.filter(ref => ref.scopes.some(scope => scope !== "instructions")).map(ref => ({ path: ref.path, access: ref.access })) } : {}),
     launchOptions, initialPrompt, modelSettings: settings.modelSettings, resumeContext,
     ...(agent.aiToolId === "claude" && settings.instructions ? { sessionInstructions: settings.instructions } : {}) };
 }

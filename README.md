@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-[![Version](https://img.shields.io/badge/version-1.8.1.45-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.1.53-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -16,6 +16,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 
 ### Sessions & Layout
 - **Project-first workflow** — register a project folder, then create aliased sessions under it in the collapsible sidebar tree
+- **Project relationship board** — connect or detach parent projects, reference folders across branches, and arrange cards with drag, pan, zoom and undo. Shared settings apply on the next launch while conversations remain independent. See [Organization](docs/session-organization.md).
 - **Session status filters** — choose All, Active, or Sleeping below sidebar search. Blue Sleeping sessions wait to start or resume; search stays within the saved filter and hides projects without matches. See [workspace navigation](docs/workspace-interactions.md#navigation-and-visibility).
 - **Compact project and session creation** — arrange the basic settings across the dialog, expand worker and advanced options when needed, and keep Create/Cancel visible on smaller screens. See [session creation](docs/session-creation.md).
 - **Tabs & nested splits** — horizontal/vertical panes, 5-zone drag-and-drop (center = merge as tab, edges = split), resizable splitters
@@ -33,6 +34,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 - A readable conversation view alongside the raw terminal (for transcript-based tools): provider-labelled assistant cards, chronological tool groups with status, structured Markdown, and a jump-to-latest control
 - Per-session SQLite history restores prior conversation blocks after restart, pages older turns on demand, and catalogs referenced output files without mixing agents
 - Composer with `/` command and `@` file autocomplete, clipboard-image paste, large-paste collapsing, message queueing while the agent works, Esc to cancel
+- Codex async questions stay visible during ongoing work, with choices or free-text answers and a guarded connection to the native question form.
 
 ### Session Resume
 - `SessionStart` hooks capture each tool's session ID; reopening a session runs `codex resume <id>` / `claude --resume <id>` automatically

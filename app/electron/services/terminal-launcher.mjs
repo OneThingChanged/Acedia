@@ -16,6 +16,17 @@ const HOOK_TOOLS = new Set(["codex", "claude", "qwen"]);
 const CLI_TOOLS = new Set([...HOOK_TOOLS, "cline", "agy"]);
 
 const asString = (value) => typeof value === "string" ? value : "";
+export function referenceFolderArgs(value, tool, ssh = false) {
+  if (value === undefined) return [];
+  if (ssh || !["codex", "claude"].includes(tool) || !Array.isArray(value) || value.length > 20) throw new Error("Unsupported reference folders");
+  const args = [];
+  for (const ref of value) {
+    if (typeof ref?.path !== "string" || /[\x00-\x1f]/.test(ref.path) || !path.isAbsolute(ref.path) || !["read", "write"].includes(ref.access)) throw new Error("Invalid reference folder");
+    if (!fs.statSync(ref.path).isDirectory()) throw new Error("Reference folder unavailable");
+    if (ref.access === "write") args.push("--add-dir", path.resolve(ref.path));
+  }
+  return args;
+}
 const asObject = (value) => value && typeof value === "object" ? value : {};
 const asPositiveInt = (value, fallback) =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
@@ -105,6 +116,7 @@ export function createTerminalLauncher({
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
       const modelArgs = ["codex", "claude"].includes(aiToolId) ? sessionModelArgs(args.modelSettings, args.launchOptions, aiToolId) : [];
+      const referenceArgs = referenceFolderArgs(args.sessionReferenceFolders, aiToolId, Boolean(ssh));
       const launchOptions = normalizeLaunchOptions(args.launchOptions);
       const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id,
         args.codexPoolAccountId || null, args.poolResumeOwnerId || null, {
@@ -112,7 +124,7 @@ export function createTerminalLauncher({
             MULTIAGENT_AGENT_ID: id, MULTIAGENT_PORT: String(hookService.port || ""),
             MULTIAGENT_TOKEN: hookService.token || "", MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath },
           cwd, cliExecutable: launchOptions?.executable,
-          configArgs: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs],
+          configArgs: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs, ...referenceArgs],
         }) : null;
       if (poolLaunch) {
         poolRelease = poolLaunch.release ?? null;
@@ -127,11 +139,11 @@ export function createTerminalLauncher({
       if (instructions && ssh) throw new Error("Session instruction arguments require a local session.");
       const instructionArgs = instructions ? ["--append-system-prompt", instructions, "--system-prompt-snapshot", "off"] : [];
       const nativeArgs = poolLaunch?.native ? codexRemoteTuiArgs([
-        ...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs,
+        ...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs, ...referenceArgs,
       ]) : null;
       const launchCommand = ssh ? "" : prepareLaunchCommand(nativeArgs ? "codex" : asString(args.initCommand).trim(), nativeArgs ? { ...launchOptions, args: [] } : args.launchOptions, {
         shell: executable, toolId: aiToolId, env: launchEnvironment, platform,
-        extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : modelArgs), ...instructionArgs, ...(initialPrompt ? [initialPrompt] : [])],
+        extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : [...modelArgs, ...referenceArgs]), ...instructionArgs, ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
       return {

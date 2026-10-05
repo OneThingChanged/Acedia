@@ -28,7 +28,7 @@ describe('active question tail monitor', () => {
       expect(await monitor.read({ ...request, startedAt: Date.now() + 1000 })).toBeNull();
       monitor.prune([]); expect(monitor.cache.size).toBe(0);
       await fs.writeFile(file, line({ ...call, name: 'functions.request_user_input_async' }));
-      expect((await monitor.read(request)).question).toBeNull();
+      expect((await monitor.read(request)).question).toMatchObject({ async: true, id: call.call_id });
     } finally { await fs.rm(root, { recursive: true }); }
   });
 });

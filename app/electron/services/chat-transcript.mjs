@@ -111,7 +111,19 @@ function decodeCodexLine(obj, out) {
   if (p.type === "message") {
     const role = p.role === "assistant" ? "assistant" : p.role === "user" ? "user" : null;
     if (!role) return; // developer/system prompts are noise in a chat view
-    const text = contentToText(p.content).trim();
+    let text = contentToText(p.content).trim();
+    if (role === "user") {
+      const reply = text.match(/^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/);
+      if (reply) {
+        try {
+          const answers = JSON.parse(reply[1]);
+          if (Array.isArray(answers)) {
+            const readable = answers.map(a => [typeof a.question === "string" ? a.question : "", typeof a.answer === "string" ? a.answer : ""].filter(Boolean).join("\n")).filter(Boolean).join("\n\n");
+            if (readable) text = readable;
+          }
+        } catch { /* Preserve unexpected provider text instead of losing it. */ }
+      }
+    }
     // Codex injects an <environment_context>/<user_instructions> wrapper as the
     // first "user" turn — skip those the way we skip Claude's reminders.
     if (!text || (role === "user" && isNoiseUserText(text))) return;
@@ -191,24 +203,46 @@ export function deriveTurnLifecycle(text, tool) {
 
 // A native Codex question can be logged without a PermissionRequest hook.
 // Track its call identity, not the position of the next unrelated tool output.
-// Async questions don't pause the CLI and aren't native answer forms.
-export function derivePendingQuestion(text, tool, previous = null) {
-  const pending = new Map(previous ? [[previous.id, previous]] : []);
+// Async calls return {accepted:true} before the user answers. Their actual
+// replies arrive later as send_user_message_question_reply user messages.
+export function derivePendingQuestions(text, tool, previous = []) {
+  const pending = new Map(previous.map(q => [q.id, q]));
   const add = (id, name, input) => {
-    if (!id || !isQuestionTool(name)) return;
-    pending.set(id, { id, toolName: name, question: typeof input === "string" ? input : JSON.stringify(input ?? {}) });
+    if (!id || !isQuestionTool(name, { includeAsync: true })) return;
+    const async = String(name).split(/[.:/]/).pop() === "request_user_input_async";
+    if (!pending.has(id)) pending.set(id, { id, toolName: name, question: typeof input === "string" ? input : JSON.stringify(input ?? {}), ...(async ? { async: true } : {}) });
   };
+  const clearSynchronous = () => { for (const [id, q] of pending) if (!q.async) pending.delete(id); };
   for (const line of String(text ?? "").split(/\r?\n/)) {
     let obj;
     try { obj = JSON.parse(line); } catch { continue; }
     if (tool === "codex") {
       const p = obj?.payload;
       if (!p) continue;
-      if (["task_started", "task_complete", "turn_aborted"].includes(p.type)) pending.clear();
+      if (["task_started", "task_complete", "turn_aborted"].includes(p.type)) clearSynchronous();
       if (obj.type !== "response_item") continue;
-      if (p.type === "message" && p.role === "user" && !isNoiseUserText(contentToText(p.content))) pending.clear();
+      if (p.type === "message" && p.role === "user") {
+        const body = contentToText(p.content), reply = body.match(/<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>/);
+        if (reply) {
+          try {
+            for (const answer of JSON.parse(reply[1])) {
+              const identity = JSON.parse(answer.questionItemId);
+              if (identity[0] !== "request_user_input_async") continue;
+              const q = pending.get(identity[1]); if (!q?.async) continue;
+              const input = JSON.parse(q.question), index = identity[2];
+              if (!Number.isInteger(index) || index < 0 || !Array.isArray(input.questions)) continue;
+              const answered = new Set(q.answeredIndices || []); answered.add(index);
+              if (input.questions.every((_, i) => answered.has(i))) pending.delete(q.id);
+              else pending.set(q.id, { ...q, answeredIndices: [...answered] });
+            }
+          } catch { /* partial/malformed replies never dismiss a question */ }
+        } else if (!isNoiseUserText(body)) clearSynchronous();
+      }
       if (["function_call", "custom_tool_call"].includes(p.type)) add(p.call_id, p.name || p.tool_name, p.arguments ?? p.input);
-      if (["function_call_output", "custom_tool_call_output"].includes(p.type)) pending.delete(p.call_id);
+      if (["function_call_output", "custom_tool_call_output"].includes(p.type)) {
+        if (!pending.get(p.call_id)?.async) pending.delete(p.call_id);
+        else { try { if (JSON.parse(p.output)?.accepted === false) pending.delete(p.call_id); } catch { /* accepted async output is not an answer */ } }
+      }
     } else if (tool === "claude") {
       const content = obj.message?.content;
       if (obj.type === "user" && typeof content === "string" && !isNoiseUserText(content)) pending.clear();
@@ -220,7 +254,11 @@ export function derivePendingQuestion(text, tool, previous = null) {
       if (obj.type === "assistant" && stop && stop !== "tool_use") pending.clear();
     }
   }
-  return [...pending.values()].pop() ?? null;
+  return [...pending.values()];
+}
+export function derivePendingQuestion(text, tool, previous = null) {
+  const pending = derivePendingQuestions(text, tool, previous ? [previous] : []);
+  return pending.find(q => !q.async) || pending.find(q => q.async) || null;
 }
 
 // Parse a full transcript body into chat blocks. `tool` is "codex" | "claude".

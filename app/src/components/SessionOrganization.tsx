@@ -7,6 +7,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { canParentSession, layoutSessionHierarchy, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings } from "../lib/sessionHierarchy";
 import "./SessionOrganization.css";
+import { ProjectBoard, type ProjectBoardChange } from "./ProjectBoard";
 
 type Props = {
   agents: Agent[];
@@ -18,6 +19,7 @@ type Props = {
   onOpenProperties: (id: string) => void;
   onCreateChild: (id: string) => void;
   onUpdateHierarchy: (id: string, hierarchy: SessionHierarchy) => void;
+  onUpdateProjects: (changes: ProjectBoardChange[]) => void;
 };
 
 export function organizationAgents(agents: Agent[], activeOnly: boolean): Agent[] {
@@ -55,7 +57,7 @@ export function SessionOrganization(props: Props) {
   const { text } = useAppLanguage();
   const rootRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scope, setScope] = useState(props.activeProjectId || "all");
+  const [scope, setScope] = useState("all");
   const [activeOnly, setActiveOnly] = useState(true);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -89,6 +91,11 @@ export function SessionOrganization(props: Props) {
     else setInspectorCollapsed((current) => !current);
   }
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+
+  if (scope === "all") return <ProjectBoard projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
+    const agent = catalog.find(item => item.id === id);
+    return agent ? <HierarchyInspector key={id} agent={agent} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={close}/> : null;
+  }}/>;
 
   return <section ref={rootRef} className={`terminal-area session-organization${inspectorCollapsed ? " org-inspector-collapsed" : ""}${mobileInspector ? " org-inspector-shown" : ""}`} aria-label={text("세션 조직도", "Session organization")}>
     <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1><NetworkIcon/>{text("세션 조직도", "Session organization")}</h1><p>{text("작업을 묶고, 필요한 설정을 이어받습니다.", "Group work and inherit the settings you need.")}</p></div><div className="org-header-actions">

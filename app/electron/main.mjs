@@ -6,7 +6,7 @@ import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
 import { SessionNotifications } from './services/session-notifications.mjs';
 import { ActiveQuestions } from './services/active-questions.mjs';
-import { QuestionResponder } from './services/question-responder.mjs';
+import { QuestionResponder, hasQueuedCodexQuestion, codexQuestionFrame } from './services/question-responder.mjs';
 import { isQuestionTool } from './shared/chat-prompt.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
@@ -469,6 +469,7 @@ const activeQuestions = new ActiveQuestions();
 const questionResponder = new QuestionResponder({ entry: id => ptys.get(id), current: currentQuestion,
   snapshot: id => ptys.get(id)?.filter.viewportText?.() || '' });
 const announcedQuestions = new Map();
+const announcedAsyncQuestions = new Map();
 
 function sessionNotificationPreference(id, change) {
   if (change && !ptys.has(id) && !(monitorService?.state?.agents || []).some(a => a.id === id)
@@ -482,10 +483,16 @@ function sessionNotificationPreference(id, change) {
 async function currentQuestion(id) {
   const entry = ptys.get(id);
   if (!entry || entry.ssh) return null;
-  const sessionId = agentSessionIds.get(id);
+  const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
   const root = accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
-  return activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
+  const result = await activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
     transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt });
+  // A resumed log can contain accepted calls whose queue no longer exists.
+  if (result?.question?.async) {
+    const screen = entry.filter.viewportText?.() || '';
+    if (!hasQueuedCodexQuestion(screen) && !codexQuestionFrame(screen)) return { ...result, question: null };
+  }
+  return result;
 }
 
 let questionPollRunning = false;
@@ -494,10 +501,20 @@ async function pollActiveQuestions() {
   questionPollRunning = true;
   try {
     activeQuestions.prune(ptys.keys());
+    for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
       const result = await currentQuestion(id);
       if (ptys.get(id) !== entry || !result) continue;
       const hook = monitorHooks.get(id);
+      if (result.question?.async) {
+        const identity = JSON.stringify([result.sessionId, result.question.id, result.question.answeredIndices]);
+        if (announcedAsyncQuestions.get(id) !== identity) {
+          announcedAsyncQuestions.set(id, identity);
+          sendEventToAll('chat:changed', { agentId: id });
+        }
+        continue; // Async questions leave the actual work status unchanged.
+      }
+      if (announcedAsyncQuestions.delete(id)) sendEventToAll('chat:changed', { agentId: id });
       if (result.question) {
         const q = result.question;
         if (hook?.question_id === q.id && hook.event === 'waiting') continue;
@@ -1024,7 +1041,8 @@ const sessionProviders = {
   },
   async submitPty(id, message) {
     const agentId = asString(id).trim();
-    if (questionResponder.isBusy(agentId) || (await currentQuestion(agentId))?.question) return false;
+    const pending = (await currentQuestion(agentId))?.question;
+    if (questionResponder.isBusy(agentId) || (pending && !pending.async)) return false;
     const value = asString(message);
     const syncedAgent = (monitorService?.state?.agents || [])
       .find((agent) => agent.id === agentId);
@@ -3483,7 +3501,10 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
     return { blocks: [], truncated: false, missing: true, tool: declaredTool, sessionId };
   }
   ensureChatWatch(transcriptPath); // push a refresh when the file changes
-  const result = await readChatTranscript(tool, transcriptPath);
+  const result = { ...await readChatTranscript(tool, transcriptPath) };
+  const liveQuestion = await currentQuestion(id);
+  if (liveQuestion?.sessionId === sessionId) result.pendingQuestion = liveQuestion.question;
+  else if (result.pendingQuestion?.async) result.pendingQuestion = null;
   try {
     const ingestInput = {
       agentId: id,

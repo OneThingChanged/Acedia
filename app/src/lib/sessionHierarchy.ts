@@ -1,4 +1,5 @@
 import type { Agent, Project, SessionHierarchy } from "../types";
+import { resolveProjectSettings } from "./projectHierarchy";
 
 export function normalizeSessionHierarchy(value: unknown): SessionHierarchy | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -66,12 +67,14 @@ export type ResolvedSessionSettings = {
 export function resolveSessionSettings(agent: Agent, agents: readonly Agent[], projects: readonly Project[] = []): ResolvedSessionSettings {
   const byId = new Map(agents.map((item) => [item.id, item]));
   const visited = new Set<string>();
+  const project = projects.find(item => item.id === agent.projectId);
+  const projectSettings = project ? resolveProjectSettings(project, projects) : undefined;
   function resolve(current: Agent): ResolvedSessionSettings {
     const hierarchy = normalizeSessionHierarchy(current.sessionHierarchy);
     const project = projects.find((item) => item.id === current.projectId);
-    const localFolder = (!current.sshHostId && hierarchy?.folderOverride) || current.folder || project?.folder || "";
-    const remoteFolder = hierarchy?.folderOverride || current.remoteFolder || project?.remoteFolder;
-    const base: ResolvedSessionSettings = { folder: localFolder, remoteFolder, modelSettings: current.modelSettings, instructions: hierarchy?.instructions || "" };
+    const localFolder = (!current.sshHostId && hierarchy?.folderOverride) || (project?.hierarchy?.inheritFolder || project?.hierarchy?.folderOverride ? projectSettings?.folder : undefined) || current.folder || project?.folder || "";
+    const remoteFolder = hierarchy?.folderOverride || (project?.hierarchy?.inheritFolder || project?.hierarchy?.folderOverride ? projectSettings?.remoteFolder : undefined) || current.remoteFolder || project?.remoteFolder;
+    const base: ResolvedSessionSettings = { folder: localFolder, remoteFolder, modelSettings: current.modelSettings || projectSettings?.models?.[current.aiToolId as "codex" | "claude"], instructions: hierarchy?.instructions || "" };
     if (visited.has(current.id)) return base;
     visited.add(current.id);
     const parent = hierarchy?.parentId ? byId.get(hierarchy.parentId) : undefined;
@@ -85,7 +88,9 @@ export function resolveSessionSettings(agent: Agent, agents: readonly Agent[], p
     if (hierarchy?.inheritModel === true && parent.aiToolId === current.aiToolId && !current.sshHostId) base.modelSettings = inherited.modelSettings;
     return base;
   }
-  return resolve(agent);
+  const result = resolve(agent);
+  result.instructions = [projectSettings?.instructions, result.instructions].filter(Boolean).join("\n\n");
+  return result;
 }
 
 export function removeSessionFromHierarchy(agents: Agent[], removedId: string, projects: readonly Project[] = []): Agent[] {

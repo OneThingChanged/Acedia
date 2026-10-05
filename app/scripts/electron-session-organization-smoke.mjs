@@ -11,7 +11,7 @@ async function exercise() {
   const wait = () => new Promise(resolve => setTimeout(resolve, 150));
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const find = selector => { const node = document.querySelector(selector); check(node, "Missing " + selector); return node; };
-  const click = async selector => { find(selector).click(); await wait(); };
+  const click = async selector => { const el = find(selector); if (el.click) el.click(); else el.dispatchEvent(new MouseEvent('click', { bubbles: true })); await wait(); };
   const button = text => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === text);
   const node = name => [...document.querySelectorAll('.org-node')].find(node => node.querySelector('strong')?.textContent === name);
   const stored = () => JSON.parse(localStorage.getItem('multiagent.agents.v1'));
@@ -22,6 +22,7 @@ async function exercise() {
   const before = launches().length;
   await click('.organization-sidebar-slot button');
   check(!document.querySelector('.files-shell'), 'Inspector replaces files in organization view');
+  const initialScope=find('[aria-label="Organization project"]');initialScope.value='project';initialScope.dispatchEvent(new Event('change',{bubbles:true}));await wait();
   button('All sessions 4').click(); await wait();
   check(document.querySelectorAll('.org-node').length === 3, 'Actual project hierarchy loaded');
   check(launches().length === before, 'Opening organization did not launch sessions');
@@ -69,6 +70,29 @@ async function exercise() {
   await click('.org-zoom [aria-label="Fit organization"]');
   const overview = find('[aria-label="Organization project"]'); overview.value = 'all'; overview.dispatchEvent(new Event('change', { bubbles: true })); await wait();
   check(document.querySelectorAll('.org-project-group').length === 2, 'Overview shows both projects');
+  await click('[data-project-card="project"] .pb-card-header');
+  const projectParent = find('[aria-label="Parent project"]'); projectParent.value = 'other-project'; projectParent.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  await click('.pb-inspector .org-save-section .btn-primary');
+  check(JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p => p.id === 'project').hierarchy.parentId === 'other-project', 'Project parent not saved');
+  await click('[data-project-card="other-project"] .pb-card-header');
+  check(find('[aria-label="Parent project"]').options.length === 1, 'Project cycle prevention missing');
+  const addRef = [...document.querySelectorAll('.pb-inspector .pb-text-button')].find(b => b.textContent.includes('Add')); addRef.click(); await wait();
+  const target = find('[aria-label="Connection target"]'); target.value = 'project'; target.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  await click('.pb-modal .btn-primary');
+  check(JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p => p.id === 'other-project').hierarchy.references[0].projectId === 'project', 'Cross-folder project reference not saved');
+  check(document.querySelectorAll('.pb-edge').length === 2, 'Parent and reference edges missing');
+  await click('.pb-edge.reference .pb-edge-hit');
+  check(find('.pb-edge-detail').textContent.includes('Selected connection'), 'Edge inspector missing');
+  [...document.querySelectorAll('.pb-edge-detail button')].find(b => b.textContent.includes('Disconnect')).click(); await wait();
+  check(document.querySelectorAll('.pb-edge.reference').length === 0, 'Reference edge was not disconnected');
+  await click('[aria-label="Undo"]');
+  check(document.querySelectorAll('.pb-edge.reference').length === 1, 'Reference undo failed');
+  await click('[aria-label="Redo"]');
+  check(document.querySelectorAll('.pb-edge.reference').length === 0, 'Reference redo failed');
+  await click('[aria-label="Undo"]');
+  await click('[data-project-card="project"] .pb-sessions .org-overview-row');
+  check(find('.org-inspector').textContent.includes('Parent session'), 'Existing session inspector unavailable from project board');
+  check(launches().length === started, 'Project board edits restarted sessions');
   await click('.browser-hub-sidebar-slot button');
   check(!document.querySelector('.session-organization'), 'Browser navigation still works');
   await click('.organization-sidebar-slot button');
@@ -82,6 +106,46 @@ async function exercise() {
   return { childId: child.id, before, started };
 }
 
+async function exerciseProjectBoard(win) {
+  const js = code => win.webContents.executeJavaScript(code);
+  const pause = () => new Promise(resolve => setTimeout(resolve, 200));
+  const assert = (ok, why) => { if (!ok) throw new Error(why); };
+  await js(`(() => { const s=document.querySelector('[aria-label="Organization project"]');s.value='all';s.dispatchEvent(new Event('change',{bubbles:true})); })()`); await pause();
+  const rect = selector => js(`(() => { const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}; })()`);
+  const drag = async (from, to) => {
+    win.webContents.sendInputEvent({ type:'mouseMove',x:Math.round(from.x),y:Math.round(from.y) });
+    win.webContents.sendInputEvent({ type:'mouseDown',button:'left',clickCount:1,x:Math.round(from.x),y:Math.round(from.y) }); await pause();
+    win.webContents.sendInputEvent({ type:'mouseMove',x:Math.round(to.x),y:Math.round(to.y) }); await pause();
+    win.webContents.sendInputEvent({ type:'mouseUp',button:'left',clickCount:1,x:Math.round(to.x),y:Math.round(to.y) }); await pause();
+  };
+  const header=await rect('[data-project-card="project"] .pb-card-header');
+  await drag({x:header.x+80,y:header.y+15},{x:header.x+176,y:header.y+63});
+  const saved=await js(`JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='project').boardPosition`);
+  assert(saved?.x>0 && saved?.y>0,'Real mouse drag did not save the card position');
+  await js(`document.querySelector('[aria-label="Undo"]').click()`); await pause();
+  assert(await js(`JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='project').boardPosition.x===0`),'Card drag undo failed');
+  await js(`document.querySelector('[aria-label="Redo"]').click()`); await pause();
+  assert(await js(`JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='project').boardPosition.x===${saved.x}`),'Card drag redo failed');
+  const board=await rect('.pb-viewport'),before=await js(`document.querySelector('.pb-world').style.transform`);
+  await drag({x:board.x+80,y:board.y+board.height-100},{x:board.x+160,y:board.y+board.height-70});
+  assert(await js(`document.querySelector('.pb-world').style.transform`)!==before,'Real mouse board pan failed');
+  const beforeZoom=await js(`document.querySelector('.org-zoom').textContent`);
+  win.webContents.sendInputEvent({type:'mouseWheel',x:Math.round(board.x+board.width/2),y:Math.round(board.y+board.height/2),deltaY:-120,deltaX:0});await pause();
+  assert(await js(`document.querySelector('.org-zoom').textContent`)!==beforeZoom,'Wheel zoom failed');
+  const mini=await rect('.pb-minimap'),beforeMini=await js(`document.querySelector('.pb-world').style.transform`);
+  await drag({x:mini.x+20,y:mini.y+20},{x:mini.x+50,y:mini.y+35});
+  assert(await js(`document.querySelector('.pb-world').style.transform`)!==beforeMini,'Minimap drag failed');
+  await js(`document.querySelector('[aria-label="Fit board"]').click()`);await pause();
+  const port=await rect('[data-project-card="project"] [data-port="reference"]'),target=await rect('[data-project-card="other-project"] .pb-card-header');
+  await drag({x:port.x+port.width/2,y:port.y+port.height/2},{x:target.x+60,y:target.y+20});
+  assert(await js(`!!document.querySelector('.pb-modal')`),'Port drag did not open the connection form');
+  await js(`document.querySelector('.pb-modal .btn-primary').click()`);await pause();
+  assert(await js(`JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='project').hierarchy.references[0].projectId==='other-project'`),'Port connection not persisted');
+  await fs.mkdir(path.resolve(root,'../output'),{recursive:true});
+  await fs.writeFile(path.resolve(root,'../output/project-relationship-board-native.png'),(await win.webContents.capturePage()).toPNG());
+  console.log('PROJECT_BOARD_NATIVE_DRAG_PAN_WHEEL_PORT_UNDO_REDO_OK');
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   const directory = process.env.ACEDIA_ORGANIZATION_SMOKE_DIRECTORY;
@@ -93,12 +157,14 @@ if (process.versions.electron) {
       win.webContents.on('console-message', details => { if (details.level === 'error') { errors.push(details.message); console.error(details.message); } });
       await win.loadFile(path.join(directory, 'index.html'));
       const result = await win.webContents.executeJavaScript('(' + exercise.toString() + ')()');
+      await exerciseProjectBoard(win);
       const loaded = new Promise(resolve => win.webContents.once('did-finish-load', resolve));
       win.webContents.reload(); await loaded;
       console.log(await win.webContents.executeJavaScript(`(async () => {
         const wait=()=>new Promise(resolve=>setTimeout(resolve,200));
         for(let i=0;i<40&&!document.querySelector('.organization-sidebar-slot');i++)await wait();
         document.querySelector('.organization-sidebar-slot button').click();await wait();
+        const scope=document.querySelector('[aria-label="Organization project"]');scope.value='project';scope.dispatchEvent(new Event('change',{bubbles:true}));await wait();
         [...document.querySelectorAll('.org-view-switch button')].find(b=>b.textContent.includes('All sessions')).click();await wait();
         const child=[...document.querySelectorAll('.org-node')].find(node=>node.querySelector('strong')?.textContent==='New child');
         if(!child)throw Error('Created child lost on reload');child.click();await wait();
@@ -106,6 +172,9 @@ if (process.versions.electron) {
         const catalog=JSON.parse(localStorage.getItem('multiagent.agents.v1'));const item=catalog.find(agent=>agent.id===${JSON.stringify(result.childId)});
         item.sessionHierarchy.parentId='root';localStorage.setItem('multiagent.agents.v1',JSON.stringify(catalog));window.dispatchEvent(new StorageEvent('storage',{key:'multiagent.agents.v1'}));await wait();
         if(document.querySelector('.org-inspector [aria-label="Parent session"]').value!=='root')throw Error('Peer hierarchy update not reflected');
+        const projects=JSON.parse(localStorage.getItem('multiagent.projects.v1'));
+        if(!projects.find(p=>p.id==='project').boardPosition?.x)throw Error('Board position lost on reload');
+        if(projects.find(p=>p.id==='project').hierarchy.references[0].projectId!=='other-project')throw Error('Project reference lost on reload');
         return 'ORGANIZATION_RELOAD_AND_PEER_SYNC_OK';
       })()`));
       for (const [width, height] of [[1600, 1000], [1280, 900], [800, 640]]) {

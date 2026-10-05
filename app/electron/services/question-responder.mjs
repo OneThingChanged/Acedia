@@ -1,5 +1,9 @@
 import { questionDetails } from '../shared/chat-prompt.mjs';
 import { stripVTControlCharacters } from 'node:util';
+export function hasQueuedCodexQuestion(raw) {
+  const screen = stripVTControlCharacters(String(raw || ''));
+  return /\b[1-9]\d*\s+questions?\b/i.test(screen) && /shift\s*\+\s*(?:↑|up)\s+to answer/i.test(screen);
+}
 
 export function codexQuestionFrame(raw) {
   // Callers supply the current xterm viewport, never flattened PTY scrollback.
@@ -16,7 +20,7 @@ export function codexQuestionFrame(raw) {
 
 export function validateQuestionAnswers(question, answers) {
   const { questions } = questionDetails(question);
-  if (!questions.length || questions.some(q => !q.id || !q.options.length || q.multiSelect) || new Set(questions.map(q => q.id)).size !== questions.length
+  if (!questions.length || questions.some(q => !q.id || q.multiSelect) || new Set(questions.map(q => q.id)).size !== questions.length
     || !Array.isArray(answers) || answers.length !== questions.length) throw new TypeError('Invalid question answers');
   return questions.map((q, i) => {
     const a = answers[i];
@@ -52,7 +56,10 @@ export class QuestionResponder {
       const initial = await this.current(id);
       const matches = result => result?.sessionId === request.sessionId && result.question?.id === request.questionId;
       if (!matches(initial)) throw new Error('This question has already changed or been answered');
-      const answers = validateQuestionAnswers(initial.question.question, request.answers);
+      const details = questionDetails(initial.question.question);
+      const remaining = details.questions.filter((_, i) => !(initial.question.answeredIndices || []).includes(i));
+      const rawRemaining = JSON.stringify({ questions: remaining.map(q => ({ id: q.id, question: q.text, options: q.options, multiSelect: q.multiSelect })) });
+      const answers = validateQuestionAnswers(rawRemaining, request.answers);
       const current = async () => {
         const result = await this.current(id);
         if (this.entry(id) !== entry || !matches(result) || result.question.question !== initial.question.question) throw new Error('The active question changed');
@@ -72,9 +79,15 @@ export class QuestionResponder {
         throw new Error('Native question form changed. Check the terminal.');
       };
       const write = async data => { await current(); wrote = true; entry.process.write(data); await this.wait(120); };
+      if (initial.question.async && !codexQuestionFrame(this.snapshot(id))) {
+        if (!hasQueuedCodexQuestion(this.snapshot(id))) throw new Error('Queued question unavailable. Check the terminal.');
+        await write('\x1b[1;2A');
+      }
       for (let i = 0; i < answers.length; i++) {
         const { question, optionIndex, text } = answers[i];
         const frame = await waitFrame(i);
+        const compact = value => String(value).replace(/\s/g, '');
+        if (initial.question.async && !compact(this.snapshot(id)).includes(compact(question.text))) throw new Error('A different queued question opened. Check the terminal.');
         if (frame.notes) throw new Error('The question was edited in the terminal');
         if (question.options.length) {
           const selected = optionIndex ?? question.options.length;
