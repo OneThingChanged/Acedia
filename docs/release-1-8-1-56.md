@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.56 verified session task delivery
 description: Deliver tasks to live Codex sessions through MCP, verify receipt and task start, prevent duplicate execution, and show delivery status.
-status: draft
+status: stable
 last_updated: 2026-10-05
 sources:
   - resource: workspace-mcp.md
@@ -40,3 +40,17 @@ sources:
 - EXE 생성과 packaged bridge·Dashboard·내장 Git·종료·트레이·보안 lifecycle 검증을 통과했다. 패키지의 관련 Electron 소스 **8개**, 별도 unpacked MCP 실행 파일과 renderer 파일 **3개**가 빌드 원본과 일치하고 재사용 APK도 일치했다.
 - 설치 파일 FileVersion **1.8.1.56**, manifest의 파일명·크기·SHA-256과 blockmap을 확인했다. `publish-github-exe.ps1 -VerifyOnly`를 통과했다. Authenticode는 기존 EXE 채널과 같은 **NotSigned**다.
 - 실제 사용자 설치 프로그램을 실행하거나 사용자 작업 세션에 모의 요청을 전달하지 않았다.
+
+## 공개 배포
+
+2026-10-05 **22:05:06 KST**, [v1.8.1.56](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.56)를 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 검증한 소스 `95b9a0f97ca7c512b66972f97f6dd15a0482ef17`이다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.56-x64.exe` | 151,268,876 | `86171f98981bfa7492d6d884e1754b9087ec9938cc7f57353ad892a2c2a1ff82` |
+| `Acedia-Setup-1.8.1.56-x64.exe.blockmap` | 159,395 | `531a2f221bc1cb12ab791d2ca7b1aafe61a55e19549303fef10a03dcdbdd2665` |
+| `latest-exe.json` | 256 | `ee3850d901a9ae9d8bb0fa6e0d3f897b87e34cd1d0f38c7447decd7ad5f6cb8c` |
+
+**22:06:00 KST**에 프로덕션 업데이터의 **1.8.1.54 및 1.8.1.55 → 1.8.1.56 감지**와 **1.8.1.55 기준 공개 EXE 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 크기·SHA-256, 최신 안정 릴리스, 소스 태그와 번들 APK 버전 **1.8.1.39**도 일치했다.
+
+Git 소스와 EXE 게시를 완료했다. 설정의 Check → Update로 적용하고 **CLI 세션을 다시 시작**하면 새 MCP 도구가 나타난다. 사용자 PC에 설치를 실행하지 않았으며 Microsoft Store와 새 APK 배포는 수행하지 않았다.
