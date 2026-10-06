@@ -4,11 +4,12 @@
 .pb-world{position:absolute;inset:0 auto auto 0;width:0;height:0;transform-origin:0 0;will-change:transform}
 .pb-edges{position:absolute;overflow:visible;inset:0;width:1px;height:1px;pointer-events:none}
 .pb-edge-line,.pb-wire{fill:none;stroke:#41c7a3;stroke-width:2}
+.pb-edge.folder .pb-edge-line{stroke:#79adf4}
 .pb-edge.reference .pb-edge-line,.pb-wire.reference{stroke:#af8eff;stroke-dasharray:7 6}
 .pb-edge.selected .pb-edge-line{stroke-width:4}
 .pb-edge-hit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer}
 .pb-edge-hit:focus{stroke:#5a91d455}
-.pb-card{position:absolute;overflow:visible!important;background:var(--app-panel,#171d25);border:1px solid var(--app-border,#303943);border-radius:9px;box-shadow:0 8px 24px #0003;user-select:none}
+.pb-card{position:absolute;display:flex;flex-direction:column;box-sizing:border-box;overflow:visible!important;background:var(--app-panel,#171d25);border:1px solid var(--app-border,#303943);border-radius:9px;box-shadow:0 8px 24px #0003;user-select:none}
 .pb-card.selected{border-color:#59a5ff;box-shadow:0 0 0 1px #59a5ff33}
 .pb-card.dimmed{opacity:.3}
 .pb-card-header{display:flex;align-items:center;gap:10px;padding:14px 16px 8px;cursor:grab;min-width:0}
@@ -17,7 +18,8 @@
 .pb-card-header small{font-size:10px;color:var(--app-muted,#8693a2)}
 .pb-card-header:focus{outline:1px solid #59a5ff;outline-offset:-3px}
 .pb-card-folder{font:10px monospace;color:var(--app-muted,#8e9aad);padding:0 16px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-bottom:1px solid var(--app-border,#303943)}
-.pb-sessions{padding:8px;min-height:36px}
+.pb-folder-badge{height:24px;box-sizing:border-box;padding:5px 16px;font-size:10px;color:#79adf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.pb-sessions{padding:8px;min-height:36px;flex:1}
 .pb-sessions .org-overview-row{width:calc(100% - 12px);min-height:41px;cursor:pointer}
 .pb-state{font-size:9px;color:#8997a8;white-space:nowrap}
 .pb-state.working,.pb-state.running{color:#4cccaa}
@@ -32,10 +34,12 @@
 .pb-history{display:flex;gap:6px;align-items:center}
 .pb-history button{background:transparent;border:1px solid var(--app-border,#303943);color:var(--app-text,#c8d4e1);border-radius:4px;cursor:pointer}
 .pb-history button:disabled{opacity:.35}
+.pb-history .pb-arrange{font-size:11px;padding:4px 8px;white-space:nowrap;color:#94bef5}
 .pb-history label{display:flex;gap:5px;font-size:10px;color:var(--app-muted,#8693a2);white-space:nowrap}
 .pb-legend{position:absolute;left:18px;bottom:47px;display:flex;gap:14px;padding:6px 10px;background:#111821e8;border:1px solid #303943;border-radius:5px;font-size:10px;pointer-events:none}
-.pb-legend span:first-child{color:#41c7a3}
-.pb-legend span:last-child{color:#af8eff}
+.pb-legend .folder{color:#79adf4}
+.pb-legend .parent{color:#41c7a3}
+.pb-legend .reference{color:#af8eff}
 .pb-minimap{position:absolute;right:16px;bottom:80px;border:1px solid var(--app-border,#303943);border-radius:7px;background:#131a23e8;cursor:crosshair;touch-action:none}
 .pb-minimap rect{fill:#2b384b;stroke:#3d526e;stroke-width:1}
 .pb-minimap .selected{fill:#375d85}
@@ -62,12 +66,13 @@
 .pb-modal .org-error:empty{display:none}
 .project-board .org-map{display:flex;flex-direction:column}
 .project-board .org-map-note{position:relative;flex-shrink:0}
-.project-board .org-search{max-width:280px;min-width:100px}
-.project-board .org-toolbar{gap:12px}
+.project-board .org-search{width:200px;max-width:280px;min-width:100px}
+.project-board .org-search input{width:100%;box-sizing:border-box;padding:0 9px}
+.project-board .org-toolbar{gap:12px;flex-wrap:wrap}
 .project-board .org-inspector{flex-shrink:0}
 .project-board button:focus-visible{outline:2px solid #75b8ff;outline-offset:2px}
 @media(max-width:1100px){.pb-minimap{width:140px;height:91px}
-.pb-legend{max-width:calc(100% - 22px);gap:9px;font-size:9px}
+.pb-legend{max-width:calc(100% - 22px);gap:9px;font-size:9px;flex-wrap:wrap}
 .pb-history label{display:none}
 .project-board .org-search{max-width:170px}
 .project-board .org-header p{max-width:400px}

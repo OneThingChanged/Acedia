@@ -146,6 +146,100 @@ async function exerciseProjectBoard(win) {
   console.log('PROJECT_BOARD_NATIVE_DRAG_PAN_WHEEL_PORT_UNDO_REDO_OK');
 }
 
+async function exerciseFolderBoard(win) {
+  const js = code => win.webContents.executeJavaScript(code);
+  await js(`(async () => {
+    const wait=()=>new Promise(resolve=>setTimeout(resolve,200));
+    const check=(condition,message)=>{if(!condition)throw Error(message)};
+    const scope=document.querySelector('[aria-label="Organization project"]');scope.value='all';scope.dispatchEvent(new Event('change',{bubbles:true}));await wait();
+    const projects=JSON.parse(localStorage.getItem('multiagent.projects.v1')),agents=JSON.parse(localStorage.getItem('multiagent.agents.v1'));
+    window.folderBoardOriginal={projects,agents,launches:window.organizationCalls.filter(c=>c.command==='spawn_pty').length};
+    const fixtures=[
+      {id:'folder-root',name:'Shared workspace',folder:'C:/BoardFixture',boardPosition:{x:700,y:700}},
+      {id:'folder-middle',name:'Dormant middle folder',folder:'C:/BoardFixture/Game'},
+      {id:'folder-leaf',name:'Plugin project',folder:'C:/BoardFixture/Game/Plugins/Plugin',boardPosition:{x:0,y:0}},
+      {id:'folder-sibling',name:'Tools project',folder:'C:/BoardFixture/Tools'},
+      {id:'folder-empty',name:'No process project',folder:'C:/EmptyFixture'}
+    ].map(p=>({...p,createdAt:2}));
+    localStorage.setItem('multiagent.projects.v1',JSON.stringify([...projects,...fixtures]));
+    localStorage.setItem('multiagent.agents.v1',JSON.stringify([...agents,...fixtures.map(p=>({id:p.id+'-agent',projectId:p.id,name:p.name+' session',folder:p.folder,aiToolId:'codex',createdAt:2}))]));
+    window.dispatchEvent(new StorageEvent('storage',{key:'multiagent.projects.v1'}));await wait();
+    for(const id of ['folder-root','folder-leaf','folder-sibling'])window.organizationEvent('pty:data',{id:id+'-agent',data:'',sequence:1});
+    await wait();
+    [...document.querySelectorAll('.org-view-switch button')].find(b=>b.textContent.includes('Active sessions')).click();await wait();
+    check(!document.querySelector('[data-project-card="folder-empty"]'),'Active view retained project without process');
+    check(!document.querySelector('[data-project-card="folder-middle"]'),'Active view retained inactive folder ancestor');
+    for(const id of ['folder-root','folder-leaf','folder-sibling'])check(document.querySelector('[data-project-card="'+id+'"]'),'Live project missing '+id);
+    check(document.querySelector('[data-project-card="folder-leaf"]').dataset.folderParent==='folder-root','Nearest visible folder ancestor missing');
+    check(document.querySelector('.pb-edge.folder[data-from="folder-root"][data-to="folder-leaf"]'),'Automatic folder edge missing');
+    check(document.querySelector('.pb-minimap').querySelectorAll('rect').length===document.querySelectorAll('[data-project-card]').length+1,'Minimap retained hidden projects');
+    check(![...document.querySelector('[aria-label="Organization project"]').options].some(o=>o.value==='folder-empty'),'Active project selector retained inactive project');
+    document.querySelector('.pb-arrange').click();await wait();
+    const root=document.querySelector('[data-project-card="folder-root"]'),leaf=document.querySelector('[data-project-card="folder-leaf"]');
+    check(parseFloat(leaf.style.top)>parseFloat(root.style.top)+parseFloat(root.style.height),'Hierarchy arrangement did not put child below parent');
+    const arranged=JSON.parse(localStorage.getItem('multiagent.projects.v1'));
+    check(arranged.find(p=>p.id==='folder-root').boardPosition.y===0,'Hierarchy arrangement not persisted');
+    check(arranged.filter(p=>p.id.startsWith('folder-')).every(p=>!p.hierarchy),'Automatic folder edges changed launch settings');
+    document.querySelector('[aria-label="Undo"]').click();await wait();
+    check(JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='folder-root').boardPosition.y===700,'Hierarchy arrangement undo failed');
+    document.querySelector('[aria-label="Redo"]').click();await wait();
+    check(JSON.parse(localStorage.getItem('multiagent.projects.v1')).find(p=>p.id==='folder-root').boardPosition.y===0,'Hierarchy arrangement redo failed');
+    document.querySelector('.pb-edge.folder[data-to="folder-leaf"] .pb-edge-hit').dispatchEvent(new MouseEvent('click',{bubbles:true}));await wait();
+    check(document.querySelector('.pb-folder-detail').textContent.includes('Dormant middle folder'),'Registered folder parent inspector missing');
+    check(document.querySelector('.pb-edge-detail').textContent.includes('Shared workspace'),'Visible folder connection inspector missing');
+    check(![...document.querySelectorAll('.pb-edge-detail button')].some(b=>b.textContent.includes('Disconnect')),'Physical folder relation incorrectly offered unlink');
+    check(document.querySelector('.pb-legend').textContent.includes('AGENTS.md'),'Folder legend missing');
+  })()`);
+  for (const width of [1280, 800]) {
+    win.setContentSize(width, 900);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const layout = await js(`(() => { const header=document.querySelector('.org-header'),toolbar=document.querySelector('.org-toolbar');return {width:innerWidth,page:document.documentElement.scrollWidth,header:[header.scrollWidth,header.clientWidth],toolbar:[toolbar.scrollWidth,toolbar.clientWidth]}; })()`);
+    if (layout.page > width || layout.header[0] > layout.header[1] + 1 || layout.toolbar[0] > layout.toolbar[1] + 1) {
+      await fs.writeFile(path.resolve(root,'../output/project-board-overflow-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
+      throw Error('Project board overflow '+JSON.stringify(layout));
+    }
+  }
+  win.setContentSize(1600, 1000); await new Promise(resolve => setTimeout(resolve, 200));
+  await fs.writeFile(path.resolve(root,'../output/project-board-folder-active.png'),(await win.webContents.capturePage()).toPNG());
+  const port = await js(`(() => { const r=document.querySelector('[data-project-card="folder-leaf"] [data-port="reference"]').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}; })()`);
+  win.webContents.sendInputEvent({type:'mouseMove',...port});
+  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...port});
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await js(`if(!document.querySelector('.pb-wire'))throw Error('Wire gesture not started');window.organizationEvent('pty:exit',{id:'folder-leaf-agent'});`);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await js(`if(document.querySelector('.pb-wire')||document.querySelector('[data-project-card="folder-leaf"]'))throw Error('Exited project retained wire gesture');`);
+  win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...port});
+  await js(`(async () => {
+    const wait=()=>new Promise(resolve=>setTimeout(resolve,200));
+    const check=(condition,message)=>{if(!condition)throw Error(message)};
+    window.organizationEvent('pty:exit',{id:'folder-leaf-agent'});await wait();
+    check(!document.querySelector('[data-project-card="folder-leaf"]'),'Exited project remained visible');
+    check(!document.querySelector('.pb-edge[data-to="folder-leaf"]'),'Exited project retained edge');
+    window.organizationEvent('pty:exit',{id:'folder-root-agent'});await wait();
+    check(!document.querySelector('[data-project-card="folder-root"]'),'Inactive root remained visible for a live child');
+    check(document.querySelector('[data-project-card="folder-sibling"]'),'Live child disappeared with inactive root');
+    check(!document.querySelector('.pb-edge.folder[data-to="folder-sibling"]'),'Hidden ancestor retained folder connection');
+    [...document.querySelectorAll('.org-view-switch button')].find(b=>b.textContent.includes('All sessions')).click();await wait();
+    check(document.querySelector('[data-project-card="folder-middle"]'),'All view did not restore dormant projects');
+    check(document.querySelector('.pb-edge.folder[data-from="folder-middle"][data-to="folder-leaf"]'),'All view did not restore nearest actual ancestor');
+    [...document.querySelectorAll('.org-view-switch button')].find(b=>b.textContent.includes('Active sessions')).click();await wait();
+    for(const agent of JSON.parse(localStorage.getItem('multiagent.agents.v1')))window.organizationEvent('pty:exit',{id:agent.id});
+    await wait();
+    check(document.querySelectorAll('[data-project-card]').length===0,'Empty Active view retained projects');
+    check(document.querySelectorAll('.pb-edge').length===0,'Empty Active view retained edges');
+    check(!document.querySelector('.pb-minimap'),'Empty Active view retained minimap');
+    check(document.querySelector('.org-empty').textContent.includes('No projects have active sessions'),'Empty Active state missing');
+    check(document.querySelector('.pb-arrange').disabled,'Empty Active view allowed layout save');
+    document.querySelector('.org-empty button').click();await wait();
+    check(document.querySelector('[data-project-card="folder-empty"]'),'Show all sessions did not recover projects');
+    check(window.organizationCalls.filter(c=>c.command==='spawn_pty').length===window.folderBoardOriginal.launches,'Board filtering or arrangement started sessions');
+    localStorage.setItem('multiagent.projects.v1',JSON.stringify(window.folderBoardOriginal.projects));
+    localStorage.setItem('multiagent.agents.v1',JSON.stringify(window.folderBoardOriginal.agents));
+    window.dispatchEvent(new StorageEvent('storage',{key:'multiagent.projects.v1'}));await wait();
+  })()`);
+  console.log('PROJECT_BOARD_ACTIVE_PROCESS_FILTER_FOLDER_TREE_ARRANGE_UNDO_EXIT_AND_EMPTY_OK');
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   const directory = process.env.ACEDIA_ORGANIZATION_SMOKE_DIRECTORY;
@@ -158,6 +252,7 @@ if (process.versions.electron) {
       await win.loadFile(path.join(directory, 'index.html'));
       const result = await win.webContents.executeJavaScript('(' + exercise.toString() + ')()');
       await exerciseProjectBoard(win);
+      await exerciseFolderBoard(win);
       const loaded = new Promise(resolve => win.webContents.once('did-finish-load', resolve));
       win.webContents.reload(); await loaded;
       console.log(await win.webContents.executeJavaScript(`(async () => {
@@ -199,7 +294,7 @@ if (process.versions.electron) {
   try {
     const { build } = await import('esbuild');
     await build({ entryPoints: [path.join(root, 'scripts/fixtures/session-organization-renderer.tsx')], bundle: true, jsx: 'automatic', define: { 'import.meta.env': '{}', '__MULTIAGENT_APP_VERSION__': JSON.stringify('organization-smoke') }, outfile: path.join(directory, 'renderer.js') });
-    await fs.writeFile(path.join(directory, 'index.html'), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><div id="root"></div><script>window.addEventListener("error",event=>console.error(event.error?.stack || event.message,JSON.stringify(window.organizationCalls?.slice(-12))));</script><script src="renderer.js"></script>');
+    await fs.writeFile(path.join(directory, 'index.html'), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><div id="root"></div><script>window.addEventListener("error",event=>console.error(event.error?.stack || event.message,JSON.stringify(window.organizationCalls?.slice(-12).map(call=>call.command))));</script><script src="renderer.js"></script>');
     const env = { ...process.env, ACEDIA_ORGANIZATION_SMOKE_DIRECTORY: directory }; delete env.ELECTRON_RUN_AS_NODE;
     await new Promise((resolve, reject) => {
       const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { cwd: root, env, stdio: 'inherit', windowsHide: true });

@@ -34,7 +34,7 @@ window.multiAgentElectron = {
     if (command === "resolve_cli_session") return args?.preferredSessionId || null;
     if (command === "prepare_worker_roles") return { documents: "C:/fixture/docs.toml", html: "C:/fixture/html.toml" };
     if (command === "document_browser_list") return { browsers: [] };
-    if (["session_web_servers", "subagent_list", "list_ports", "list_git_submodules"].includes(command)) return [];
+    if (["session_web_servers", "subagent_list", "list_ports", "list_git_submodules", "session_deliveries_get"].includes(command)) return [];
     if (command === "usage_rate_limits_get") return { updatedAt: Date.now(), limits: [] };
     if (command === "idle_preferences_get") return { revision: 0, enabled: false, minutes: 30 };
     if (command === "browser_preferences_get") return { revision: 0, home: "", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
