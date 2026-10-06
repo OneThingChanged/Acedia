@@ -5,7 +5,7 @@ import { createSessionUsageView } from './usage-sessions.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
-import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, inlineMd, mdToHtml } from "./chat-markup.js";
+import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml } from "./chat-markup.js";
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
@@ -2012,12 +2012,12 @@ async function downloadRemoteFile(file) {
   }
 }
 
-async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
-  if (!projectId || !relativePath) return;
+async function openRemoteHtmlPreview(projectId, relativePath, agentId = "", hostedUrl = "", hostedName = "") {
+  if ((!projectId && !hostedUrl) || !relativePath) return;
   const requestId = ++filePreviewRequest;
   if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
   resetFilePreviewContent();
-  filePreviewContext = { agentId, projectId, path: relativePath, kind: "html" };
+  filePreviewContext = hostedUrl ? null : { agentId, projectId, path: relativePath, kind: "html" };
   syncFileDownloadButtons();
   ui.filePreviewTitle.textContent = relativePath.split(/[\\/]/).pop() || relativePath;
   ui.filePreviewPath.textContent = relativePath;
@@ -2047,9 +2047,11 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
   const query = remoteFileQuery(projectId, relativePath, agentId);
   query.set("format", "json");
   try {
-    const response = await fetch(`/api/docs/preview?${query}`, {
+    const response = await fetch(hostedUrl ? '/api/hosting' : `/api/docs/preview?${query}`, {
       cache: "no-store", credentials: "same-origin",
       signal: AbortSignal.any([launch.controller.signal, AbortSignal.timeout(30000)]),
+      ...(hostedUrl ? { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'open-url', url: hostedUrl, name: hostedName }) } : {}),
     });
     const result = await response.json();
     if (requestId !== filePreviewRequest) return;
@@ -2059,10 +2061,28 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "") {
       throw error;
     }
     const previewUrl = new URL(result.url, window.location.origin);
-    if (previewUrl.origin !== window.location.origin || !/^\/preview\/[A-Za-z0-9_-]{43}\//.test(previewUrl.pathname)) {
+    const expectedPrefix = hostedUrl ? /^\/hosting-preview\/[A-Za-z0-9_-]{43}\// : /^\/preview\/[A-Za-z0-9_-]{43}\//;
+    if (previewUrl.origin !== window.location.origin || !expectedPrefix.test(previewUrl.pathname)) {
       throw new Error(t("올바른 미리보기 주소를 받지 못했습니다."));
     }
-    if (nativeExternal) {
+    if (hostedUrl) {
+      hostingLoaded = false;
+      const probe = await fetch(previewUrl.href, { method: 'HEAD', cache: 'no-store',
+        signal: AbortSignal.any([launch.controller.signal, AbortSignal.timeout(12000)]) });
+      if (!probe.ok) throw new Error(t('페이지에 연결할 수 없습니다. 개발 PC의 서버와 URL을 확인하세요.'));
+      if (requestId !== filePreviewRequest) return;
+      previewUrl.hash = new URL(hostedUrl).hash;
+    }
+    if (hostedUrl && window.__MULTIAGENT_NATIVE_APP__) {
+      // Existing APKs only accept /preview in their external-open bridge.
+      // Keep hosted scripts inside Hosting's isolated frame in the app shell.
+      htmlPreviewLaunch = null;
+      closeFilePreview();
+      hosting.openPreview(result.entry, previewUrl.href);
+      selectHosting();
+      return;
+    }
+    if (nativeExternal && !hostedUrl) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: "multiagent:open-external-preview",
         url: previewUrl.href,
@@ -3354,6 +3374,8 @@ function selectUsage() {
 async function sendInput(agentId, message, { quiet = false, requestId = submissionId() } = {}) {
   const text = message.trim();
   if (!agentId || !text) return false;
+  const previousConversation = { sessionId: chatHistoryStore.get(agentId)?.sessionId,
+    rawKey: rawChatKeys.get(agentId) || '0' };
   try {
     const { response, data: result } = await requestJson("/api/session/submit", {
       method: "POST",
@@ -3369,9 +3391,11 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
       throw new Error(result.error || `HTTP ${response.status}`);
     }
     uncertainSubmissions.delete(requestId);
-    if (text === "/clear") clearRemoteChatHistory(agentId);
+    if (/^\/clear(?:\s|$)/.test(text) || (agentMap().get(agentId)?.aiToolId === 'codex' && /^\/new(?:\s|$)/.test(text))) {
+      clearRemoteChatHistory(agentId, previousConversation);
+      if (!quiet) showToast(t('새 대화를 시작했습니다.'));
+    } else if (!quiet) showToast(t("전송했습니다."));
     setTimeout(() => fetchState({ quiet: true }), 250);
-    if (!quiet) showToast(t("전송했습니다."));
     return true;
   } catch (error) {
     if (!quiet) showToast(uncertainSubmissions.has(requestId)
@@ -3993,6 +4017,8 @@ const URL_RE = new RegExp(
 function openExternalUrl(uri) {
   const target = String(uri || "").trim();
   if (!target) return;
+  const localUrl = localHostingUrl(target);
+  if (localUrl) { void openRemoteHtmlPreview('', localUrl, '', localUrl, selectedAgent()?.name || ''); return; }
   window.open(target, "_blank", "noopener,noreferrer");
 }
 
@@ -4660,12 +4686,14 @@ const chatHistoryStore = new Map();
 const rawChatKeys = new Map();
 const pendingChatClears = new Map();
 
-function clearRemoteChatHistory(agentId) {
-  pendingChatClears.set(agentId, rawChatKeys.get(agentId) || "0");
+function clearRemoteChatHistory(agentId, previousConversation) {
+  pendingChatClears.set(agentId, previousConversation);
   chatHistoryStore.delete(agentId);
   if (chatAgent === agentId) {
     lastChatData = { blocks: [], missing: true };
     lastChatKey = "";
+    chatRequestSeq++; // Discard a transcript fetch that started before reset.
+    lastChatFetch = { id: null, at: 0 };
     renderChat(lastChatData);
   }
 }
@@ -4880,9 +4908,10 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     }
     const incoming = Array.isArray(data?.blocks) ? data.blocks : [];
     const incomingKey = rawChatKey(incoming);
-    const pendingClearKey = prepend ? undefined : pendingChatClears.get(agentId);
-    if (!prepend && pendingClearKey !== undefined) {
-      if (incomingKey === pendingClearKey) return;
+    const pendingClear = pendingChatClears.get(agentId);
+    if (pendingClear) {
+      if (pendingClear.sessionId ? !data.sessionId || data.sessionId === pendingClear.sessionId
+        : incomingKey === pendingClear.rawKey) return;
       pendingChatClears.delete(agentId);
     }
     rawChatKeys.set(agentId, incomingKey);
@@ -4909,6 +4938,9 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
       chatHistoryStore.set(agentId, { sessionId: data.sessionId || cached?.sessionId, data });
     } else if (data?.missing && previous.length) {
       data = { ...cached.data, lifecycle: data.lifecycle ?? cached.data.lifecycle, pendingQuestion: data.pendingQuestion ?? null };
+    }
+    if (!data?.error && !data?.unsupported && data?.sessionId && !blocks.length) {
+      chatHistoryStore.set(agentId, { sessionId: data.sessionId, data });
     }
     const last = blocks[blocks.length - 1];
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
@@ -5571,6 +5603,13 @@ ui.appShell.addEventListener("click", (event) => {
   const link = event.target.closest(".chat-file-link");
   if (!link) return;
   event.preventDefault();
+  const hostedUrl = localHostingUrl(link.dataset.chatHostingUrl);
+  if (hostedUrl) {
+    const path = new URL(hostedUrl).pathname;
+    const name = [link.dataset.chatHostingName, path.split('/').pop() || path].filter(Boolean).join(' · ');
+    void openRemoteHtmlPreview('', hostedUrl, '', hostedUrl, name);
+    return;
+  }
   void openChatFilePreview(
     String(link.dataset.chatFileAgent || ""),
     String(link.dataset.chatFileProject || ""),
@@ -5846,6 +5885,9 @@ ui.messageInput.addEventListener("keydown", (event) => {
   if (acItems.length) {
     if (event.key === "ArrowDown") { event.preventDefault(); acIndex = (acIndex + 1) % acItems.length; renderComposerAc(); return; }
     if (event.key === "ArrowUp") { event.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; renderComposerAc(); return; }
+    if (event.key === "Enter" && ui.messageInput.value.trim() === `/${acItems[acIndex][0]}`) {
+      event.preventDefault(); acItems = []; acTrigger = null; renderComposerAc(); void sendSelectedMessage(); return;
+    }
     if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); acceptComposerAc(acIndex); return; }
     if (event.key === "Escape") { event.preventDefault(); acItems = []; renderComposerAc(); return; }
   }

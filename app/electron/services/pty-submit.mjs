@@ -26,6 +26,8 @@ export async function submitPtyMessage({
   ptyProcess,
   message,
   encodeInput = value => value,
+  confirm = null,
+  confirmTimeoutMs = 8000,
   isCurrent = () => true,
   wait = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
   now = () => performance.now(),
@@ -57,6 +59,15 @@ export async function submitPtyMessage({
     }
     if (!isCurrent()) throw new Error("Terminal changed after paste; submission outcome unknown.");
     ptyProcess.write("\r");
+    if (confirm) {
+      const deadline = now() + confirmTimeoutMs;
+      while (!(await confirm())) {
+        if (!isCurrent() || now() >= deadline) {
+          throw new Error("Conversation reset was not confirmed; submission outcome unknown. Check the terminal before retrying.");
+        }
+        await wait(100);
+      }
+    }
     return true;
   } finally {
     // Once write() was attempted, do not report a safe-to-retry rejection.

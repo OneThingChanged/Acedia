@@ -51,6 +51,26 @@ describe("Remote chat file links", () => {
     expect(noProject).not.toContain("data-chat-file-path");
   });
 
+  it('routes local server links through Hosting in Markdown, plain text and code', () => {
+    const url = 'http://127.0.0.1:3010/docs/UIMapComparison.html?mode=side&x=1#overlay';
+    for (const message of [url, `\`${url}\``, `[항공뷰](${url})`, `(${url}).`]) {
+      const html = links.inlineMd(message, { ...agent, name: 'UI' });
+      expect(html).toContain('data-chat-hosting-url="http://127.0.0.1:3010/docs/UIMapComparison.html?mode=side&amp;x=1#overlay"');
+      expect(html).not.toContain('<a ');
+      expect(html).not.toContain('data-chat-file-path');
+    }
+    expect(links.inlineMd('[UI](http://localhost:3010/)', null)).toContain('data-chat-hosting-url');
+    expect(links.localHostingUrl('http://[::1]:3010/page.html')).toBe('http://[::1]:3010/page.html');
+  });
+
+  it('never automatically registers external, credentialed or unsupported URLs', () => {
+    for (const url of ['http://localhost.example.com:3010/a.html', 'http://192.168.0.1:3010/a.html',
+      'http://user:pass@localhost:3010/a.html', 'https://localhost:3010/a.html', 'http://localhost/a.html']) {
+      expect(links.localHostingUrl(url)).toBeNull();
+      expect(links.inlineMd(`[page](${url})`, agent)).not.toContain('data-chat-hosting-url');
+    }
+  });
+
   it("opens HTML links directly through the capability preview", () => {
     const start = appScript.indexOf("async function openChatHtmlDocument");
     const end = appScript.indexOf("async function openChatFilePreview", start);

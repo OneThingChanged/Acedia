@@ -65,6 +65,7 @@ import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs";
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
+import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
@@ -1119,10 +1120,23 @@ const sessionProviders = {
     const entry = ptys.get(agentId);
     const ptyProcess = entry?.process;
     if (!ptyProcess || !value.trim() || value.length > 8 * 1024) return false;
+    const resetting = !entry.ssh && entry.aiToolId === 'codex' && /^\/(?:clear|new)(?:\s|$)/.test(value.trim());
+    if (resetting && !deliveryComposerReady(entry)) return false;
+    const previousSessionId = agentSessionIds.get(agentId) || accountBindings.get(agentId)?.sessionId;
+    const isCurrent = () => ptys.get(agentId) === entry && entry.process === ptyProcess;
     return submitPtyMessage({
       ptyProcess,
       message: value,
-      isCurrent: () => ptys.get(agentId) === entry && entry.process === ptyProcess,
+      ...(resetting ? { confirm: async () => {
+        const sessionId = await confirmCodexConversationReset({ entry, previousSessionId, isCurrent,
+          sessionId: () => agentSessionIds.get(agentId) });
+        if (!isCurrent()) throw new Error('Terminal changed; submission outcome unknown.');
+        agentTranscripts.delete(agentId); agentTranscriptTool.delete(agentId); transcriptMissUntil.delete(agentId);
+        publishAgentHookEvent('agent:hook-event', { id: agentId, event: 'session-start',
+          hook_event_name: 'RemoteConversationReset', session_id: sessionId, cwd: entry.cwd, received_at: Date.now() });
+        return true;
+      } } : {}),
+      isCurrent,
     });
   },
   terminalSnapshot: (id, afterSequence) => terminalSessions.snapshotSince(id, afterSequence),

@@ -8,7 +8,7 @@ import { hostingUrl } from './remote-hosting.mjs';
 const cleanup=[];
 afterEach(async()=>{for(const fn of cleanup.splice(0).reverse())await fn();});
 it('hosts HTML and assets with isolated, revocable preview links',async()=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'hosting-test-')); cleanup.push(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'hosting-test-')); cleanup.push(()=>{expect(path.dirname(root)).toBe(path.resolve(os.tmpdir()));expect(path.basename(root)).toMatch(/^hosting-test-/);fs.rmSync(root,{recursive:true});});
  let received;
  const upstream=http.createServer((req,res)=>{ received=req.headers; res.setHeader('content-type',req.url.endsWith('.css')?'text/css':'text/html'); res.end(req.url.endsWith('.css')?'body{background:url(/img.png)}':'<html><head></head><body><img src="assets/a.png"><link href="/site.css"></body></html>'); });
  await new Promise(r=>upstream.listen(0,'127.0.0.1',r));cleanup.push(()=>new Promise(r=>upstream.close(r)));
@@ -29,4 +29,30 @@ it('hosts HTML and assets with isolated, revocable preview links',async()=>{
 it('rejects non-loopback, credentialed and unsupported targets',()=>{
  for(const value of ['https://example.com:443','http://192.168.0.1:80','http://localhost','file:///c:/x','http://a:b@127.0.0.1:4410']) expect(()=>hostingUrl(value)).toThrow();
  expect(hostingUrl('http://127.0.0.1:4410/a').pathname).toBe('/a');
+});
+
+it('automatically registers and reuses pages across concurrent clicks and restarts', async () => {
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'hosting-test-'));
+ cleanup.push(()=>{expect(path.dirname(root)).toBe(path.resolve(os.tmpdir()));fs.rmSync(root,{recursive:true});});
+ const service=new RemoteDashboardService({baseDir:root});service.config.server_port=0;
+ const status=await service.start();cleanup.push(()=>service.stop());
+ const api=body=>fetch(status.url+'/api/hosting',{method:body?'POST':'GET',headers:{'content-type':'application/json',origin:status.url},...(body?{body:JSON.stringify(body)}:{})});
+ const body={action:'open-url',name:'UI · 항공뷰',url:'http://127.0.0.1:3010/docs/compare.html?mode=side#overlay'};
+ const opened=await Promise.all(Array.from({length:4},()=>api(body).then(async r=>{expect(r.status).toBe(200);return r.json();})));
+ expect(new Set(opened.map(r=>r.entry.id)).size).toBe(1);
+ expect(new Set(opened.map(r=>r.url)).size).toBe(4);
+ expect(opened[0].url).toMatch(/\/docs\/compare.html\?mode=side$/);
+ expect((await(await api()).json()).entries).toHaveLength(1);
+ const {RemoteHosting}=await import('./remote-hosting.mjs');
+ expect(new RemoteHosting(root).store.get().entries[0].id).toBe(opened[0].entry.id);
+ expect((await api({action:'add',name:'manual duplicate',url:body.url})).status).toBe(400);
+ expect((await api({...body,url:status.url+'/'})).status).toBe(400);
+ expect((await api({...body,url:'http://example.com:3010/page.html'})).status).toBe(400);
+ const denied=await fetch(status.url+'/api/hosting',{method:'POST',headers:{origin:'https://other.test','content-type':'application/json'},body:JSON.stringify(body)});
+ expect(denied.status).toBe(403);
+ const first=service.hosting.store.get().entries[0];
+ service.hosting.store.set({entries:Array.from({length:64},(_,i)=>({...first,id:'entry-'+i,url:'http://127.0.0.1:3010/page-'+i+'.html'}))},service.hosting.store.get().revision);
+ expect((await api({...body,url:'http://127.0.0.1:3010/overflow.html'})).status).toBe(400);
+ expect((await api({...body,url:'http://127.0.0.1:3010/page-0.html'})).status).toBe(200);
+ expect(service.hosting.store.get().entries).toHaveLength(64);
 });

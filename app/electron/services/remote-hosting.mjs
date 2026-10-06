@@ -35,10 +35,12 @@ export class RemoteHosting {
     if (url.pathname !== '/api/hosting') return false;
     try {
       if (!allowed()) { sendJson(response, 403, { error: 'Cross-origin request blocked.' }); return true; }
-      const current = this.store.get();
-      if (request.method === 'GET') { sendJson(response, 200, current); return true; }
+      if (request.method === 'GET') { sendJson(response, 200, this.store.get()); return true; }
       if (request.method !== 'POST') { sendJson(response, 405, { error: 'Method not allowed.' }); return true; }
       const body = await readJson(request, 8192);
+      // Read after the asynchronous body so concurrent clicks see the latest
+      // registration. The ensure + ticket creation below is synchronous.
+      const current = this.store.get();
       if (body.action === 'add') {
         const target = hostingUrl(body.url);
         if (Number(target.port) === request.socket.localPort) throw new Error('Choose a local website, not this Remote server.');
@@ -51,8 +53,19 @@ export class RemoteHosting {
         this.store.set({ entries: current.entries.filter(e => e.id !== body.id) }, current.revision);
         for (const [token, ticket] of this.tickets) if (ticket.id === body.id) this.tickets.delete(token);
         sendJson(response, 200, this.store.get());
-      } else if (body.action === 'open') {
-        const entry = current.entries.find(e => e.id === body.id);
+      } else if (body.action === 'open' || body.action === 'open-url') {
+        let entry = current.entries.find(e => e.id === body.id);
+        if (body.action === 'open-url') {
+          const target = hostingUrl(body.url);
+          if (Number(target.port) === request.socket.localPort) throw new Error('Cannot host the Remote server itself.');
+          entry = current.entries.find(e => e.url === target.href);
+          if (!entry) {
+            const name = String(body.name || target.pathname).trim().slice(0, 100);
+            if (!name) throw new Error('Enter a name up to 100 characters.');
+            entry = { id: crypto.randomUUID(), name, url: target.href };
+            this.store.set({ entries: [...current.entries, entry] }, current.revision);
+          }
+        }
         if (!entry) throw new Error('Hosting entry not found.');
         const target = hostingUrl(entry.url);
         if (Number(target.port) === request.socket.localPort) throw new Error('Cannot host the Remote server itself.');
@@ -60,7 +73,7 @@ export class RemoteHosting {
         if (this.tickets.size >= 128) this.tickets.delete(this.tickets.keys().next().value);
         const token = crypto.randomBytes(32).toString('base64url');
         this.tickets.set(token, { id: entry.id, origin: target.origin, expires: Date.now() + 30 * 60_000 });
-        sendJson(response, 200, { url: `/hosting-preview/${token}${target.pathname}${target.search}`, expiresIn: 1800 });
+        sendJson(response, 200, { url: `/hosting-preview/${token}${target.pathname}${target.search}`, expiresIn: 1800, entry });
       } else throw new Error('Unknown Hosting action.');
     } catch (error) { sendJson(response, 400, { error: error.message }); }
     return true;

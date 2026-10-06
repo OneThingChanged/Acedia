@@ -52,6 +52,12 @@ export function createHostingView(root) {
     }
   }
   function clearPreview() { ++sequence; selectedId = null; previewUrl = ''; frame.removeAttribute('src'); frame.hidden = true; tools.hidden = true; external.removeAttribute('href'); }
+  function openPreview(entry, href) {
+    ++sequence;
+    if (!entries.some(e => e.id === entry.id)) entries.push(entry);
+    selectedId = entry.id; previewUrl = href; title.textContent = entry.name; external.href = href; tools.hidden = false;
+    frame.src = href; frame.hidden = false; render();
+  }
   async function show(entry) {
     const generation = ++sequence;
     const result = await api({action:'open',id:entry.id});
@@ -59,12 +65,16 @@ export function createHostingView(root) {
     const response = await fetch(result.url, { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error(t('페이지에 연결할 수 없습니다. 개발 PC의 서버와 URL을 확인하세요.'));
     if (generation !== sequence) return;
-    selectedId = entry.id; previewUrl = result.url; title.textContent = entry.name; external.href = previewUrl; tools.hidden = false;
-    frame.src = previewUrl; frame.hidden = false;
+    openPreview(entry, result.url);
   }
-  const load = () => run(async () => { entries = (await api()).entries; if (selectedId && !entries.some(e => e.id === selectedId)) clearPreview(); });
+  const load = () => run(async () => {
+    const generation = sequence, result = await api();
+    if (generation !== sequence) return;
+    entries = result.entries;
+    if (selectedId && !entries.some(e => e.id === selectedId)) clearPreview();
+  });
   form.onsubmit = event => { event.preventDefault(); void run(async () => { entries = (await api({action:'add',name:name.value,url:url.value})).entries; name.value = ''; url.value = ''; }); };
   refresh.onclick = () => void load();
   reload.onclick = () => { const entry = entries.find(e => e.id === selectedId); if (entry) void run(() => show(entry)); };
-  render(); return { load, translate };
+  render(); return { load, translate, openPreview };
 }

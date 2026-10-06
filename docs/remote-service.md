@@ -233,6 +233,30 @@ opaque-origin sandbox로 Remote DOM·로그인 저장소에서 격리하며 API 
 로그인·폼 제출·WebSocket·API 앱이나 LocalStorage 의존 페이지의 완전한 실행은 지원하지 않는다.
 
 구현: `app/electron/services/remote-hosting.mjs`, `app/electron/remote-pwa/hosting.js`.
+
+### 자동 Hosting 등록 및 대화 초기화 (1.8.1.57 source, publication pending)
+
+Remote·Dashboard 채팅의 로컬 HTTP 링크를 누르면 `open-url`이 해당 페이지를
+Hosting에 등록하고 바로 연다. Markdown·일반 URL·코드 안의 URL과 터미널 URL을
+지원하며, 같은 URL은 기존 등록을 재사용한다. query·fragment를 유지하고 클릭마다
+새 30분 미리보기 링크를 발급한다. 서버 연결 실패는 입력 창의 미리보기 메시지로
+알리며, 기존 인증·loopback·포트·64개 등록 제한은 그대로 적용한다. APK 외부 열기
+브리지의 지원 범위에 의존하지 않도록 앱에서는 Hosting의 격리 iframe에서 연다.
+
+정확한 slash 명령은 Enter 한 번으로 전송한다. Codex `/clear`·`/new`는 실제 새
+대화 ID를 확인한 뒤 성공을 보고한다. Codex 0.160.1은 해당 명령에서 SessionStart
+이벤트를 보내지 않아, 같은 PTY 전송 잠금 안에서 `/status`를 읽어 새 ID를 연결한다.
+이는 모델 요청을 추가하지 않는다. 확인 실패는 불확실한 전송으로 남겨 자동 재전송과
+화면만 지우기를 막는다. Remote는 전송 전 ID를 기준으로 이전 응답을 버리고, 빈 새
+대화도 캐시하여 세션 전환 후 이전 기록이 붙지 않게 한다. 저장된 과거 기록은 유지한다.
+
+명령의 의도는 [OpenAI 공식 명령 문서](https://learn.chatgpt.com/docs/developer-commands?surface=cli)의
+`/clear`·`/new` 설명을 따르며, 이벤트 미전달은 설치된 CLI로 별도 재현한 결과다.
+
+검증: `npm run codex:clear-smoke`는 격리된 프로필·가짜 응답 서버와 설치된 Codex로
+새 ID·새 문맥·기존 기록 보존을 확인한다. `npm run electron:remote-clear-hosting-smoke`는
+Remote·Dashboard 1280px·390px에서 자동 등록·중복 재사용·격리 미리보기·전송 실패 시
+입력 보존·Enter 초기화·늦은 이전 응답 차단·세션 재선택·새로고침과 기존 APK 경로를 확인한다.
 검증: `node app/scripts/electron-remote-hosting-smoke.mjs`는 1280px·390px에서 등록·열기,
 상대 이미지와 스크립트 실행, Remote DOM 접근 차단을 확인한다. 서비스 테스트는 인증,
 교차 출처 등록 차단과 제거 후 링크 만료를 확인한다. 2026-09-21 확인 시 위 예시의

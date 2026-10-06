@@ -1,6 +1,7 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["새 대화를 시작했습니다.","Started a new conversation."],
   ["세션별 사용량","Session usage"],
   ["오늘","Today"],
   ["최근 7일","Last 7 days"],

@@ -9,6 +9,28 @@ import {
 } from "./pty-submit.mjs";
 
 describe("PTY message submission", () => {
+  it('keeps the submission locked until a new conversation is confirmed', async () => {
+    let clock = 0, sessionId = 'before';
+    const writes = [], ptyProcess = { write: value => writes.push(value) };
+    await submitPtyMessage({ ptyProcess, message: '/clear', now: () => clock,
+      confirm: () => sessionId === 'after', wait: async ms => {
+        clock += ms;
+        if (writes.includes('\r')) {
+          expect(await submitPtyMessage({ ptyProcess, message: 'other' })).toBe(false);
+          if (clock >= 700) sessionId = 'after';
+        }
+      } });
+    expect(writes).toEqual(['/clear', '\r']);
+    expect(sessionId).toBe('after');
+  });
+  it('reports an unconfirmed reset as uncertain without sending another Enter', async () => {
+    let clock = 0;
+    const writes = [];
+    await expect(submitPtyMessage({ ptyProcess: { write: s => writes.push(s) }, message: '/clear',
+      confirm: () => false, confirmTimeoutMs: 300, now: () => clock, wait: async ms => { clock += ms; } }))
+      .rejects.toThrow('reset was not confirmed');
+    expect(writes).toEqual(['/clear', '\r']);
+  });
   it("preserves Unicode as unmodified UTF-16 key records while keeping paste controls intact", async () => {
     const writes = [];
     await submitPtyMessage({ ptyProcess: { write: s => writes.push(s) }, message: 'A·→🚀\n한',
