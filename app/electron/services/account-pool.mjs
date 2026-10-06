@@ -541,8 +541,11 @@ export class AccountPool {
         'content-type': nativeTool ? req.headers['content-type'] || 'application/json' : 'application/json',
         accept: req.headers.accept || 'text/event-stream, application/json', originator: 'codex_cli_rs' };
       if (nativeTool && req.headers['content-encoding']) headers['content-encoding'] = req.headers['content-encoding'];
+      // Native Codex uses hyphenated session/thread headers for cache affinity.
+      // Preserve its identities and turn state; never replace them with our agent ID.
       for (const key of Object.keys(req.headers)) if (typeof req.headers[key] === 'string'
-        && (/^(?:x-codex-|x-openai-|openai-)/.test(key) || ['version', 'originator', 'session_id', 'conversation_id', 'user-agent'].includes(key))) headers[key] = req.headers[key];
+        && (/^(?:x-codex-|x-openai-|openai-)/.test(key)
+          || ['version', 'originator', 'session-id', 'thread-id', 'x-client-request-id', 'session_id', 'conversation_id', 'user-agent'].includes(key))) headers[key] = req.headers[key];
       const origin = lease && this.upstream === DEFAULT_UPSTREAM ? backendOrigin(a.backendOrigin) : null;
       const target = origin ? origin + '/backend-api/codex' : this.upstream;
       const send = () => {
@@ -571,7 +574,8 @@ export class AccountPool {
       const responseHeaders = { 'content-type': contentType, 'cache-control': 'no-store', 'x-accel-buffering': 'no' };
       for (const key of ['x-codex-turn-state', 'x-request-id', 'retry-after']) if (upstream.headers.get(key)) responseHeaders[key] = upstream.headers.get(key);
       res.writeHead(upstream.status, responseHeaders);
-      const streaming = contentType.toLowerCase().includes('text/event-stream');
+      let streaming = contentType.toLowerCase().includes('text/event-stream');
+      let formatKnown = streaming || !modelRequest || endpoint !== '/responses';
       const decoder = new StringDecoder('utf8');
       const inspectionLimit = 2 * 1024 * 1024;
       let tail = '', eventName = '', dataLines = [], eventLength = 0, oversized = false;
@@ -625,11 +629,22 @@ export class AccountPool {
         }
         if (tail.length > inspectionLimit) { tail = ''; oversized = true; dataLines = []; }
       };
+      const readBody = (final = false) => {
+        // The Codex backend can label SSE as application/json. Detect framing
+        // before forwarding each chunk so an early client close retains usage.
+        // Wait for split field names; a real JSON response remains JSON.
+        if (!formatKnown) {
+          const prefix = tail.trimStart();
+          if (/^(?:data|event|id|retry):|^:/.test(prefix)) { streaming = true; formatKnown = true; }
+          else if (prefix && !['data:', 'event:', 'id:', 'retry:', ':'].some(field => field.startsWith(prefix))) formatKnown = true;
+        }
+        if (streaming) readLines(final);
+        else if (tail.length > inspectionLimit) { tail = ''; oversized = true; formatKnown = true; }
+      };
       if (upstream.body) for await (const chunk of upstream.body) {
         if (!nativeTool) {
           tail += decoder.write(Buffer.from(chunk));
-          if (streaming) readLines();
-          else if (tail.length > inspectionLimit) { tail = ''; oversized = true; }
+          readBody();
         }
         if (!res.write(chunk)) await new Promise((resolve, reject) => {
           const cleanup = () => { res.off('drain', drained); res.off('close', closed); };
@@ -639,7 +654,8 @@ export class AccountPool {
         });
       }
       tail += decoder.end();
-      if (streaming) { readLines(true); if (tail) line(tail); dispatch(); }
+      readBody(true);
+      if (streaming) { if (tail) line(tail); dispatch(); }
       else if (!oversized && tail) inspect(tail);
       if (record.status !== 'failed') record.status = !nativeTool && streaming && !record.completionObserved ? 'failed' : 'completed';
       res.end();

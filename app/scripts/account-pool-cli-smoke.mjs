@@ -15,9 +15,11 @@ const pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, fe
   calls.push({ url, account: options.headers['chatgpt-account-id'] });
   if (url.includes('/models')) return new Response('{"models":[]}', { headers: { 'content-type': 'application/json' } });
   const request = JSON.parse(options.body); assert.equal(request.stream, true); assert.ok(Array.isArray(request.input));
+  assert.equal(options.headers['session-id'], request.prompt_cache_key, 'The native cache identity must reach upstream unchanged.');
+  assert.ok(options.headers['thread-id']); assert.equal(options.headers['x-client-request-id'], options.headers['thread-id']);
   calls.at(-1).input = request.input;
   const item = { id: 'message_fixture', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'POOL_FIXTURE_OK', annotations: [] }] };
-  const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: request.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
+  const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: request.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15, input_tokens_details: { cached_tokens: 4 } } };
   const events = [{ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
     { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } },
     { type: 'response.content_part.added', item_id: item.id, output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } },
@@ -32,7 +34,7 @@ const pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0, fe
       controller.enqueue(new TextEncoder().encode(stream));
       options.signal.addEventListener('abort', () => controller.error(new Error('fixture client finished reading')), { once: true });
     } }) : stream;
-  return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(body, { headers: { 'content-type': calls.filter(c => c.url.endsWith('/responses')).length % 2 ? 'application/json' : 'text/event-stream' } });
 } });
 let rpc;
 try {
@@ -85,7 +87,9 @@ try {
   assert.equal(records.length, 5);
   assert.ok(records.every(r => r.status === 'completed' && r.completionObserved && r.usageReported));
   assert.equal(records.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0), 75);
+  assert.equal(records.reduce((sum, r) => sum + r.cachedTokens, 0), 20);
   console.log('ACCOUNT_POOL_REAL_CLI_RPC_AND_STREAM_OK');
+  console.log('ACCOUNT_POOL_CACHE_HEADERS_AND_JSON_LABELLED_STREAM_OK');
   console.log('ACCOUNT_POOL_EXCLUDED_ACCOUNT_RESUME_OK');
 } finally {
   rpc?.close(); pool.close();

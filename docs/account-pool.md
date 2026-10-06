@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 계정 분산
 description: 기존 Dashboard에서 전용 계정을 등록하고 로컬 Codex 세션을 계정별로 배분하는 자체 기능.
 status: stable
-last_updated: 2026-10-03
+last_updated: 2026-10-06
 sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
@@ -165,6 +165,30 @@ Codex 도구 요청도 고정된 계정의 Codex backend 아래로 전달한다.
 이미지 결과·검색 결과·MCP 호출, 동일 계정 인증 갱신, 계정 제외 후 실제 TUI의 동일 대화
 resume과 이전 메시지 보존을 검사한다. 실제 상용 이미지 생성이나 외부 Apps 계정 연결을
 검증한 것은 아니며, 로컬 fixture 인증서를 시스템 신뢰 저장소에 설치하지 않는다.
+
+## 캐시 연결과 스트림 집계 (소스 1.8.1.59)
+
+Codex가 보내는 `session-id`, `thread-id`, `x-client-request-id`를 상위 서버로
+그대로 전달한다. 이전 밑줄 형태의 헤더도 유지한다. 요청 본문과 `prompt_cache_key`를
+변경하거나 서로 다른 세션에 같은 식별자를 부여하지 않는다. `x-codex-turn-state`는
+CLI가 관리하는 턴 범위 그대로 전달하며, 인증 갱신은 같은 계정에서 수행한다.
+
+상위 서버가 SSE를 `application/json`으로 표시하더라도 `/responses` 본문의 실제
+이벤트 형식을 확인해 완료·실패와 입력·출력·캐시 토큰을 기록한다. 실제 JSON 응답,
+UTF-8·CRLF·필드명이 청크 경계에서 나뉜 응답과 큰 이벤트도 구분한다. 전달하는 응답
+바이트와 헤더는 유지한다. 완료 후 CLI가 연결을 닫으면 완료와 사용량을 보존하고,
+완료 전에 끊긴 요청은 중단으로 기록한다. 반복된 사용량 스냅샷은 더하지 않는다.
+
+이 수정은 이후 요청의 기록에 적용한다. 과거 요청의 누락된 토큰이나 모호한 취소
+기록을 추정해 보충하지 않는다. 캐시 연결 헤더 보존은 격리된 실제 CLI로 검증하지만,
+상용 서버의 캐시 재사용률·구독 한도 개선 폭은 업데이트 후 별도 확인이 필요하다.
+
+검증: `account-pool.test.mjs`, `account-pool-native.test.mjs`,
+`account-pool:cli-smoke`, `account-pool:tools-smoke`. 실제 CLI 검사는 임시 홈,
+모의 계정과 로컬 모델·도구 응답을 사용한다.
+2026-10-06 관련 회귀 검사 111개, TypeScript/Vite 빌드와 Codex CLI 0.160.1의
+직접·native 연결 검사를 통과했다. 같은 계정 인증 갱신, 서로 다른 계정의 세션
+식별자, 도구 호출, 턴 내 상태 전달과 계정 제외 후 같은 대화 이어받기를 확인했다.
 
 ## 인증과 기록
 

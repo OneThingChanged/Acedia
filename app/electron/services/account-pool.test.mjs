@@ -231,7 +231,8 @@ describe('Acedia account pool', () => {
     expect(reopened.account(id).stats).toMatchObject({ cancelled: 0, legacyDisconnected: 80 });
     reopened.close();
   });
-  it.each([false, true])('keeps completion when the client closes after its final event (usage: %s)', async usage => {
+  it.each(['text/event-stream', 'application/json'].flatMap(contentType => [false, true].map(usage => ({ contentType, usage }))))
+  ('keeps completion when the client closes after its final event ($contentType, usage: $usage)', async ({ contentType, usage }) => {
     const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
       start(controller) {
         const event = { type: 'response.completed', response: { id: 'r1',
@@ -239,7 +240,7 @@ describe('Acedia account pool', () => {
         controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify(event) + '\n\n'));
         options.signal.addEventListener('abort', () => controller.error(new Error('client finished reading')), { once: true });
       },
-    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    }), { headers: { 'content-type': contentType } }) });
     const id = add(pool, 'A'); await pool.setEnabled(true);
     const launch = await pool.launch('completed');
     const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
@@ -255,13 +256,13 @@ describe('Acedia account pool', () => {
     expect(pool.account(id).stats).toMatchObject({ requests: 1, failures: 0, cancelled: 0,
       measuredRequests: usage ? 1 : 0, unmeasuredRequests: usage ? 0 : 1 });
   });
-  it('keeps an explicit failure when the client closes after the error event', async () => {
+  it.each(['text/event-stream', 'application/json'])('keeps an explicit failure when the client closes after the error event (%s)', async contentType => {
     const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"type":"response.failed"}\n\n'));
         options.signal.addEventListener('abort', () => controller.error(new Error('client read the error')), { once: true });
       },
-    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    }), { headers: { 'content-type': contentType } }) });
     const id = add(pool, 'A'); await pool.setEnabled(true);
     const launch = await pool.launch('failed');
     const response = await fetch(`http://127.0.0.1:${pool.server.address().port}/provider/responses`, {
@@ -273,34 +274,34 @@ describe('Acedia account pool', () => {
     expect(pool.state.recent.at(-1)).toMatchObject({ status: 'failed', completionObserved: false });
     expect(pool.account(id).stats).toMatchObject({ failures: 1, cancelled: 0 });
   });
-  it('reads multiline SSE data and event names across byte and CRLF boundaries', async () => {
-    const text = ': keepalive\r\nevent: response.completed\r\ndata: {"response":\r\ndata: {"usage":{"input_tokens":12,"output_tokens":3,"cached_input_tokens":4},"note":"완료"}}\r\n\r\n';
+  it.each(['text/event-stream', 'application/json'])('reads multiline SSE data and event names across byte and CRLF boundaries (%s)', async contentType => {
+    const text = '\uFEFF\r\n: keepalive\r\nevent: response.completed\r\ndata: {"response":\r\ndata: {"usage":{"input_tokens":12,"output_tokens":3,"cached_input_tokens":4},"note":"완료"}}\r\n\r\n';
     const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({
       start(controller) { for (const byte of new TextEncoder().encode(text)) controller.enqueue(Uint8Array.of(byte)); controller.close(); },
-    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    }), { headers: { 'content-type': contentType } }) });
     const id = add(pool, 'A'); await pool.setEnabled(true);
-    expect((await request(pool, 'multiline')).text).toBe(text);
+    expect((await request(pool, 'multiline')).text).toBe(text.replace(/^\uFEFF/, ''));
     expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true,
       usageReported: true, inputTokens: 12, outputTokens: 3, cachedTokens: 4 });
     expect(pool.account(id).stats).toMatchObject({ measuredRequests: 1, failures: 0, inputTokens: 12, outputTokens: 3 });
   });
-  it('does not count cumulative usage snapshots twice and preserves measured zero', async () => {
+  it.each(['text/event-stream', 'application/json'])('does not count cumulative usage snapshots twice and preserves measured zero (%s)', async contentType => {
     let text = 'data: {"type":"response.created","response":{"usage":{"input_tokens":10,"output_tokens":2}}}\n\n'
       + 'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3}}}\n\n';
-    const { pool } = fixture({ fetchImpl: async () => new Response(text, { headers: { 'content-type': 'text/event-stream' } }) });
+    const { pool } = fixture({ fetchImpl: async () => new Response(text, { headers: { 'content-type': contentType } }) });
     const id = add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'snapshots');
     text = 'data: {"type":"response.completed","response":{"usage":{"input_tokens":0,"output_tokens":0}}}\n\n';
     await request(pool, 'zero');
     expect(pool.state.recent.at(-1)).toMatchObject({ usageReported: true, inputTokens: 0, outputTokens: 0 });
     expect(pool.account(id).stats).toMatchObject({ measuredRequests: 2, inputTokens: 12, outputTokens: 3 });
   });
-  it('preserves forwarding and reads later completion after an oversized SSE event', async () => {
+  it.each(['text/event-stream', 'application/json'])('preserves forwarding and reads later completion after an oversized SSE event (%s)', async contentType => {
     const prefix = 'data: {"type":"response.output_text.delta","delta":"' + 'x'.repeat(2 * 1024 * 1024);
     const suffix = '"}\n\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3}}}\n\n';
     const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({ start(controller) {
       controller.enqueue(new TextEncoder().encode(prefix));
       controller.enqueue(new TextEncoder().encode(suffix)); controller.close();
-    } }), { headers: { 'content-type': 'text/event-stream' } }) });
+    } }), { headers: { 'content-type': contentType } }) });
     add(pool, 'A'); await pool.setEnabled(true);
     const { text } = await request(pool, 'oversized');
     expect(text.length).toBe(prefix.length + suffix.length);
@@ -324,6 +325,35 @@ describe('Acedia account pool', () => {
     expect(pool.state.recent.map(record => record.status)).toEqual(['failed', 'failed']);
     expect(pool.account(id).stats).toMatchObject({ failures: 2, cancelled: 0, measuredRequests: 2 });
   });
+  it('keeps fragmented, formatted JSON responses distinct from stream framing', async () => {
+    const text = ' \r\n' + JSON.stringify({ status: 'completed', note: 'event: response.failed\ndata: {"usage":{"input_tokens":999}}',
+      usage: { input_tokens: 12, output_tokens: 3, input_tokens_details: { cached_tokens: 4 } } }, null, 2);
+    const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({ start(controller) {
+      for (const byte of new TextEncoder().encode(text)) controller.enqueue(Uint8Array.of(byte)); controller.close();
+    } }), { headers: { 'content-type': 'application/json' } }) });
+    add(pool, 'A'); await pool.setEnabled(true);
+    expect((await request(pool, 'json-response')).text).toBe(text);
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true,
+      usageReported: true, inputTokens: 12, outputTokens: 3, cachedTokens: 4 });
+  });
+  it.each(['data', 'event', 'id', 'retry'])('detects a JSON-labelled SSE stream starting with a fragmented %s field', async field => {
+    const data = '{"response":{"status":"completed","usage":{"input_tokens":12,"output_tokens":3}}}';
+    const prefix = { data: '', event: 'event: response.completed\n', id: 'id: first\n', retry: 'retry: 5000\n' }[field];
+    const text = prefix + 'data: ' + data + '\n\n';
+    const { pool } = fixture({ fetchImpl: async () => new Response(new ReadableStream({ start(controller) {
+      for (const byte of new TextEncoder().encode(text)) controller.enqueue(Uint8Array.of(byte)); controller.close();
+    } }), { headers: { 'content-type': 'application/json' } }) });
+    add(pool, 'A'); await pool.setEnabled(true);
+    expect((await request(pool, 'fragmented-prefix')).text).toBe(text);
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true, usageReported: true, inputTokens: 12 });
+  });
+  it.each(['data: {"type":"response.created"}\n\n', 'event: response.created\ndata: {}\n\n'])
+  ('does not report a JSON-labelled stream as complete when it ends without completion (%s)', async text => {
+    const { pool } = fixture({ fetchImpl: async () => new Response(text, { headers: { 'content-type': 'application/json' } }) });
+    const id = add(pool, 'A'); await pool.setEnabled(true); await request(pool, 'missing-completion');
+    expect(pool.state.recent.at(-1)).toMatchObject({ status: 'failed', completionObserved: false, usageReported: false });
+    expect(pool.account(id).stats).toMatchObject({ failures: 1, cancelled: 0, unmeasuredRequests: 1 });
+  });
   it('orders recent requests by their displayed start time when streams finish out of order', async () => {
     let now = Date.now(), finishFirst, calls = 0;
     const { pool } = fixture({ now: () => now, fetchImpl: async () => ++calls === 1
@@ -341,13 +371,13 @@ describe('Acedia account pool', () => {
     now += 10_000; await request(pool, 'later'); finishFirst(); await first.text();
     expect(pool.snapshot().recent.map(record => record.sessionId)).toEqual(['later', 'earlier']);
   });
-  it('counts a client-aborted successful HTTP stream as cancelled, not failed or zero measured tokens', async () => {
+  it.each(['text/event-stream', 'application/json'])('counts an interrupted HTTP stream as cancelled with usage missing (%s)', async contentType => {
     const { pool } = fixture({ fetchImpl: async (_url, options) => new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"type":"response.created"}\n\n'));
         options.signal.addEventListener('abort', () => controller.error(new Error('client disconnected')), { once: true });
       },
-    }), { headers: { 'content-type': 'text/event-stream' } }) });
+    }), { headers: { 'content-type': contentType } }) });
     const accountId = add(pool, 'A'); await pool.setEnabled(true);
     const launch = await pool.launch('interrupted');
     const abort = new AbortController();

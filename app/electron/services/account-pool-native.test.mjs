@@ -101,6 +101,40 @@ describe('routed native tool credentials', () => {
     expect(f.requests[0].headers['x-codex-turn-metadata']).toBe('native-metadata');
     expect(f.pool.account(f.accounts[0]).stats).toMatchObject({ requests: 1, measuredRequests: 1, inputTokens: 12, outputTokens: 3 });
   });
+  it.each(['identity', 'gzip', 'zstd'])('preserves cache affinity and JSON bytes for %s requests on separate native accounts', async encoding => {
+    const f = await fixture();
+    for (const [index, name] of ['one', 'two'].entries()) {
+      await f.pool.launchNative(name, f.accounts[index], null, f.context);
+      const body = ` { "model": "fixture", "stream": true, "prompt_cache_key": "cache-${name}", "input": [] } `;
+      const wire = encoding === 'identity' ? body : (encoding === 'gzip' ? gzipSync : zstdCompressSync)(Buffer.from(body));
+      const identity = { 'session-id': `cache-${name}`, 'thread-id': `thread-${name}`, 'x-client-request-id': `thread-${name}`,
+        'x-codex-turn-state': `turn-${name}`, session_id: `legacy-${name}`, conversation_id: `conversation-${name}` };
+      expect((await request(f.runtimes[index], { body: wire, headers: { ...identity, 'content-encoding': encoding,
+        cookie: 'must-not-forward', 'x-unrelated': 'must-not-forward' } })).status).toBe(200);
+      const sent = f.requests.at(-1);
+      expect(sent.headers).toMatchObject({ ...identity, 'chatgpt-account-id': `chatgpt-${index === 0 ? 'A' : 'B'}` });
+      expect(sent.body.toString()).toBe(body);
+      expect(sent.headers.cookie).toBeUndefined(); expect(sent.headers['x-unrelated']).toBeUndefined();
+      expect(sent.headers['content-encoding']).toBeUndefined();
+    }
+  });
+  it('preserves native cache identity through same-account authentication refresh', async () => {
+    const f = await fixture(); await f.pool.launchNative('one', f.accounts[0], null, f.context);
+    const calls = [];
+    f.pool.credentials = vi.fn(async () => ({ access_token: 'renewed-local-token', account_id: 'chatgpt-A' }));
+    f.pool.fetch = async (_url, options) => {
+      calls.push({ headers: { ...options.headers }, body: options.body.toString() });
+      return calls.length === 1 ? new Response('{}', { status: 401 })
+        : new Response('data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3,"cached_input_tokens":4}}}\n\n',
+          { headers: { 'content-type': 'application/json', 'x-codex-turn-state': 'server-turn-state' } });
+    };
+    const identity = { 'session-id': 'cache-one', 'thread-id': 'thread-one', 'x-client-request-id': 'thread-one', 'x-codex-turn-state': 'turn-one' };
+    const body = '{"model":"fixture","stream":true,"prompt_cache_key":"cache-one","input":[]}';
+    expect((await request(f.runtimes[0], { body, headers: identity })).status).toBe(200);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) { expect(call.headers).toMatchObject({ ...identity, 'chatgpt-account-id': 'chatgpt-A' }); expect(call.body).toBe(body); }
+    expect(f.pool.state.recent.at(-1)).toMatchObject({ status: 'completed', completionObserved: true, usageReported: true, cachedTokens: 4 });
+  });
   it('protects the TUI socket with a per-launch token and rejects browser origins', async () => {
     const f = await fixture(); const launch = await f.pool.launchNative('one', null, null, f.context);
     const url = launch.args[1];

@@ -86,6 +86,13 @@ Receiving a completion event takes precedence over a later client disconnect.
 Historical disconnect counts are preserved separately because older records
 cannot establish whether completion preceded the disconnect.[^account-pool]
 
+Source 1.8.1.59 also detects Responses SSE framing when the upstream labels the
+stream `application/json`. Completed streams therefore retain reported tokens
+when the CLI closes before EOF, while ordinary JSON, explicit failures and
+interrupted streams keep their own outcomes. Previously unmeasured request
+usage is not reconstructed from transcript timestamps or added to response
+totals.[^account-pool]
+
 ## Local storage
 
 SQLite runs in WAL mode and stores event identity, time, project, agent,

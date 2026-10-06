@@ -74,11 +74,12 @@ const configArgs = Object.entries({ model: 'gpt-6-astra', chatgpt_base_url: base
 }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`]);
 configArgs.push('--profile', 'fixture');
 function stream(body, item) {
-  const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: body.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
+  const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: body.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15, input_tokens_details: { cached_tokens: 4 } } };
   const events = [{ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
     { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress' } },
     { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
-  return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''),
+    { headers: { 'content-type': 'application/json', 'x-codex-turn-state': 'fixture-turn-state' } });
 }
 pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
   command: () => ({ file: binary, args: ['app-server'] }),
@@ -102,8 +103,11 @@ pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
     }
     const body = JSON.parse(options.body); const text = JSON.stringify(body);
     assert.ok(text.includes('PROFILE_FIXTURE_MARKER'), 'The named profile must reach the native thread.');
+    assert.equal(options.headers['session-id'], body.prompt_cache_key);
+    assert.ok(options.headers['thread-id']); assert.equal(options.headers['x-client-request-id'], options.headers['thread-id']);
     const account = options.headers['chatgpt-account-id'];
-    responses.push({ account, image: text.includes('image_gen__imagegen'), web: /web__|web_search/.test(text), mcp: text.includes('account_fixture'), input: body.input });
+    responses.push({ account, sessionId: options.headers['session-id'], threadId: options.headers['thread-id'], turnState: options.headers['x-codex-turn-state'],
+      image: text.includes('image_gen__imagegen'), web: /web__|web_search/.test(text), mcp: text.includes('account_fixture'), input: body.input });
     const output = body.input.find(item => item.type === 'custom_tool_call_output' && item.call_id === 'fixture-exec');
     if (output) toolResults.push({ account, output: JSON.stringify(output) });
     const item = output ? { type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'NATIVE_TOOLS_OK', annotations: [] }] }
@@ -178,6 +182,7 @@ try {
   }
   assert.ok(responses.length >= 4);
   assert.ok(responses.every(response => response.image));
+  assert.ok(responses.some(response => response.turnState === 'fixture-turn-state'), 'The server turn state must reach continuation requests.');
   assert.deepEqual([...new Set(responses.map(response => response.account))], accounts);
   assert.equal(toolResults.length, 2);
   for (const result of toolResults) {
@@ -202,6 +207,14 @@ try {
   assert.equal(last.account, accounts[1]);
   assert.ok(JSON.stringify(last.input).includes('Call the local image, web and MCP fixture tools.'));
   assert.ok(JSON.stringify(last.input).includes('TUI fixture; use localhost tools.'));
+  assert.equal(last.threadId, threadIds[0]); assert.equal(last.sessionId, threadIds[0]);
+  for (let attempt = 0; attempt < 100 && pool.state.recent.filter(record => record.operation === 'generation').length < responses.length; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  const generations = pool.state.recent.filter(record => record.operation === 'generation');
+  assert.equal(generations.length, responses.length);
+  assert.ok(generations.every(record => record.status === 'completed' && record.completionObserved && record.usageReported && record.cachedTokens === 4));
+  console.log('ACCOUNT_POOL_NATIVE_CACHE_IDENTITY_AND_STREAM_USAGE_OK');
   console.log('ACCOUNT_POOL_NATIVE_TUI_EXCLUSION_AND_RESUME_OK');
   for (const launch of launches) launch.release();
   assert.equal(pool.nativeSessions.size, 0);
