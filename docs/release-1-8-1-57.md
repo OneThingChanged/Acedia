@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.57 automatic local-page Hosting and conversation reset
 description: Open local website links through Hosting automatically and reliably switch Remote chat to a fresh Codex conversation after clear.
-status: draft
+status: stable
 last_updated: 2026-10-06
 sources:
   - resource: remote-service.md
@@ -36,4 +36,21 @@ sources:
 - 전체 **165개 파일·1,085개 검사**를 실행했다. 초기 실패 3개가 포함된 파일은 서비스 워커 캐시 기대값 수정과 worker 1개 재검증 후 **38개 검사**를 통과했다. 관련 기능·버전·APK 검사와 TypeScript/Vite 빌드도 통과했다.
 - 설치된 **Codex CLI 0.160.1**을 격리 프로필과 로컬 응답 fixture로 실행해 `/clear` 후 실제 새 대화 ID, 이전 모델 문맥 제외, 새 transcript 일치와 기존 transcript 보존을 확인했다.
 - 실제 Electron의 Remote와 Dashboard **1280/390px** 화면에서 자동 Hosting 등록·중복 방지·CSS/이미지·격리된 스크립트 실행, Enter 한 번의 clear, 실패 시 화면 유지, 이전 응답 제외, 세션 재선택·새로고침과 기존 APK 미리보기 호환을 검증했다.
-- 실행 중인 사용자 세션에 시험 요청을 보내거나 설치된 앱을 종료하지 않았다. EXE 패키지 및 공개 업데이트 검증 결과는 게시 후 추가한다.
+- EXE 생성과 packaged bridge·Dashboard·내장 Git·종료·트레이·보안 lifecycle 검증을 통과했다. 패키지의 관련 Electron·Remote 소스 **16개**, unpacked MCP 실행 파일과 renderer 파일 **3개**가 빌드 원본과 일치하고 재사용 APK도 일치했다.
+- 패키지의 실제 `app.asar`에서 Remote/Dashboard 서비스를 불러와 **1280/390px**의 자동 Hosting·clear·기존 APK 호환 검증을 다시 통과했다.
+- 설치 파일 FileVersion **1.8.1.57**, manifest의 파일명·크기·SHA-256과 blockmap을 확인했다. `publish-github-exe.ps1 -VerifyOnly`를 통과했다. Authenticode는 기존 EXE 채널과 같은 **NotSigned**다.
+- 실행 중인 사용자 세션에 시험 요청을 보내거나 설치된 앱을 종료하지 않았다.
+
+## 공개 배포
+
+2026-10-06 **13:41:28 KST**, [v1.8.1.57](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.57)를 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 검증한 소스 `e4a594cea8e252e1f60cfb1713acb8abf04b61e0`이다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.57-x64.exe` | 151,272,135 | `13985ecb0e976284efc008cc3e7935564d51179a2491500520c298cef6597079` |
+| `Acedia-Setup-1.8.1.57-x64.exe.blockmap` | 158,993 | `8d6559f26f688f4f984273c34209be9b27f5bfb84e94c1800a0ec3610a7c26e5` |
+| `latest-exe.json` | 256 | `f098a1006d647572b04eadd47e0b9d6162812f7ef6fbec52b0a777265bfd9009` |
+
+**13:42:17 KST**에 프로덕션 업데이터의 **1.8.1.54 및 1.8.1.56 → 1.8.1.57 감지**와 **1.8.1.56 기준 공개 EXE 다운로드·설치 전 해시 검증**을 완료했다. 세 공개 자산의 크기·SHA-256, 최신 안정 릴리스, 소스 태그와 번들 APK 버전 **1.8.1.39**도 일치했다.
+
+Git 소스와 EXE 게시를 완료했다. 확인 시 실행 중인 사용자 설치본은 **1.8.1.54**이며 자동으로 설치하거나 재시작하지 않았다. 설정의 Check → Update로 데스크톱을 업데이트하고 Remote 페이지를 새로고침하면 새 동작이 적용된다. Microsoft Store와 새 APK 배포는 수행하지 않았다.
