@@ -70,7 +70,7 @@ export function resolveTerminalPath(folder, rawPath) {
   if (!root || !fs.statSync(root).isDirectory()) {
     throw new Error("프로젝트 폴더를 찾을 수 없습니다.");
   }
-  const probes = [path.join(root, candidate), path.join(root, "Docs", candidate)];
+  const probes = [path.join(root, candidate), path.join(root, "Docs", candidate), path.join(root, "output", candidate)];
   const parent = path.dirname(root);
   probes.push(path.join(parent, candidate));
   try {

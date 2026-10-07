@@ -396,7 +396,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v91');
+    expect(workerBody).toContain('multiagent-remote-v92');
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js", "session-state.js"]) {
@@ -711,7 +711,7 @@ describe("Electron dashboard server", () => {
     expect(imageUnsupported.status).toBe(415);
     expect(imageOversized.status).toBe(413);
     expect(traversal.status).toBe(403);
-    expect(absoluteOutside.status).toBe(403);
+    expect(absoluteOutside.status).toBe(200); // Direct PC owner can open explicit result paths.
     expect(unsupported.status).toBe(415);
     expect(oversized.status).toBe(413);
     expect(ssh.status).toBe(409);

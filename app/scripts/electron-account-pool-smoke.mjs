@@ -58,7 +58,7 @@ if (!process.versions.electron) {
         window.open = () => { window.authPopup = { opener: window, closed: false, location: { replace: url => { window.openedAuthUrl = url; } }, close: () => {} }; return window.authPopup; };
         const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool UI timeout: '+document.body.innerText); };
         await wait(() => document.querySelector('.pool-tabs button'));
-        document.querySelectorAll('.pool-tabs button')[1].click();
+        document.querySelector('.pool-tabs [data-usage-view="accounts"]').click();
         await wait(() => !document.querySelector('.pool-panel form').hidden && !document.querySelector('.pool-panel input').disabled);
         const form = document.querySelector('.pool-panel form'); form.querySelector('input').value = 'Fixture ${width}'; form.requestSubmit();
         const card = () => [...document.querySelectorAll('.pool-card')].find(c => c.querySelector('h3').textContent === 'Fixture ${width}');
@@ -90,7 +90,7 @@ if (!process.versions.electron) {
         progress.destroy();
       }
       await win.webContents.executeJavaScript(`(async () => {
-        const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool completion timeout'); };
+        const wait = async fn => { for (let i=0;i<150;i++) { if (fn()) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Pool completion timeout: ' + document.querySelector('.pool-panel').innerText); };
         const card = () => [...document.querySelectorAll('.pool-card')].find(c => c.querySelector('h3').textContent === 'Fixture ${width}');
         const action = name => [...card().querySelectorAll('button')].find(b=>b.textContent===name);
         await wait(() => card().textContent.includes('fixture@example.invalid') && !card().querySelector('.pool-login'));
@@ -98,6 +98,9 @@ if (!process.versions.electron) {
         await wait(() => action('분산 제외') && !action('분산 제외').disabled);
         if (!document.querySelector('.pool-toolbar button').getAttribute('aria-pressed').includes('true')) document.querySelector('.pool-toolbar button').click();
         await wait(() => document.querySelector('.pool-toolbar button').getAttribute('aria-pressed') === 'true');
+        await wait(() => document.querySelector('.pool-routing-summary').dataset.state === 'ready');
+        if (!document.querySelector('.pool-routing-heading').textContent.includes('요청 대기')) throw new Error('Enabled routing was not clearly labeled as idle');
+        if (!card().querySelector('.pool-account-badge.participating')) throw new Error('Missing account participation badge');
         if (document.documentElement.scrollWidth > window.innerWidth+2) throw new Error('Horizontal overflow');
         const grid = document.querySelector('.pool-list');
         const available = grid.getBoundingClientRect().width;
@@ -144,6 +147,14 @@ if (!process.versions.electron) {
       assert.equal(pool.quotaRefresh.succeeded, 1);
       assert.equal(pool.account(account.id).limits.rateLimits.primary.usedPercent, 20);
       if (failedAccount) assert.equal(failedAccount.limitsAt, preservedAt);
+      pool.active.set(account.id, 1);
+      await win.webContents.executeJavaScript(`(async () => {
+        const toggle = document.querySelector('.pool-toolbar button');
+        const wait = async state => { for (let i=0;i<150;i++) { if (document.querySelector('.pool-routing-summary').dataset.state === state && !toggle.disabled) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('Routing state did not become ' + state); };
+        toggle.click(); await wait('off'); toggle.click(); await wait('working');
+        if (!document.querySelector('.pool-account-badge.working')) throw new Error('Missing actual processing badge');
+        document.querySelector('.pool-routing-summary').scrollIntoView({block:'start'});
+      })()`);
       await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
       const image = await win.webContents.capturePage();
       const output = fileURLToPath(new URL('../../.acedia/account-pool-ui/', import.meta.url)); fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(path.join(output, `${width}.png`), image.toPNG());
@@ -152,6 +163,7 @@ if (!process.versions.electron) {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       })()`);
       fs.writeFileSync(path.join(output, `${width}-requests.png`), (await win.webContents.capturePage()).toPNG());
+      pool.active.set(account.id, 0);
       currentLanguage = 'en'; web.syncView({ ...web.view, language: currentLanguage });
       await win.webContents.executeJavaScript(`(async () => {
         for (let i=0;i<150 && document.documentElement.lang!=='en';i++) await new Promise(r=>setTimeout(r,50));
@@ -171,7 +183,7 @@ if (!process.versions.electron) {
   finally {
     clearTimeout(timer); windows.forEach(w => { if (!w.isDestroyed()) w.destroy(); }); pool?.close(); await web?.stop();
     if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-pool-ui-')) throw new Error('Unexpected cleanup path');
-    try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Chromium can briefly retain its isolated profile at shutdown. */ }
+    try { fs.rmSync(root, { recursive: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Chromium can briefly retain its isolated profile at shutdown. */ }
     app.exit(process.exitCode || 0);
   }
   }).catch(error => { console.error(error); app.exit(1); });

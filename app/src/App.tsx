@@ -1,4 +1,5 @@
 import { markIdleSuspended } from './lib/idleSessions';
+import { viewedImagePaths } from './lib/viewedImagePath';
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
@@ -3533,13 +3534,35 @@ function App() {
     [openDocTab, pushToast, text]
   );
 
-  const handleOpenImagePath = useCallback((agentId: string, path: string) => {
+  const handleOpenImagePath = useCallback(async (agentId: string, path: string) => {
     const agent = agentsRef.current.find((a) => a.id === agentId);
     const project = projectsRef.current.find(
       (candidate) => candidate.id === agent?.projectId
     );
-    setImageViewer({ path, folder: project?.folder ?? null });
-  }, []);
+    if (!agent || !project?.folder) return;
+    try {
+      let target = path;
+      if (!/[\\/]/.test(path)) {
+        const blocks = [] as ChatBlocksResult['blocks'];
+        let beforeSequence: number | undefined;
+        for (let page = 0; page < 5; page++) {
+          const history = await invoke<ChatBlocksResult>('chat_blocks', { id: agentId, limit: 1000, beforeSequence }).catch(() => null);
+          if (!history) break;
+          blocks.push(...history.blocks);
+          if (!history.hasOlder || !history.firstSequence || history.firstSequence === beforeSequence) break;
+          beforeSequence = history.firstSequence;
+        }
+        const candidates = viewedImagePaths(blocks, path);
+        if (candidates.length > 1) throw new Error(text(`같은 이름의 이미지가 여러 경로에 있습니다. 전체 경로로 열어주세요: ${candidates.join(' · ')}`, `Multiple images have this name. Open a full path: ${candidates.join(' · ')}`));
+        if (candidates.length === 1) target = candidates[0];
+      }
+      const resolved = await invoke<TerminalPathResolution>('resolve_terminal_path', { folder: project.folder, path: target });
+      if (resolved.kind !== 'image') throw new Error(text('이미지 파일이 아닙니다.', 'This is not an image file.'));
+      setImageViewer({ path: resolved.path, folder: null });
+    } catch (error) {
+      pushToast(agentId, agent.name, text(`이미지를 열 수 없습니다: ${String(error)}`, `Could not open the image: ${String(error)}`));
+    }
+  }, [pushToast, text]);
 
   const handleOpenFolderPath = useCallback(
     async (agentId: string, path: string) => {

@@ -433,13 +433,18 @@
           <button class="small-button file-download-button" id="filePreviewDownload" type="button" hidden>다운로드</button>
           <button class="icon-button" id="filePreviewClose" type="button" title="미리보기 닫기" aria-label="미리보기 닫기">×</button>
         </header>
+        <div class="file-preview-image-tools" id="filePreviewImageTools" hidden>
+          <button class="small-button" type="button" data-image-zoom="out" title="축소" aria-label="축소" disabled>−</button>
+          <button class="small-button" type="button" data-image-zoom="fit" title="화면에 맞추기" aria-label="화면에 맞추기" disabled>100%</button>
+          <button class="small-button" type="button" data-image-zoom="in" title="확대" aria-label="확대" disabled>+</button>
+        </div>
         <div class="file-preview-body">
           <div class="file-preview-message" id="filePreviewMessage" role="status" aria-live="polite" aria-busy="false">파일을 불러오는 중…</div>
           <a class="small-button file-preview-open-link" id="filePreviewOpen" target="_blank" rel="noopener noreferrer" hidden>새 창에서 HTML 열기 ↗</a>
           <article class="document-markdown file-preview-markdown" id="filePreviewMarkdown" hidden></article>
           <video id="filePreviewVideo" class="remote-video" controls playsinline preload="metadata" hidden></video>
           <div class="file-preview-image-wrap" id="filePreviewImageWrap" hidden>
-            <img id="filePreviewImage" alt="">
+            <img id="filePreviewImage" alt="" draggable="false">
           </div>
         </div>
       </section>

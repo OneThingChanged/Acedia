@@ -15,6 +15,7 @@ export type DashboardStatus = {
     addresses: { name: string; url: string }[];
     code: string | null;
     allowedNetworks?: string[];
+    clients?: { ip: string; connectedAt: number; lastSeenAt: number; active: boolean }[];
   };
 };
 
@@ -80,7 +81,7 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           placeholder="172.28.37.0/24" value={networks} disabled={busy || !lan?.available}
           onChange={event => setNetworks(event.target.value)} />
       </label>
-      <p className="app-update-message">{text("한 줄에 한 대역을 입력하세요. 비우면 같은 서브넷만 허용합니다. 변경하면 연결 코드가 갱신되고 기존 연결이 해제됩니다.", "Enter one network per line. Leave empty to allow only the same subnet. Changes reset the code and disconnect existing clients.")}</p>
+      <p className="app-update-message">{text("한 줄에 한 대역을 입력하세요. 추가해도 연결 코드와 기존 접속은 유지됩니다. 허용에서 제외된 접속만 해제됩니다.", "Enter one network per line. Adding networks preserves the code and existing clients. Only clients no longer allowed are disconnected.")}</p>
       <button type="button" className="btn-secondary app-update-btn" disabled={busy || !lan?.available}
         onClick={() => { void saveNetworks(); }}>{text("허용 네트워크 저장", "Save allowed networks")}</button>
       {busy && <p role="status" className="app-update-message">{text("적용 중…", "Applying…")}</p>}
@@ -102,7 +103,14 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
             {text("코드 갱신 및 연결 해제", "Reset code and disconnect")}
           </button>
         </div>
-        <p className="app-update-message">{text("코드 갱신이나 Acedia 재실행 후에는 다시 연결해야 합니다. LAN 접속을 끄면 연결된 PC의 접근이 해제됩니다.", "Reconnect after resetting the code or restarting Acedia. Turning LAN access off disconnects connected PCs.")}</p>
+        <p className="app-update-message">{text("연결 코드는 갱신 버튼을 누를 때만 바뀝니다. 재실행 후에는 같은 코드로 다시 연결하세요. LAN 접속을 끄면 연결된 PC의 접근이 해제됩니다.", "The code changes only when you reset it. Reconnect with the same code after restarting. Turning LAN access off disconnects connected PCs.")}</p>
+        <div className="field-label">{text("대시보드 접속 IP", "Dashboard client IPs")} ({lan.clients?.length || 0})</div>
+        {lan.clients?.length ? lan.clients.map(client => <div key={client.ip} className="dashboard-lan-client" style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
+          <code>{client.ip}</code>
+          <span className="app-update-message">{client.active ? text("접속 중", "Connected") : text("최근 활동", "Recent activity")}</span>
+          <time className="app-update-message" dateTime={new Date(client.lastSeenAt).toISOString()}>{text("마지막 요청", "Last request")}: {new Date(client.lastSeenAt).toLocaleTimeString()}</time>
+        </div>) : <p className="app-update-message">{text("접속 중인 인증된 PC가 없습니다.", "No authenticated clients connected.")}</p>}
+        <p className="app-update-message">{text("연결 코드로 인증한 직접 접속 IP를 표시합니다. 연결이 닫힌 IP는 마지막 요청 후 1분 동안 최근 활동으로 표시합니다.", "Shows direct client IPs authenticated with the code. Closed connections appear as recent activity for one minute after the last request.")}</p>
         <p className="app-update-message">{text("연결되지 않으면 Windows 방화벽에서 Acedia의 개인 네트워크 접근을 허용하세요.", "If the connection fails, allow Acedia on private networks in Windows Firewall.")}</p>
       </>}
       {lan?.enabled && !status.running && <p className="app-update-message">{text("위의 Start를 눌러 대시보드를 시작하세요.", "Use Start above to start the dashboard.")}</p>}

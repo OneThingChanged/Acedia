@@ -17,6 +17,58 @@ function request(peer = "192.168.10.21", host = "192.168.10.20:4421", headers = 
 }
 
 describe("LAN connection boundary", () => {
+  it("disconnects only clients removed from the allowlist and retains the code", () => {
+    const access = new LanAccess({ interfaces: () => network });
+    access.reset(true);
+    const code = access.code;
+    const removed = request("172.28.37.188");
+    const retained = request();
+    const removedCookie = access.pair(removed, code).cookie.split(";")[0];
+    const retainedCookie = access.pair(retained, code).cookie.split(";")[0];
+    access.revalidate(4421, true, []);
+    expect(access.code).toBe(code);
+    expect(removed.socket.destroy).toHaveBeenCalledOnce();
+    expect(retained.socket.destroy).not.toHaveBeenCalled();
+    expect(access.authenticated(request("172.28.37.188", undefined, { cookie: removedCookie }))).toBe(false);
+    expect(access.authenticated(request(undefined, undefined, { cookie: retainedCookie }))).toBe(true);
+  });
+
+  it("reports authenticated direct IPs, recent activity and expiry without returning credentials", () => {
+    let now = 1000;
+    const access = new LanAccess({ now: () => now });
+    access.reset(true);
+    const browser = request("::ffff:192.168.10.21");
+    access.pair(browser, access.code);
+    expect(access.clients()).toEqual([{ ip: "192.168.10.21", connectedAt: 1000, lastSeenAt: 1000, active: true }]);
+    browser.socket.emit("close");
+    expect(access.clients()[0].active).toBe(false);
+    now += 60001;
+    expect(access.clients()).toEqual([]);
+  });
+
+  it("preserves the pairing code across server restarts and changes it only on explicit reset", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-lan-code-"));
+    const makeService = () => new LocalDashboardService({ title: "test", defaultPort: 0, baseDir: root, configName: "config.json", allowLan: true });
+    let service = makeService();
+    try {
+      await service.setLanEnabled(true);
+      const code = service.status().lan.code;
+      await service.stop();
+      await service.start(0);
+      expect(service.status().lan.code).toBe(code);
+      await service.stop();
+      service = makeService();
+      await service.start(0);
+      expect(service.status().lan.code).toBe(code);
+      await service.resetLanCode();
+      expect(service.status().lan.code).not.toBe(code);
+      const updated = service.status().lan.code;
+      await service.stop();
+      service = makeService();
+      await service.start(0);
+      expect(service.status().lan.code).toBe(updated);
+    } finally { await service.stop(); fs.rmSync(root, { recursive: true }); }
+  });
   it("allows explicitly added private subnets as code-authenticated LAN clients while keeping direct host and interface checks", () => {
     const allowed = ["172.28.37.0/24"];
     expect(dashboardClient(request("172.28.37.188"), 4421, true, network)).toBe("blocked");
@@ -35,17 +87,22 @@ describe("LAN connection boundary", () => {
     }
   });
 
-  it("persists added networks, preserves them during other saves, and revokes authenticated clients when they change", async () => {
+  it("persists added networks and keeps code and authenticated clients when adding networks", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-lan-networks-"));
-    const access = new LanAccess();
+    const access = new LanAccess({ interfaces: () => network });
     const service = new LocalDashboardService({ title: "test", defaultPort: 4421, baseDir: root, configName: "config.json", allowLan: true, lanAccess: access });
     try {
       access.reset(true);
       const paired = access.pair(request(), access.code);
       const browser = request(undefined, undefined, { cookie: paired.cookie.split(";")[0] });
       expect(access.authenticated(browser)).toBe(true);
+      service.lanActive = true;
+      service.port = 4421;
+      const code = access.code;
       await service.setLanNetworks(["172.28.37.188/24"]);
-      expect(access.authenticated(browser)).toBe(false);
+      expect(access.authenticated(browser)).toBe(true);
+      expect(access.code).toBe(code);
+      expect(browser.socket.destroy).not.toHaveBeenCalled();
       await service.setConfig({ enabled: true, serverPort: 4421 });
       const restored = new LocalDashboardService({ title: "test", defaultPort: 4421, baseDir: root, configName: "config.json", allowLan: true });
       expect(restored.status().lan.allowedNetworks).toEqual(["172.28.37.0/24"]);
@@ -189,7 +246,7 @@ describe("LAN dashboard HTTP", () => {
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(401);
     const pairedAgain = await pair(service.status().lan.code);
     const oldCookie = pairedAgain.headers.get("set-cookie").split(";")[0];
-    service.resetLanCode();
+    await service.resetLanCode();
     expect((await fetch(`${base}/api/state`, { headers: { cookie: oldCookie } })).status).toBe(401);
     const disabled = await service.setLanEnabled(false);
     expect(disabled.lan.code).toBeNull();

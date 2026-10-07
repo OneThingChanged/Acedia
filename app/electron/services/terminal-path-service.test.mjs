@@ -9,6 +9,18 @@ const roots = [];
 afterEach(() => roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
 
 describe("terminal path resolver", () => {
+  it('resolves generated output-relative links while preferring a matching project-relative file', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'multiagent-path-'));
+    roots.push(root);
+    const results = path.join(root, 'output', 'akari-parts-v1-2026-10-07');
+    fs.mkdirSync(results, { recursive: true });
+    fs.writeFileSync(path.join(results, 'character-four-view.png'), 'fixture');
+    expect(resolveTerminalPath(root, 'akari-parts-v1-2026-10-07/character-four-view.png').path).toBe(path.join(results, 'character-four-view.png'));
+    expect(resolveTerminalPath(root, 'akari-parts-v1-2026-10-07/').kind).toBe('folder');
+    fs.mkdirSync(path.join(root, 'akari-parts-v1-2026-10-07'));
+    fs.writeFileSync(path.join(root, 'akari-parts-v1-2026-10-07', 'character-four-view.png'), 'root fixture');
+    expect(resolveTerminalPath(root, 'akari-parts-v1-2026-10-07/character-four-view.png').path).toBe(path.join(root, 'akari-parts-v1-2026-10-07', 'character-four-view.png'));
+  });
   it("resolves project-relative markdown paths and line suffixes", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-path-"));
     roots.push(root);

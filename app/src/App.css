@@ -14,6 +14,8 @@
 }
 
 .image-viewer {
+  width: min(1100px, 100%);
+  height: min(800px, 100%);
   background: var(--app-bg-elevated, #161b22);
   border: 1px solid var(--app-border, #30363d);
   border-radius: 10px;
@@ -35,6 +37,8 @@
 }
 
 .image-viewer-name {
+  min-width: 0;
+  flex: 1;
   font-size: 13px;
   font-family: Consolas, monospace;
   color: var(--app-text, #c9d1d9);
@@ -44,9 +48,13 @@
 }
 
 .image-viewer-body {
+  flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -54,8 +62,10 @@
 }
 
 .image-viewer-body img {
-  max-width: 100%;
-  max-height: calc(100vh - 140px);
+  max-width: none;
+  max-height: none;
+  flex-shrink: 0;
+  pointer-events: none;
   object-fit: contain;
   image-rendering: auto;
 }
@@ -4747,6 +4757,15 @@ body.files-resizing .files-resizer::after {
 .browser-hub-tabs::-webkit-scrollbar {
   height: 4px;
 }
+
+.image-viewer-body:active { cursor: grabbing; }
+.image-viewer-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.image-viewer-actions svg { width:18px; height:18px; }
+.image-viewer-fit { padding:6px; min-width:54px; border:0; background:transparent; color:var(--app-text); cursor:pointer; }
+.image-viewer-status { padding:6px 12px; color:var(--app-muted); font-size:12px; }
+.image-viewer-path { padding:6px 12px; color:var(--app-muted, #8b949e); font-size:12px; overflow-wrap:anywhere; max-height:64px; overflow:auto; }
+.chat-path-link { display:inline; border:0; padding:0; background:transparent; color:var(--app-accent, #58a6ff); font:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; text-align:left; overflow-wrap:anywhere; }
+.chat-path-code code { color:inherit; }
 
 .browser-hub-tabs > select {
   border: 1px solid var(--app-border);

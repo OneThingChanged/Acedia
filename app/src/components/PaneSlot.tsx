@@ -1175,6 +1175,7 @@ export function PaneSlot({
           provider={activeAgent?.aiToolId}
           questionToken={activeAgent?.activity?.stateStartedAt}
           onOpenTerminal={() => { ctx.setActivePath(path); ctx.onToggleChat(activeAgentId); }}
+          onOpenPath={(filePath) => { void ctx.onOpenTerminalPath(activeAgentId, filePath); }}
         />
       )}
       </div>

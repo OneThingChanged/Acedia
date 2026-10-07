@@ -117,6 +117,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/i18n.js", { file: "i18n.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/translations.js", { file: "translations.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-markup.js", { file: "chat-markup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/image-zoom.js", { file: "image-zoom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-prompt.js", { file: "../shared/chat-prompt.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -698,6 +699,11 @@ export class LocalDashboardService {
     this.baseDir = baseDir;
     this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, configName);
+    this.lanCodePath = `${this.configPath}.lan-code`;
+    try {
+      const saved = fs.readFileSync(this.lanCodePath, "utf8").trim();
+      this.savedLanCode = /^\d{8}$/.test(saved) ? saved : null;
+    } catch { this.savedLanCode = null; }
     this.submissions = new RemoteSubmissions(path.join(baseDir, `${configName}.submissions.json`));
     this.stateProvider = stateProvider;
     // When provided, the dashboard serves the full Remote PWA (chat/terminal/
@@ -783,9 +789,13 @@ export class LocalDashboardService {
     return result;
   }
 
-  resetLanCode() {
+  async resetLanCode() {
     if (!this.allowLan || !this.lanActive) throw new Error("Start LAN access first.");
-    this.lanAccess.reset(true);
+    let next;
+    do { next = String(crypto.randomInt(100_000_000)).padStart(8, "0"); } while (next === this.savedLanCode);
+    await fsPromises.writeFile(this.lanCodePath, next, { encoding: "utf8", mode: 0o600 });
+    this.savedLanCode = next;
+    this.lanAccess.reset(true, next);
     return this.status();
   }
 
@@ -798,7 +808,7 @@ export class LocalDashboardService {
       this.config.lanAllowedNetworks = next;
       try { await this.setConfig(this.config); }
       catch (error) { this.config.lanAllowedNetworks = previous; throw error; }
-      this.lanAccess.reset(this.lanActive);
+      this.lanAccess.revalidate(this.port, this.lanActive, next);
       return this.status();
     };
     const result = this.lanChange.then(change);
@@ -848,7 +858,13 @@ export class LocalDashboardService {
   async start(desiredPort = this.config.serverPort) {
     if (this.server?.listening) return this.status();
     this.lanActive = this.allowLan && this.config.lanEnabled === true;
-    this.lanAccess.reset(this.lanActive);
+    if (this.lanActive && !this.savedLanCode) {
+      const next = String(crypto.randomInt(100_000_000)).padStart(8, "0");
+      await fsPromises.mkdir(this.baseDir, { recursive: true });
+      await fsPromises.writeFile(this.lanCodePath, next, { encoding: "utf8", mode: 0o600 });
+      this.savedLanCode = next;
+    }
+    this.lanAccess.reset(this.lanActive, this.savedLanCode);
     const p = this.providers;
     this.server = http.createServer(async (request, response) => {
       try {
@@ -1020,6 +1036,7 @@ export class LocalDashboardService {
           }
           if (await serveRemoteDocumentApi(request, response, url, {
             snapshot: () => this.snapshot(), previews: this.htmlPreviews,
+            ownerFileAccess: this.lanAccess.classify(request, this.port, this.lanActive, this.config.lanAllowedNetworks || []) === 'local',
             mutationAllowed: () => this.isLocalOrigin(request), trashDocument: this.trashDocument,
           })) return;
           // The PWA shell + assets (index at "/", app.js, xterm, styles, sw…).
@@ -1899,6 +1916,7 @@ export class RemoteDashboardService {
         }
         if (await serveRemoteDocumentApi(request, response, url, {
           snapshot: () => ({ agents: this.agents, view: this.view }), previews: this.htmlPreviews,
+          ownerFileAccess: usageAccess.canManageAccounts,
           mutationAllowed: () => this.isSameOrigin(request), trashDocument: this.trashDocument,
         })) return;
         if (request.method === "GET" && sendRemoteAsset(response, url.pathname)) return;

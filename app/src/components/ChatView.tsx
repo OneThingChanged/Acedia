@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import { ChatMarkdown } from "./ChatMarkdown";
 import { invoke, listen } from "../platform/runtime";
 import { electronBridge } from "../platform/electronBridge";
 import { extractDroppedFilePaths, formatDroppedPathForTerminal, hasExternalFiles } from "../lib/fileDrop";
@@ -275,7 +273,7 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-function AssistantTurn({ run, tool }: { run: ChatBlock[]; tool?: string }) {
+function AssistantTurn({ run, tool, onOpenPath }: { run: ChatBlock[]; tool?: string; onOpenPath?: (path: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   return (
@@ -299,9 +297,9 @@ function AssistantTurn({ run, tool }: { run: ChatBlock[]; tool?: string }) {
         if (block.kind === "text") {
           return (
             <div key={`t${sourceIndex}`} className="chat-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+              <ChatMarkdown onOpenPath={onOpenPath}>
                 {block.text ?? ""}
-              </ReactMarkdown>
+              </ChatMarkdown>
             </div>
           );
         }
@@ -325,6 +323,7 @@ export function ChatView({
   provider,
   questionToken,
   onOpenTerminal,
+  onOpenPath,
 }: {
   agentId: string;
   active: boolean;
@@ -337,6 +336,7 @@ export function ChatView({
   provider?: string;
   questionToken?: number;
   onOpenTerminal: () => void;
+  onOpenPath?: (path: string) => void;
 }) {
   const { text } = useAppLanguage();
   const storeKey = `${agentId}:${sessionId || "unbound"}`;
@@ -630,7 +630,7 @@ export function ChatView({
         <UserMessage text={blocks[range.start].text ?? ""} />
       </div>
     ) : (
-      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={tool} />
+      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={tool} onOpenPath={onOpenPath} />
     )
   );
 

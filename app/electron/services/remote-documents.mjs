@@ -738,10 +738,55 @@ function sendRemoteDocumentError(response, error) {
 }
 
 
-const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/download", "/api/docs/preview", "/api/docs/path", "/api/docs/file", "/api/files/image", "/api/files/asset", "/api/files/video"]);
+const DOCUMENT_ROUTES = new Set(["/api/docs", "/api/docs/read", "/api/docs/download", "/api/docs/preview", "/api/docs/path", "/api/docs/file", "/api/files/folder", "/api/files/image", "/api/files/asset", "/api/files/video"]);
+
+function ownerFileSnapshot(state, projectId, requestedPath, ownerFileAccess) {
+  const raw = normalizeRemoteRequestedPath(requestedPath);
+  if (!ownerFileAccess || !(path.isAbsolute(raw) || path.win32.isAbsolute(raw))) return state;
+  try {
+    documentProjectRootForAbsolutePath(state, path.resolve(raw));
+    return state;
+  } catch (error) { if (error.status !== 403) throw error; }
+  // Explicit absolute paths clicked by the PC owner may refer to exported
+  // results outside registered projects. Never apply this to mutation routes.
+  const { project } = documentProjectRoot(state, projectId);
+  let resolved, root;
+  try {
+    resolved = fs.realpathSync(raw);
+    root = fs.statSync(resolved).isDirectory() ? resolved : path.dirname(resolved);
+  } catch { throw new RemoteDocumentError(404, "파일 또는 폴더를 찾을 수 없습니다."); }
+  const projects = [...documentProjects(state), { ...project, folder: root }];
+  return { ...state, projects, view: { ...state?.view, projects } };
+}
+
+async function listRemoteFolder(state, projectId, requestedPath, agentId) {
+  const raw = normalizeRemoteRequestedPath(requestedPath);
+  if (!raw) throw new RemoteDocumentError(400, "올바른 폴더 경로가 필요합니다.");
+  const absolute = path.isAbsolute(raw) || path.win32.isAbsolute(raw);
+  const candidate = absolute ? path.resolve(raw) : null;
+  const { root, baseRoot } = absolute ? documentProjectRootForAbsolutePath(state, candidate) : documentProjectRoot(state, projectId, agentId);
+  const directory = candidate || path.resolve(baseRoot, raw);
+  if (!isInsideDocumentRoot(root, directory)) throw new RemoteDocumentError(403, "프로젝트 밖의 폴더는 열 수 없습니다.");
+  let resolved;
+  try { resolved = fs.realpathSync(directory); } catch { throw new RemoteDocumentError(404, "폴더를 찾을 수 없습니다."); }
+  if (!isInsideDocumentRoot(root, resolved)) throw new RemoteDocumentError(403, "프로젝트 밖의 폴더는 열 수 없습니다.");
+  if (!fs.statSync(resolved).isDirectory()) throw new RemoteDocumentError(400, "폴더 경로가 아닙니다.");
+  const entries = [];
+  const handle = await fsPromises.opendir(resolved);
+  let truncated = false;
+  for await (const entry of handle) {
+    if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile()) || REMOTE_DOCUMENT_SKIPPED_DIRS.has(entry.name.toLowerCase())) continue;
+    if (entries.length === MAX_REMOTE_DOCUMENT_FILES) { truncated = true; break; }
+    const extension = path.extname(entry.name).toLowerCase();
+    const kind = entry.isDirectory() ? 'folder' : REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_IMAGE_EXTENSIONS.has(extension) ? 'image' : extension === '.json' ? 'text' : null);
+    entries.push({ name: entry.name, path: path.join(resolved, entry.name), kind });
+  }
+  entries.sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder') || a.name.localeCompare(b.name));
+  return { path: resolved, entries, truncated, limit: MAX_REMOTE_DOCUMENT_FILES };
+}
 
 // Caller owns authentication. Capability URLs retain their separate token gate.
-export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews, mutationAllowed, trashDocument }) {
+export async function serveRemoteDocumentApi(request, response, url, { snapshot, previews, mutationAllowed, trashDocument, ownerFileAccess = false }) {
   if (!DOCUMENT_ROUTES.has(url.pathname) ||
       (url.pathname === "/api/docs/file" && request.method !== "DELETE") ||
       (request.method !== "GET" && !(request.method === "HEAD" && ["/api/files/video", "/api/docs/download"].includes(url.pathname)) &&
@@ -755,10 +800,13 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
       sendJson(response, 200, { ok: true, path: file.relativePath }, { "cache-control": "no-store" });
       return true;
     }
-    const state = snapshot();
+    const originalState = snapshot();
+    const state = ['/api/docs', '/api/docs/path'].includes(url.pathname) ? originalState
+      : ownerFileSnapshot(originalState, url.searchParams.get('projectId'), url.searchParams.get('path'), ownerFileAccess);
     const args = [state, url.searchParams.get("projectId"), url.searchParams.get("path"), url.searchParams.get("agentId")];
     switch (url.pathname) {
       case "/api/docs": sendJson(response, 200, await listRemoteDocuments(state, args[1])); break;
+      case "/api/files/folder": sendJson(response, 200, await listRemoteFolder(...args), { "cache-control": "no-store" }); break;
       case "/api/docs/path": {
         const file = await resolveListedRemoteDocument(state, args[1], args[2]);
         sendJson(response, 200, { path: file.path, relativePath: file.relativePath }, { "cache-control": "no-store" });

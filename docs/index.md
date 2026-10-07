@@ -19,6 +19,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.62 EXE release](release-1-8-1-62.md) - Stable LAN codes and client IPs, clear routing status, clickable file paths and desktop/Remote image viewing.
 * [Acedia 1.8.1.61 EXE release](release-1-8-1-61.md) - Additional private Dashboard networks and saved-configuration guards for Remote and tunnels.
 * [Acedia 1.8.1.60 EXE release](release-1-8-1-60.md) - Screen ungrouping, browser themes, Claude authentication prompts and generated project configuration management.
 * [Acedia 1.8.1.59 EXE release](release-1-8-1-59.md) - Preserve Codex cache affinity and streamed usage, show active project folder hierarchy, and record publication plus live ToonShader and account-switch cache measurements.

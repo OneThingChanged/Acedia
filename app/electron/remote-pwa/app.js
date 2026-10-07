@@ -1,4 +1,5 @@
 import { createHostingView } from './hosting.js';
+import { createImageZoom } from './image-zoom.js';
 import { createSessionModelEditor } from './session-model.js';
 import { createAccountPoolView } from './account-pool.js';
 import { createSessionUsageView } from './usage-sessions.js';
@@ -2014,6 +2015,8 @@ async function downloadRemoteFile(file) {
   }
 }
 
+const remoteImageZoom = createImageZoom(ui.filePreviewImageWrap, ui.filePreviewImage, $("#filePreviewImageTools"));
+
 async function openRemoteHtmlPreview(projectId, relativePath, agentId = "", hostedUrl = "", hostedName = "") {
   if ((!projectId && !hostedUrl) || !relativePath) return;
   const requestId = ++filePreviewRequest;
@@ -2118,6 +2121,7 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "", host
 }
 
 function resetFilePreviewContent() {
+  remoteImageZoom.clear();
   htmlPreviewLaunch?.controller.abort();
   htmlPreviewLaunch?.popup?.close();
   htmlPreviewLaunch = null;
@@ -2159,7 +2163,64 @@ async function openChatHtmlDocument(agentId, projectId, rawPath) {
   await openRemoteHtmlPreview(projectId, path, agentId);
 }
 
+async function openChatFolder(agentId, projectId, rawPath, trail = []) {
+  const path = cleanChatFilePath(rawPath);
+  if (!projectId || !path) return;
+  const requestId = ++filePreviewRequest;
+  if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
+  resetFilePreviewContent();
+  filePreviewContext = null;
+  syncFileDownloadButtons();
+  ui.filePreviewTitle.textContent = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  ui.filePreviewPath.textContent = path;
+  ui.filePreviewKind.textContent = t("폴더");
+  ui.filePreviewMessage.textContent = t("파일을 불러오는 중…");
+  ui.filePreviewOverlay.hidden = false;
+  document.documentElement.classList.add("file-preview-open");
+  ui.filePreviewClose.focus();
+  try {
+    const response = await fetch(`/api/files/folder?${remoteFileQuery(projectId, path, agentId)}`, { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) throw new Error(await apiError(response));
+    const result = await response.json();
+    if (requestId !== filePreviewRequest) return;
+    const list = document.createElement("ul");
+    list.className = "chat-folder-list";
+    for (const entry of result.entries || []) {
+      const item = document.createElement("li");
+      const node = document.createElement(entry.kind ? "button" : "span");
+      node.textContent = `${entry.kind === 'folder' ? '📁 ' : ''}${entry.name}`;
+      if (entry.kind) {
+        node.type = "button";
+        node.addEventListener("click", () => {
+          if (entry.kind === 'folder') void openChatFolder(agentId, projectId, entry.path, [...trail, path]);
+          else void openChatFilePreview(agentId, projectId, entry.path, entry.kind);
+        });
+      }
+      item.append(node); list.append(item);
+    }
+    ui.filePreviewMarkdown.replaceChildren(list);
+    if (trail.length) {
+      const back = document.createElement('button');
+      back.type = 'button'; back.textContent = t('상위 폴더로');
+      back.dataset.folderBack = 'true';
+      back.addEventListener('click', () => void openChatFolder(agentId, projectId, trail.at(-1), trail.slice(0, -1)));
+      ui.filePreviewMarkdown.prepend(back);
+    }
+    ui.filePreviewMarkdown.hidden = false;
+    ui.filePreviewMarkdown.scrollTop = 0;
+    ui.filePreviewMessage.hidden = result.entries?.length > 0 && !result.truncated;
+    ui.filePreviewMessage.textContent = result.truncated ? t("처음 {0}개 항목만 표시합니다.", [result.limit]) : t("폴더가 비어 있습니다.");
+  } catch (error) {
+    if (requestId !== filePreviewRequest) return;
+    ui.filePreviewMessage.textContent = t("폴더를 열지 못했습니다: {0}", [error.message || error]);
+  }
+}
+
 async function openChatFilePreview(agentId, projectId, rawPath, kind) {
+  if (kind === "folder") {
+    await openChatFolder(agentId, projectId, rawPath);
+    return;
+  }
   if (kind === "html") {
     await openChatHtmlDocument(agentId, projectId, rawPath);
     return;

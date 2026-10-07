@@ -189,6 +189,43 @@ HTML의 루트 경로 보정은 크기를 제한한 본문을 메모리에서 �
 통과했다. 이 변경은 [1.8.1.50 EXE](release-1-8-1-50.md)에 게시됐으며 기존 서명 APK
 1.8.1.39를 재사용한다. 공개 업데이트 감지·다운로드·해시 검증 결과도 릴리스 문서에 기록했다.
 
+## Result folder links (1.8.1.62)
+
+Windows absolute folder links in chat, such as `[결과 폴더](K:/Exports/SummerSix-20261007)`,
+and folders in inline code open a read-only folder browser in Remote and Dashboard.
+The dialog lists immediate children, opens subfolders, provides a parent button within
+the opened folder tree, and previews supported images, HTML, Markdown, JSON and video.
+Other files such as FBX appear by name without a preview action. Each list is capped
+at 500 entries; symbolic links and the existing skipped directories are omitted.
+
+An authenticated Remote owner, or direct loopback Dashboard user, can read explicitly
+requested absolute result paths outside registered projects. This also lets image links
+to exported results open directly. Approved non-owner users and LAN code users retain
+the registered project/Unreal workspace boundary. No project is created by opening a
+result folder, and external result access does not widen deletion or listed-document
+path actions. HTML previews retain isolated, expiring capability URLs.
+
+2026-10-07 source checks cover owner/non-owner/unauthenticated requests, external folder
+listing and images, deletion rejection, missing paths, and real Electron folder browsing,
+parent navigation and image display at desktop and mobile sizes with fixture files.
+Publication is recorded in [release verification](release-1-8-1-62.md); installed-app verification remains separate.
+
+## Image zoom (1.8.1.62)
+
+Remote and Dashboard image previews show zoom-out, percentage/fit and zoom-in
+buttons after the image loads. Mouse wheel zoom preserves the point under the cursor;
+pointer dragging pans the image. Two-finger touch gestures zoom and pan inside the
+viewer without zooming the app shell. The percentage button, double click or `0`
+restores fit; `+`/`-` adjusts zoom. New images start fitted, and closing or changing
+preview type clears the image transform and hides zoom controls. Download continues
+to save the original file. Scale is bounded to 5%–1600%.
+
+The image controller is an app-shell module served and cached with the PWA; service
+worker cache v92 includes it. Source validation covers wheel/pinch anchor math and
+scale bounds, existing document layout and service endpoints, and real Electron
+375px/844px/1280px image buttons, mouse wheel, drag, CDP-generated touch pinch,
+fit reset and transition to HTML previews. This does not claim an installed APK test.
+
 ## Original file downloads
 
 Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 **다운로드**를
@@ -198,7 +235,7 @@ Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 
 
 `GET /api/docs/download`는 기존 `projectId`, `path`, 선택적 `agentId`로 파일을
 해석한다. 프로젝트·세션 상대 경로와 등록된 프로젝트/Unreal 작업공간의 전체 경로를
-지원한다. Remote 인증·승인 뒤 실행하며 프로젝트 밖 경로, 외부로 향한 링크, SSH와
+지원한다. Remote 인증·승인 뒤 실행하며 일반 접속자의 프로젝트 밖 경로, 외부로 향한 링크, SSH와
 지원하지 않는 형식은 거부한다. `Content-Disposition`의 UTF-8 파일명으로 한글을
 보존하고 `application/octet-stream`, `nosniff`, `no-store`로 원본 바이트를 전송한다.
 

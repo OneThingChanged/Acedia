@@ -215,6 +215,34 @@ continuation opens the same target; OSC 8 links with a visible label follow the
 same routing. Encoded spaces, Unicode and filename characters are decoded once,
 including `file://localhost/` addresses. Images outside the project open in the
 image viewer, while documents and folders use their existing open actions.
+
+Desktop chat also turns inline-code file and folder paths into clickable links,
+including project-relative output paths. Markdown links with Windows drive paths
+use the same local open action; external HTTP links keep their normal browser action.
+Fenced source remains selectable source text. When a short generated path omits
+`output/`, the resolver checks that project output directory after direct project and
+Docs matches, so a matching project-relative file takes precedence.
+
+The desktop image viewer supports zoom buttons and the mouse wheel, pointer dragging
+to pan, and reset to fit with the percentage button, double click or `0`. The `+`/`-`
+keys adjust zoom and Escape closes the viewer. The top-right copy icon copies the
+full image as PNG bitmap data, independent of the zoom or visible crop, and reports
+copy success or failure. Copy is disabled while loading and during a copy request.
+The viewer continues to hide native browser views while open.
+
+For terminal image links that only show a basename (for example Codex's
+`Viewed image desktop-times.png`), the desktop checks up to 5,000 recent chat
+blocks for direct `view_image` tool inputs and uses their original path.
+Different paths with the same basename produce an explicit ambiguity error.
+If no matching tool path exists, the normal file resolver is used. The image
+viewer displays the resolved full path under its title. Native OSC 8 links
+continue to use their embedded full URL directly.
+
+2026-10-07 source validation covers chat path rendering, blocked URL schemes,
+fenced source, output path resolution and IPC contracts, plus real Electron at
+1280px/640px for link clicks, zoom, wheel, drag, fit reset, copy payload and failure
+feedback. Clipboard delivery is mocked in the UI fixture; this check does not replace
+an installed-app clipboard paste test. Publication is recorded in [release verification](release-1-8-1-62.md).
 Malformed URLs and missing targets fail without falling back to a shorter path.
 HTTP links keep their configured browser behavior.[^terminal-links][^terminal-path-service][^terminal-links-smoke]
 

@@ -27,7 +27,7 @@ if (!process.versions.electron) {
   }
   process.exit(code);
 }
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, nativeImage } = require("electron");
 const root = process.argv[2];
 assert(root && path.dirname(root) === path.resolve(os.tmpdir()) && path.basename(root).startsWith("acedia-remote-html-ui-"), "Run this smoke with Node");
 app.setPath("userData", path.join(root, "profile"));
@@ -130,6 +130,12 @@ void app.whenReady().then(async () => {
     const docs = path.join(project, "docs");
     fs.mkdirSync(docs, { recursive: true });
     const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lhDAZQAAAABJRU5ErkJggg==";
+    const results = path.join(root, 'SummerSix-20261007');
+    fs.mkdirSync(path.join(results, 'Viessa'), { recursive: true });
+    const previewBitmap = Buffer.alloc(1600 * 1000 * 4);
+    for (let index = 0; index < previewBitmap.length; index += 4) { previewBitmap[index] = 80; previewBitmap[index + 1] = 170; previewBitmap[index + 2] = 50 + Math.floor(index / 4 / 1600) % 150; previewBitmap[index + 3] = 255; }
+    fs.writeFileSync(path.join(results, 'Six_Outfits_Render.png'), nativeImage.createFromBitmap(previewBitmap, { width:1600, height:1000 }).toPNG());
+    fs.writeFileSync(path.join(results, 'export.fbx'), 'fixture FBX');
     const source = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
       + '<link rel="stylesheet" href="/assets/roadmap.css"></head><body><h1>로드맵</h1>'
       + `<img id="fixtureImage" src="data:image/png;base64,${image}"><button id="check" onclick="this.textContent='Clicked'">Check</button>`
@@ -142,7 +148,7 @@ void app.whenReady().then(async () => {
     const oversized = Buffer.alloc(32 * 1024 * 1024 + 1, 32);
     fs.writeFileSync(path.join(docs, overName), oversized);
     service = new RemoteDashboardService({ baseDir: path.join(root, "service"), chatProvider: async () => ({
-      sessionId: "fixture", blocks: [{ sequence: 1, role: "assistant", kind: "text", text: `\`${largeName}\`\n\n\`${overName}\`` }],
+      sessionId: "fixture", blocks: [{ sequence: 1, role: "assistant", kind: "text", text: `[결과 폴더](${results.replaceAll('\\', '/')})\n\n\`${largeName}\`\n\n\`${overName}\`` }],
     }) });
     service.config.server_port = 0;
     service.syncView({ language: "ko", projects: [{ id: "p1", name: "Roadmap fixture", folder: project }],
@@ -152,8 +158,48 @@ void app.whenReady().then(async () => {
     const output = path.resolve("../output");
     fs.mkdirSync(output, { recursive: true });
 
-    for (const [width, height] of [[375, 812], [844, 375]]) {
+    for (const [width, height] of [[375, 812], [844, 375], [1280, 850]]) {
       const win = await createRemoteWindow(url, width, height, true);
+      await win.webContents.executeJavaScript("document.querySelector('[data-chat-file-kind=folder]').click()", true);
+      await waitFor(win, "document.querySelector('.chat-folder-list')?.textContent.includes('Six_Outfits_Render.png')");
+      assert(await win.webContents.executeJavaScript("document.querySelector('.chat-folder-list').textContent.includes('export.fbx')"));
+      await capturePreview(win, path.join(output, `remote-result-folder-${width}.png`));
+      await win.webContents.executeJavaScript("[...document.querySelectorAll('.chat-folder-list button')].find(b=>b.textContent.includes('Viessa')).click()", true);
+      await waitFor(win, "document.querySelector('#filePreviewMessage').textContent.includes('폴더가 비어')");
+      await win.webContents.executeJavaScript("document.querySelector('[data-folder-back]').click()", true);
+      await waitFor(win, "document.querySelector('.chat-folder-list')?.textContent.includes('Six_Outfits_Render.png')");
+      await win.webContents.executeJavaScript("[...document.querySelectorAll('.chat-folder-list button')].find(b=>b.textContent.includes('Six_Outfits_Render.png')).click()", true);
+      await waitFor(win, "!document.querySelector('#filePreviewImageWrap').hidden && document.querySelector('#filePreviewImage').naturalWidth>0");
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const initialScale = await win.webContents.executeJavaScript("Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)");
+      assert(initialScale > 0 && initialScale < 1);
+      await win.webContents.executeJavaScript("document.querySelector('[data-image-zoom=in]').click()", true);
+      await waitFor(win, `Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)>${initialScale}`);
+      await win.webContents.executeJavaScript("document.querySelector('[data-image-zoom=out]').click()", true);
+      assert(Math.abs(await win.webContents.executeJavaScript("Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)") - initialScale) < 0.001);
+      const point = await win.webContents.executeJavaScript("(()=>{const r=document.querySelector('#filePreviewImageWrap').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()");
+      await win.webContents.executeJavaScript(`document.querySelector('#filePreviewImageWrap').dispatchEvent(new WheelEvent('wheel',{deltaY:-120,clientX:${point.x},clientY:${point.y},cancelable:true}))`);
+      await waitFor(win, `Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)>${initialScale}`);
+      const beforePan = await win.webContents.executeJavaScript("Number(document.querySelector('#filePreviewImageWrap').dataset.imagePanX)");
+      win.webContents.sendInputEvent({ type:'mouseDown', button:'left', clickCount:1, ...point });
+      win.webContents.sendInputEvent({ type:'mouseMove', x:point.x+60, y:point.y+30 });
+      win.webContents.sendInputEvent({ type:'mouseUp', button:'left', clickCount:1, x:point.x+60, y:point.y+30 });
+      await waitFor(win, `Math.abs(Number(document.querySelector('#filePreviewImageWrap').dataset.imagePanX)-(${beforePan})-60)<0.01`);
+      const beforePinch = await win.webContents.executeJavaScript("Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)");
+      win.webContents.debugger.attach('1.3');
+      try {
+        const touchPoints = distance => [{ x:point.x-distance, y:point.y, id:1 }, { x:point.x+distance, y:point.y, id:2 }];
+        await win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:touchPoints(25) });
+        await win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', { type:'touchMove', touchPoints:touchPoints(65) });
+        await win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[] });
+      } finally { win.webContents.debugger.detach(); }
+      await waitFor(win, `Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)>${beforePinch}`);
+      await capturePreview(win, path.join(output, `remote-image-zoom-${width}.png`));
+      await win.webContents.executeJavaScript("document.querySelector('[data-image-zoom=fit]').click()", true);
+      await waitFor(win, "Number(document.querySelector('#filePreviewImageWrap').dataset.imagePanX)===0");
+      assert(Math.abs(await win.webContents.executeJavaScript("Number(document.querySelector('#filePreviewImageWrap').dataset.imageScale)") - initialScale) < 0.001);
+      await win.webContents.executeJavaScript("document.querySelector('#filePreviewClose').click()", true);
+      assert(await win.webContents.executeJavaScript("document.querySelector('#filePreviewImageTools').hidden"));
       await win.webContents.executeJavaScript(`window.__holdPreviewIssue=true; ${clickFile(largeName)}`, true);
       await waitFor(win, "document.querySelector('#filePreviewMessage').getAttribute('aria-busy')==='true'");
       assert(await win.webContents.executeJavaScript("!document.querySelector('#filePreviewOverlay').hidden && getComputedStyle(document.querySelector('#filePreviewMessage'),'::before').content==='\"\"'"), "HTML loading indicator missing");

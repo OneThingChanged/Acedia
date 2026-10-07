@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-10-07
+
+* **1.8.1.62 EXE preparation**: Preserve LAN pairing codes and still-allowed clients, show authenticated direct IPs, clarify routing readiness and in-flight accounts, open desktop code-formatted paths and recover Viewed image basenames, add desktop image zoom/pan/copy/full paths, and add owner-only external result browsing plus Remote image wheel/drag/pinch zoom. PWA cache v92. All 171 files/1,147 tests passed, including a Git PATH repair and successful rerun of the affected simulated Store test file; TypeScript/Vite and desktop/mobile Electron source checks passed. Signed APK 1.8.1.39 is reused. See [scope and publication verification](release-1-8-1-62.md).
+
 ## 2026-10-05
 
 * **1.8.1.54 EXE release**: Fixed the missing phone notification call for Codex async questions while retaining Working. Deduplicate conversation/call IDs across partial answers and queued forms, prune stopped sessions, retry transport-call errors and honor existing question/session preferences. Related 46 tests and all 161 files/1,052 tests, actual isolated native-monitor HTTP events, TypeScript/Vite, EXE build, packaged bridge/Dashboard/lifecycle, source equality and installer manifest/hash/version passed. Published stable v1.8.1.54 at 15:35:27 KST from 4689d44; production updater detection from 1.8.1.52/53, actual download and all public asset hashes passed at 15:36:35 KST. Read-only live checks found desktop 1.8.1.52, enabled desktop notification policies and a reachable public Remote. Reuses APK 1.8.1.39/code 21; user installation and actual phone receipt/audio remain unverified. See [release verification](release-1-8-1-54.md).

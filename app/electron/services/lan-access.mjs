@@ -76,11 +76,11 @@ export class LanAccess {
     this.attempts = new Map();
   }
 
-  reset(enabled) {
+  reset(enabled, savedCode = null) {
     for (const entry of this.sessions.values()) for (const socket of entry.sockets) socket.destroy();
     this.sessions.clear();
     this.attempts.clear();
-    this.code = enabled ? String(crypto.randomInt(100_000_000)).padStart(8, "0") : null;
+    this.code = enabled ? savedCode || String(crypto.randomInt(100_000_000)).padStart(8, "0") : null;
   }
 
   status(port, enabled, running) {
@@ -88,10 +88,48 @@ export class LanAccess {
       enabled, running,
       addresses: running ? this.interfaces().map(entry => ({ name: entry.name, url: `http://${entry.address}:${port}` })) : [],
       code: running ? this.code : null,
+      clients: this.clients(),
     };
   }
 
   classify(request, port, enabled, allowedNetworks = []) { return dashboardClient(request, port, enabled, this.interfaces(), allowedNetworks); }
+
+  clients() {
+    const clients = new Map();
+    for (const [key, entry] of this.sessions) {
+      if (entry.expires <= this.now()) { this.revoke(key); continue; }
+      for (const [ip, record] of entry.clients) {
+        const active = [...entry.requests.values()].some(request => address(request.socket.remoteAddress) === ip);
+        if (!active && this.now() - record.lastSeenAt > 60_000) continue;
+        const previous = clients.get(ip);
+        clients.set(ip, { ip, connectedAt: Math.min(previous?.connectedAt ?? Infinity, record.connectedAt), lastSeenAt: Math.max(previous?.lastSeenAt ?? 0, record.lastSeenAt), active: active || Boolean(previous?.active) });
+      }
+    }
+    return [...clients.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  }
+
+  revalidate(port, enabled, networks) {
+    for (const [key, entry] of this.sessions) {
+      // Retain authenticated sessions and streams whose actual addresses still
+      // qualify. A removed IP loses its cookie as well as its open streams.
+      if ([...entry.clients.values()].some(record => this.classify(record.request, port, enabled, networks) !== "lan")) this.revoke(key);
+    }
+  }
+
+  track(entry, request) {
+    const ip = address(request.socket.remoteAddress);
+    const now = this.now();
+    const previous = entry.clients.get(ip);
+    entry.clients.set(ip, { connectedAt: previous?.connectedAt ?? now, lastSeenAt: now, request: {
+      socket: { remoteAddress: request.socket.remoteAddress, localAddress: request.socket.localAddress },
+      headers: { host: request.headers.host },
+    } });
+    if (!entry.sockets.has(request.socket)) {
+      entry.sockets.add(request.socket);
+      entry.requests.set(request.socket, { socket: { remoteAddress: request.socket.remoteAddress } });
+      request.socket.once("close", () => { entry.sockets.delete(request.socket); entry.requests.delete(request.socket); });
+    }
+  }
 
   key(request) {
     const token = String(request.headers.cookie || "").match(/(?:^|;\s*)acedia_lan=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
@@ -109,10 +147,7 @@ export class LanAccess {
     const entry = this.sessions.get(key);
     if (!entry) return false;
     if (entry.expires <= this.now()) { this.revoke(key, request.socket); return false; }
-    if (!entry.sockets.has(request.socket)) {
-      entry.sockets.add(request.socket);
-      request.socket.once("close", () => entry.sockets.delete(request.socket));
-    }
+    this.track(entry, request);
     return true;
   }
 
@@ -141,7 +176,9 @@ export class LanAccess {
     if (this.sessions.size >= 128) this.revoke(this.sessions.keys().next().value);
     const token = crypto.randomBytes(32).toString("base64url");
     const key = crypto.createHash("sha256").update(token).digest("hex");
-    this.sessions.set(key, { expires: now + SESSION_MS, sockets: new Set() });
+    const entry = { expires: now + SESSION_MS, sockets: new Set(), requests: new Map(), clients: new Map() };
+    this.sessions.set(key, entry);
+    this.track(entry, request);
     this.attempts.delete(keys[0]);
     return { status: 200, cookie: this.cookie(token) };
   }

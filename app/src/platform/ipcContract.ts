@@ -54,7 +54,7 @@ export type RuntimeCommand =
   | "rename_path" | "duplicate_path" | "delete_path"
   | "resolve_terminal_path"
   | "read_image_data_url" | "play_system_sound" | "read_audio_file"
-  | "clipboard_read_text" | "clipboard_write_text" | "save_clipboard_image"
+  | "clipboard_read_text" | "clipboard_write_text" | "clipboard_write_image" | "save_clipboard_image"
   | "check_tools" | "qwen_region_get" | "qwen_region_set"
   | "show_native_notification"
   | "resolve_cli_session" | "resolve_cline_session" | "relink_cli_session" | "sync_remote_agents"

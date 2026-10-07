@@ -112,7 +112,6 @@ describe("Remote original document downloads", () => {
     fs.symlinkSync(outside, path.join(project, "docs", "escape"), process.platform === "win32" ? "junction" : "dir");
     for (const [requestedPath, status] of [
       ["../outside/outside.md", 403],
-      [path.join(outside, "outside.md"), 403],
       ["docs/escape/outside.md", 403],
       ["blocked.exe", 415],
       ["missing.md", 404],
@@ -122,6 +121,9 @@ describe("Remote original document downloads", () => {
       expect(response.status, requestedPath).toBe(status);
       expect(response.headers.get("content-disposition")).toBeNull();
     }
+    const ownerExternal = await download(path.join(outside, 'outside.md'));
+    expect(ownerExternal.status).toBe(200);
+    expect(await ownerExternal.text()).toBe('# Outside');
     expect((await download("missing.md", undefined, { projectId: "ssh" })).status).toBe(409);
   });
 

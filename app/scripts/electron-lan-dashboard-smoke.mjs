@@ -107,6 +107,16 @@ if (process.versions.electron) {
         await fs.writeFile(path.join(output, `lan-login-${width}.png`), (await win.webContents.capturePage()).toPNG());
         await connect(win, service.status().lan.code);
         await waitFor(win, "document.querySelector('#detailName')?.textContent.includes('LAN fixture session')");
+        if (width === 1024) {
+          const previousCode = service.status().lan.code;
+          await service.setLanNetworks(["172.28.37.0/24", "10.22.0.0/16"]);
+          assert(service.status().lan.code === previousCode, "Adding a network changed the code");
+          assert(await win.webContents.executeJavaScript("fetch('/api/state').then(r => r.status === 200)"), "Adding a network disconnected an authenticated client");
+          await waitFor(host, "!!document.querySelector('.dashboard-lan-client code')?.textContent");
+          assert(service.status().lan.clients.some(client => client.ip), "Authenticated direct IP missing");
+          await fs.writeFile(path.join(output, "lan-dashboard-clients.png"), (await host.webContents.capturePage()).toPNG());
+          console.log("LAN_CODE_CLIENT_PRESERVATION_AND_IP_UI_OK");
+        }
         assert(await win.webContents.executeJavaScript("location.search.includes('agent=lan-agent')"), "Login lost the selected session link");
         await win.webContents.executeJavaScript("document.querySelector('#sessionMode [data-mode=chat]').click()");
         await waitFor(win, "document.querySelector('#chatView')?.textContent.includes('LAN chat fixture')");

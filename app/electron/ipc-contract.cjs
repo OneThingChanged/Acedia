@@ -109,6 +109,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "read_audio_file",
   "clipboard_read_text",
   "clipboard_write_text",
+  "clipboard_write_image",
   "save_clipboard_image",
   "check_tools",
   "qwen_region_get",

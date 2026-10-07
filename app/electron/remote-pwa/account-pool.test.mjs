@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { quotaPresentation, recordedTokens, requestStatus } from './account-pool.js';
+import { quotaPresentation, recordedTokens, requestStatus, routingPresentation } from './account-pool.js';
+
+describe('Routing status summary', () => {
+  const account = { enabled: true, available: true, active: 0 };
+  it('distinguishes routing enabled with no live requests from actual processing and disabled routing', () => {
+    expect(routingPresentation({ canManage: true, enabled: true, running: true, accounts: [account] }).state).toBe('ready');
+    expect(routingPresentation({ canManage: true, enabled: true, running: true, accounts: [{ ...account, active: 2 }] })).toMatchObject({ state: 'working', active: 2, available: 1 });
+    expect(routingPresentation({ canManage: true, enabled: false, running: true, accounts: [account] }).state).toBe('off');
+  });
+  it('does not claim readiness when routing is enabled but the server or eligible accounts are unavailable', () => {
+    expect(routingPresentation({ canManage: true, enabled: true, running: false, accounts: [account] }).state).toBe('connecting');
+    expect(routingPresentation({ canManage: true, enabled: true, running: true, accounts: [{ ...account, available: false }] })).toMatchObject({ state: 'unavailable', available: 0, participating: 1 });
+    expect(routingPresentation({ canManage: false, enabled: true, accounts: [] }).state).toBe('enabled');
+    expect(routingPresentation(null).state).toBe('loading');
+  });
+});
 
 describe('Remote account quota labels', () => {
   it('shows a recently checked percentage as remaining quota', () => {

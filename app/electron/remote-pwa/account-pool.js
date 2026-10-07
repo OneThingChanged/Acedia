@@ -23,6 +23,16 @@ export function requestStatus(record) {
   return { completed: '완료', failed: '실패' }[record.status] || '처리 중…';
 }
 
+export function routingPresentation(data) {
+  const available = (data?.accounts || []).filter(account => account.available === true).length;
+  const participating = (data?.accounts || []).filter(account => account.enabled).length;
+  const active = (data?.accounts || []).reduce((sum, account) => sum + (Number.isSafeInteger(account.active) && account.active > 0 ? account.active : 0), 0);
+  const state = !data ? 'loading' : !data.enabled ? 'off' : !data.canManage ? 'enabled'
+    : data.running !== true ? 'connecting' : active ? 'working' : available ? 'ready' : 'unavailable';
+  const labels = { loading: '분산 상태 확인 중…', off: '분산 꺼짐', enabled: '분산 켜짐', connecting: '분산 켜짐 · 연결 준비 중', working: '분산 켜짐 · 처리 중', ready: '분산 켜짐 · 요청 대기', unavailable: '분산 켜짐 · 사용 가능한 계정 없음' };
+  return { state, label: labels[state], available, participating, active };
+}
+
 export function createAccountPoolView(root, { sessionLabel = (id) => id, onChange = () => {}, onViewChange = () => {} } = {}) {
   const pageUrl = new URL(location.href);
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
@@ -38,6 +48,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   history.dataset.usageView = 'history'; sessions.dataset.usageView = 'sessions'; accounts.dataset.usageView = 'accounts';
   sessions.dataset.usageSessionsTab = 'true';
   const panel = el('section', '', 'pool-panel'); panel.hidden = true;
+  const routingSummary = el('div', '', 'pool-routing-summary'); routingSummary.setAttribute('role', 'status'); routingSummary.setAttribute('aria-live', 'polite');
+  let summarySignature = '';
   const intro = el('p', '분산 전용 계정을 등록하면 새로 시작하는 Codex 세션에 적용됩니다. 진행 중인 세션은 다시 열어야 합니다.');
   const status = el('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const toolbar = el('div', '', 'pool-toolbar');
@@ -52,7 +64,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   const list = el('div', '', 'pool-list');
   const recordsTitle = el('h3', '최근 분산 요청'); const records = el('div', '', 'pool-records');
   const recordsHint = el('p', '요청별 토큰 정보가 없어도 사용량이 발생할 수 있습니다. 대화 기록의 토큰 합계는 위 계정 카드에서 확인하세요.', 'pool-records-hint');
-  panel.append(intro, toolbar, refreshStatus, form, status, list, recordsTitle, recordsHint, records); root.append(tabs, panel);
+  panel.append(routingSummary, toolbar, intro, refreshStatus, form, status, list, recordsTitle, recordsHint, records); root.append(tabs, panel);
   if (loginAccountId) {
     tabs.hidden = true;
     intro.textContent = t('인증 탭에서 로그인한 뒤 이 화면으로 돌아오세요. 완료되면 계정 관리 화면으로 자동 이동합니다.');
@@ -96,6 +108,26 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   const names = { ready: '인증 완료', login_required: '로그인 필요', login_pending: '로그인 대기', login_failed: '로그인 실패' };
   function render() {
     const admin = data?.canManage === true;
+    const presentation = routingPresentation(data);
+    const nextSummary = JSON.stringify([presentation, admin, getLanguage()]);
+    routingSummary.hidden = Boolean(loginAccountId);
+    if (summarySignature !== nextSummary) {
+      summarySignature = nextSummary;
+      routingSummary.dataset.state = presentation.state;
+      const heading = el('strong', presentation.label, 'pool-routing-heading');
+      routingSummary.replaceChildren(heading);
+      if (admin) {
+        const metrics = el('div', '', 'pool-routing-metrics');
+        for (const [name, count] of [['참여 계정', presentation.participating], ['사용 가능한 계정', presentation.available], ['처리 중인 요청', presentation.active]]) {
+          const metric = el('div'); metric.append(el('span', name), el('b', String(count))); metrics.append(metric);
+        }
+        const hint = presentation.state === 'off' ? '분산을 켜면 새 Codex 세션에 분산 계정을 사용할 수 있습니다.'
+          : presentation.state === 'unavailable' ? '계정 로그인·분산 참여·한도를 확인하세요.'
+          : presentation.state === 'connecting' ? '분산 서버가 아직 준비되지 않았습니다. 목록을 새로고침해 상태를 확인하세요.'
+          : presentation.active ? '아래 계정 카드에서 현재 요청을 처리하는 계정을 확인하세요.' : '분산이 켜져 있으며 현재 처리 중인 요청은 없습니다.';
+        routingSummary.append(metrics, el('p', hint));
+      }
+    }
     form.hidden = toolbar.hidden = !admin || Boolean(loginAccountId);
     refreshStatus.hidden = !admin || Boolean(loginAccountId);
     for (const node of panel.querySelectorAll('button,input')) node.disabled = !admin || busy;
@@ -126,7 +158,13 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
       const quotaResult = job?.results?.find(item => item.id === account.id);
       const quotaBusy = job?.running && quotaResult?.status === 'running';
       const card = el('article', '', 'pool-card'); const title = el('h3'); title.textContent = account.label;
-      const state = el('p', `${account.email || ''} ${account.plan || ''} · ${t(names[account.state] || '확인 필요')} · ${t(account.enabled ? '분산 참여' : '분산 제외')}`);
+      const badges = el('div', '', 'pool-account-badges');
+      badges.append(el('span', account.enabled ? '분산 참여' : '분산 제외', `pool-account-badge ${account.enabled ? 'participating' : ''}`));
+      const working = Number.isSafeInteger(account.active) && account.active > 0;
+      if (working) badges.append(el('span', t('요청 처리 중 {0}건', [account.active]), 'pool-account-badge working'));
+      else if (account.available === true) badges.append(el('span', data.enabled ? '요청 대기' : '분산 대기', 'pool-account-badge ready'));
+      card.dataset.routingActive = String(working);
+      const state = el('p', `${account.email || ''} ${account.plan || ''} · ${t(names[account.state] || '확인 필요')}`);
       if (account.cooldownUntil > Date.now()) state.append(el('span', ' · ' + t('한도 대기')));
       const statistics = account.stats;
       const legacy = Number(statistics.legacyFailedOrCancelled) || 0;
@@ -140,7 +178,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
         : measured
           ? `${t('확인된 입력 토큰')} ${statistics.inputTokens.toLocaleString()} · ${t('확인된 출력 토큰')} ${statistics.outputTokens.toLocaleString()}`
           : t('토큰 사용량 미집계'));
-      card.append(title, state, numbers, usage);
+      card.append(title, badges, state, numbers, usage);
       if (transcript?.events > 0) card.append(el('small', '기록된 계정 배정 기간의 Codex 대화 토큰입니다.'));
       if (legacy) card.append(el('small', t('기존 실패·취소 혼합 {0}건은 분리할 수 없습니다.', [legacy.toLocaleString()])));
       if (legacyDisconnected) card.append(el('small', t('기존 연결 종료 {0}건은 완료 여부를 확인할 수 없습니다.', [legacyDisconnected.toLocaleString()])));

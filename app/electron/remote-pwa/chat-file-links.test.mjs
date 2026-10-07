@@ -51,6 +51,17 @@ describe("Remote chat file links", () => {
     expect(noProject).not.toContain("data-chat-file-path");
   });
 
+  it('opens an extensionless Windows result folder from a Markdown link or inline code', () => {
+    const folder = 'K:/Assets/Unreal/UnrealAssetFinder/TheFirstDescendant/FBX_Packages/SummerSix-20261007';
+    for (const message of [`[결과 폴더](${folder})`, `\`${folder}\``]) {
+      const html = links.inlineMd(message, agent);
+      expect(html).toContain('data-chat-file-kind="folder"');
+      expect(html).toContain(`data-chat-file-path="${folder}"`);
+      expect(html).not.toContain(`[결과 폴더](`);
+    }
+    expect(links.chatFileKind('https://example.com/folder')).toBeNull();
+  });
+
   it('routes local server links through Hosting in Markdown, plain text and code', () => {
     const url = 'http://127.0.0.1:3010/docs/UIMapComparison.html?mode=side&x=1#overlay';
     for (const message of [url, `\`${url}\``, `[항공뷰](${url})`, `(${url}).`]) {

@@ -44,6 +44,7 @@ function chatFileKind(value) {
   if (/\.(?:html|htm)$/i.test(path)) return "html";
   if (/\.(?:png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(path)) return "image";
   if (/\.(?:mp4|webm)$/i.test(path)) return "video";
+  if (isAbsoluteChatFilePath(path) && !/\.[^\\/]+$/.test(path.replace(/[\\/]+$/, ""))) return "folder";
   return null;
 }
 

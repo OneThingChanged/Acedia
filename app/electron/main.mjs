@@ -5549,6 +5549,14 @@ async function invokeCommand(event, command, rawArgs) {
     case "clipboard_write_text":
       clipboard.writeText(asString(args.text));
       return null;
+    case "clipboard_write_image": {
+      const dataUrl = asString(args.dataUrl);
+      if (!/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i.test(dataUrl) || dataUrl.length > Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 128) throw new Error("올바른 이미지 데이터가 필요합니다.");
+      const image = nativeImage.createFromDataURL(dataUrl);
+      if (image.isEmpty()) throw new Error("이미지를 복사하지 못했습니다.");
+      clipboard.writeImage(image);
+      return null;
+    }
     case "save_clipboard_image": {
       // Write the current clipboard image to a temp PNG and return its path so
       // the chat/terminal composer can reference it (Codex/Claude read the file).

@@ -41,6 +41,18 @@ html { touch-action: pan-x pan-y; }
 @container account-pool (min-width:992px) { .pool-list { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 .pool-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
 .pool-card h3 { margin:0 0 8px; overflow-wrap:anywhere; }
+.pool-routing-summary { padding:20px; margin:8px 0 16px; border:1px solid var(--line-strong); border-left:4px solid var(--muted); border-radius:12px; background:var(--panel); }
+.pool-routing-heading { display:block; font-size:clamp(20px, 3vw, 28px); overflow-wrap:anywhere; }
+.pool-routing-summary[data-state="ready"], .pool-routing-summary[data-state="working"], .pool-routing-summary[data-state="enabled"] { border-left-color:var(--cyan); }
+.pool-routing-summary[data-state="unavailable"], .pool-routing-summary[data-state="connecting"] { border-left-color:var(--yellow, #e6b86a); }
+.pool-routing-summary p { margin:12px 0 0; color:var(--muted); }
+.pool-routing-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:16px; }
+.pool-routing-metrics span { display:block; color:var(--muted); font-size:13px; word-break:keep-all; }
+.pool-routing-metrics b { display:block; font-size:26px; margin-top:4px; }
+.pool-account-badges { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.pool-account-badge { padding:4px 9px; border:1px solid var(--line-strong); border-radius:20px; color:var(--muted); font-size:13px; }
+.pool-account-badge.participating, .pool-account-badge.working { border-color:var(--cyan); color:var(--cyan); }
+.pool-card[data-routing-active="true"] { border-color:var(--cyan); }
 .pool-card small { display:block; margin:6px 0; }
 .pool-card label { display:block; }
 .pool-card meter { width:100%; height:18px; }
@@ -630,9 +642,16 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .document-html-open-button:hover { background: #83f0e5; }
 .chat-file-link { display: inline; margin: 0; padding: 0; border: 0; color: var(--blue); background: transparent; font: inherit; line-height: inherit; text-align: inherit; text-decoration: underline; text-decoration-color: rgba(91, 188, 255, 0.42); text-underline-offset: 2px; cursor: pointer; }
 .chat-file-link:hover { color: #8dd2ff; text-decoration-color: currentColor; }
+.chat-folder-list { list-style:none; margin:0; padding:0; }
+.chat-folder-list li { padding:8px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.chat-folder-list button { width:100%; min-height:44px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--panel); color:var(--blue); font:inherit; text-align:left; white-space:normal; overflow-wrap:anywhere; cursor:pointer; }
+.chat-folder-list button:hover { border-color:var(--blue); }
+[data-folder-back] { min-height:44px; padding:8px 12px; margin-bottom:12px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:var(--panel); font:inherit; cursor:pointer; }
 .chat-file-link.chat-file-code { padding: 0.12em 0.35em; border-radius: 4px; color: #75e6da; background: rgba(80, 223, 208, 0.09); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-decoration: none; }
 .file-preview-overlay { position: fixed; inset: 0; z-index: 180; display: grid; place-items: center; padding: clamp(10px, 3vw, 36px); background: rgba(1, 7, 12, 0.8); backdrop-filter: blur(5px); }
-.file-preview-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1080px, 100%); height: min(86dvh, 900px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #07111a; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55); }
+.file-preview-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr); width: min(1080px, 100%); height: min(86dvh, 900px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #07111a; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55); }
+.file-preview-head { grid-row:1; }
+.file-preview-body { grid-row:3; }
 .file-preview-head { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 7px 9px 7px 14px; border-bottom: 1px solid var(--line); background: rgba(12, 27, 39, 0.96); }
 .file-preview-head > div { display: grid; flex: 1 1 auto; min-width: 0; }
 .file-preview-head strong, .file-preview-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -649,8 +668,11 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .file-preview-markdown { width: 100%; height: 100%; }
 .file-preview-markdown pre { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .document-inline-file { display: inline; margin: 0; padding: 0; border: 0; color: var(--blue); background: transparent; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.file-preview-image-wrap { width: 100%; height: 100%; overflow: auto; padding: clamp(12px, 3vw, 30px); text-align: center; background: repeating-conic-gradient(#0a1721 0 25%, #0d1d29 0 50%) 50% / 20px 20px; }
-.file-preview-image-wrap img { display: block; width: auto; max-width: 100%; height: auto; max-height: 100%; margin: auto; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.38); }
+.file-preview-image-tools { grid-row:2; display:flex; gap:8px; justify-content:center; padding:6px 12px; border-bottom:1px solid var(--line); }
+.file-preview-image-tools button { min-width:44px; min-height:44px; }
+.file-preview-image-wrap { position:relative; width:100%; height:100%; overflow:hidden; padding:0; touch-action:none; user-select:none; cursor:grab; background: repeating-conic-gradient(#0a1721 0 25%, #0d1d29 0 50%) 50% / 20px 20px; }
+.file-preview-image-wrap:active { cursor:grabbing; }
+.file-preview-image-wrap img { position:absolute; top:50%; left:50%; display:block; width:auto; max-width:none; height:auto; max-height:none; margin:0; object-fit:contain; pointer-events:none; border-radius:4px; box-shadow:0 8px 30px rgba(0,0,0,0.38); }
 .session-editor-overlay { position: fixed; inset: 0; z-index: 190; display: grid; place-items: center; padding: 16px; background: rgba(1, 7, 12, 0.82); backdrop-filter: blur(5px); }
 .session-editor-dialog { display: grid; gap: 14px; width: min(440px, 100%); max-height: calc(var(--visual-viewport-height, 100dvh) - 24px); overflow-y: auto; padding: 18px; border: 1px solid var(--line-strong); border-radius: 14px; background: #091722; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58); }
 .session-editor-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -682,7 +704,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
   .file-preview-head .file-download-button { grid-column: 2 / 4; grid-row: 2; justify-self: end; }
   .file-preview-head .icon-button { grid-column: 3; grid-row: 1; min-width: 44px; min-height: 44px; }
   .file-preview-markdown { padding: 18px 14px 36px; }
-  .file-preview-image-wrap { padding: 10px; }
+  .file-preview-image-wrap { padding: 0; }
   .session-editor-overlay { align-items: end; padding: 6px; }
   .session-editor-dialog { width: 100%; padding: 15px; border-radius: 14px 14px 9px 9px; }
 }
