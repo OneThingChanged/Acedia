@@ -855,14 +855,16 @@ export function ChatView({
       )}
       {prompt && (
         <div className={`chat-prompt ${prompt.kind}`} role="status" aria-live="polite">
-          <strong className="chat-prompt-heading">{nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
+          <strong className="chat-prompt-heading">{prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
           {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
-            {prompt.kind === "permission" ? "🔒 " : "❓ "}
+            {prompt.kind === "permission" || prompt.kind === "authentication" ? "🔒 " : "❓ "}
             {prompt.text || text("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.", "The agent is waiting for a question or approval. Open the terminal to review and answer it.")}
           </div>}
-          <div className="chat-prompt-hint">{answeredPromptSig === promptSig
+          <div className="chat-prompt-hint">{prompt.kind === "authentication"
+            ? text("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.", "Run /login in this session's terminal and sign in through the browser. Then resend your request.")
+            : answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
             : nativeQuestion?.async ? text('작업은 계속 진행됩니다. 보내기를 누르면 Codex 질문에 답합니다.', 'Work continues. Send your answers to the queued Codex question.')
             : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
@@ -880,7 +882,7 @@ export function ChatView({
                 {option.label}
               </button>
             ))}
-            <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{text("터미널에서 답변", "Answer in terminal")}</button>
+            <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{prompt.kind === "authentication" ? text("로그인할 터미널 열기", "Open terminal to sign in") : text("터미널에서 답변", "Answer in terminal")}</button>
           </div>
         </div>
       )}
@@ -906,7 +908,7 @@ export function ChatView({
         </div>
       )}
       {status !== "unsupported" && (
-        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} tool={tool} folder={folder} />
+        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={tool} folder={folder} />
       )}
     </div>
   );
@@ -923,6 +925,7 @@ function ChatComposer({
   onSend,
   busy,
   waitingForAnswer,
+  authenticationRequired,
   tool,
   folder,
 }: {
@@ -930,6 +933,7 @@ function ChatComposer({
   onSend: (text: string) => void;
   busy: boolean;
   waitingForAnswer: boolean;
+  authenticationRequired: boolean;
   tool?: string;
   folder?: string;
 }) {
@@ -1223,7 +1227,7 @@ function ChatComposer({
           onDragOver={onDragOver}
           onDrop={onDrop}
           placeholder={
-            waitingForAnswer ? localize('답변 대기 중 · 새 메시지는 예약됩니다', 'Waiting for an answer · new messages will be queued') : busy
+            authenticationRequired ? localize('로그인 필요 · 터미널에서 /login을 실행하세요', 'Sign-in required · run /login in the terminal') : waitingForAnswer ? localize('답변 대기 중 · 새 메시지는 예약됩니다', 'Waiting for an answer · new messages will be queued') : busy
               ? localize("작업 중 — Enter로 예약(대기열에 추가) · Ctrl+Enter 줄바꿈", "Working — Enter queues · Ctrl+Enter inserts a line break")
               : localize("이 세션으로 전송…  (Enter 전송 · Ctrl+Enter 줄바꿈 · /명령 @파일)", "Send to this session… (Enter sends · Ctrl+Enter line break · /command @file)")
           }

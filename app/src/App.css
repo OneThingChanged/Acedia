@@ -1130,6 +1130,7 @@ body,
 }
 
 .app-theme-light {
+  color-scheme: light;
   --app-bg: #ffffff;
   --app-panel: #f6f8fa;
   --app-panel-soft: #eef1f4;
@@ -4704,7 +4705,8 @@ body.files-resizing .files-resizer::after {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #0d1117;
+  background: var(--app-bg, #0d1117);
+  color: var(--app-text, #c9d1d9);
 }
 
 .embedded-document-browser-toolbar {
@@ -4719,8 +4721,8 @@ body.files-resizing .files-resizer::after {
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: #0d1117;
-  border-top: 1px solid #30363d;
+  background: var(--app-bg, #0d1117);
+  border-top: 1px solid var(--app-border, #30363d);
 }
 
 /* ---- Global browser hub ---- */
@@ -4744,6 +4746,18 @@ body.files-resizing .files-resizer::after {
 
 .browser-hub-tabs::-webkit-scrollbar {
   height: 4px;
+}
+
+.browser-hub-tabs > select {
+  border: 1px solid var(--app-border);
+  background: var(--app-input-bg);
+  color: var(--app-text);
+  font: inherit;
+}
+
+.browser-hub-tabs > select:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: -2px;
 }
 
 .browser-hub-tabs::-webkit-scrollbar-thumb {
@@ -4945,9 +4959,9 @@ body.files-resizing .files-resizer::after {
   max-height: 160px;
   overflow: auto;
   padding: 6px 10px;
-  border-bottom: 1px solid #303d4d;
-  background: #101923;
-  color: #8b949e;
+  border-bottom: 1px solid var(--app-border, #303d4d);
+  background: var(--app-panel-soft, #101923);
+  color: var(--app-muted, #8b949e);
   font: 11px Consolas, "Courier New", monospace;
 }
 
@@ -4958,7 +4972,7 @@ body.files-resizing .files-resizer::after {
 
 .document-browser-annotation-bar summary {
   cursor: pointer;
-  color: #58a6ff;
+  color: var(--app-accent, #58a6ff);
 }
 
 .document-browser-annotation-bar pre {
@@ -4978,8 +4992,8 @@ body.files-resizing .files-resizer::after {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--app-bg, #0d1117);
+  color: var(--app-text, #c9d1d9);
 }
 
 .document-browser-toolbar {
@@ -4989,8 +5003,8 @@ body.files-resizing .files-resizer::after {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-bottom: 1px solid #30363d;
-  background: #111820;
+  border-bottom: 1px solid var(--app-border, #30363d);
+  background: var(--app-panel, #111820);
   user-select: none;
   -webkit-app-region: drag;
 }
@@ -5008,24 +5022,24 @@ body.files-resizing .files-resizer::after {
   min-width: 32px;
   height: 30px;
   padding: 0 9px;
-  border: 1px solid #303d4d;
+  border: 1px solid var(--app-border, #303d4d);
   border-radius: 6px;
-  background: #192331;
-  color: #c9d1d9;
+  background: var(--app-button-bg, #192331);
+  color: var(--app-text, #c9d1d9);
   cursor: pointer;
   font-size: 12px;
 }
 
 .document-browser-btn:hover:not(:disabled) {
-  background: #263548;
-  border-color: #58a6ff;
+  background: var(--app-button-hover, #263548);
+  border-color: var(--app-accent, #58a6ff);
 }
 
 .document-browser-btn.is-active {
-  border-color: #58a6ff;
-  background: rgba(31, 111, 235, 0.34);
-  color: #ffffff;
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.16);
+  border-color: var(--app-accent, #58a6ff);
+  background: var(--app-active-bg-strong, rgba(31, 111, 235, 0.34));
+  color: var(--app-heading, #ffffff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent, #58a6ff) 16%, transparent);
 }
 
 .document-browser-btn:disabled {
@@ -5052,22 +5066,22 @@ body.files-resizing .files-resizer::after {
   flex: 1;
   height: 30px;
   padding: 0 9px;
-  border: 1px solid #303d4d;
+  border: 1px solid var(--app-border, #303d4d);
   border-radius: 6px;
   outline: none;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--app-input-bg, #0d1117);
+  color: var(--app-text, #c9d1d9);
   font: 11px Consolas, "Courier New", monospace;
 }
 
 .document-browser-address:focus {
-  border-color: #58a6ff;
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.18);
+  border-color: var(--app-accent, #58a6ff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent, #58a6ff) 18%, transparent);
 }
 
 .document-browser-path {
   min-width: 0;
-  color: #8b949e;
+  color: var(--app-muted, #8b949e);
   font: 11px Consolas, "Courier New", monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5075,12 +5089,12 @@ body.files-resizing .files-resizer::after {
 }
 
 .document-browser-close {
-  color: #ffb4ab;
+  color: var(--app-danger, #ffb4ab);
 }
 
 .document-browser-status-inline {
   flex-shrink: 0;
-  color: #8b949e;
+  color: var(--app-muted, #8b949e);
   font-size: 10px;
 }
 
@@ -5089,7 +5103,7 @@ body.files-resizing .files-resizer::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #ffb4ab;
+  color: var(--app-danger, #ffb4ab);
 }
 
 .doc-image-wrap {
@@ -5630,7 +5644,8 @@ body.files-resizing .files-resizer::after {
   border-top: 1px solid var(--app-border);
   background: color-mix(in srgb, var(--app-accent, #58a6ff) 8%, var(--app-panel, var(--app-bg)));
 }
-.chat-prompt.permission {
+.chat-prompt.permission,
+.chat-prompt.authentication {
   background: color-mix(in srgb, var(--app-danger, #f85149) 8%, var(--app-panel, var(--app-bg)));
 }
 .chat-prompt-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; font-size: 13px; color: var(--app-text); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -5652,6 +5667,8 @@ body.files-resizing .files-resizer::after {
 .chat-prompt-option:disabled { opacity: 0.55; cursor: default; }
 .chat-prompt-option:focus-visible { outline: 2px solid var(--app-accent, #58a6ff); outline-offset: 2px; }
 .chat-prompt.permission .chat-prompt-option { border-color: var(--app-danger, #f85149); }
+.chat-prompt.authentication .chat-prompt-heading { color: var(--app-danger, #f85149); }
+.chat-prompt.authentication .chat-prompt-option { border-color: var(--app-danger, #f85149); }
 .chat-queue {
   flex: 0 0 auto;
   display: flex;

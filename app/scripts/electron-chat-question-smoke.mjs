@@ -81,6 +81,14 @@ async function exerciseDesktop(win, directory) {
   await waitFor(win, "!document.querySelector('.chat-prompt-option').disabled");
   await win.webContents.executeJavaScript("[...document.querySelectorAll('.chat-prompt-option')].at(-1).click()");
   assert(await win.webContents.executeJavaScript("window.questionTerminalOpened===true"), "Desktop terminal action failed");
+  await patch({ state: { provider: "claude", question: "Login expired · Please run /login", questionToken: 8 } });
+  await waitFor(win, "document.querySelector('.chat-prompt.authentication .chat-prompt-heading')?.textContent.includes('Claude 로그인 필요')");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-hint').textContent.includes('/login') && document.querySelectorAll('.chat-prompt-option').length===1 && document.querySelector('.chat-prompt-option').textContent.includes('로그인할 터미널')"), 'Desktop login failure still presented as an answer');
+  const authWrites = await win.webContents.executeJavaScript("window.questionFixture.writes.length");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-option').click()");
+  assert(await win.webContents.executeJavaScript("window.questionFixture.writes.length") === authWrites, 'Opening auth terminal submitted input automatically');
+  await patch({ state: { agentStatus: "running", question: null } });
+  await waitFor(win, "!document.querySelector('.chat-prompt')");
   console.log("Desktop chat questions passed");
 }
 
@@ -152,6 +160,11 @@ async function exerciseRemote(BrowserWindow, directory) {
         await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
         agent.hook = { ...agent.hook, received_at: 7 }; sync();
         await waitFor(win, "!document.querySelector('#chatPrompt button').disabled");
+        agent.hook = { event: "waiting", received_at: 8, interactive_question: "Login expired · Please run /login" }; sync();
+        await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt.authentication .chat-prompt-heading')?.textContent.includes('Claude 로그인 필요')");
+        assert(await win.webContents.executeJavaScript("document.querySelector('#chatPrompt .chat-prompt-hint').textContent.includes('/login') && document.querySelectorAll('#chatPrompt button').length===1 && document.querySelector('#chatPrompt button').textContent.includes('로그인할 터미널')"), 'Remote login failure still presented as an answer');
+        agent.status = 'running'; agent.hook = { event: 'done', received_at: 9 }; sync();
+        await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         assert(errors.length === 0, errors.join("\n"));
         console.log(`Remote chat questions passed: ${width}px`);
       } finally { win.destroy(); }

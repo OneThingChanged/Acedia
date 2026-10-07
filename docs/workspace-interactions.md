@@ -165,6 +165,13 @@ keyboard interaction, in addition to React lifecycle assertions.
 
 ## Screens, tabs, and splits
 
+Right-click a **SCREENS → Screen** shortcut and choose **스크린 해제 / Ungroup screen**
+to turn each split pane into an independent screen. Tabs within a pane, including
+documents and Git history, stay together. The currently selected pane stays visible;
+ungrouping another screen does not switch the current screen. Session processes,
+conversations, and pane-specific session pins remain intact. The resulting screens
+use the normal saved workspace layout and no longer appear as split shortcuts.
+
 The center workspace uses one layout tree for terminal, document, and Git
 history tabs. Dragging can reorder tabs, move a tab to another pane, or create a
 split. Moving an agent removes its previous layout placement; the same terminal

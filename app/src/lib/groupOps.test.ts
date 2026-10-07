@@ -75,6 +75,55 @@ describe("selectGroup", () => {
   });
 });
 
+describe("dissolveScreen", () => {
+  const screen = (): ops.GroupState => ({
+    groups: [{ id: "screen", projectId: "p-a", sessionLocked: true,
+      sessionPins: { a: "chat-a", b: "chat-b" },
+      layout: { type: "split", id: "split", direction: "h", sizes: [0.4, 0.6], children: [
+        { ...makeLeaf("a"), tabs: ["a", "doc:p-a:report.md"], activeIndex: 1 },
+        { type: "split", id: "nested", direction: "v", sizes: [0.5, 0.5], children: [makeLeaf("b"), makeLeaf("c")] },
+      ] } }],
+    activeGroupId: "screen", activePath: [1, 0],
+  });
+
+  it("separates nested panes, retains tabs, selection, pins and project ownership", () => {
+    const state = screen();
+    const next = ops.dissolveScreen(state, "screen", id => id === "b" ? "p-b" : undefined);
+    expect(next.groups).toHaveLength(3);
+    expect(next.groups.every(group => group.layout.type === "leaf")).toBe(true);
+    expect(next.groups[0].layout).toBe(getAt(state.groups[0].layout, [0]));
+    expect(next.groups[0].sessionPins).toEqual({ a: "chat-a" });
+    expect(next.groups[1]).toMatchObject({ id: "screen", projectId: "p-b", sessionPins: { b: "chat-b" }, sessionLocked: true });
+    expect(next.groups[2].sessionPins).toBeUndefined();
+    expect(new Set(next.groups.map(group => group.id)).size).toBe(3);
+    expect(next.activeGroupId).toBe("screen");
+    expect(next.activePath).toEqual([]);
+    expect([...collectAgentIds(next.groups[1].layout)]).toEqual(["b"]);
+    expect(state.groups[0].layout.type).toBe("split");
+  });
+
+  it("leaves the selected unrelated screen and its path unchanged", () => {
+    const state = screen();
+    const other = { id: "other", layout: makeLeaf("x") };
+    state.groups.push(other);
+    state.activeGroupId = "other";
+    state.activePath = [];
+    const next = ops.dissolveScreen(state, "screen");
+    expect(next.groups[3]).toBe(other);
+    expect(next.activeGroupId).toBe("other");
+    expect(next.activePath).toBe(state.activePath);
+    expect(next.groups[0].id).toBe("screen");
+  });
+
+  it("ignores missing screens and already separated layouts", () => {
+    const state = leafState(["a", "b"]);
+    expect(ops.dissolveScreen(state, "missing")).toBe(state);
+    expect(ops.dissolveScreen(state, "g-a")).toBe(state);
+    const separated = ops.dissolveScreen(screen(), "screen");
+    expect(ops.dissolveScreen(separated, "screen")).toBe(separated);
+  });
+});
+
 describe("openAsTab", () => {
   it("falls back to selectAgent when no active group", () => {
     const s: ops.GroupState = { groups: [], activeGroupId: null, activePath: null };

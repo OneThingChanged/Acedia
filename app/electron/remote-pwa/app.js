@@ -415,7 +415,7 @@ function promptCard(agent, prompt, data, openTerminal) {
   const state = promptResponses.get(agent.id)?.key === key ? promptResponses.get(agent.id) : null;
   const card = make("div", `chat-prompt ${prompt.kind}`);
   card.setAttribute("role", "status");
-  card.appendChild(make("strong", "chat-prompt-heading", t("답변 대기 중")));
+  card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : "답변 대기 중")));
   if (prompt.answerStyle === 'codex-form') {
     let draft = questionDrafts.get(agent.id);
     if (draft?.key !== key) { draft = { key, answers: prompt.questions.map(q => ({ id: q.id, optionIndex: q.options.length ? undefined : null, text: '' })) }; questionDrafts.set(agent.id, draft); }
@@ -434,7 +434,9 @@ function promptCard(agent, prompt, data, openTerminal) {
         finally { responseState.sending = false; refreshPromptViews(agent.id); }
       } }));
   } else card.appendChild(make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.")));
-  card.appendChild(make("div", "chat-prompt-hint", state?.sent
+  card.appendChild(make("div", "chat-prompt-hint", prompt.kind === "authentication"
+    ? t("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.")
+    : state?.sent
     ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
     : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
   if (state?.error) {
@@ -450,7 +452,7 @@ function promptCard(agent, prompt, data, openTerminal) {
     button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option, key); });
     options.appendChild(button);
   }
-  const terminal = make("button", "chat-prompt-option", t("터미널에서 답변"));
+  const terminal = make("button", "chat-prompt-option", t(prompt.kind === "authentication" ? "로그인할 터미널 열기" : "터미널에서 답변"));
   terminal.type = "button";
   terminal.addEventListener("click", openTerminal);
   options.appendChild(terminal);

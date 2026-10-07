@@ -93,6 +93,24 @@ interrupted streams keep their own outcomes. Previously unmeasured request
 usage is not reconstructed from transcript timestamps or added to response
 totals.[^account-pool]
 
+### Codex cache reuse calculation
+
+Cache reuse is cached input divided by all input, expressed as a percentage.
+For routed response records, use `cachedTokens / inputTokens`: `inputTokens`
+already includes cached input. In the local usage database, `input_tokens`
+stores fresh input, so use `cache_read_tokens / (input_tokens + cache_read_tokens)`.
+Do not add cached input to the routed denominator a second time.[^account-pool][^usage-service]
+
+For several calls, divide the sum of cached input by the sum of all input rather
+than averaging individual percentages. Include only completed generation calls
+with reported usage; exclude model-list requests, incomplete or unmeasured calls,
+and output tokens. A zero-input denominator has no defined percentage. Transcript
+indexing can lag the latest completion, so record the observation time and source
+when checking a live session. The
+[1.8.1.59 ToonShader measurement](release-1-8-1-59.md#설치본과-실제-캐시-재사용-확인)
+documents a real observation separately from the mock transport checks. This
+ratio does not measure subscription quota savings or provider billing.
+
 ## Local storage
 
 SQLite runs in WAL mode and stores event identity, time, project, agent,

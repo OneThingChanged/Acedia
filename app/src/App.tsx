@@ -51,6 +51,7 @@ import type {
   ProjectFolder,
   ProjectFolderContextMenuState,
   SessionContextAction,
+  ScreenContextMenuState,
   SessionHierarchy,
   SessionResumeContext,
   StoredAgent,
@@ -188,6 +189,7 @@ import { DeleteSessionModal } from "./components/DeleteSessionModal";
 import { ToastContainer } from "./components/Toast";
 import {
   ContextMenu,
+  ScreenContextMenu,
   ProjectContextMenu,
   ProjectFolderContextMenu,
   TabContextMenu,
@@ -686,6 +688,7 @@ function App() {
   >(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [screenContextMenu, setScreenContextMenu] = useState<ScreenContextMenuState | null>(null);
   // Per-session preference: view a session as a chat transcript vs the terminal.
   const [chatModeAgents, setChatModeAgents] = useState<Set<string>>(
     () => new Set()
@@ -2154,6 +2157,7 @@ function App() {
 
   const dismissTransientMenus = useCallback(() => {
     setContextMenu(null);
+    setScreenContextMenu(null);
     setProjectContextMenu(null);
     setProjectFolderContextMenu(null);
     setTabContextMenu(null);
@@ -3008,6 +3012,11 @@ function App() {
     },
     [dismissTransientMenus]
   );
+
+  const onScreenContextMenu = useCallback((groupId: string, x: number, y: number) => {
+    dismissTransientMenus();
+    setScreenContextMenu({ groupId, x, y });
+  }, [dismissTransientMenus]);
 
   const onSidebarProjectContextMenu = useCallback(
     (projectId: string, x: number, y: number) => {
@@ -4255,6 +4264,9 @@ function App() {
     projects.some((project) => project.id === projectContextMenu.projectId)
       ? projectContextMenu
       : null;
+  const visibleScreenContextMenu = screenContextMenu && groups.some((group) =>
+    group.id === screenContextMenu.groupId && group.layout.type === "split")
+      ? screenContextMenu : null;
   const visibleProjectFolderContextMenu =
     projectFolderContextMenu &&
     projectFolders.some(
@@ -4343,6 +4355,7 @@ function App() {
         onSelectProject={selectProject}
         onSelect={requestSelectAgent}
         onSelectScreen={selectScreen}
+        onScreenContextMenu={onScreenContextMenu}
         onRenameSession={setRenameSessionId}
         onContextMenu={onSidebarContextMenu}
         onNewProject={() => setShowProjectModal(true)}
@@ -4739,6 +4752,21 @@ function App() {
           })()}
           onClose={dismissTransientMenus}
           onAction={onContextAction}
+        />
+      )}
+      {visibleScreenContextMenu && (
+        <ScreenContextMenu
+          state={visibleScreenContextMenu}
+          onClose={dismissTransientMenus}
+          onDissolve={() => {
+            const groupId = visibleScreenContextMenu.groupId;
+            dismissTransientMenus();
+            applyGroupOp((state) => groupOps.dissolveScreen(state, groupId,
+              (tabId) => agentsRef.current.find((agent) => agent.id === tabId)?.projectId
+                ?? parseDocTabId(tabId)?.projectId
+                ?? parseGitHistoryTabId(tabId)?.projectId));
+            restoreWorkspaceFocus();
+          }}
         />
       )}
       {visibleProjectContextMenu && (

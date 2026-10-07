@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { isQuestionTool, parseChatPrompt, promptSignature, questionDetails } from "./chat-prompt.mjs";
 
 describe("chat questions", () => {
+  it.each(["Login expired · Please run /login", "Not logged in · Please run /login", "Anthropic profile login expired"])("identifies a Claude authentication failure: %s", message => {
+    expect(parseChatPrompt("waiting", message, null, "claude")).toMatchObject({ kind: "authentication", answerStyle: "terminal", options: [] });
+    expect(parseChatPrompt("blocked", null, message, "claude").kind).toBe("authentication");
+    expect(parseChatPrompt("running", message, null, "claude")).toBeNull();
+  });
+  it("does not classify quoted login errors, other providers or structured questions as authentication failures", () => {
+    const message = "Login expired · Please run /login";
+    expect(parseChatPrompt("waiting", `What does '${message}' mean?`, null, "claude").kind).toBe("question");
+    expect(parseChatPrompt("waiting", message, null, "codex").kind).toBe("question");
+    expect(parseChatPrompt("waiting", JSON.stringify({ questions: [{ question: message, options: ["A", "B"] }] }), null, "claude").answerStyle).toBe("arrow");
+  });
   it.each(["waiting", "blocked", "attention", "question"])("shows a fallback for %s without details", status => {
     expect(parseChatPrompt(status, null, null, "codex")).toMatchObject({ text: "", answerStyle: "terminal", options: [] });
   });

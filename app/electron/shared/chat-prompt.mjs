@@ -49,6 +49,10 @@ export function parseChatPrompt(status, question, assistantMessage, provider) {
       text: details.text, options: direct ? first.options.map((option, i) => ({ label: option.label, send: String(i + 1) })) : [] };
   }
   const src = details.text || bounded(assistantMessage);
+  // Match direct CLI authentication failures, not quoted text or user questions.
+  if (provider === "claude" && /^(?:(?:login expired|not logged in)\s*·\s*please run \/login\b|anthropic profile login expired\b)/i.test(src)) {
+    return { kind: "authentication", answerStyle: "terminal", text: src, options: [] };
+  }
   const lower = src.toLowerCase();
   const permission = ["allow", "permission", "approve", "grant", "proceed?", "do you want", "y/n", "yes/no", "허용", "권한", "승인", "진행할까요", "계속할까요"].some(h => lower.includes(h));
   const options = [];

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { useAppLanguage } from "../lib/appLanguage";
 import type {
@@ -6,6 +6,7 @@ import type {
   ProjectFolderContextMenuState,
   ProjectContextMenuState,
   SessionContextAction,
+  ScreenContextMenuState,
   TabCtxState,
 } from "../types";
 
@@ -34,6 +35,38 @@ function useClampedMenuPosition(x: number, y: number) {
     setPos({ left, top });
   }, [x, y]);
   return { ref, pos };
+}
+
+export function ScreenContextMenu({ state, onClose, onDissolve }: {
+  state: ScreenContextMenuState;
+  onClose: () => void;
+  onDissolve: () => void;
+}) {
+  const { ref, pos } = useClampedMenuPosition(state.x, state.y);
+  const { text } = useAppLanguage();
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape, true);
+    ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => window.removeEventListener("keydown", closeOnEscape, true);
+  }, [onClose, ref]);
+  return <>
+    <div className="ctx-backdrop" onClick={onClose} onContextMenu={(event) => {
+      event.preventDefault();
+      onClose();
+    }} />
+    <div ref={ref} className="ctx-menu" role="menu" aria-label={text("스크린 메뉴", "Screen menu")}
+      style={{ left: pos.left, top: pos.top }} onContextMenu={(event) => event.preventDefault()}>
+      <button className="ctx-item" role="menuitem" onClick={onDissolve}>
+        {text("스크린 해제", "Ungroup screen")}
+      </button>
+    </div>
+  </>;
 }
 
 export function ProjectFolderContextMenu({

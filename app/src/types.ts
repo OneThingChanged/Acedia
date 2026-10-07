@@ -390,6 +390,12 @@ export type ContextMenuState = {
   agentId: string;
 };
 
+export type ScreenContextMenuState = {
+  x: number;
+  y: number;
+  groupId: string;
+};
+
 export type SessionContextAction =
   | "open"
   | "open-new-window"

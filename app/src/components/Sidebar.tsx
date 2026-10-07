@@ -148,6 +148,7 @@ export function Sidebar({
   onSelectProject,
   onSelect,
   onSelectScreen,
+  onScreenContextMenu,
   onRenameSession,
   onContextMenu,
   onNewProject,
@@ -182,6 +183,7 @@ export function Sidebar({
   onSelectProject: (id: string) => void;
   onSelect: (id: string) => void;
   onSelectScreen: (groupId: string, agentId: string) => void;
+  onScreenContextMenu?: (groupId: string, x: number, y: number) => void;
   onRenameSession: (id: string) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
   onNewProject: () => void;
@@ -1270,6 +1272,11 @@ export function Sidebar({
                   onClick={() =>
                     onSelectScreen(screen.groupId, screen.targetAgentId)
                   }
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onScreenContextMenu?.(screen.groupId, event.clientX, event.clientY);
+                  }}
                   title={screen.title}
                 >
                   <span className="screen-group-rail" aria-hidden="true" />

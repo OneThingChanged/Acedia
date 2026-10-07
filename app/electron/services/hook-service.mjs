@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { checkProjectPath, makeWritable, projectManagementPlan } from "./project-managed-files.mjs";
 import { MIRACONTROL_API_VERSION } from "./miracontrol-integration.mjs";
 
 const HOOK_MARKER = "multiagent";
@@ -281,13 +282,16 @@ function commandFor(helperPath, event, hookEventName) {
 
 async function atomicWrite(filePath, body) {
   await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-  const temp = `${filePath}.${process.pid}.tmp`;
+  const temp = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   await fsPromises.writeFile(temp, body, "utf8");
   try {
     await fsPromises.rename(temp, filePath);
   } catch {
-    await fsPromises.writeFile(filePath, body, "utf8");
-    await fsPromises.rm(temp, { force: true }).catch(() => {});
+    try {
+      await fsPromises.writeFile(filePath, body, "utf8");
+    } finally {
+      await fsPromises.rm(temp).catch(() => {});
+    }
   }
 }
 
@@ -785,7 +789,7 @@ export class HookService {
         merge: before => mergeQwen(before, this.helperPath),
       });
     }
-    return this.#mergeSettings(updates);
+    return this.#mergeSettings(updates, { root, aiToolId });
   }
 
   async setupCodexHome(home) {
@@ -803,12 +807,15 @@ export class HookService {
     }))]);
   }
 
-  #mergeSettings(updates) {
+  #mergeSettings(updates, project = null) {
     const task = async () => {
       // Validate every input before writing any of this project's settings.
       // Missing files can be created; unreadable files must never be replaced.
       const changes = [];
+      const managed = [];
+      const writable = [];
       for (const { target, merge } of updates) {
+        if (project) await checkProjectPath(project.root, target);
         const before = await fsPromises.readFile(target, "utf8").catch(error => {
           if (error.code === "ENOENT") return "";
           throw error;
@@ -820,7 +827,27 @@ export class HookService {
           throw new Error(`Cannot update ${target}: ${error.message}`, { cause: error });
         }
         if (before !== after) changes.push({ target, after });
+        if (project) {
+          const source = `${project.aiToolId}-${path.basename(target)}`;
+          managed.push({ tool: project.aiToolId, target, source, content: merge("") });
+          // Existing user configurations are shared files. Only a verified
+          // Acedia hook/MCP entry authorizes clearing their read-only attribute.
+          let owned = false;
+          if (project.aiToolId === "codex") {
+            owned = before.includes(CODEX_BEGIN) || /^\s*__source\s*=\s*["']multiagent["']\s*$/m.test(before);
+          } else if (before.trim()) {
+            const settings = parseJsonSettings(before);
+            owned = Object.values(settings.hooks || {}).some(entries =>
+              Array.isArray(entries) && entries.some(entry => entry?.__source === HOOK_MARKER));
+            const server = settings.mcpServers?.["multiagent-browser"];
+            owned ||= Array.isArray(server?.args) && server.args.some(arg =>
+              typeof arg === "string" && arg.includes("MULTIAGENT_MCP_SCRIPT"));
+          }
+          if (owned) writable.push(target);
+        }
       }
+      if (project && managed.length) changes.push(...await projectManagementPlan(project.root, managed));
+      for (const target of writable) await makeWritable(target);
       for (const { target, after } of changes) await atomicWrite(target, after);
       return changes.length > 0;
     };

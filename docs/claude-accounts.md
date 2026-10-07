@@ -26,6 +26,12 @@ sources:
 
 ## User workflow
 
+When the CLI reports `Login expired · Please run /login`, desktop and Remote chat
+show **Claude 로그인 필요 / Claude sign-in required** instead of a question. Open
+that session's terminal, run `/login`, complete browser authentication and resend
+the request. The app does not submit a login command, clear credentials or switch
+accounts automatically. A saved credential file alone does not prove a valid login.
+
 Open **Settings → Agents → Claude → Login accounts → Add account**, enter a
 display name, and choose **Add and sign in**. The app runs `claude auth login` with
 that account's own configuration directory. Complete authentication in the browser,

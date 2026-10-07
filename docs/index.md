@@ -13,11 +13,15 @@ configuration that supports it.
 * [Product overview](product-overview.md) - Product goals, runtime shape, capabilities, and variants.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
+* [Project managed files](project-managed-files.md) - Acedia settings registry, Git/Perforce ignores, and read-only repair at local session startup.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
 
 ## Settings and review
 
+* [Acedia 1.8.1.60 EXE release](release-1-8-1-60.md) - Screen ungrouping, browser themes, Claude authentication prompts and generated project configuration management.
+* [Acedia 1.8.1.59 EXE release](release-1-8-1-59.md) - Preserve Codex cache affinity and streamed usage, show active project folder hierarchy, and record publication plus live ToonShader and account-switch cache measurements.
+* [Acedia 1.8.1.57 EXE release](release-1-8-1-57.md) - Automatically open local page links through Hosting and reliably clear Remote Codex conversations.
 * [Acedia 1.8.1.56 EXE release](release-1-8-1-56.md) - Deliver tasks between live Codex sessions through MCP with verified receipt/start stages and persistent duplicate prevention.
 * [Acedia 1.8.1.55 EXE release](release-1-8-1-55.md) - Retry Codex capacity failures with the same model and conversation; show countdown, cancellation and final failure alerts.
 * [Acedia 1.8.1.54 EXE release](release-1-8-1-54.md) - Send Codex async question alerts to the phone while work continues, with call deduplication and existing notification preferences.

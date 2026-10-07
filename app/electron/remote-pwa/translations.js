@@ -115,6 +115,9 @@ export const messages = [
   ["답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.", "Choose your answers and send them to continue.", "选择答案并发送以继续。", "選擇答案並傳送以繼續。", "回答を選択して送信すると作業が続行します。", "Selecciona y envía tus respuestas para continuar."],
 
   ["답변 대기 중", "Answer needed"],
+  ["Claude 로그인 필요", "Claude sign-in required"],
+  ["로그인할 터미널 열기", "Open terminal to sign in"],
+  ["이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.", "Run /login in this session's terminal and sign in through the browser. Then resend your request."],
   ["터미널에서 답변", "Answer in terminal"],
   ["에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.", "The agent is waiting for a question or approval. Open the terminal to review and answer it."],
   ["답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue."],

@@ -38,6 +38,7 @@ window.multiAgentElectron = {
     if (command === "monitor_config_get") return { enabled: false, serverPort: 4421 };
     if (command === "remote_access_list") return { pending: [], approved: [] };
     if (command === "list_project_files" || command === "list_directory" || command === "list_markdown_files") return [];
+    if (command === "session_web_servers" || command === "session_deliveries_get") return [];
     if (command === "get_system_resources") return null;
     if (command.endsWith("_status")) return { running: false };
     return null;

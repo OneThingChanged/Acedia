@@ -1,4 +1,4 @@
-import type { DropZone, Group, LayoutNode, Path } from "../types";
+import type { DropZone, Group, LayoutNode, LeafNode, Path } from "../types";
 import {
   addTabToLeafAt,
   collectAgentIds,
@@ -129,6 +129,47 @@ export function addNewAgent(
   projectId?: string
 ): GroupState {
   return placeIntoSoloGroup(state, agentId, projectId);
+}
+
+// Release the split layout without closing tabs or changing terminal ownership.
+export function dissolveScreen(
+  state: GroupState,
+  groupId: string,
+  projectForTab: (tabId: string) => string | undefined = () => undefined
+): GroupState {
+  const group = state.groups.find((candidate) => candidate.id === groupId);
+  if (!group || group.layout.type !== "split") return state;
+  const leaves: LeafNode[] = [];
+  const visit = (node: LayoutNode) => {
+    if (node.type === "leaf") leaves.push(node);
+    else node.children.forEach(visit);
+  };
+  visit(group.layout);
+  if (leaves.length < 2) return state;
+
+  const activeNode = state.activeGroupId === groupId && state.activePath
+    ? getAt(group.layout, state.activePath)
+    : null;
+  const retainedLeaf = activeNode?.type === "leaf" ? activeNode : leaves[0];
+  const separated = leaves.map((leaf): Group => {
+    const projectId = projectForTab(leaf.tabs[leaf.activeIndex])
+      ?? leaf.tabs.map(projectForTab).find(Boolean)
+      ?? group.projectId;
+    const pins = Object.fromEntries(Object.entries(group.sessionPins ?? {})
+      .filter(([tabId]) => leaf.tabs.includes(tabId)));
+    return {
+      ...group,
+      id: leaf === retainedLeaf ? group.id : crypto.randomUUID(),
+      projectId,
+      layout: leaf,
+      sessionPins: Object.keys(pins).length ? pins : undefined,
+    };
+  });
+  return {
+    groups: state.groups.flatMap((candidate) => candidate.id === groupId ? separated : [candidate]),
+    activeGroupId: state.activeGroupId,
+    activePath: state.activeGroupId === groupId ? [] : state.activePath,
+  };
 }
 
 export function openAsTab(
