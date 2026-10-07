@@ -1,4 +1,5 @@
 import { listSubagents } from './services/subagent-monitor.mjs';
+import { assertRemoteConfigured } from "./shared/tunnel-config.mjs";
 import { sessionWebServers, openServerChrome } from './services/session-web-servers.mjs';
 import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
@@ -5822,12 +5823,14 @@ async function invokeCommand(event, command, rawArgs) {
     case "remote_server_status":
       return remoteService.status();
     case "start_remote_server":
+      assertRemoteConfigured(remoteService.config);
       return remoteService.start();
     case "stop_remote_server":
       return remoteService.stop();
     case "tunnel_status":
       return tunnelService.status();
     case "start_tunnel":
+      tunnelService.validateConfiguration();
       if (!remoteService.status().running) await remoteService.start();
       return tunnelService.start();
     case "stop_tunnel":
@@ -5845,6 +5848,7 @@ async function invokeCommand(event, command, rawArgs) {
     case "monitor_server_status":
       return monitorService.status();
     case "monitor_lan_set":
+      if (args.allowedNetworks !== undefined) return monitorService.setLanNetworks(args.allowedNetworks);
       return monitorService.setLanEnabled(args.enabled === true);
     case "monitor_lan_reset_code":
       return monitorService.resetLanCode();

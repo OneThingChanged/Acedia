@@ -14,6 +14,9 @@ describe("Electron IPC contract", () => {
   });
   it("allows LAN controls and session notification synchronization with explicit values", () => {
     expect(contract.assertInvokeRequest("monitor_lan_set", { enabled: true })).toEqual({ enabled: true });
+    expect(contract.assertInvokeRequest("monitor_lan_set", { allowedNetworks: ["172.28.37.0/24"] })).toEqual({ allowedNetworks: ["172.28.37.0/24"] });
+    expect(() => contract.assertInvokeRequest("monitor_lan_set", { allowedNetworks: "172.28.37.0/24" })).toThrow();
+    expect(() => contract.assertInvokeRequest("monitor_lan_set", { enabled: true, allowedNetworks: [] })).toThrow();
     expect(contract.assertInvokeRequest("monitor_lan_reset_code", {})).toEqual({});
     expect(() => contract.assertInvokeRequest("monitor_lan_set", { enabled: "yes" })).toThrow();
     expect(contract.assertInvokeRequest("session_notifications_get", { id: "session" })).toEqual({ id: "session" });

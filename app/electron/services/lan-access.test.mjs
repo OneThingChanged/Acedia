@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LanAccess, dashboardClient, dashboardSameOrigin, lanInterfaces } from "./lan-access.mjs";
+import { LanAccess, dashboardClient, dashboardSameOrigin, lanInterfaces, normalizeLanNetworks } from "./lan-access.mjs";
 import { LocalDashboardService } from "./web-services.mjs";
 
 // Each probe uses a new connection: reset/disable deliberately closes existing
@@ -17,6 +17,44 @@ function request(peer = "192.168.10.21", host = "192.168.10.20:4421", headers = 
 }
 
 describe("LAN connection boundary", () => {
+  it("allows explicitly added private subnets as code-authenticated LAN clients while keeping direct host and interface checks", () => {
+    const allowed = ["172.28.37.0/24"];
+    expect(dashboardClient(request("172.28.37.188"), 4421, true, network)).toBe("blocked");
+    expect(dashboardClient(request("172.28.37.188"), 4421, true, network, allowed)).toBe("lan");
+    expect(dashboardClient(request("172.28.38.188"), 4421, true, network, allowed)).toBe("blocked");
+    expect(dashboardClient(request("172.28.37.188"), 4421, false, network, allowed)).toBe("blocked");
+    expect(dashboardClient(request("172.28.37.188", "127.0.0.1:4421"), 4421, true, network, allowed)).toBe("blocked");
+    expect(dashboardClient(request("172.28.37.188", undefined, { "x-forwarded-for": "172.28.37.188" }), 4421, true, network, allowed)).toBe("blocked");
+    expect(dashboardClient(request("172.28.37.188"), 4421, true, [], allowed)).toBe("blocked");
+  });
+
+  it("normalizes private CIDRs and rejects public, loopback, invalid and overbroad networks", () => {
+    expect(normalizeLanNetworks([" 172.28.37.188/24 ", "172.28.37.0/24", "10.1.2.3/32", ""])).toEqual(["172.28.37.0/24", "10.1.2.3/32"]);
+    for (const value of ["0.0.0.0/0", "172.0.0.0/8", "127.0.0.0/8", "203.0.113.0/24", "192.168.1.0/33", "192.168.1.1", "garbage"]) {
+      expect(() => normalizeLanNetworks([value])).toThrow();
+    }
+  });
+
+  it("persists added networks, preserves them during other saves, and revokes authenticated clients when they change", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-lan-networks-"));
+    const access = new LanAccess();
+    const service = new LocalDashboardService({ title: "test", defaultPort: 4421, baseDir: root, configName: "config.json", allowLan: true, lanAccess: access });
+    try {
+      access.reset(true);
+      const paired = access.pair(request(), access.code);
+      const browser = request(undefined, undefined, { cookie: paired.cookie.split(";")[0] });
+      expect(access.authenticated(browser)).toBe(true);
+      await service.setLanNetworks(["172.28.37.188/24"]);
+      expect(access.authenticated(browser)).toBe(false);
+      await service.setConfig({ enabled: true, serverPort: 4421 });
+      const restored = new LocalDashboardService({ title: "test", defaultPort: 4421, baseDir: root, configName: "config.json", allowLan: true });
+      expect(restored.status().lan.allowedNetworks).toEqual(["172.28.37.0/24"]);
+      await expect(service.setLanNetworks(["0.0.0.0/0"])).rejects.toThrow();
+      expect(service.status().lan.allowedNetworks).toEqual(["172.28.37.0/24"]);
+      await service.setLanNetworks([]);
+      expect(service.status().lan.allowedNetworks).toEqual([]);
+    } finally { fs.rmSync(root, { recursive: true }); }
+  });
   it("advertises private IPv4 interfaces and excludes public, loopback and IPv6 addresses", () => {
     expect(lanInterfaces({
       Ethernet: [network[0], { address: "203.0.113.5", netmask: "255.255.255.0" }],

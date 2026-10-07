@@ -14,6 +14,7 @@ export type DashboardStatus = {
     running: boolean;
     addresses: { name: string; url: string }[];
     code: string | null;
+    allowedNetworks?: string[];
   };
 };
 
@@ -23,6 +24,9 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
   const lan = status.lan;
+  const [networks, setNetworks] = useState("");
+  const networksKey = JSON.stringify(lan?.allowedNetworks || []);
+  useEffect(() => { setNetworks((JSON.parse(networksKey) as string[]).join("\n")); }, [networksKey]);
   useEffect(() => {
     if (!lan?.enabled || busy) return;
     let disposed = false;
@@ -48,6 +52,18 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
     catch { setError(text("복사하지 못했습니다.", "Could not copy.")); }
   };
 
+  const saveNetworks = async () => {
+    setBusy(true); setError("");
+    try {
+      const saved = await invoke<DashboardStatus>("monitor_lan_set", {
+        allowedNetworks: networks.split(/[\n,;]+/).map(value => value.trim()).filter(Boolean),
+      });
+      onChange(saved);
+      setNetworks((saved.lan?.allowedNetworks || []).join("\n"));
+    } catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); }
+    finally { setBusy(false); }
+  };
+
   return <div className="app-settings-section dashboard-lan-panel" {...settingTarget("dashboard.lan")}>
     <div className="field-label">{text("같은 네트워크에서 접속", "Local network access")}<SettingScope id="dashboard.lan" /></div>
     <div className="app-about-card">
@@ -56,7 +72,17 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           disabled={busy || !lan?.available} onChange={() => { void change(); }} />
         <span>{text("LAN 접속 허용", "Allow LAN access")}</span>
       </label>
-      <p className="app-update-message">{text("같은 공유기에 연결된 PC에서 아래 주소를 열고 연결 코드를 입력하세요. 세션·Chat·터미널을 함께 사용할 수 있습니다.", "Open the address below on a PC connected to the same router and enter the connection code to use your sessions, Chat and terminals.")}</p>
+      <p className="app-update-message">{text("같은 서브넷 또는 아래에 추가한 사내 네트워크의 PC에서 주소를 열고 연결 코드를 입력하세요.", "Open the address from a PC on the same subnet or an added private network, then enter the connection code.")}</p>
+      <label className="field">
+        <span className="field-label">{text("추가 허용 네트워크 (IPv4 CIDR)", "Additional allowed networks (IPv4 CIDR)")}</span>
+        <textarea aria-label={text("추가 허용 네트워크", "Additional allowed networks")} rows={3}
+          style={{ width: "100%", boxSizing: "border-box", resize: "vertical" }}
+          placeholder="172.28.37.0/24" value={networks} disabled={busy || !lan?.available}
+          onChange={event => setNetworks(event.target.value)} />
+      </label>
+      <p className="app-update-message">{text("한 줄에 한 대역을 입력하세요. 비우면 같은 서브넷만 허용합니다. 변경하면 연결 코드가 갱신되고 기존 연결이 해제됩니다.", "Enter one network per line. Leave empty to allow only the same subnet. Changes reset the code and disconnect existing clients.")}</p>
+      <button type="button" className="btn-secondary app-update-btn" disabled={busy || !lan?.available}
+        onClick={() => { void saveNetworks(); }}>{text("허용 네트워크 저장", "Save allowed networks")}</button>
       {busy && <p role="status" className="app-update-message">{text("적용 중…", "Applying…")}</p>}
       {lan?.running && <>
         {lan.addresses.map(entry => <div key={entry.url} className="dashboard-lan-address">

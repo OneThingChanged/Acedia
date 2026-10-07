@@ -175,6 +175,34 @@ async function exerciseAccountLaunchDefaults() {
   return 'SESSION_ACCOUNT_LAUNCH_SETTINGS_UI_OK';
 }
 
+async function exerciseTunnelConfiguration() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 100));
+  const set = async (field, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true })); await wait();
+  };
+  await set(document.querySelector('.app-settings-search input'), 'tunnel');
+  document.querySelector('[data-setting-result="remote.tunnel"]').click(); await wait();
+  const start = () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Start tunnel');
+  const starts = () => window.fixtureCalls.filter(call => call.command === 'start_tunnel' || call.command === 'start_remote_server').length;
+  const initial = starts();
+  await set(document.querySelector('[data-setting-id="remote.clientId"] input'), ' ');
+  start().click(); await wait();
+  if (starts() !== initial || !document.querySelector('.app-update-error')?.textContent.includes('Client ID')) throw Error('Empty OAuth settings started a tunnel or lacked input guidance');
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'Start').click(); await wait();
+  if (starts() !== initial || !document.querySelector('[role=alert]')?.textContent.includes('Client ID')) throw Error('Empty OAuth settings started Remote');
+  await set(document.querySelector('[data-setting-id="remote.clientId"] input'), 'client');
+  await set(document.querySelector('[data-setting-id="remote.owner"] input'), 'owner');
+  start().click(); await wait();
+  if (starts() !== initial || !document.querySelector('.app-update-error')?.textContent.includes('Save')) throw Error('Unsaved settings started a tunnel');
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'Save').click(); await wait();
+  start().click(); await wait();
+  if (starts() !== initial + 1) throw Error('Saved OAuth settings did not start a quick tunnel');
+  [...document.querySelectorAll('button')].find(button => button.textContent === 'Stop tunnel').click(); await wait();
+  if (!start()) throw Error('Stop tunnel failed');
+  return 'TUNNEL_CONFIGURATION_GUARD_UI_OK';
+}
+
 async function exerciseStatusBar() {
   const wait = () => new Promise(resolve => setTimeout(resolve,100));
   localStorage.setItem('multiagent.statusBar.v1',JSON.stringify({...JSON.parse(localStorage.getItem('multiagent.statusBar.v1')||'{}'),selectedAccount:'codex:fixture',selectedAccounts:['codex:fixture','claude']}));
@@ -232,6 +260,7 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript("(" + exerciseSavedCommands.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exercisePolicies.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exerciseTunnelConfiguration.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
     const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});
     await peer.loadFile(path.join(directory,"index.html"));

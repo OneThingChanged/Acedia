@@ -1742,7 +1742,7 @@ describe("Electron dashboard server", () => {
     let spawnedArgs = null;
     const service = new TunnelService({
       baseDir: root,
-      getConfig: () => ({ tunnel_token: "", public_hostname: "" }),
+      getConfig: () => ({ client_id: "client", owner: "owner", tunnel_token: "  ", public_hostname: "" }),
       getLocalUrl: () => "http://127.0.0.1:18800",
       spawnImpl(_executable, args) {
         spawnedArgs = args;

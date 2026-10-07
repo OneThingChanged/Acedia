@@ -303,6 +303,15 @@ WebView. Version-specific results are recorded in the
 
 ## Authentication and approval
 
+Starting an external tunnel requires a saved GitHub Client ID and owner username.
+The Remote PWA Start action also requires these saved fields and rejects unsaved edits.
+The settings screen guides users to enter and save these fields before starting;
+unsaved edits also block startup. Named tunnels additionally require a public
+hostname and a fixed local port (1–65535). Client Secret and the tunnel token
+remain optional for quick tunnels. The IPC handler validates saved configuration
+before starting the Remote server, and the tunnel service validates before
+downloading cloudflared or spawning a process.
+
 GitHub OAuth establishes identity; it does not by itself grant workspace access.
 The desktop owner must approve the account in MultiAgent. OAuth state, signed
 session cookies, and Android return tickets are short-lived and validated by the

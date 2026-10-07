@@ -263,7 +263,10 @@ function assertInvokeRequest(command, rawArgs) {
   const args = assertObject(rawArgs);
   switch (command) {
     case "monitor_lan_set":
-      if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
+      if (args.allowedNetworks !== undefined) {
+        if (args.enabled !== undefined || !Array.isArray(args.allowedNetworks) || args.allowedNetworks.length > 32 ||
+            args.allowedNetworks.some(value => typeof value !== "string" || value.length > 64)) throw new TypeError("Invalid LAN allowed networks");
+      } else if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
       break;
     case "session_notifications_get":
     case "capacity_retry_get":

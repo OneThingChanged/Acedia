@@ -9,6 +9,7 @@ import { defaultCommandShortcuts } from "../../src/lib/commandRegistry";
 import "../../src/App.css";
 
 window.fixtureCalls = [];
+window.fixtureRemoteConfig = { client_id: "private-fixture", owner: "", client_secret: "", tunnel_token: "", public_hostname: "", server_port: 0 };
 window.fixtureIdleConfig = {revision:0,enabled:false,minutes:30};
 window.fixtureNotificationConfig = {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
 window.fixtureCommandConfig = { revision: 0, commands: [], startups: {} };
@@ -40,7 +41,10 @@ window.multiAgentElectron = {
     if (command === "qwen_region_get") return { available: true, region: "international", regions: [{ id: "international", label: "International" }] };
     if (command === "conversation_storage_get") return { path: "C:/fixture/storage", custom: false, available: true, conversations: 0, blocks: 0, artifacts: 0, bytes: 0 };
     if (command === "get_developer_update_settings") return { directory: null, source: "none" };
-    if (command === "remote_config_get") return { client_id: "private-fixture", owner: "", client_secret: "", tunnel_token: "", public_hostname: "", server_port: 0 };
+    if (command === "remote_config_get") return structuredClone(window.fixtureRemoteConfig);
+    if (command === "remote_config_set") { window.fixtureRemoteConfig = structuredClone(args.config); return structuredClone(window.fixtureRemoteConfig); }
+    if (command === "start_tunnel") return { running: true, publicUrl: "https://fixture.trycloudflare.com" };
+    if (command === "stop_tunnel") return { running: false, publicUrl: null };
     if (command === "monitor_config_get") return { enabled: false, serverPort: 4421 };
     if (command === "remote_access_list") return { pending: [], approved: [] };
     if (command.endsWith("_status")) return { running: false };

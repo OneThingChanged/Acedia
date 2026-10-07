@@ -48,7 +48,7 @@ if (process.versions.electron) {
       ipcMain.handle("multiagent:invoke", (_event, command, rawArgs) => {
         const args = contract.assertInvokeRequest(command, rawArgs);
         if (command === "monitor_server_status") return service.status();
-        if (command === "monitor_lan_set") return service.setLanEnabled(args.enabled);
+        if (command === "monitor_lan_set") return args.allowedNetworks !== undefined ? service.setLanNetworks(args.allowedNetworks) : service.setLanEnabled(args.enabled);
         if (command === "monitor_lan_reset_code") return service.resetLanCode();
         if (command === "clipboard_write_text") { copied = args.text; return; }
         throw new Error("Unexpected fixture command");
@@ -62,6 +62,25 @@ if (process.versions.electron) {
       await waitFor(host, "document.querySelector('input[type=checkbox]')?.disabled === false");
       await host.webContents.executeJavaScript("document.querySelector('input[type=checkbox]').click()");
       await waitFor(host, "!!document.querySelector('.dashboard-lan-code strong')?.textContent.trim()");
+      await host.webContents.executeJavaScript(`(() => {
+        const field = document.querySelector('textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, '0.0.0.0/0');
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await host.webContents.executeJavaScript("document.querySelector('textarea').closest('.app-about-card').querySelector('button').click()");
+      await waitFor(host, "!!document.querySelector('[role=alert]')");
+      assert(service.status().lan.allowedNetworks.length === 0, "Invalid network changed the allowlist");
+      await host.webContents.executeJavaScript(`(() => {
+        const field = document.querySelector('textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, '172.28.37.188/24');
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await host.webContents.executeJavaScript("document.querySelector('textarea').closest('.app-about-card').querySelector('button').click()");
+      await waitFor(host, "document.querySelector('textarea').value === '172.28.37.0/24' && !document.querySelector('[role=alert]')");
+      assert(service.status().lan.allowedNetworks[0] === "172.28.37.0/24", "Allowed network was not saved");
+      console.log("LAN_ALLOWED_NETWORK_EDITOR_OK");
       const status = service.status();
       assert(status.lan.addresses.length, "A private IPv4 interface is required for this smoke");
       const base = status.lan.addresses[0].url;

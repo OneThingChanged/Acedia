@@ -13,6 +13,23 @@ export function isPrivateIPv4(value) {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
+function privateNetwork(value) {
+  const match = String(value).trim().match(/^([^/]+)\/(\d{1,2})$/);
+  if (!match || isIP(match[1]) !== 4 || Number(match[2]) > 32) throw new Error("Enter a private IPv4 CIDR, for example 172.28.37.0/24.");
+  const prefix = Number(match[2]);
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  const start = (ipv4(match[1]) & mask) >>> 0;
+  const end = (start | (~mask >>> 0)) >>> 0;
+  const format = number => [24, 16, 8, 0].map(shift => (number >>> shift) & 255).join(".");
+  if (!isPrivateIPv4(format(start)) || !isPrivateIPv4(format(end))) throw new Error("Only private IPv4 networks are allowed (10/8, 172.16/12, 192.168/16).");
+  return { mask, start, cidr: `${format(start)}/${prefix}` };
+}
+
+export function normalizeLanNetworks(values) {
+  if (!Array.isArray(values) || values.length > 32 || values.some(value => typeof value !== "string")) throw new Error("Enter up to 32 private IPv4 networks.");
+  return [...new Set(values.map(value => value.trim()).filter(Boolean).map(value => privateNetwork(value).cidr))];
+}
+
 export function lanInterfaces(interfaces = os.networkInterfaces()) {
   return Object.entries(interfaces).flatMap(([name, entries]) => (entries || []).flatMap(entry => (
     !entry.internal && isPrivateIPv4(entry.address) && isIP(entry.netmask) === 4
@@ -20,9 +37,9 @@ export function lanInterfaces(interfaces = os.networkInterfaces()) {
   )));
 }
 
-// Only direct connections to an advertised interface on the same IPv4 subnet
-// can pair. Forwarded headers never turn a proxy request into a local owner.
-export function dashboardClient(request, port, enabled, interfaces) {
+// Direct connections to an advertised interface can pair from its subnet or
+// explicitly allowed private CIDRs. Proxy headers never create a local owner.
+export function dashboardClient(request, port, enabled, interfaces, allowedNetworks = []) {
   const peer = address(request.socket.remoteAddress);
   const local = address(request.socket.localAddress);
   if (Object.keys(request.headers).some(key => /^(forwarded|x-forwarded-|cf-connecting-ip|true-client-ip)/i.test(key))) return "blocked";
@@ -34,8 +51,14 @@ export function dashboardClient(request, port, enabled, interfaces) {
   } catch { return "blocked"; }
   if ((peer === "127.0.0.1" || peer === "::1") && ["127.0.0.1", "localhost", "[::1]"].includes(host.hostname)) return "local";
   if (!enabled || !isPrivateIPv4(peer) || host.hostname !== local) return "blocked";
-  return interfaces.some(entry => entry.address === local &&
-    (ipv4(peer) & ipv4(entry.netmask)) === (ipv4(local) & ipv4(entry.netmask))) ? "lan" : "blocked";
+  if (!interfaces.some(entry => entry.address === local)) return "blocked";
+  const sameSubnet = interfaces.some(entry => entry.address === local &&
+    (ipv4(peer) & ipv4(entry.netmask)) === (ipv4(local) & ipv4(entry.netmask)));
+  const explicitlyAllowed = allowedNetworks.some(value => {
+    try { const { mask, start } = privateNetwork(value); return ((ipv4(peer) & mask) >>> 0) === start; }
+    catch { return false; }
+  });
+  return sameSubnet || explicitlyAllowed ? "lan" : "blocked";
 }
 
 export function dashboardSameOrigin(request) {
@@ -68,7 +91,7 @@ export class LanAccess {
     };
   }
 
-  classify(request, port, enabled) { return dashboardClient(request, port, enabled, this.interfaces()); }
+  classify(request, port, enabled, allowedNetworks = []) { return dashboardClient(request, port, enabled, this.interfaces(), allowedNetworks); }
 
   key(request) {
     const token = String(request.headers.cookie || "").match(/(?:^|;\s*)acedia_lan=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];

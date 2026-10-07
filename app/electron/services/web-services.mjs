@@ -1,5 +1,6 @@
 import { RemoteHosting } from './remote-hosting.mjs';
-import { LanAccess, dashboardSameOrigin } from "./lan-access.mjs";
+import { assertTunnelConfigured } from "../shared/tunnel-config.mjs";
+import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { sendJson } from "./remote-http.mjs";
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
@@ -727,6 +728,7 @@ export class LocalDashboardService {
         enabled: Boolean(stored.enabled),
         serverPort: Number(stored.serverPort ?? stored.server_port) || this.defaultPort,
         lanEnabled: this.allowLan && stored.lanEnabled === true,
+        lanAllowedNetworks: normalizeLanNetworks(stored.lanAllowedNetworks || []),
       };
     } catch {}
   }
@@ -738,6 +740,7 @@ export class LocalDashboardService {
       // LAN exposure is changed only by the desktop's dedicated action. A stale
       // port/autostart form must not silently enable or disable access.
       lanEnabled: this.allowLan && this.config.lanEnabled === true,
+      lanAllowedNetworks: this.config.lanAllowedNetworks || [],
     };
     await fsPromises.mkdir(this.baseDir, { recursive: true });
     await fsPromises.writeFile(this.configPath, JSON.stringify(this.config, null, 2), "utf8");
@@ -758,7 +761,7 @@ export class LocalDashboardService {
       running: Boolean(this.server?.listening),
       url: this.port ? `http://127.0.0.1:${this.port}` : null,
       port: this.port,
-      lan: { available: this.allowLan, ...this.lanAccess.status(this.port, this.config.lanEnabled === true, this.lanActive) },
+      lan: { available: this.allowLan, allowedNetworks: this.config.lanAllowedNetworks || [], ...this.lanAccess.status(this.port, this.config.lanEnabled === true, this.lanActive) },
     };
   }
 
@@ -786,8 +789,25 @@ export class LocalDashboardService {
     return this.status();
   }
 
+  setLanNetworks(values) {
+    const change = async () => {
+      if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
+      const next = normalizeLanNetworks(values);
+      const previous = this.config.lanAllowedNetworks;
+      if (JSON.stringify(next) === JSON.stringify(previous || [])) return this.status();
+      this.config.lanAllowedNetworks = next;
+      try { await this.setConfig(this.config); }
+      catch (error) { this.config.lanAllowedNetworks = previous; throw error; }
+      this.lanAccess.reset(this.lanActive);
+      return this.status();
+    };
+    const result = this.lanChange.then(change);
+    this.lanChange = result.catch(() => {});
+    return result;
+  }
+
   async serveLanAccess(request, response, url) {
-    const client = this.lanAccess.classify(request, this.port, this.lanActive);
+    const client = this.lanAccess.classify(request, this.port, this.lanActive, this.config.lanAllowedNetworks || []);
     if (client === "blocked") { sendJson(response, 403, { error: "Direct local network access required" }); return true; }
     if (client === "local") return false;
     if (request.method === "GET" && url.pathname === "/auth/mode") {
@@ -1931,6 +1951,7 @@ export class TunnelService {
     this.startPromise = null;
   }
   status() { return { running: Boolean(this.child && !this.child.killed), publicUrl: this.publicUrl }; }
+  validateConfiguration() { assertTunnelConfigured(this.getConfig()); }
 
   async ensureExecutable() {
     const executableName = process.platform === "win32" ? "cloudflared.exe" : "cloudflared";
@@ -1980,14 +2001,15 @@ export class TunnelService {
   async start() {
     if (this.startPromise) return this.startPromise;
     if (this.child && !this.child.killed && this.publicUrl) return this.status();
+    this.validateConfiguration();
     this.startPromise = (async () => {
       const config = this.getConfig();
       const executable = await this.ensureExecutable();
-      const named = Boolean(config.tunnel_token);
+      const named = Boolean(String(config.tunnel_token || "").trim());
       const localUrl = this.getLocalUrl();
       if (!named && !localUrl) throw new Error("Remote PWA 서버가 실행 중이 아닙니다.");
       const args = named
-        ? ["tunnel", "run", "--token", config.tunnel_token]
+        ? ["tunnel", "run", "--token", config.tunnel_token.trim()]
         : ["tunnel", "--url", localUrl, "--no-autoupdate"];
       const child = this.spawnImpl(executable, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       this.child = child;

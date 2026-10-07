@@ -1,4 +1,5 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
+import { tunnelConfigurationIssue } from "../../electron/shared/tunnel-config.mjs";
 import { DashboardLanPanel, type DashboardStatus } from "./DashboardLanPanel";
 import { UsageCollectorPanel } from './UsageCollectorPanel';
 import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
@@ -401,6 +402,7 @@ export function SettingsModal({
   });
   const [tunnelBusy, setTunnelBusy] = useState(false);
   const [tunnelError, setTunnelError] = useState<string | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [tunnelCopied, setTunnelCopied] = useState(false);
 
   const [access, setAccess] = useState<AccessList>({
@@ -656,6 +658,8 @@ export function SettingsModal({
     invoke<RemoteConfig>("remote_config_set", { config: remoteConfig })
       .then((saved) => {
         setRemoteConfig(saved);
+        setRemoteError(null);
+        setTunnelError(null);
         setConfigSaved(true);
         setTimeout(() => setConfigSaved(false), 1500);
       })
@@ -699,12 +703,28 @@ export function SettingsModal({
 
   const handleTunnelToggle = async () => {
     if (IS_COMPANY_BUILD) return;
+    if (!tunnel.running) {
+      const issue = tunnelConfigurationIssue(remoteConfig);
+      if (issue) {
+        setTunnelError(issue === "oauth"
+          ? text("GitHub Client ID와 Owner GitHub username을 먼저 입력하고 Save를 눌러 주세요.", "Enter GitHub Client ID and Owner GitHub username, then click Save first.")
+          : issue === "hostname"
+            ? text("고정 터널의 Public hostname을 입력하고 Save를 눌러 주세요.", "Enter Public hostname for the named tunnel, then click Save first.")
+            : text("고정 터널의 로컬 서버 포트(1–65535)를 입력하고 Save를 눌러 주세요.", "Enter a fixed local server port (1–65535), then click Save first."));
+        return;
+      }
+    }
     setTunnelBusy(true);
     setTunnelError(null);
     try {
       if (tunnel.running) {
         setTunnel(await invoke<TunnelStatus>("stop_tunnel"));
       } else {
+        const saved = await invoke<RemoteConfig>("remote_config_get");
+        if ((Object.keys(remoteConfig) as (keyof RemoteConfig)[]).some(key => remoteConfig[key] !== saved[key])) {
+          setTunnelError(text("변경한 Remote 설정을 Save로 저장한 뒤 터널을 시작해 주세요.", "Click Save to save your Remote settings before starting the tunnel."));
+          return;
+        }
         setTunnel(await invoke<TunnelStatus>("start_tunnel"));
         const status = await invoke<RemoteStatus>("remote_server_status");
         setRemote(status);
@@ -730,14 +750,26 @@ export function SettingsModal({
 
   const handleRemoteToggle = async () => {
     if (IS_COMPANY_BUILD) return;
+    setRemoteError(null);
+    if (!remote.running && tunnelConfigurationIssue({ client_id: remoteConfig.client_id, owner: remoteConfig.owner })) {
+      setRemoteError(text("GitHub Client ID와 Owner GitHub username을 먼저 입력하고 Save를 눌러 주세요.", "Enter GitHub Client ID and Owner GitHub username, then click Save first."));
+      return;
+    }
     setRemoteBusy(true);
     try {
+      if (!remote.running) {
+        const saved = await invoke<RemoteConfig>("remote_config_get");
+        if ((Object.keys(remoteConfig) as (keyof RemoteConfig)[]).some(key => remoteConfig[key] !== saved[key])) {
+          setRemoteError(text("변경한 Remote 설정을 Save로 저장한 뒤 시작해 주세요.", "Click Save to save your Remote settings before starting."));
+          return;
+        }
+      }
       const next = remote.running
         ? await invoke<RemoteStatus>("stop_remote_server")
         : await invoke<RemoteStatus>("start_remote_server");
       setRemote(next);
     } catch (err) {
-      console.error("remote server toggle failed", err);
+      setRemoteError(err instanceof Error ? err.message : String(err));
     } finally {
       setRemoteBusy(false);
     }
@@ -1687,10 +1719,10 @@ export function SettingsModal({
                 </button>
               </div>
             )}
-            <div className="app-update-message">
-              {remote.running
+            <div className={`app-update-message ${remoteError ? "app-update-error" : ""}`} role={remoteError ? "alert" : undefined}>
+              {remoteError || (remote.running
                 ? text("모바일 리모컨 서버가 준비됐습니다. 위 주소는 이 PC에서 확인할 때 사용하고, 휴대폰에서는 아래 HTTPS 터널 주소를 사용하세요.", "The mobile remote server is ready. Use the address above on this PC and the HTTPS tunnel address below on your phone.")
-                : text("세션 상태·최근 출력·질문을 확인하고 짧은 지시를 보낼 수 있는 모바일 PWA 서버를 켭니다.", "Start a mobile PWA server for viewing session status, recent output, and questions, and for sending short instructions.")}
+                : text("GitHub Client ID와 Owner를 입력하고 Save로 저장한 뒤 시작하세요.", "Enter GitHub Client ID and Owner, then click Save before starting."))}
             </div>
             <div className="app-update-actions">
               <button
@@ -1735,7 +1767,7 @@ export function SettingsModal({
                   ? text("터널 시작 중... 처음이면 cloudflared 다운로드(~60MB) 때문에 오래 걸릴 수 있어요.", "Starting tunnel… The first start may take longer while cloudflared (~60 MB) downloads.")
                   : tunnel.running
                     ? text("휴대폰에서 위 HTTPS 주소를 열고 브라우저 메뉴의 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택하세요. Quick tunnel 주소는 다시 켤 때 바뀝니다.", "Open the HTTPS address above on your phone and choose Install app or Add to Home Screen in the browser menu. A quick tunnel address changes each time it starts.")
-                    : text("Cloudflare Tunnel로 공개 HTTPS 주소를 발급해 외부 인터넷에서 접속할 수 있게 합니다.", "Create a public HTTPS address with Cloudflare Tunnel for access over the internet.")}
+                    : text("GitHub Client ID와 Owner를 입력하고 Save로 저장한 뒤 터널을 시작하세요. Cloudflare Tunnel로 외부 접속용 HTTPS 주소를 만듭니다.", "Enter GitHub Client ID and Owner, then click Save before starting a tunnel. Cloudflare Tunnel creates a public HTTPS address.")}
             </div>
             <div className="app-update-actions">
               <button
