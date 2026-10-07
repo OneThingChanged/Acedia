@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.61
 description: "대시보드의 추가 사내 네트워크 허용과 Remote·터널 시작 전 설정 검사."
-status: candidate
+status: stable
 last_updated: 2026-10-07
 ---
 
@@ -35,4 +35,20 @@ last_updated: 2026-10-07
 
 - 전체 **167개 파일·1,133개 검사**, TypeScript 검사 및 native PTY 검증을 통과했다.
 
-EXE 패키지·공개 배포 결과는 완료 후 기록한다. Microsoft Store와 새 APK는 이 배포에 포함하지 않는다.
+- Standard EXE 빌드와 packaged bridge·Dashboard·내장 Git·종료·트레이·보안 lifecycle 검증을 통과했다.
+- `app.asar`의 runtime·renderer 파일 **8개**가 빌드 원본과 일치하고 패키지 버전이 **1.8.1.61**임을 확인했다.
+- 기존 APK **1.8.1.39**의 패키지·아키텍처·서명 인증서를 검증하고 재사용했다. 설치 파일 FileVersion **1.8.1.61**, 파일명·크기·SHA-256·blockmap·manifest 검증을 통과했다. Authenticode는 기존 EXE 채널과 같은 **NotSigned**다.
+
+## 공개 배포
+
+2026-10-07 **13:43:53 KST**에 [v1.8.1.61](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.61)을 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 검증한 소스 `47a705ab2e8a02c20bd283219e45e53bea63a6ae`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.61-x64.exe` | 151,281,733 | `bf03ee048ec0f1497a3fa74bef09d219896b36443cb00f0ea0effb49f0c30f76` |
+| `Acedia-Setup-1.8.1.61-x64.exe.blockmap` | 159,224 | `2d108eba4bbe511ff658993bf838c698a5d7f2cc816d1c5d3115095f1d129616` |
+| `latest-exe.json` | 256 | `816bf5fda5761e1b0ea6884174b907c7c9f902d450f914a2ad8059bb2d4721d5` |
+
+**13:44:28 KST**에 프로덕션 업데이터의 **1.8.1.59·1.8.1.60 → 1.8.1.61 감지**와 공개 EXE 다운로드·설치 전 해시 검증을 완료했다. 세 공개 자산의 크기·SHA-256, 소스 태그와 최신 안정 릴리스, 번들 APK 버전 **1.8.1.39**가 일치했다.
+
+실행 중인 사용자 앱의 설치·종료·재시작은 수행하지 않았다. Microsoft Store와 새 APK 배포는 수행하지 않았다.
