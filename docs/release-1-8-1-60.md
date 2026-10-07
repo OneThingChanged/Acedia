@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.60
 description: "스크린 해제 메뉴, 브라우저 테마 동기화, Claude 로그인 안내와 프로젝트 생성 설정 자동 관리."
-status: candidate
+status: stable
 last_updated: 2026-10-07
 ---
 
@@ -34,4 +34,21 @@ last_updated: 2026-10-07
 - 실제 Electron에서 스크린 우클릭 메뉴·해제·레이아웃 복원과 4개 테마의 브라우저 도구 모음·메뉴·방문 기록·다운로드 표시를 확인했다.
 - Claude 인증 안내는 데스크톱 및 Remote **1024/390px**에서 로그인 필요 표시·터미널 열기·오류 해제 후 복구를 검증했다. 실제 OAuth 로그인이나 ACL 접근 거부 복구를 검증한 것은 아니다.
 
-EXE 빌드·패키지 및 공개 배포 검증은 완료 후 기록한다. Microsoft Store와 새 APK 배포는 이 릴리스에 포함하지 않는다.
+- TypeScript/Vite 및 Standard EXE 빌드를 통과했다. 기존 APK **1.8.1.39**의 패키지·아키텍처·서명 인증서를 검증하고 재사용했다.
+- native PTY, packaged bridge·Dashboard·내장 Git 및 종료·트레이·보안 lifecycle 검증을 통과했다. Claude 인증 안내의 Electron 데스크톱·Remote 검증도 다시 통과했다.
+- `app.asar`의 변경된 runtime 모듈 **6개**가 원본과 일치하며 패키지 버전이 **1.8.1.60**임을 확인했다.
+- 설치 파일 FileVersion **1.8.1.60**과 파일명·크기·SHA-256·blockmap·`latest-exe.json` 검증을 통과했다. Authenticode는 기존 EXE 채널과 같은 **NotSigned**다.
+
+## 공개 배포
+
+2026-10-07 **12:38:05 KST**에 [v1.8.1.60](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.60)을 최신 안정 EXE 릴리스로 게시했다. 제품 태그와 릴리스 대상은 검증한 소스 `7d4b832dac651974ab7a6d2a4b69da0995373ac4`다.
+
+| 공개 자산 | 크기 (bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.60-x64.exe` | 151,279,432 | `f07d9ce71467a4ed5717fca2f7dd982f50e0c965f8a2e5fe8fb8aff8ad204684` |
+| `Acedia-Setup-1.8.1.60-x64.exe.blockmap` | 159,426 | `1c79701a28d9c88f0c76039fb00e182bb9780f3e40df2273e2ae94f11b1ee4fd` |
+| `latest-exe.json` | 256 | `1ca2d1b5a807ff28c9592fe06140f6cd3effaaccd2f0ec3967e7194a8e93b906` |
+
+**12:38:34 KST**에 프로덕션 업데이터의 **1.8.1.58·1.8.1.59 → 1.8.1.60 감지**와 공개 EXE 다운로드·설치 전 해시 검증을 완료했다. 세 자산의 크기·SHA-256과 소스 태그, 최신 안정 릴리스 및 번들 APK 버전 **1.8.1.39**가 일치했다.
+
+실행 중인 사용자 앱의 설치·종료·재시작은 수행하지 않았다. Microsoft Store와 새 APK 배포는 수행하지 않았다.
