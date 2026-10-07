@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.62
 description: "연결 코드 유지·접속 IP, 분산 상태 표시, 파일 링크와 이미지 확대·이동·복사 개선."
-status: draft
+status: stable
 last_updated: 2026-10-07
 ---
 
@@ -42,9 +42,21 @@ last_updated: 2026-10-07
 - 터미널 전체 파일 URL·OSC 8·줄바꿈·색상 경로의 실제 클릭·셀 판별 검증을 통과했다. basename 복원·동명 충돌은 단위 검사로 확인했다.
 - native PTY 실행 검증을 통과했다.
 
-고정 소스의 EXE 빌드·패키지 검증과 공개 배포 결과는 아래에 기록한다.
+- 고정 소스의 Standard EXE 빌드, 패키지 bridge·Dashboard·수명 주기 실행 검증을 통과했다. 패키지 내 runtime·Remote PWA·renderer 파일 17개가 빌드 원본과 일치한다.
+- 설치 파일의 제품 버전 1.8.1.62, 크기·SHA-256과 `latest-exe.json` 일치를 확인했다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`다. 서명된 APK 1.8.1.39/code 21을 재사용했다.
+
 실제 사용자 앱 설치·재시작, 실제 상용 계정 요청과 실제 Android 기기 동작은 별도 검증이다.
 
 ## 공개 배포
 
-GitHub Standard EXE 게시와 공개 업데이터 다운로드 검증 후 결과를 기록한다.
+- [GitHub 안정 릴리스 v1.8.1.62](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.62)를 2026-10-07 **19:37:57 KST**에 게시했다.
+- 소스·태그는 `32fc831a802e0dec31d582aa23f43f18f1555323`이며 `origin/main` 푸시 후 빌드했다. Microsoft Store 제출과 신규 APK 빌드는 실행하지 않았다.
+- **19:38:40 KST**에 운영 EXE 업데이터가 1.8.1.60·1.8.1.61에서 1.8.1.62를 감지하는지 확인했다. 실제 공개 설치 파일을 내려받아 업데이터의 설치 파일 검증을 통과했고, 아래 세 자산의 크기·SHA-256, 최신 안정 릴리스와 소스 태그를 확인했다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.62-x64.exe` | 151289203 | `2542ceac0946bafbdca2fb290122271758beccf51e132ca66ffc35c7f7d0cb66` |
+| `Acedia-Setup-1.8.1.62-x64.exe.blockmap` | 159076 | `1949f754ddb6ad6fc1731d553374f60f8d5393b5b659c50f0d98ea08e25f8a19` |
+| `latest-exe.json` | 256 | `9d05d9f4a6db92e9c898b3c39628cad20cd775b5142652734f22a10847ed984f` |
+
+로컬 증빙: `output/build-exe-1.8.1.62.log`, `output/packaged-smoke-1.8.1.62.log`, `output/packaged-lifecycle-1.8.1.62.log`, `output/exe-release-1.8.1.62/verification.json`.

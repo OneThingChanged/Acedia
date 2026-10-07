@@ -2,7 +2,7 @@
 
 ## 2026-10-07
 
-* **1.8.1.62 EXE preparation**: Preserve LAN pairing codes and still-allowed clients, show authenticated direct IPs, clarify routing readiness and in-flight accounts, open desktop code-formatted paths and recover Viewed image basenames, add desktop image zoom/pan/copy/full paths, and add owner-only external result browsing plus Remote image wheel/drag/pinch zoom. PWA cache v92. All 171 files/1,147 tests passed, including a Git PATH repair and successful rerun of the affected simulated Store test file; TypeScript/Vite and desktop/mobile Electron source checks passed. Signed APK 1.8.1.39 is reused. See [scope and publication verification](release-1-8-1-62.md).
+* **1.8.1.62 EXE release**: Preserve LAN pairing codes and still-allowed clients, show authenticated direct IPs, clarify routing readiness and in-flight accounts, open desktop code-formatted paths and recover Viewed image basenames, add desktop image zoom/pan/copy/full paths, and add owner-only external result browsing plus Remote image wheel/drag/pinch zoom. PWA cache v92. All 171 files/1,147 tests passed, including a Git PATH repair and successful rerun of the affected simulated Store test file; TypeScript/Vite and desktop/mobile Electron source checks passed. EXE build, packaged bridge/Dashboard/lifecycle, 17-file source equality and installer version/manifest/hash checks passed. Published stable v1.8.1.62 at 19:37:57 KST from 32fc831; production updater detection from 1.8.1.60/61, actual download and all three public asset hashes passed at 19:38:40 KST. Signed APK 1.8.1.39/code 21 is reused; user installation remains separate. See [scope and publication verification](release-1-8-1-62.md).
 
 ## 2026-10-05
 
