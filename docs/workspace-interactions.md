@@ -479,6 +479,13 @@ validation, not a rerun of all tests for this UX change. The implementation and
 image-flicker reproduction are recorded in the
 [chat UX review](chat-ux-review-2026-10-08.md).
 
+Release 1.8.1.66 then verified all 1,193 tests in 177 files, 24 mobile checks,
+the Standard build, packaged runtime/lifecycle checks and public download/update
+delivery from 1.8.1.64 and 1.8.1.65. The Git-dependent test file required a rerun
+after restoring Git to the test process PATH. The search-layout request is an
+additional HTML draft; the released desktop search continues its existing flow.
+Evidence and publication details are in the [release record](release-1-8-1-66.md).
+
 Runtime state and work state are distinct. Starting/recovering describes the
 process lifecycle; working/waiting/blocked/done comes from hooks. A completion
 highlight clears when the user opens the session or submits new work.

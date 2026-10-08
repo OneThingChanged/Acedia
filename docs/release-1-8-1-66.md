@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.66
 description: "요청·답변 구분, 인용·요청 재사용·결과물 카드와 채팅 이미지 깜박임 수정."
-status: draft
+status: stable
 last_updated: 2026-10-08
 ---
 
@@ -34,7 +34,22 @@ last_updated: 2026-10-08
 - 채팅·마크다운·파일 경로·대화 기록·작업 상태의 집중 검사 **18개**와 실제 Electron의 데스크톱·시작 질문·Remote 1024/390px 검사를 통과했다. 같은 이미지 DOM 유지와 파일·원본 첨부 재읽기 방지를 상태 갱신, 답변 추가, 이전 대화 로딩에서 확인했다.
 - 요청·답변 정렬, 인용·요청 재사용, 초안 분리, 결과물 열기, 이미지 뷰어·복사, 큐·중지·로그인 가드와 다크·라이트 및 420/800/1280px 배치를 검증했다. IPC·클립보드·파일 선택은 격리된 fixture를 사용했다.
 - 검색 HTML은 기존 동작을 포함한 **46개 검사**를 통과했다. 프로젝트·세션 통합 결과, 키보드 선택, 프로젝트 펼침, 빈 결과, 검색 취소와 초안 유지, 검색 창 간 포커스 분리 및 390px 배치를 확인했다. 실제 사용자 대화·클립보드를 조작하지 않았다.
+- 고정 소스의 TypeScript·Vite와 Standard EXE 빌드, 패키지 bridge·Dashboard·Git·네이티브 PTY·종료·트레이·보안 검사를 통과했다. 패키지 renderer·runtime **275개 파일**이 빌드 원본과 일치한다. 콘솔 목록 보조 프로세스의 `AttachConsole failed` 진단 8회는 직전 버전과 같으며 네이티브 PTY와 계정 관리 검증은 통과했다.
+- 설치 파일 FileVersion **1.8.1.66**, 크기·SHA-256과 같은 빌드의 `latest-exe.json` 일치를 확인했다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`이다. 포함된 APK **1.8.1.39/code 21**의 인증서·패키지·아키텍처·해시를 검증했다.
+- 공개 업데이터가 **1.8.1.64·1.8.1.65 → 1.8.1.66**을 감지한다. 공개 설치 파일을 실제로 내려받아 검증했고 EXE·blockmap·manifest의 크기·해시, 최신 안정 릴리스와 소스 태그가 일치한다.
 
-## 배포 진행
+실제 사용자 앱의 설치·재시작, OS 파일 선택·클립보드와 Android 기기 동작은 별도 검증이다.
 
-소스를 커밋·푸시한 뒤 같은 소스로 Standard EXE를 빌드하고 패키지·설치 파일·공개 업데이트를 검증한다. 게시 결과는 이 문서에 추가한다.
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.66](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.66)를 2026-10-08 **14:56:21 KST**에 게시했다.
+- 소스·태그는 `b4cf56a181a6dce194dd254c01ff16c1f7c0c49d`이며 `origin/main`에 푸시한 같은 소스를 빌드했다. Microsoft Store 제출과 신규 APK 빌드는 실행하지 않았다.
+- **14:57:24 KST**에 공개 다운로드·업데이트 검증을 완료했다. 사용 중인 앱·세션을 재시작하거나 설치 프로그램을 실행하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.66-x64.exe` | 151309176 | `7450b802a8fe08481cf415aada2fa8a8f379766f471d73649f8ff3522ef05c33` |
+| `Acedia-Setup-1.8.1.66-x64.exe.blockmap` | 159476 | `3c1b4d1494aa7e6b8b81f2a2a04ebf4a9137c06b72f12d2697f69a995b02abbf` |
+| `latest-exe.json` | 256 | `e0d9e77ebe175314ba668bc15eb502e245da5644447bb283ec0eb93c6aa8cd3f` |
+
+로컬 증빙: `output/full-suite-exe-1.8.1.66-summary.json`, `output/full-suite-exe-1.8.1.66.json`, `output/full-suite-exe-1.8.1.66-git-recheck.json`, `output/mobile-tests-exe-1.8.1.66.log`, `output/chat-smoke-exe-1.8.1.66.log`, `output/build-exe-1.8.1.66.log`, `output/packaged-smoke-1.8.1.66.log`, `output/packaged-lifecycle-1.8.1.66.log`, `output/public-update-verification-1.8.1.66.log`, `output/exe-release-1.8.1.66/local-verification.json`, `output/exe-release-1.8.1.66/public-verification.json`, `output/chat-ux-research/verification.json`.
