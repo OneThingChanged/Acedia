@@ -1,4 +1,5 @@
 import type { Agent, Group, LayoutNode, Project, ProjectFolder } from "../types";
+import { toolForId } from "../types";
 import { collectAgentIdsInOrder } from "./layout";
 import { isAgentRuntimeActive } from "./agentActivity";
 import { isStandbySession } from "./sessionStandby";
@@ -59,10 +60,23 @@ export function recentSidebarSessions(agents: Agent[], projects: Project[], fold
     const project = projectById.get(agent.projectId);
     if (agent.sidebarArchived || !project || (options.projectId && agent.projectId !== options.projectId) || !matchesSidebarFilter(agent, options.filter)) return false;
     const folder = project.projectFolderId ? folderById.get(project.projectFolderId) : undefined;
-    return !query || matchesSessionSearch(query, agent.name, agent.folder, agent.remoteFolder, project.name, project.folder, project.remoteFolder, folder?.name);
+    return !query || matchesSessionSearch(query, agent.name, agent.folder, agent.remoteFolder, project.name, project.folder, project.remoteFolder, folder?.name, toolForId(agent.aiToolId).label);
   }).sort((a, b) => Number(!!b.sidebarPinned) - Number(!!a.sidebarPinned)
     || (options.sortByName ? a.name.localeCompare(b.name) : sidebarSessionTime(b) - sidebarSessionTime(a))
     || a.id.localeCompare(b.id));
+}
+
+// Inline search spans every project and non-archived session, independently of
+// the current browse scope/filter. It searches metadata without loading chats.
+export function searchSidebarItems(agents: Agent[], projects: Project[], folders: ProjectFolder[], query: string) {
+  if (!normalizeSessionSearch(query)) return { projects: [], sessions: [] };
+  const folderById = new Map(folders.map(folder => [folder.id, folder]));
+  return {
+    projects: projects.filter(project => matchesSessionSearch(query,
+      project.name, project.folder, project.remoteFolder,
+      project.projectFolderId ? folderById.get(project.projectFolderId)?.name : undefined)),
+    sessions: recentSidebarSessions(agents, projects, folders, { projectId: null, filter: "all", query }),
+  };
 }
 
 function leafCount(node: LayoutNode): number {

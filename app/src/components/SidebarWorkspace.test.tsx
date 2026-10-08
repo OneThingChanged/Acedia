@@ -65,15 +65,15 @@ describe("workspace sidebar", () => {
     expect(html).not.toContain('aria-label="foreign 대화 메뉴"');
   });
   it("retains configured keyboard hints and an accessible collapsed rail", () => {
-    const html = render([], { collapsed: true, quickOpenShortcut: "Alt+K", newSessionShortcut: "Ctrl+T", onToggleCollapsed: vi.fn() });
+    const html = render([], { collapsed: true, newSessionShortcut: "Ctrl+T", onToggleCollapsed: vi.fn() });
     expect(html).toContain("sidebar-workspace-collapsed"); expect(html).toContain('aria-label="사이드바 펼치기"');
-    expect(html).toContain("Alt+K"); expect(html).toContain("Ctrl+T");
+    expect(html).toContain("Ctrl+T");
   });
-  it("uses header icons for Quick Open and notifications with no duplicate search field or settings", () => {
-    const html = render([], { onQuickOpen: vi.fn(), onOpenAttention: vi.fn(), attentionUnreadCount: 7 });
-    expect(html).toContain("sidebar-search-button"); expect(html).toContain("sidebar-notifications-unread");
+  it("provides inline session/project search and notifications without duplicate search buttons or settings", () => {
+    const html = render([], { onOpenAttention: vi.fn(), attentionUnreadCount: 7 });
+    expect(html).not.toContain("sidebar-search-button"); expect(html).toContain("sidebar-notifications-unread");
     expect(html).toContain("읽지 않은 항목 7개"); expect(html).toContain('class="sidebar-notification-count"');
-    expect(html).not.toContain('<input'); expect(html).not.toContain('sidebar-settings');
+    expect(html).toContain('type="search"'); expect(html).toContain('aria-label="세션과 프로젝트 검색"'); expect(html).not.toContain('sidebar-settings');
     expect(html).not.toContain("sidebar-routing"); expect(html).not.toContain("sidebar-account");
   });
 });

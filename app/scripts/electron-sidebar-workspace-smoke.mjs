@@ -21,6 +21,7 @@ async function exercise() {
   const projectButton = id => `${projectSelector(id)} .project-item`;
   const projectRows = id => [...document.querySelectorAll(`${projectSelector(id)} .project-session-list [data-sidebar-agent-id]`)];
   const expanded = id => find(projectButton(id)).getAttribute('aria-expanded') === 'true';
+  const savedExpanded = id => JSON.parse(localStorage.getItem('multiagent.sidebarExpandedProjects.v1') || '[]').includes(id);
   check(find('.sidebar-brand-icon').naturalWidth > 0, 'Acedia icon did not load');
   check(!document.querySelector('.topbar-logo, .app-topbar [aria-label="Toggle left sidebar"]'), 'Duplicate titlebar branding or sidebar toggle');
   check(rows() === 5 && !document.querySelector('[data-sidebar-agent-id="archived"]'), 'Archive projection');
@@ -60,7 +61,70 @@ async function exercise() {
   await click(projectButton('acedia')); check(!expanded('acedia') && expanded('toon'), 'Closing one project folded another');
   await click('.sidebar-primary-nav > button'); check(rows() === 5, 'All conversations');
   const setInput = (selector, value) => { const input = find(selector); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
-  await click('.sidebar-search-button'); check(document.querySelector('.quick-open'), 'Sidebar search did not open Quick Open');
+  const key = async (element, key, extra = {}) => { element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...extra })); await wait(); };
+  const searchInput = find('.sidebar-workspace-search input');
+  const search = async value => { searchInput.focus(); setInput('.sidebar-workspace-search input', value); await wait(); };
+  const results = kind => [...document.querySelectorAll(`[data-sidebar-search-result="${kind}"]`)];
+  check(!document.querySelector('.sidebar-search-button'), 'Duplicate sidebar search button');
+  const keptTree = find('.sidebar-project-navigation');
+  await click('[data-session-filter="active"]'); check(rows() === 0, 'Active filter fixture');
+  await search('ACEDIA');
+  check(results('project').length === 1 && results('session').length === 3, 'Combined search obeyed browse filter or leaked archived sessions');
+  check(find('.sidebar-workspace-browse').hidden && keptTree.isConnected, 'Search remounted the project tree');
+  check(find('.sidebar-search-summary').textContent.includes('4개 결과') && document.querySelector('.sidebar-search-results mark'), 'Search count or match highlighting');
+  const clearRect = find('.sidebar-inline-search-clear').getBoundingClientRect();
+  const fieldRect = find('.sidebar-workspace-search').getBoundingClientRect();
+  check(clearRect.left >= fieldRect.left && clearRect.right <= fieldRect.right && clearRect.top >= fieldRect.top && clearRect.bottom <= fieldRect.bottom, 'Search clear button escaped its input field');
+  check(getComputedStyle(searchInput).outlineWidth === '0px' && getComputedStyle(searchInput).borderLeftWidth === '0px', 'Double input focus border');
+  await key(searchInput, 'Enter', { isComposing: true });
+  check(searchInput.value === 'ACEDIA' && !savedExpanded('acedia'), 'IME Enter selected a search result');
+  await key(searchInput, 'Enter', { keyCode: 229 }); check(searchInput.value === 'ACEDIA', 'IME compatibility key selected a result');
+  await key(searchInput, 'ArrowDown'); check(document.activeElement === results('project')[0], 'Keyboard did not focus project results');
+  await key(document.activeElement, 'ArrowDown'); check(document.activeElement === results('session')[0], 'Keyboard did not reach session results');
+  await key(document.activeElement, 'Escape');
+  check(!searchInput.value && !document.querySelector('.sidebar-search-results') && rows() === 0 && !savedExpanded('acedia'), 'Escape did not restore browse state');
+  check(find('.sidebar-project-navigation') === keptTree, 'Search replaced the project navigation');
+  await search('acedia'); await key(searchInput, 'Enter');
+  check(!searchInput.value && expanded('acedia') && projectRows('acedia').length === 3 && rows() === 3, 'Search project did not reveal all its sessions');
+  check(find('[data-session-filter="all"]').getAttribute('aria-pressed') === 'true' && document.activeElement === find(projectButton('acedia')), 'Project selection did not reset filter or focus its row');
+  await click(projectButton('acedia'));
+  await click('.sidebar-workspace-browse > .sidebar-section .sidebar-section-toggle');
+  check(!document.querySelector(projectButton('toon')), 'Project section did not close');
+  await search('toon'); await key(searchInput, 'Enter');
+  check(expanded('toon') && projectRows('toon').length === 1, 'Searching a project with an unmounted tree did not reveal it');
+  await click(projectButton('toon'));
+  await click('.sidebar-workspace-browse > .sidebar-section .sidebar-section-toggle');
+  await click('.sidebar-workspace-browse > .sidebar-section .sidebar-section-toggle');
+  check(!expanded('toon'), 'Completed search replayed on a later tree remount');
+  await click(projectButton('toon'));
+  await click('.sidebar-primary-nav > button');
+  await click('[data-session-filter="active"]');
+  await search('claude'); check(results('project').length === 0 && results('session').length === 2, 'Provider search was scoped to the selected project');
+  window.sidebarFixtureInUse = ['image']; await new Promise(resolve => setTimeout(resolve, 1200));
+  check(find('[data-sidebar-search-result="session"][data-search-id="image"]').getAttribute('aria-disabled') === 'true', 'Foreign search result stayed enabled');
+  await key(searchInput, 'ArrowDown'); check(document.activeElement.dataset.searchId === 'shader', 'Keyboard selected a foreign conversation');
+  await key(document.activeElement, 'Escape');
+  window.sidebarFixtureInUse = []; await new Promise(resolve => setTimeout(resolve, 1200));
+  await search('C:\\FIXTURE\\TOON'); check(results('project').length === 1 && results('session')[0]?.dataset.searchId === 'shader', 'Windows path search');
+  await search('不存在-no-result'); check(!results('project').length && !results('session').length && find('.sidebar-search-results').textContent.includes('일치하는'), 'Empty search feedback');
+  await key(searchInput, 'ArrowDown'); check(document.activeElement === searchInput, 'Empty search moved focus into hidden browse rows');
+  await key(searchInput, 'Escape');
+  await click('[data-session-filter="all"]');
+  await search('이미지');
+  await key(searchInput, 'k', { ctrlKey: true }); check(document.querySelector('.quick-open'), 'Configured global search shortcut did not open Quick Search from inline input');
+  const quickInput = find('.quick-open input');
+  check(find('.quick-open').getAttribute('aria-label') === 'Quick Search', 'Global search display name');
+  setInput('.quick-open input', 'no-result'); await wait(); await key(quickInput, 'ArrowDown');
+  setInput('.quick-open input', '이미지'); await wait();
+  check(find('.quick-open-results').textContent.includes('리모트 이미지') && document.querySelector('.quick-open-result[aria-selected="true"]'), 'Quick Search lost selection after empty results');
+  await key(quickInput, 'Enter', { isComposing: true }); check(document.querySelector('.quick-open'), 'Global search selected during IME composition');
+  await key(quickInput, 'ArrowDown');
+  check(document.activeElement === quickInput && searchInput.value === '이미지', 'Global navigation changed inline search focus/query');
+  await key(quickInput, 'Escape'); check(document.activeElement === searchInput && searchInput.value === '이미지', 'Global close did not restore inline search focus');
+  await click('.sidebar-inline-search-clear');
+  check(window.layoutCalls.filter(call => ['spawn_pty', 'kill_pty'].includes(call.command)).length === beforeRuntime, 'Searching activated or stopped a conversation');
+  console.log('SIDEBAR_COMBINED_SEARCH_OK');
+  await click('.topbar-quick-search'); check(document.querySelector('.quick-open'), 'Titlebar search did not open Quick Search');
   setInput('.quick-open input', '이미지'); await wait(); check(find('.quick-open-results').textContent.includes('리모트 이미지'), 'Quick Open session search');
   find('.quick-open input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait();
   check(!document.querySelector('.quick-open') && rows() === 5, 'Quick Open changed sidebar scope');
@@ -81,7 +145,8 @@ async function exercise() {
   check(panes.every(element => element.isConnected) || !document.querySelector('.screen-groups'), 'Pane replacement');
   await click('.sidebar-collapse');
   check(Math.round(find('.sidebar').getBoundingClientRect().width) === 66, 'Collapsed rail');
-  await click('.sidebar-search-button'); check(document.querySelector('.quick-open'), 'Collapsed rail search not connected');
+  check(getComputedStyle(find('.sidebar-workspace-search')).display === 'none', 'Collapsed rail still shows the inline search');
+  await click('.topbar-quick-search'); check(document.querySelector('.quick-open'), 'Collapsed rail global search not connected');
   find('.quick-open input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait();
   await click('.sidebar-collapse');
   const width = find('.sidebar').getBoundingClientRect().width;
@@ -108,22 +173,94 @@ async function exercise() {
   check(['ux', 'shader'].every(id => stored(id).status !== 'exited'), 'Fixture failed to attach selected session');
   check(window.layoutCalls.filter(call => call.command === 'spawn_pty').every(call => ['ux', 'shader'].includes(call.args.id)), 'Selecting a session activated another conversation');
   check(!window.layoutCalls.some(call => call.command === 'kill_pty'), 'Session selection stopped another process');
+  await search('셰이더'); await key(searchInput, 'Enter');
+  check(!searchInput.value && find(`${projectSelector('toon')} [data-sidebar-agent-id="shader"]`).getAttribute('aria-current') === 'page', 'Inline search Enter did not open the conversation');
+  await search('사이드바');
+  const searchRow = find('[data-sidebar-search-result="session"][data-search-id="ux"]');
+  searchRow.dispatchEvent(new PointerEvent('pointerdown', {pointerId: 8, button: 0, bubbles: true, clientX: 45, clientY: 45}));
+  searchRow.dispatchEvent(new PointerEvent('pointerup', {pointerId: 8, button: 0, bubbles: true, clientX: 45, clientY: 45})); await wait();
+  check(!searchInput.value && find(`${projectSelector('acedia')} [data-sidebar-agent-id="ux"]`).getAttribute('aria-current') === 'page', 'Inline search pointer did not open the conversation');
+  check(!window.layoutCalls.some(call => call.command === 'kill_pty'), 'Inline selection stopped another process');
+  const visible = selector => [...document.querySelectorAll(selector)].find(element => element.getBoundingClientRect().width > 0);
+  const start = [...document.querySelectorAll('.terminal-area .session-standby button')].find(button => button.getBoundingClientRect().width > 0);
+  if (start) { start.click(); await wait(); }
+  visible('.terminal-area .pane-chat-toggle[aria-label="대화(채팅) 뷰로 전환"]').click(); await wait();
+  const composer = find('.chat-composer-input');
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(composer, '검색 중에도 보존할 작성 중인 메시지');
+  composer.dispatchEvent(new Event('input', {bubbles: true})); await wait();
+  await search('acedia'); await key(searchInput, 'Escape');
+  check(composer.isConnected && composer.value === '검색 중에도 보존할 작성 중인 메시지', 'Inline search reset or replaced the conversation draft');
+  visible('.terminal-area .pane-chat-toggle[aria-label="터미널 뷰로 전환"]').click(); await wait();
   return 'SIDEBAR_REAL_APP_INTERACTIONS_OK';
+}
+
+async function exerciseSearchReveal() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 220));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const projectButton = id => document.querySelector(`[data-sidebar-project-id="${id}"] .project-item`);
+  const folder = name => [...document.querySelectorAll('.project-folder-name')].find(element => element.textContent === name)?.closest('.project-folder-node');
+  const write = (key, value) => { localStorage.setItem(key, JSON.stringify(value)); window.dispatchEvent(new StorageEvent('storage', {key})); };
+  const input = document.querySelector('.sidebar-workspace-search input');
+  const search = async value => { input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); await wait(); };
+  const enter = async () => { input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); await wait(); };
+  const projects = JSON.parse(localStorage.getItem('multiagent.projects.v1'));
+  write('multiagent.projectFolders.v1', [
+    {id: 'search-local', name: '개발 검색 검증', machineKey: 'local', createdAt: 1},
+    {id: 'search-remote', name: '원격 검색 검증', machineKey: 'ssh:fixture', createdAt: 1},
+  ]);
+  write('multiagent.projects.v1', [...projects.map(project => project.id === 'acedia' ? {...project, projectFolderId: 'search-local'} : project),
+    {id: 'remote-search', name: 'Remote Search Fixture', folder: '', sshHostId: 'fixture', remoteFolder: '/work/remote', projectFolderId: 'search-remote', createdAt: 1}]);
+  await wait();
+  check(folder('개발 검색 검증') && folder('원격 검색 검증'), 'Shared fixture folders did not update');
+  folder('개발 검색 검증').querySelector('.project-folder-item').click(); await wait();
+  check(!projectButton('acedia'), 'Local parent folder did not collapse');
+  document.querySelectorAll('.machine-caret-btn')[0].click(); await wait();
+  await search('acedia'); await enter();
+  check(projectButton('acedia')?.getAttribute('aria-expanded') === 'true' && document.querySelectorAll('[data-sidebar-project-id="acedia"] .project-session-list [data-sidebar-agent-id]').length === 3, 'Search did not reveal collapsed local machine/folder/project');
+  check(!JSON.parse(localStorage.getItem('multiagent.collapsedMachines.v1')).includes('local') && !JSON.parse(localStorage.getItem('multiagent.collapsedProjectFolders.v1')).includes('search-local'), 'Local reveal did not persist');
+  projectButton('acedia').click(); await wait();
+  folder('원격 검색 검증').querySelector('.project-folder-item').click(); await wait();
+  document.querySelectorAll('.machine-caret-btn')[1].click(); await wait();
+  await search('/WORK/remote');
+  check(document.querySelectorAll('[data-sidebar-search-result="project"]').length === 1 && !document.querySelector('[data-sidebar-search-result="session"]'), 'Empty remote project was not searchable by its path');
+  await enter();
+  check(projectButton('remote-search')?.getAttribute('aria-expanded') === 'true' && document.querySelector('[data-sidebar-project-id="remote-search"] .sidebar-project-empty-action'), 'Search did not reveal collapsed SSH machine/folder/empty project');
+  check(projectButton('acedia')?.getAttribute('aria-expanded') === 'false', 'Remote search reopened an unrelated folded project');
+  check(!JSON.parse(localStorage.getItem('multiagent.collapsedMachines.v1')).includes('ssh:fixture') && !JSON.parse(localStorage.getItem('multiagent.collapsedProjectFolders.v1')).includes('search-remote'), 'Remote reveal did not persist');
+  folder('미분류').querySelector('.project-folder-item').click(); await wait();
+  check(!projectButton('toon'), 'Uncategorized folder did not collapse');
+  await search('toon'); await enter();
+  check(projectButton('toon')?.getAttribute('aria-expanded') === 'true' && !JSON.parse(localStorage.getItem('multiagent.collapsedProjectFolders.v1')).includes('uncategorized:local'), 'Search did not reveal an uncategorized project');
+  await search('실시간 이름 변경');
+  check(!document.querySelector('[data-sidebar-search-result]'), 'Live query fixture was already matched');
+  write('multiagent.agents.v1', JSON.parse(localStorage.getItem('multiagent.agents.v1')).map(agent => agent.id === 'routing' ? {...agent, name: '실시간 이름 변경'} : agent));
+  await wait();
+  check(input.value === '실시간 이름 변경' && document.querySelector('[data-sidebar-search-result="session"][data-search-id="routing"]'), 'Live catalog updates reset search or left stale results');
+  input.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true})); await wait();
+  check(!window.layoutCalls.some(call => call.command === 'kill_pty' || (call.command === 'spawn_pty' && call.args.id !== 'ux' && call.args.id !== 'shader')), 'Project search activated or stopped a session');
+  return 'SIDEBAR_SEARCH_FOLDER_AND_LIVE_UPDATE_OK';
 }
 
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.disableHardwareAcceleration();
   app.setPath('userData', process.env.ACEDIA_SIDEBAR_SMOKE_PROFILE);
-  app.whenReady().then(async () => { try {
-    const win = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true, webPreferences: { offscreen: true, backgroundThrottling: false } });
+  app.whenReady().then(async () => { let win; try {
+    win = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#151b22', symbolColor: '#96a0ad', height: 35 }, webPreferences: { offscreen: true, backgroundThrottling: false } });
     const errors = [];
-    win.webContents.on('console-message', details => { if (details.level === 'error') errors.push(details.message); });
+    win.webContents.on('console-message', details => { if (details.level === 'error') { errors.push(details.message); console.error('RENDERER_ERROR', details.message); } });
     await win.loadFile(path.join(directory, 'index.html'));
     await new Promise(resolve => setTimeout(resolve, 900));
     await fs.writeFile(path.join(directory, 'sidebar-app-1440.png'), (await win.webContents.capturePage()).toPNG());
     console.log(await win.webContents.executeJavaScript(`(${exercise.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-app-light-1440.png'), (await win.webContents.capturePage()).toPNG());
+    const inlineQuery = async value => {
+      await win.webContents.executeJavaScript(`(() => { const input = document.querySelector('.sidebar-workspace-search input'); input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+      await new Promise(resolve => setTimeout(resolve, 220));
+    };
+    await inlineQuery('acedia');
+    await fs.writeFile(path.join(directory, 'sidebar-search-light-1440.png'), (await win.webContents.capturePage()).toPNG());
+    await inlineQuery('');
     await win.webContents.executeJavaScript("localStorage.setItem('multiagent.appTheme.v1','soft')");
     await win.loadFile(path.join(directory, 'index.html'));
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -137,20 +274,44 @@ if (process.versions.electron) {
       if (document.querySelector('.screen-groups')) throw Error('Unsplit lost on reload');
       return 'SIDEBAR_RELOAD_OK';
     })()`));
+    await inlineQuery('acedia');
+    await fs.writeFile(path.join(directory, 'sidebar-search-1440.png'), (await win.webContents.capturePage()).toPNG());
+    await inlineQuery('');
     for (const [width, height] of [[1280, 820], [800, 640]]) {
       win.setContentSize(width, height); await new Promise(resolve => setTimeout(resolve, 250));
+      await fs.writeFile(path.join(directory, `sidebar-app-${width}.png`), (await win.webContents.capturePage()).toPNG());
       console.log(await win.webContents.executeJavaScript(`(() => {
         if (document.documentElement.scrollWidth !== innerWidth) throw Error('Horizontal overflow at '+innerWidth);
         const footer = document.querySelector('.sidebar-workspace-footer').getBoundingClientRect();
         if (footer.bottom > innerHeight) throw Error('Footer clipped');
         if (document.querySelector('.terminal-area').getBoundingClientRect().width < 180) throw Error('Workspace too narrow');
+        const launcher = document.querySelector('.topbar-quick-search').getBoundingClientRect();
+        if (Math.abs((launcher.left + launcher.right) / 2 - innerWidth / 2) > 8) throw Error('Quick Search is not centered');
+        if ([...document.querySelectorAll('.topbar-actions button')].some(button => button.getBoundingClientRect().left < launcher.right + 6)) throw Error('Quick Search overlaps titlebar buttons');
+        const area = document.querySelector('.topbar-inner').getBoundingClientRect();
+        if ([...document.querySelectorAll('.topbar-actions button')].some(button => button.getBoundingClientRect().right > area.right)) throw Error('Titlebar buttons overlap native window controls');
         return 'SIDEBAR_LAYOUT_OK '+innerWidth+'x'+innerHeight;
       })()`));
-      await fs.writeFile(path.join(directory, `sidebar-app-${width}.png`), (await win.webContents.capturePage()).toPNG());
+      if (width === 800) {
+        const scrollTop = await win.webContents.executeJavaScript(`(() => { const scroll = document.querySelector('.sidebar-workspace-scroll'); scroll.scrollTop = 50; if (scroll.scrollTop !== 50) throw Error('Scroll restoration fixture has no overflow'); return scroll.scrollTop; })()`);
+        await inlineQuery('acedia');
+        await fs.writeFile(path.join(directory, 'sidebar-search-800.png'), (await win.webContents.capturePage()).toPNG());
+        await inlineQuery('');
+        console.log(await win.webContents.executeJavaScript(`(() => { if (document.querySelector('.sidebar-workspace-scroll').scrollTop !== ${scrollTop}) throw Error('Search clear lost browse scroll'); return 'SIDEBAR_SEARCH_SCROLL_OK'; })()`));
+      }
     }
+    win.setContentSize(1280, 820); await new Promise(resolve => setTimeout(resolve, 220));
+    console.log(await win.webContents.executeJavaScript(`(${exerciseSearchReveal.toString()})()`));
     if (errors.length) throw Error(errors.join('\n'));
     app.exit(0);
-  } catch (error) { console.error(error); app.exit(1); } });
+  } catch (error) {
+    console.error(error);
+    if (win && !win.isDestroyed()) {
+      await fs.writeFile(path.join(directory, 'sidebar-failure.png'), (await win.webContents.capturePage()).toPNG());
+      console.error(await win.webContents.executeJavaScript(`JSON.stringify({ agent: document.querySelector('.pane-active')?.dataset.paneActiveAgentId, toggles: [...document.querySelectorAll('.pane-chat-toggle')].map(button => ({label:button.getAttribute('aria-label'), on:button.classList.contains('on')})), content:document.querySelector('.terminal-area')?.innerText.slice(0,1000) })`));
+    }
+    app.exit(1);
+  } });
 } else {
   const { build } = await import('esbuild');
   await fs.mkdir(directory, { recursive: true });

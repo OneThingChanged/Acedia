@@ -171,6 +171,7 @@ export function SidebarProjectTree({
   navigationSearch = "",
   navigationFilter = "all",
   renderProjectSession,
+  revealProject,
 }: {
   projects: Project[];
   projectFolders: ProjectFolder[];
@@ -223,6 +224,7 @@ export function SidebarProjectTree({
   navigationSearch?: string;
   navigationFilter?: SessionFilter;
   renderProjectSession?: (agent: Agent) => ReactNode;
+  revealProject?: { id: string };
 }) {
   const { text } = useAppLanguage();
   const localizedDetachedLabel =
@@ -278,6 +280,28 @@ export function SidebarProjectTree({
   const [collapsedProjectFolderIds, setCollapsedProjectFolderIds] = useState<
     Set<string>
   >(() => loadCollapsedProjectFolders());
+
+  const revealedProjectRef = useRef<typeof revealProject>(undefined);
+  useEffect(() => {
+    if (!navigationOnly || !revealProject || revealedProjectRef.current === revealProject) return;
+    revealedProjectRef.current = revealProject;
+    const project = projects.find(project => project.id === revealProject.id);
+    if (!project) return;
+    const machineKey = project.sshHostId ? `ssh:${project.sshHostId}` : "local";
+    const folderKey = projectFolders.find(folder => folder.id === project.projectFolderId && folder.machineKey === machineKey)?.id
+      || `uncategorized:${machineKey}`;
+    setExpandedProjectIds(current => new Set(current).add(project.id));
+    setCollapsedMachineIds(current => {
+      const next = new Set(current);
+      next.delete(machineKey);
+      return next;
+    });
+    setCollapsedProjectFolderIds(current => {
+      const next = new Set(current);
+      next.delete(folderKey);
+      return next;
+    });
+  }, [navigationOnly, projectFolders, projects, revealProject]);
 
   useEffect(() => {
     try {

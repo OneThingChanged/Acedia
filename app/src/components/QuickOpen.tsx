@@ -28,12 +28,17 @@ export function QuickOpen({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const results = useMemo(() => rankQuickOpenItems(items, query), [items, query]);
 
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    inputRef.current?.focus();
+    return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }); };
+  }, []);
   useEffect(() => setActiveIndex(0), [query]);
   useEffect(() => {
-    document.querySelector(`[data-quick-index="${activeIndex}"]`)
+    dialogRef.current?.querySelector(`[data-quick-index="${activeIndex}"]`)
       ?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
@@ -41,18 +46,20 @@ export function QuickOpen({
     <div className="quick-open-backdrop" onMouseDown={onClose}>
       <section
         className="quick-open"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Quick Open"
+        aria-label="Quick Search"
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
           if (event.key === "Escape") {
             event.preventDefault();
             onClose();
           } else if (event.key === "ArrowDown") {
             event.preventDefault();
-            setActiveIndex((index) => Math.min(results.length - 1, index + 1));
+            setActiveIndex((index) => Math.max(0, Math.min(results.length - 1, index + 1)));
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setActiveIndex((index) => Math.max(0, index - 1));
@@ -69,7 +76,7 @@ export function QuickOpen({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={text("프로젝트, 세션, Screen, 문서 또는 명령 검색", "Search projects, sessions, screens, documents, or commands")}
-            aria-label={text("Quick Open 검색", "Search Quick Open")}
+            aria-label={text("Quick Search 검색", "Search Quick Search")}
           />
           <kbd>Esc</kbd>
         </div>

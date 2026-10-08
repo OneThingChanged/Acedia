@@ -4359,6 +4359,8 @@ function App() {
     >
       {isElectronRuntime() && (
         <TopBar
+          onQuickOpen={() => setQuickOpen(true)}
+          quickOpenShortcut={commandShortcuts["quick-open"]}
           filesOpen={filesOpen}
           onToggleFiles={() => setFilesOpen((open) => !open)}
           desktopPetEnabled={desktopPetEnabled}
@@ -4381,10 +4383,8 @@ function App() {
         onNewSession={() => { if (activeProjectIdRef.current) openNewSessionModal(); else setShowProjectModal(true); }}
         onRestoreSession={id => setSidebarPreference(id, "sidebarArchived", false)}
         onShowSessions={() => setWorkspaceMode("sessions")}
-        onQuickOpen={() => setQuickOpen(true)}
         onOpenAttention={() => setAttentionOpen(true)}
         attentionUnreadCount={attentionUnreadCount}
-        quickOpenShortcut={commandShortcuts["quick-open"]}
         newSessionShortcut={commandShortcuts["new-session"]}
         projects={sidebarProjects}
         projectFolders={projectFolders}

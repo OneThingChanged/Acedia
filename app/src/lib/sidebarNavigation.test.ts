@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
+import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
 import { loadStoredAgents, normalizeStoredGroups } from "./persistence";
 import type { Agent, Group, Project } from "../types";
 
@@ -27,6 +27,37 @@ describe("sidebar navigation", () => {
   it("finds sessions by virtual folder names", () => {
     const p = { ...projects[0], projectFolderId: "folder" };
     expect(recentSidebarSessions([agent("one")], [p], [{ id: "folder", name: "업무", machineKey: "local", createdAt: 1 }], { projectId: null, filter: "all", query: "업무" })).toHaveLength(1);
+  });
+  it("searches projects and all session states together, including empty projects", () => {
+    const input = [agent("working", { status: "working" }), agent("sleeping", { deferredStart: true, resumeEligible: true }),
+      agent("new", { deferredStart: true }), agent("hidden", { sidebarArchived: true }), agent("orphan", { projectId: "deleted" })];
+    const empty = { ...projects[0], id: "empty", name: "Acedia docs" };
+    const result = searchSidebarItems(input, [...projects, empty], [], " ACEDIA ");
+    expect(result.projects.map(project => project.id)).toEqual(["p", "empty"]);
+    expect(result.sessions.map(session => session.id)).toEqual(["new", "sleeping", "working"]);
+    expect(input.find(session => session.id === "hidden")?.sidebarArchived).toBe(true);
+  });
+  it("matches normalized local paths, remote paths and virtual folders across projects", () => {
+    const folder = { id: "f", name: "게임 개발", machineKey: "local", createdAt: 1 };
+    const allProjects = [{ ...projects[0], projectFolderId: "f" }, projects[1]];
+    const input = [agent("local"), agent("remote", { projectId: "ssh", folder: "", remoteFolder: "/work/remote" })];
+    for (const query of ["C:\\ACEDIA", "게임"]) {
+      const result = searchSidebarItems(input, allProjects, [folder], query);
+      expect(result.projects.map(project => project.id)).toEqual(["p"]);
+      expect(result.sessions.map(session => session.id)).toEqual(["local"]);
+    }
+    const result = searchSidebarItems(input, allProjects, [folder], "/WORK/remote");
+    expect(result.projects.map(project => project.id)).toEqual(["ssh"]);
+    expect(result.sessions.map(session => session.id)).toEqual(["remote"]);
+  });
+  it("finds session titles/providers and retains pinned/recent ordering", () => {
+    const input = [agent("older", { aiToolId: "claude", name: "이미지 확인" }),
+      agent("recent", { aiToolId: "claude", lastOpenedAt: 50 }), agent("pin", { aiToolId: "claude", sidebarPinned: true }), agent("codex")];
+    expect(searchSidebarItems(input, projects, [], "claude").sessions.map(session => session.id)).toEqual(["pin", "recent", "older"]);
+    expect(searchSidebarItems(input, projects, [], "이미지").sessions.map(session => session.id)).toEqual(["older"]);
+    expect(searchSidebarItems(input, projects, [], "이미지").projects).toEqual([]);
+    expect(searchSidebarItems(input, projects, [], " ")).toEqual({ projects: [], sessions: [] });
+    expect(searchSidebarItems(input, projects, [], "not-found")).toEqual({ projects: [], sessions: [] });
   });
   it("keeps restored sleep distinct from never-started, live questions and running sessions", () => {
     expect(matchesSidebarFilter(agent("new", { deferredStart: true, resumeEligible: false }), "sleeping")).toBe(false);

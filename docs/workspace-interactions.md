@@ -37,6 +37,12 @@ sources:
   - id: sidebar-smoke
     resource: ../app/scripts/electron-sidebar-workspace-smoke.mjs
     title: "Native sidebar actions, persistence, themes and geometry"
+  - id: topbar
+    resource: ../app/src/components/TopBar.tsx
+    title: "Centered Quick Search and native window controls"
+  - id: quick-search
+    resource: ../app/src/components/QuickOpen.tsx
+    title: "Global search, keyboard navigation and input composition"
   - id: pane-slot
     resource: ../app/src/components/PaneSlot.tsx
     title: "Pane and tab host"
@@ -133,13 +139,16 @@ sources:
 
 ## Navigation and visibility
 
-The desktop sidebar header holds collapse/expand, notifications, and search
-icons beside the Acedia brand. Search opens the existing global **Quick Open**
-dialog, using the same configured shortcut; there is no inline sidebar search
-field. The bell opens the existing notification center and displays its unread
-count. The window titlebar omits duplicate Quick Open and attention controls.
+The desktop sidebar header holds collapse/expand and notifications beside the
+Acedia brand. The bell opens the existing notification center and displays its
+unread count. **Quick Search** sits in the center of the window titlebar and
+opens the existing global search dialog with the same configured shortcut
+(default Ctrl+K). The command's persisted ID remains `quick-open`. The titlebar
+reserves space for native window controls and contains no duplicate brand,
+sidebar toggle or notification button.[^topbar][^quick-search]
 **New conversation**, **All conversations**, **Browsers**, and **Project board**
-sit below the header. Projects form a compact folder/SSH
+sit below the header, with an inline **Search sessions and projects** input
+below New conversation. Projects form a compact folder/SSH
 navigation tree. Clicking a project toggles its inline conversation list and
 scopes the recent-conversation list to that project. Clicking it again folds
 the inline list while keeping that scope; **All conversations** or the scope's
@@ -155,6 +164,25 @@ the collapse/expand button; the window titlebar omits duplicate brand/navigation
 controls.
 The approved [interactive HTML draft](mockups/sidebar-workspace.html) remains
 available as a design reference.[^sidebar][^sidebar-project-tree]
+
+Typing in the inline search replaces the visible browse list with grouped
+project and session results across the catalog, independently of the selected
+project and All/Active/Sleeping filter. It searches names, local/remote paths,
+virtual folder names and session providers using metadata; it does not load
+conversation transcripts. Archived sessions stay in the archive dialog and
+sessions owned by another window remain visible but unavailable. Matching names
+are highlighted. Empty projects are searchable and retain their New conversation
+action when opened.[^sidebar][^sidebar-navigation]
+
+Selecting a project clears the query, selects All, opens the project section,
+unfolds its machine/folder/project and focuses that project row. Other projects
+retain their fold state; later catalog updates do not reopen the revealed
+project. Selecting a session clears the query and uses the existing session
+selection path. Up/Down moves between enabled results, Enter opens a result,
+and Esc or the clear button restores the browse filter, scope and scroll
+position. The browse tree stays mounted during search, and typing/canceling
+does not replace the conversation composer or its draft. Both search surfaces
+ignore selection keys during IME composition.[^sidebar][^sidebar-project-tree][^quick-search]
 
 Each project starts folded on first use. Its expanded state is saved separately
 from the session picker's expansion and restored after reopening; selecting a
@@ -192,23 +220,27 @@ Projects, virtual folders, and machines with no matching sessions are hidden
 under Active or Sleeping. An empty result offers a reset to All. The selected
 status survives reopening the app; the previous active-only preference migrates
 to Active. Split shortcuts remain available independently of status. Global
-Quick Open searches sessions and projects independently of the recent-list
+Quick Search searches sessions and projects independently of the recent-list
 filters. Filtering and folder/project collapse change
 visibility without deleting or activating sessions.[^sidebar]
 
 The sidebar collapses to a 66px navigation rail and resizes from 244px to 360px,
 with a saved default of 286px. Drag the edge or focus it and use Left/Right to
-resize. Search and New conversation show the user's configured shortcuts. The
+resize. Quick Search and New conversation show the user's configured shortcuts.
+The inline field is hidden in the collapsed rail; global Quick Search remains
+available in the titlebar and by shortcut. The
 header actions also remain available in the collapsed rail. The sidebar follows
 the current application theme. The Electron sidebar smoke uses a separate
 profile and checks pin/archive/restore, scopes, independent project folds,
-project menus/new conversations, nested pointer/keyboard selection, Quick Open,
+project menus/new conversations, nested pointer/keyboard selection, Quick Search,
 notifications, split rename/ungroup, collapse/resize, settings, reload and
 800–1440px layouts. IPC is simulated: no real terminal processes or user
 accounts are used. Source validation for project folding passed 33 focused
 sidebar/navigation tests, TypeScript checking and the native sidebar smoke;
 captures are in `output/sidebar-workspace-app/`. Project folding is recorded in
-the [1.8.1.65 release notes](release-1-8-1-65.md).[^sidebar][^sidebar-smoke]
+the [1.8.1.65 release notes](release-1-8-1-65.md). The later search implementation
+and verification are recorded in the [2026-10-08 UX review](chat-ux-review-2026-10-08.md).
+[^sidebar][^sidebar-smoke]
 
 The shared Dashboard/Remote sidebar uses these same All/Active/Sleeping categories,
 with global counts and a browser-local saved selection. Search stays within the
@@ -630,6 +662,8 @@ The domain invariants behind these interactions are documented in
 [^sidebar-project-tree]: Project folders, SSH machines and session picker
 [^sidebar-navigation]: Recent conversation ordering, scopes and saved preferences
 [^sidebar-smoke]: Native sidebar actions, persistence, themes and geometry
+[^topbar]: Centered Quick Search and native window controls
+[^quick-search]: Global search, keyboard navigation and input composition
 [^pane-slot]: Pane and tab host
 [^context-menus]: Workspace context menus
 [^terminal-area]: Terminal and chat surface

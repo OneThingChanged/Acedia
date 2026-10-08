@@ -27,6 +27,29 @@
 .sidebar-new-chat { width: 100%; height: 38px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; padding: 0 13px; border: 0; border-radius: 8px; background: var(--app-heading); color: var(--app-bg) !important; font-weight: 600; font-size: 13px; }
 .sidebar-new-chat:hover { filter: brightness(1.08); }
 .sidebar-new-chat kbd { margin-left: auto; font-family: inherit; font-size: 9px; font-weight: 400; opacity: .65; white-space: nowrap; }
+.sidebar-workspace-search { display: flex; align-items: center; gap: 8px; min-width: 0; height: 35px; margin-bottom: 8px; padding: 0 8px 0 10px; border: 1px solid var(--app-border); border-radius: 7px; background: var(--app-bg); color: var(--app-muted); }
+.sidebar-workspace-search:focus-within { border-color: var(--app-accent); }
+.sidebar-workspace-search > .sidebar-icon { width: 15px; height: 15px; }
+.sidebar-workspace .sidebar-workspace-search input { flex: 1; min-width: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; outline: 0; box-shadow: none; background: transparent; color: var(--app-heading); font-size: 11px; }
+.sidebar-workspace-search input::placeholder { color: var(--app-soft-text); }
+.sidebar-workspace-search input::-webkit-search-cancel-button { display: none; }
+.sidebar-workspace-search .sidebar-inline-search-clear { width: 23px; height: 23px; }
+.sidebar-inline-search-clear .sidebar-icon { width: 13px; height: 13px; }
+.sidebar-workspace-browse[hidden] { display: none; }
+.sidebar-search-summary { margin: 5px 8px 17px; color: var(--app-soft-text); font-size: 10px; line-height: 1.6; }
+.sidebar-search-group + .sidebar-search-group { margin-top: 18px; }
+.sidebar-search-group h2 { display: flex; gap: 6px; margin: 0 8px 6px; color: var(--app-muted); font-size: 10px; font-weight: 500; }
+.sidebar-search-group h2 span { color: var(--app-soft-text); }
+.sidebar-search-project { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 10px; min-height: 45px; border: 0; border-radius: 7px; background: transparent; text-align: left; }
+.sidebar-search-project:hover { background: var(--app-panel-hover); }
+.sidebar-search-project > .sidebar-icon { color: var(--app-muted); width: 16px; height: 16px; }
+.sidebar-search-project > .sidebar-icon:last-child { width: 12px; height: 12px; transform: rotate(-90deg); }
+.sidebar-search-project-copy { flex: 1; min-width: 0; }
+.sidebar-search-project-copy strong, .sidebar-search-project-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-search-project-copy strong { color: var(--app-heading); font-size: 12px; font-weight: 500; }
+.sidebar-search-project-copy small { color: var(--app-soft-text); margin-top: 3px; font-size: 9px; }
+.sidebar-search-results mark { padding: 0; background: transparent; color: var(--app-accent); }
+.sidebar-search-hint { margin: 20px 8px 5px; color: var(--app-soft-text); font-size: 9px; }
 .sidebar-primary-nav { display: grid; gap: 2px; }
 .sidebar-nav-row { width: 100%; height: 33px; padding: 0 11px; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 7px; background: transparent; color: var(--app-muted) !important; text-align: left; font-size: 12px; }
 .sidebar-nav-row:hover, .sidebar-nav-row[aria-current="page"] { background: var(--app-panel-hover); color: var(--app-heading) !important; }
@@ -127,7 +150,7 @@
 .sidebar-workspace-collapsed .sidebar-header-actions { flex-direction: column; gap: 4px; margin: 0; }
 .sidebar-workspace-collapsed .sidebar-header-actions .sidebar-icon-button { width: 38px; height: 38px; }
 .sidebar-workspace-collapsed .sidebar-brand, .sidebar-workspace-collapsed .sidebar-nav-label, .sidebar-workspace-collapsed .sidebar-new-chat kbd,
-.sidebar-workspace-collapsed .sidebar-nav-count, .sidebar-workspace-collapsed .sidebar-workspace-scroll { display: none; }
+.sidebar-workspace-collapsed .sidebar-nav-count, .sidebar-workspace-collapsed .sidebar-workspace-scroll, .sidebar-workspace-collapsed .sidebar-workspace-search { display: none; }
 .sidebar-workspace-collapsed .sidebar-workspace-top { padding: 0 13px; }
 .sidebar-workspace-collapsed .sidebar-new-chat { width: 38px; padding: 0; justify-content: center; margin-bottom: 12px; }
 .sidebar-workspace-collapsed .sidebar-primary-nav { gap: 8px; }

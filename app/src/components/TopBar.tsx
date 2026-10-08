@@ -4,6 +4,7 @@
 // never sit under the native buttons. Everything interactive is app-region:
 // no-drag; the rest of the bar drags the window (double-click maximizes).
 import { useAppLanguage } from "../lib/appLanguage";
+import { SidebarIcon } from "./SidebarIcon";
 
 export function TopBar({
   filesOpen,
@@ -16,6 +17,8 @@ export function TopBar({
   alwaysOnTop,
   onToggleAlwaysOnTop,
   onOpenNewWindow,
+  onQuickOpen,
+  quickOpenShortcut,
 }: {
   filesOpen: boolean;
   onToggleFiles: () => void;
@@ -27,12 +30,20 @@ export function TopBar({
   alwaysOnTop: boolean;
   onToggleAlwaysOnTop: () => void;
   onOpenNewWindow: () => void;
+  onQuickOpen: () => void;
+  quickOpenShortcut?: string;
 }) {
   const { text } = useAppLanguage();
   return (
     <header className="app-topbar">
       <div className="topbar-inner">
         <div className="topbar-drag" aria-hidden="true" />
+        <button type="button" className="topbar-quick-search" onClick={onQuickOpen}
+          aria-haspopup="dialog" aria-label={text("통합 검색 · Quick Search", "Search · Quick Search")}
+          title={`Quick Search${quickOpenShortcut ? ` · ${quickOpenShortcut}` : ""}`}>
+          <SidebarIcon name="search" /><span>Quick Search</span>{quickOpenShortcut && <kbd>{quickOpenShortcut}</kbd>}
+        </button>
+        <div className="topbar-actions">
         <button
           type="button"
           className={`topbar-btn ${alwaysOnTop ? "topbar-btn-active" : ""}`}
@@ -81,6 +92,7 @@ export function TopBar({
             <rect x="15.3" y="5.4" width="4.8" height="13.2" rx="1.4" fill="currentColor" />
           </svg>
         </button>
+        </div>
       </div>
     </header>
   );

@@ -3,9 +3,9 @@ export const LS_COMMAND_SHORTCUTS = "multiagent.commandShortcuts.v1";
 export const COMMAND_DEFINITIONS = [
   {
     id: "quick-open",
-    title: "Quick Open",
+    title: "Quick Search",
     description: "프로젝트·세션·Screen·문서·명령 통합 검색",
-    titleEn: "Quick Open",
+    titleEn: "Quick Search",
     descriptionEn: "Search projects, sessions, screens, documents, and commands",
     keywords: "search palette navigate 찾기 열기",
     defaultShortcut: "Ctrl+K",
