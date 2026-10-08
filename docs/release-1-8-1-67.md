@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.67
 description: "상단 중앙 Quick Search와 사이드바 프로젝트·세션 통합 입력 검색."
-status: draft
+status: stable
 last_updated: 2026-10-08
 ---
 
@@ -33,5 +33,22 @@ last_updated: 2026-10-08
 - 검색·사이드바·세션 검색·명령의 집중 검사 **6개 파일·43개 검사**를 통과했다.
 - 별도 프로필의 실제 App 렌더러를 띄운 Electron 검사에서 통합 결과, 범위·필터와의 독립성, 한글 조합, 키보드·포인터 선택, 사용 중인 세션 보호, 빈 결과, 로컬·SSH·미분류 폴더 펼침, 목록 갱신, 초안·스크롤 유지와 접힘 상태 재실행 복원을 통과했다. 다크·라이트 및 800·1280·1440px 화면을 확인했다.
 - TypeScript 검사와 프로덕션 빌드를 통과했다. 기존 큰 번들 크기 경고는 남아 있다.
+- 고정 소스의 Standard EXE 빌드와 패키지 bridge·Dashboard·Git·네이티브 PTY·종료·트레이·보안 검사를 통과했다. 패키지 renderer·runtime **275개 파일**이 빌드 원본과 일치한다. 콘솔 목록 보조 프로세스의 `AttachConsole failed` 진단 8회와 종료 시 GPU 진단 2회는 직전 버전 로그와 같으며 필수 검증은 모두 통과했다.
+- 설치 파일 FileVersion **1.8.1.67**, 크기·SHA-256과 같은 빌드의 `latest-exe.json` 일치를 확인했다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`이다. 포함된 APK **1.8.1.39/code 21**의 인증서·패키지·아키텍처·해시를 검증했다.
+- 공개 업데이터의 **1.8.1.65·1.8.1.66 → 1.8.1.67** 감지와 공개 설치 파일 다운로드를 통과했다. EXE·blockmap·manifest의 크기·해시, 최신 안정 릴리스와 소스 태그가 일치한다.
 
-전체 검사, 고정 소스의 EXE 빌드·패키지 검증과 공개 다운로드·업데이트 결과는 배포 완료 후 기록한다. IPC는 검사용이며 실제 사용자 세션·계정·클립보드를 조작하지 않는다.
+실제 사용자 앱의 설치·재시작과 Android 기기 동작은 별도 검증이다. UI 검사의 IPC는 검사용이며 실제 사용자 세션·계정·클립보드를 조작하지 않는다.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.67](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.67)를 2026-10-08 **16:35:50 KST**에 게시했다.
+- 소스·태그는 `09e02efb52618e07026d8f6080aacc5b09938265`이며 `origin/main`에 푸시한 같은 소스를 빌드했다. Microsoft Store 제출과 신규 APK 빌드는 실행하지 않았다.
+- **16:37:31 KST**에 공개 다운로드·업데이트 검증을 완료했다. 사용 중인 앱·세션을 재시작하거나 설치 프로그램을 실행하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.67-x64.exe` | 151310726 | `fd563f57ccb2482e3ae6220c2333a5f65b16e52b38cb67c9548409b896f0db0f` |
+| `Acedia-Setup-1.8.1.67-x64.exe.blockmap` | 159479 | `2f78795f31f7ee8f3cdf98fd68d629619e0c05886917e518507318e0723c1436` |
+| `latest-exe.json` | 256 | `136dd3e5b16ebf0410a3a540403d5609e5163b6b35999e73679ce9614b6d440c` |
+
+로컬 증빙: `output/full-suite-exe-1.8.1.67-summary.json`, `output/full-suite-exe-1.8.1.67.json`, `output/mobile-tests-exe-1.8.1.67.log`, `output/sidebar-workspace-app/`, `output/build-exe-1.8.1.67.log`, `output/packaged-smoke-1.8.1.67.log`, `output/packaged-lifecycle-1.8.1.67.log`, `output/public-update-verification-1.8.1.67.log`, `output/exe-release-1.8.1.67/local-verification.json`, `output/exe-release-1.8.1.67/public-verification.json`.
