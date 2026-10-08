@@ -233,8 +233,8 @@ CLI의 별칭과 옵션을 사용한다. SSH와 다른 도구는 공급자 표�
 - TypeScript 검사와 프로덕션 빌드 통과. 기존 큰 번들 경고는 유지된다.
 
 캡처는 `output/chat-model-ui/`의 `codex-390.png`, `claude-300.png`,
-`light-390.png`, `workspace-1440.png`다. 이번 항목은 소스 구현·검증 기록이며
-공개 EXE 배포 상태는 해당 릴리스 문서에서 별도로 관리한다.
+`light-390.png`, `workspace-1440.png`다. 모델·effort 변경은
+[1.8.1.68 EXE 배포](release-1-8-1-68.md)에 포함한다.
 
 ## 이미지 경계와 답변별 파일 목록 앱 적용 — 2026-10-08
 
@@ -276,5 +276,5 @@ CLI의 별칭과 옵션을 사용한다. SSH와 다른 도구는 공급자 표�
 
 검사 캡처는 `output/chat-files-ui/`의 `images-1440-soft.png`,
 `images-300-light.png`, `popup-1440-soft.png`, `popup-390-soft.png`다.
-이번 항목은 소스 구현 기록이며 공개 EXE 배포 상태는 릴리스 문서에서
-별도로 관리한다.
+이미지 경계·답변별 파일 목록 변경은
+[1.8.1.68 EXE 배포](release-1-8-1-68.md)에 포함한다.

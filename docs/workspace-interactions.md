@@ -511,9 +511,9 @@ The native file/image smoke checks frame bounds and preserved aspect ratios at
 1440/390/300px, dark/light themes, 150 files in the searchable dialog, the
 three-card threshold, file preview routing, focus/Esc, live list refresh,
 older-page merges, session isolation and loaded-image identity. Source validation
-passed all 1,214 tests in 180 files and the TypeScript/Vite build; the
-[2026-10-08 review](chat-ux-review-2026-10-08.md) records the evidence separately
-from published EXE releases.[^chat-files-smoke]
+passed all 1,214 tests in 180 files and the TypeScript/Vite build. The model,
+image and file changes shipped in [EXE 1.8.1.68](release-1-8-1-68.md); the
+[2026-10-08 review](chat-ux-review-2026-10-08.md) records UI evidence.[^chat-files-smoke]
 
 Markdown renderer component types and transcript turn keys remain stable during
 status polling, new answer blocks and older-history prepends. A loaded image is

@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.68
 description: "채팅 모델·effort 변경, 이미지 프레임 경계 수정과 답변별 파일·검색 팝업."
-status: draft
+status: stable
 last_updated: 2026-10-08
 ---
 
@@ -34,5 +34,30 @@ last_updated: 2026-10-08
 - 1440·390·300px의 다크·라이트 채팅에서 가로·세로 이미지 경계·비율, **150개 파일**의 답변별 연결·3개 인라인·4개부터 팝업·검색·개수·경로·열기·포커스·Esc·목록 갱신과 이전 페이지 병합을 통과했다. 이미지 DOM과 읽기 횟수를 보존하고 새 세션에 목록을 섞지 않는다.
 - 기존 데스크톱·Remote 질문·로그인·시작 확인·작업 상태·이미지 뷰어·메시지 재사용·인용과 Remote 모델 선택창 검사도 통과했다. 상세 구현 검사는 [UX 기록](chat-ux-review-2026-10-08.md)을 따른다.
 
-Standard EXE 빌드·패키지 실행·종료·설치 파일·공개 다운로드 검증과
-게시 결과는 완료 후 추가한다. 실제 사용자 앱의 설치·재시작은 별도 확인이다.
+- TypeScript 검사·프로덕션 빌드와 고정 소스의 Standard EXE 빌드를 통과했다. 기존 큰 번들 경고는 남아 있다.
+- 패키지 bridge·Dashboard·Git·네이티브 PTY·종료·트레이·보안 검사를 통과했다. 패키지 renderer·runtime **277개 파일**이 빌드 원본과 일치한다. 콘솔 목록 보조 프로세스의 `AttachConsole failed` 진단 8회는 직전 버전과 같으며 필수 검증은 모두 통과했다.
+- 설치 파일 FileVersion **1.8.1.68**, 크기·SHA-256과 같은 빌드의 `latest-exe.json` 일치를 확인했다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`다. 포함된 APK **1.8.1.39/code 21**의 인증서·패키지·아키텍처·해시도 검증했다.
+- 공개 업데이터의 **1.8.1.66·1.8.1.67 → 1.8.1.68** 감지와 공개 설치 파일 다운로드를 통과했다. EXE·blockmap·manifest의 크기·해시, 최신 안정 릴리스와 소스 태그가 일치한다.
+
+실제 사용자 앱의 설치·재시작과 Android 기기 동작은 별도 검증이다.
+UI 검사의 IPC·CLI·클립보드는 검사용이다.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.68](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.68)를 2026-10-08 **20:18:44 KST**에 게시했다.
+- 소스·태그는 `eeada24886871113e939a591c6c53c7920220586`이며 `origin/main`에 푸시한 같은 고정 소스를 빌드했다. 이번 EXE에는 기존 서명 APK를 포함하며 Microsoft Store 제출·신규 APK 빌드는 별도 배포 항목이다.
+- **20:20:36 KST**에 공개 다운로드·업데이트 검증을 완료했다. 설치 파일을 실행하는 대신 공개 업데이터의 다운로드·검증 완료 상태를 확인했다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.68-x64.exe` | 151318612 | `d4c6d6f13d04d6a772d6b080b57af2505b85c54506eea2cc0daba828c2cc7565` |
+| `Acedia-Setup-1.8.1.68-x64.exe.blockmap` | 159548 | `8cdc8e991f53f426214b174deb4103d6a310c235947f592fbec95ef8dc2110eb` |
+| `latest-exe.json` | 256 | `a2e32a985183172feb6e887fe1b914099034656fbca4cbf1582ec159a6bb5aab` |
+
+로컬 증빙: `output/full-suite-exe-1.8.1.68-summary.json`,
+`output/full-suite-exe-1.8.1.68.json`, `output/mobile-tests-exe-1.8.1.68.log`,
+`output/chat-model-ui/`, `output/chat-files-ui/`, `output/build-exe-1.8.1.68.log`,
+`output/packaged-smoke-1.8.1.68.log`, `output/packaged-lifecycle-1.8.1.68.log`,
+`output/public-update-verification-1.8.1.68.log`,
+`output/exe-release-1.8.1.68/local-verification.json`,
+`output/exe-1.8.1.68-public-verify/`와 `.build-tools/public-verified-1.8.1.68.json`.
