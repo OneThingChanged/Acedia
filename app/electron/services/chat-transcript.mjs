@@ -14,6 +14,7 @@ import { toolSummary, diffFromToolCall, diffFromText } from "./chat-tool-format.
 import { isNoiseUserText } from "./chat-noise.mjs";
 import { isQuestionTool } from "../shared/chat-prompt.mjs";
 import { transcriptImages } from "./chat-images.mjs";
+import { changesFromToolCall } from "./chat-file-changes.mjs";
 
 const MAX_TOOL_OUTPUT = 4000;
 const MAX_TEXT = 20000;
@@ -38,6 +39,8 @@ function toolCallBlock(name, rawInput, callId) {
   if (summary) block.summary = summary;
   const diff = diffFromToolCall(name, input);
   if (diff) block.diff = diff;
+  const fileChanges = changesFromToolCall(name, input);
+  if (fileChanges.length) block.fileChanges = fileChanges;
   return block;
 }
 

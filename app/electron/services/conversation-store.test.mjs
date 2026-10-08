@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { promises as fsPromises } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +32,29 @@ afterEach(async () => {
 });
 
 describe("ConversationStoreManager", () => {
+  it("deduplicates asynchronous file checks and invalidates a cached miss after a write", async () => {
+    const root = await tempRoot();
+    const manager = new ConversationStoreManager({ configDir:path.join(root,"config"), defaultRoot:path.join(root,"store") });
+    const input = { agentId:"stats", sessionId:"one", provider:"codex", projectPath:root, transcriptPath:path.join(root,"session.jsonl") };
+    const target = path.join(root,"created.md");
+    try {
+      await fsPromises.writeFile(input.transcriptPath, [codexLine("user","Review"), ...Array.from({length:40},()=>codexLine("assistant","`created.md`"))].join("\n")+"\n");
+      await manager.store.ingestTranscript(input);
+      const spy = vi.spyOn(fsPromises,"stat");
+      const first = await manager.listBlocks(input);
+      expect(first.artifacts).toEqual([]);
+      await manager.listBlocks(input);
+      expect(spy.mock.calls.filter(([file])=>file===target)).toHaveLength(1);
+      spy.mockRestore();
+      await fsPromises.writeFile(target,"created");
+      const tool = payload=>JSON.stringify({type:"response_item",payload});
+      await fsPromises.appendFile(input.transcriptPath,[tool({type:"function_call",name:"Write",arguments:JSON.stringify({file_path:"created.md",content:"created"}),call_id:"write"}),
+        tool({type:"function_call_output",output:"Done",call_id:"write"}),codexLine("assistant","[created](created.md)")].join("\n")+"\n");
+      await manager.store.ingestTranscript(input);
+      const updated = await manager.listBlocks(input);
+      expect(updated.artifacts.some(file=>file.path===target && file.usage==="output")).toBe(true);
+    } finally { vi.restoreAllMocks(); manager.close(); }
+  });
   it("rebuilds per-block file associations for stored history, older pages and more than 100 files", async () => {
     const root = await tempRoot();
     const config = { configDir: path.join(root, "config"), defaultRoot: path.join(root, "store") };
@@ -48,15 +71,15 @@ describe("ConversationStoreManager", () => {
       await manager.store.ingestTranscript(input);
       manager.close();
       manager = new ConversationStoreManager(config);
-      const page = manager.store.listBlocks({ ...input, limit: 3 });
+      const page = await manager.store.listBlocks({ ...input, limit: 3 });
       expect(page.artifacts.some(file => file.usage === "output" && file.path === path.join(root, "result.mp4"))).toBe(true);
       expect(page.artifacts.some(file => file.path.endsWith("guide.html"))).toBe(false);
-      const older = manager.store.listBlocks({ ...input, beforeSequence: page.firstSequence, limit: 3 });
+      const older = await manager.store.listBlocks({ ...input, beforeSequence: page.firstSequence, limit: 3 });
       expect(older.artifacts).toEqual([expect.objectContaining({ path: path.join(root, "guide.html"), usage: "reference", sourceSequence: older.blocks[1].sequence })]);
-      expect(manager.store.listBlocks({ ...input, agentId: "other" }).artifacts).toEqual([]);
+      expect((await manager.store.listBlocks({ ...input, agentId: "other" })).artifacts).toEqual([]);
       await fsPromises.appendFile(input.transcriptPath, codexLine("user", "Review the source files") + "\n" + codexLine("assistant", names.slice(2).map(name => `\`${name}\``).join("\n")) + "\n");
       await manager.store.ingestTranscript(input);
-      const last = manager.store.listBlocks({ ...input, limit: 2 });
+      const last = await manager.store.listBlocks({ ...input, limit: 2 });
       expect(last.artifacts).toHaveLength(105);
       expect(last.artifacts.every(file => file.usage === "reference" && file.sourceSequence === last.blocks[1].sequence)).toBe(true);
     } finally { manager.close(); }
@@ -73,7 +96,7 @@ describe("ConversationStoreManager", () => {
       manager.store.recordUserMessage({ ...input, text });
       await fsPromises.writeFile(transcriptPath, `${codexLine("assistant", "이전 답변")}\n${record}\n`);
       await manager.store.ingestTranscript(input);
-      const page = manager.store.listBlocks(input);
+      const page = await manager.store.listBlocks(input);
       const sequence = page.blocks.find(block => block.role === "user").sequence;
       expect(JSON.stringify(page)).not.toContain("base64");
       expect(await manager.readImages({ agentId: input.agentId, sequence })).toEqual([{ dataUrl: bitmap }]);
@@ -95,7 +118,7 @@ describe("ConversationStoreManager", () => {
         { type: "text", text: "그리고 두 번째" },
         { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "Yg==" } }] } }) + "\n");
       await manager.store.ingestTranscript(input);
-      const page = manager.store.listBlocks(input);
+      const page = await manager.store.listBlocks(input);
       const images = page.blocks.filter(block => block.kind === "image");
       expect(images).toHaveLength(2);
       expect(await manager.readImages({ agentId: input.agentId, sequence: images[0].sequence })).toEqual([{ dataUrl: "data:image/png;base64,YQ==" }]);
@@ -127,7 +150,7 @@ describe("ConversationStoreManager", () => {
     await manager.store.ingestTranscript(input);
     await manager.store.ingestTranscript(input);
 
-    let page = manager.store.listBlocks({
+    let page = await manager.store.listBlocks({
       agentId: input.agentId,
       sessionId: input.sessionId,
       provider: input.provider,
@@ -142,7 +165,7 @@ describe("ConversationStoreManager", () => {
       "utf8",
     );
     await manager.store.ingestTranscript(input);
-    page = manager.store.listBlocks({
+    page = await manager.store.listBlocks({
       agentId: input.agentId,
       sessionId: input.sessionId,
       provider: input.provider,
@@ -152,7 +175,7 @@ describe("ConversationStoreManager", () => {
     expect(page.hasOlder).toBe(true);
     expect(page.total).toBe(4);
 
-    const older = manager.store.listBlocks({
+    const older = await manager.store.listBlocks({
       agentId: input.agentId,
       sessionId: input.sessionId,
       provider: input.provider,
@@ -163,12 +186,12 @@ describe("ConversationStoreManager", () => {
     manager.close();
 
     const reopened = new ConversationStoreManager({ configDir, defaultRoot });
-    expect(reopened.store.listBlocks({
+    expect((await reopened.store.listBlocks({
       agentId: input.agentId,
       sessionId: input.sessionId,
       provider: input.provider,
       limit: 10,
-    }).blocks.map((block) => block.text)).toEqual(["hello", "world", "again", "done"]);
+    })).blocks.map((block) => block.text)).toEqual(["hello", "world", "again", "done"]);
     reopened.close();
   });
 
@@ -191,33 +214,33 @@ describe("ConversationStoreManager", () => {
       provider: "codex",
       text: "only b",
     });
-    expect(manager.store.listBlocks({
+    expect((await manager.store.listBlocks({
       agentId: "agent-a",
       sessionId: "shared-provider-id",
       provider: "codex",
-    }).blocks.map((block) => block.text)).toEqual(["only a"]);
-    expect(manager.store.listBlocks({
+    })).blocks.map((block) => block.text)).toEqual(["only a"]);
+    expect((await manager.store.listBlocks({
       agentId: "agent-b",
       sessionId: "shared-provider-id",
       provider: "codex",
-    }).blocks.map((block) => block.text)).toEqual(["only b"]);
+    })).blocks.map((block) => block.text)).toEqual(["only b"]);
 
     const moved = await manager.setRoot(customRoot);
     expect(moved.custom).toBe(true);
     expect(path.resolve(moved.path)).toBe(path.resolve(customRoot));
-    expect(manager.store.listBlocks({
+    expect((await manager.store.listBlocks({
       agentId: "agent-a",
       sessionId: "shared-provider-id",
       provider: "codex",
-    }).blocks.map((block) => block.text)).toEqual(["only a"]);
+    })).blocks.map((block) => block.text)).toEqual(["only a"]);
 
     const reset = await manager.setRoot(null);
     expect(reset.custom).toBe(false);
-    expect(manager.store.listBlocks({
+    expect((await manager.store.listBlocks({
       agentId: "agent-b",
       sessionId: "shared-provider-id",
       provider: "codex",
-    }).blocks.map((block) => block.text)).toEqual(["only b"]);
+    })).blocks.map((block) => block.text)).toEqual(["only b"]);
     manager.close();
   });
 

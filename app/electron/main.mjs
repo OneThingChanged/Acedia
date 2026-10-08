@@ -72,7 +72,7 @@ import { RemoteSessionCreateBroker } from "./services/remote-session-create-brok
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
-import { SessionModelService, lastTurnModel, modelRestartAllowed, verifyModelSessionStart } from "./services/session-model-service.mjs";
+import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
 import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
 import { projectSessionRuntime } from "./shared/session-state.mjs";
@@ -797,7 +797,7 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
       capacityRetry: live ? capacityRetry.get(agent.id) : null,
       status: live ? capacityRetry.isActive(agent.id) ? 'working' : completedWithoutHook ? "done" : agent.status : "offline",
       output: sanitizeTerminalOutput(
-        ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? ""
+        maxOutput > 0 ? ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? "" : ""
       ),
       hook: capacityRetry.isActive(agent.id) ? { ...hook, event: 'working', hook_event_name: 'CapacityRetry' }
         : completedWithoutHook ? { ...hook, event: "done", hook_event_name: "TranscriptComplete" } : hook,
@@ -1080,8 +1080,12 @@ async function sessionModelCatalog(agent) {
 }
 const sessionModels = new SessionModelService({
   agentFor: sessionModelAgent, active: id => ptys.has(id), catalog: sessionModelCatalog,
+  inputReady: id => modelInputReady(ptys.get(id)),
   update: payload => remoteSessionModelBroker.update(payload),
 });
+function modelInputReady(entry) {
+  return codexModelInputReady(entry, { blocked: forceClosing || questionResponder.isBusy(entry?.id) || capacityRetry.isActive(entry?.id) });
+}
 
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
@@ -5788,7 +5792,7 @@ async function invokeCommand(event, command, rawArgs) {
         try {
           if (!args.restarted) throw new Error("새 CLI를 시작하지 못했습니다.");
           await verifyModelSessionStart({ id: args.id, settings: pending.settings,
-            entryFor: id => ptys.get(id), hookFor: id => monitorHooks.get(id) });
+            entryFor: id => ptys.get(id), hookFor: id => monitorHooks.get(id), inputReady: modelInputReady });
         } catch (error) {
           return remoteSessionModelBroker.complete({ ...args, ok: false, error: error.message, statusCode: 409 });
         }
@@ -5799,7 +5803,7 @@ async function invokeCommand(event, command, rawArgs) {
       const id = asString(args.id);
       if (event.sender.id !== coordinatorWebContentsId || !claimAgentForWindow(id, event.sender.id)) throw new Error("다른 작업창에서 사용 중인 세션입니다.");
       const agent = sessionModels.agent(id), live = ptys.get(id);
-      if (!modelRestartAllowed(agent, Boolean(live))) throw new Error("작업이 끝난 뒤 재시작하세요.");
+      if (!sessionModels.canRestart(id)) throw new Error("작업이 끝난 뒤 재시작하세요.");
       const sessionId = agentSessionIds.get(id) || agent.lastSessionId || null;
       if (args.expectedSessionId && args.expectedSessionId !== sessionId) throw new Error("고정된 대화와 현재 세션이 다릅니다. 세션 고정을 확인하세요.");
       if (live && !sessionId) throw new Error("대화 ID를 아직 확인하지 못했습니다. 첫 대화 완료 후 재시작하세요.");
@@ -5810,7 +5814,7 @@ async function invokeCommand(event, command, rawArgs) {
         if (resolved !== sessionId) throw new Error("기존 대화를 찾을 수 없어 재시작하지 않았습니다.");
       }
       const current = sessionModels.agent(id);
-      if (ptys.get(id) !== live || !modelRestartAllowed(current, Boolean(live))) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
+      if (ptys.get(id) !== live || !sessionModels.canRestart(id)) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
       if ((agentSessionIds.get(id) || current.lastSessionId || null) !== sessionId) throw new Error("현재 대화가 바뀌었습니다. 다시 확인하세요.");
       if (selectedAccountId(current) !== selectedAccountId(agent)
         || (live && selectedAccountId(live) !== selectedAccountId(current))) throw new Error("세션 계정이 바뀌었습니다. 다시 확인하세요.");

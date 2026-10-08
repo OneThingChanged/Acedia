@@ -24,7 +24,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [applyError, setApplyError] = useState("");
-  const [page, setPage] = useState<"model" | "effort" | null>(null);
+  const [isOpen, setOpen] = useState(false);
   const [draft, setDraft] = useState<SessionModel | null>(null);
   const [portal, setPortal] = useState<HTMLElement | null>(null);
   const [position, setPosition] = useState<CSSProperties>({});
@@ -38,7 +38,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
   target.current = { agentId, provider };
   const applyingRef = useRef(applying);
   applyingRef.current = applying;
-  useNativeViewOcclusion(page !== null);
+  useNativeViewOcclusion(isOpen);
 
   const load = useCallback(async () => {
     const ticket = ++sequence.current;
@@ -54,7 +54,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
   }, [agentId, text]);
 
   useEffect(() => {
-    setCatalog(null); setPage(null); setDraft(null); setError(""); setApplyError("");
+    setCatalog(null); setOpen(false); setDraft(null); setError(""); setApplyError("");
     return () => { sequence.current++; };
   }, [agentId, provider]);
   useEffect(() => {
@@ -62,43 +62,50 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
     void load();
     return () => { sequence.current++; };
   }, [active, applying, busy, sessionId, provider, settingsKey, load]);
-  useEffect(() => { if (!active && !applying) setPage(null); }, [active, applying]);
+  useEffect(() => { if (!active && !applying) setOpen(false); }, [active, applying]);
+  useEffect(() => {
+    if (!active || applying) return;
+    // CLI /model changes can happen without a busy/status transition.
+    const timer = window.setInterval(() => { void load(); }, isOpen && catalog?.canRestart === false ? 2000 : 15000);
+    return () => window.clearInterval(timer);
+  }, [active, applying, isOpen, catalog?.canRestart, load]);
 
   const current = catalog?.current ?? catalog?.saved ?? null;
   const model = catalog?.models.find(item => item.model === current?.model);
   const selected = catalog?.models.find(item => item.model === draft?.model);
-  const modelLabel = model?.label || current?.model || `${provider === "claude" ? "Claude" : "Codex"} ${text("기본값", "defaults")}`;
+  const modelLabel = model?.label || current?.model || text("모델 확인 중", "Checking model");
   const effortLabel = current?.effort || model?.defaultEffort || text("기본값", "Default");
   const disabled = applying || catalog?.canEdit === false;
+  const unchanged = sameSettings(draft, model ? settingsForChatModel(model, current) : current);
   const canApply = !!draft && !!selected && !busy && !loading && !error && !applying && !!catalog?.canEdit
-    && catalog.canRestart && !sameSettings(draft, current);
+    && catalog.canRestart && !unchanged;
 
   useEffect(() => {
-    if (!page || !catalog || edited.current) return;
+    if (!isOpen || !catalog || edited.current) return;
     const value = catalog.current ?? catalog.saved;
     const option = catalog.models.find(item => item.model === value?.model);
     setDraft(option ? settingsForChatModel(option, value) : value);
-  }, [catalog, page]);
+  }, [catalog, isOpen]);
 
   const close = useCallback(() => {
     if (applyingRef.current) return;
-    setPage(null);
+    setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
   }, []);
 
-  function open(next: "model" | "effort", button: HTMLButtonElement) {
+  function open(button: HTMLButtonElement) {
     if (disabled) return;
     triggerRef.current = button;
     edited.current = false;
     setDraft(model ? settingsForChatModel(model, current) : current);
     setApplyError("");
-    setPage(next);
+    setOpen(true);
     // Recheck account capabilities and session readiness at the point of use.
     void load();
   }
 
   useLayoutEffect(() => {
-    if (!page) return;
+    if (!isOpen) return;
     const root = rowRef.current?.closest<HTMLElement>(".chat-view-modern");
     if (!root) return;
     setPortal(root);
@@ -114,20 +121,24 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
     const observer = new ResizeObserver(place); observer.observe(root);
     window.addEventListener("resize", place);
     const outside = (event: PointerEvent) => {
-      if (!applyingRef.current && !panelRef.current?.contains(event.target as Node) && !rowRef.current?.contains(event.target as Node)) setPage(null);
+      if (!applyingRef.current && !panelRef.current?.contains(event.target as Node) && !rowRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
     return () => { observer.disconnect(); window.removeEventListener("resize", place); document.removeEventListener("pointerdown", outside); };
-  }, [page, close]);
+  }, [isOpen, close]);
 
   useEffect(() => {
-    if (!page || !portal) return;
+    if (!isOpen || !portal) return;
     const timer = requestAnimationFrame(() => {
       const checked = panelRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
       (checked || panelRef.current?.querySelector<HTMLElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(timer);
-  }, [page, portal]);
+  }, [isOpen, portal]);
+  useEffect(() => {
+    if (!isOpen || loading || edited.current) return;
+    panelRef.current?.querySelector('.chat-model-options [aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [isOpen, loading, catalog]);
 
   function keys(event: KeyboardEvent<HTMLDivElement>) {
     if (event.nativeEvent.isComposing) return;
@@ -159,7 +170,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
       await applyChatSessionModel(id, settings);
       if (target.current.agentId !== id || target.current.provider !== tool) return;
       setCatalog(value => value ? { ...value, current: settings, currentSource: "launch", saved: settings } : value);
-      setPage(null);
+      setOpen(false);
       requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
     } catch (problem) {
       if (target.current.agentId === id && target.current.provider === tool) {
@@ -170,28 +181,24 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
 
   const title = applying ? text("모델 설정을 적용하고 있습니다.", "Applying model settings.") : catalog?.canEdit === false ? text("기본 작업창에서 모델을 변경하세요.", "Change the model in the main workspace.")
     : text("모델 및 추론 강도 변경", "Change model and reasoning effort");
-  const effortTitle = text("추론 강도 변경", "Change reasoning effort");
   return <div className="chat-model-picker" ref={rowRef}>
-    <button type="button" className="chat-model-trigger" aria-label={text("모델 변경", "Change model")} title={`${title} · ${modelLabel}`}
-      aria-haspopup="dialog" aria-expanded={page !== null} aria-controls={page ? id : undefined} disabled={disabled}
-      onClick={event => open("model", event.currentTarget)}><span>{applying ? text("적용 중…", "Applying…") : modelLabel}</span><ChatIcon name="chevron" /></button>
-    <button type="button" className="chat-effort-trigger" aria-label={effortTitle} title={`${effortTitle} · ${effortLabel}`}
-      aria-haspopup="dialog" aria-expanded={page !== null} aria-controls={page ? id : undefined} disabled={disabled}
-      onClick={event => open("effort", event.currentTarget)}><span>{effortLabel}</span><ChatIcon name="chevron" /></button>
-    {page && portal && createPortal(<div className="chat-model-popover" ref={panelRef} id={id} style={position}
+    <button type="button" className="chat-model-trigger" aria-label={text("모델 및 추론 강도 변경", "Change model and reasoning effort")} title={`${title} · ${modelLabel} · ${effortLabel}`}
+      aria-haspopup="dialog" aria-expanded={isOpen} aria-controls={isOpen ? id : undefined} disabled={disabled}
+      onClick={event => open(event.currentTarget)}><span>{applying ? text("적용 중…", "Applying…") : modelLabel}</span><ChatIcon name="chevron" /></button>
+    {isOpen && portal && createPortal(<div className="chat-model-popover" ref={panelRef} id={id} style={position}
       role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-busy={loading || applying} onKeyDown={keys}>
-      <header className="chat-model-head"><strong id={`${id}-title`}>{page === "model" ? text("모델 선택", "Choose a model") : text("추론 강도", "Reasoning effort")}</strong>
+      <header className="chat-model-head"><strong id={`${id}-title`}>{text("모델 선택", "Choose a model")}</strong>
         <button type="button" className="chat-copy-button" aria-label={text("닫기", "Close")} disabled={applying} onClick={close}><ChatIcon name="close" /></button></header>
       <div className="chat-model-body">
         <div className="chat-model-account">{provider === "claude" ? "Claude" : "Codex"}{catalog?.accountLabel ? ` · ${catalog.accountLabel}` : ""}</div>
+        {current && <div className="chat-model-current">{text("현재 모델", "Current model")}: <strong>{modelLabel}</strong>{current.effort ? ` · ${current.effort}` : ""}</div>}
         {loading && <div className="chat-model-notice" role="status">{text("모델 목록을 확인하는 중…", "Checking available models…")}</div>}
         {catalog && <>
-          {page === "model" ? <div className="chat-model-options" role="radiogroup" aria-label={text("모델", "Model")}>
+          <div className="chat-model-options" role="radiogroup" aria-label={text("모델", "Model")}>
             {catalog.models.map(item => <button type="button" role="radio" aria-checked={draft?.model === item.model}
               className="chat-model-option" data-model={item.model} key={item.model} disabled={applying || loading}
               onClick={() => { edited.current = true; setDraft(settingsForChatModel(item, draft)); }}><span><strong>{item.label}</strong>{item.label !== item.model && <small>{item.model}</small>}</span>{draft?.model === item.model && <ChatIcon name="check" />}</button>)}
-          </div> : <button type="button" className="chat-model-selected" disabled={applying || loading} onClick={() => setPage("model")}>
-            <span>{selected?.label || draft?.model || text("모델 선택", "Choose a model")}</span><ChatIcon name="chevron" /></button>}
+          </div>
           {selected && <fieldset className="chat-effort-field"><legend>{text("추론 강도", "Reasoning effort")}</legend>
             <div className="chat-effort-options" role="radiogroup" aria-label={text("추론 강도 선택", "Choose reasoning effort")}>
               {!selected.defaultEffort && <button type="button" role="radio" aria-checked={!draft?.effort} disabled={applying || loading}
@@ -203,8 +210,10 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
             {selected.defaultEffort && <small>{text("모델 기본값", "Model default")}: {selected.defaultEffort}</small>}
           </fieldset>}
           {catalog.capabilitiesSource === "cli-help" && <p className="chat-model-notice">{text("Claude가 모델과 추론 강도의 지원 여부를 실행 시 확인합니다.", "Claude checks model and effort availability when it starts.")}</p>}
-          <p className="chat-model-notice">{busy || !catalog.canRestart
-            ? text("작업 또는 질문이 끝나면 변경할 수 있습니다.", "You can change settings after the work or question finishes.")
+          <p className="chat-model-notice" role="status">{unchanged
+            ? text("이미 적용된 설정입니다. 모델 또는 추론 강도를 변경해 주세요.", "These settings are already applied. Choose a different model or effort.")
+            : busy ? text("작업 또는 질문이 끝나면 변경할 수 있습니다.", "You can change settings after the work or question finishes.")
+            : !catalog.canRestart ? text("세션의 입력 대기를 확인하고 있습니다. 계속되면 터미널 상태를 확인해 주세요.", "Checking that the session is ready. If this continues, check the terminal.")
             : text("같은 대화를 유지하며 다음 메시지부터 적용합니다.", "Applies to your next message while keeping this conversation.")}</p>
         </>}
         {(applyError || error) && <div className="chat-model-error" role="alert">{applyError || error}<button type="button" disabled={applying || loading} onClick={() => { setApplyError(""); void load(); }}>{text("다시 확인", "Retry")}</button></div>}

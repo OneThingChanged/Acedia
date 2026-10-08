@@ -14,13 +14,14 @@ configuration that supports it.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.
 * [Project managed files](project-managed-files.md) - Acedia settings registry, Git/Perforce ignores, and read-only repair at local session startup.
-* [Workspace interactions](workspace-interactions.md) - Centered Quick Search, inline project/session search, Chat model/effort controls, fitted image previews, response-specific file cards and searchable file dialogs, navigation, sessions, panes, documents, source control, and notifications.
+* [Workspace interactions](workspace-interactions.md) - Centered Quick Search, inline project/session search, Chat model/effort controls, fitted image previews, changed-file summaries and searchable file dialogs, conversation performance, navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
 * [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
 * [대화 UX HTML 초안 02](mockups/chat-workspace-v2.html) - 요청·답변 구분, 상단 Quick Search와 사이드바 프로젝트·세션 통합 검색. [기본 화면](mockups/chat-workspace-v2.png), [검색 화면](mockups/chat-workspace-v2-search.png), [관찰·앱 적용·검사](chat-ux-review-2026-10-08.md).
 
 ## Settings and review
 
+* [Acedia 1.8.1.69 EXE release](release-1-8-1-69.md) - Changed-file summaries and diffs, faster Chat, reliable current-model lookup and one model/effort button; EXE publication in progress.
 * [Acedia 1.8.1.68 EXE release](release-1-8-1-68.md) - Chat model/effort controls, fitted image frames, response-specific files and searchable file dialogs; public EXE delivery verified.
 * [Acedia 1.8.1.67 EXE release](release-1-8-1-67.md) - Centered Quick Search and inline sidebar project/session search, with saved folds, draft/scroll preservation and IME support; public EXE delivery verified.
 * [Acedia 1.8.1.66 EXE release](release-1-8-1-66.md) - Readable chat roles, response quotation, request reuse and artifact previews; retain loaded images across transcript updates; public EXE delivery verified.

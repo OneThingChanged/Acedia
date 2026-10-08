@@ -1,10 +1,11 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatIcon } from "./ChatIcon";
 import { ChatModelPicker } from "./ChatModelPicker";
 import { ChatImage } from "./ChatImage";
 import { ChatFiles } from "./ChatFiles";
+import { ChatDiff } from "./ChatDiff";
 import { chatFilesForTurn, mergeChatFiles, sameChatFiles } from "../lib/chatFiles";
 import { splitChatImagePaths } from "../lib/chatPaths";
 import { isChatWorking } from "../lib/chatWorkState";
@@ -140,19 +141,14 @@ function workLabel(name: string, text: (ko: string, en: string) => string): stri
   return text("도구 실행", "Using tools");
 }
 
-function ChatDiff({ diff }: { diff: ChatDiffLine[] }) {
-  return (
-    <div className="chat-diff">
-      {diff.map((line, i) => (
-        <div key={i} className={`chat-diff-line ${line.type}`}>
-          <span className="chat-diff-gutter">
-            {line.type === "add" ? "+" : line.type === "del" ? "-" : " "}
-          </span>
-          {line.text || " "}
-        </div>
-      ))}
-    </div>
-  );
+function ToolDetails({ tool }: { tool: ToolPair }) {
+  const { text } = useAppLanguage();
+  const [open, setOpen] = useState(false);
+  const state = tool.isError ? "error" : tool.completed ? "done" : "pending";
+  return <details className="chat-tool" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
+    <summary><span className={`chat-tool-state ${state}`} aria-label={state} /><span className="chat-tool-label"><span className="chat-tool-k">$</span> {toolLabel(tool)}</span></summary>
+    {open && <>{tool.diff && <ChatDiff diff={tool.diff} />}{(tool.output !== undefined || !tool.diff) && <pre className={tool.isError ? "err" : ""}>{tool.output ?? text("(출력 없음)", "(no output)")}</pre>}</>}
+  </details>;
 }
 
 type ToolPair = {
@@ -214,10 +210,11 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
 
 function ToolGroup({ tools }: { tools: ToolPair[] }) {
   const { text } = useAppLanguage();
+  const [open, setOpen] = useState(false);
   const failed = tools.filter((tool) => tool.isError).length;
   const finished = tools.filter((tool) => tool.completed).length;
   return (
-    <details className="chat-work chat-work-tools">
+    <details className="chat-work chat-work-tools" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
       <summary>
         <span>{text(`작업 ${tools.length}개`, `Tasks ${tools.length}`)}</span>
         <span className={`chat-work-meta ${failed ? "err" : ""}`}>
@@ -228,25 +225,7 @@ function ToolGroup({ tools }: { tools: ToolPair[] }) {
               : text("진행 중", "In progress")}
         </span>
       </summary>
-      <div className="chat-tools">
-        {tools.map((tool, index) => {
-          const state = tool.isError ? "error" : tool.completed ? "done" : "pending";
-          return (
-            <details key={index} className="chat-tool">
-              <summary>
-                <span className={`chat-tool-state ${state}`} aria-label={state} />
-                <span className="chat-tool-label">
-                  <span className="chat-tool-k">$</span> {toolLabel(tool)}
-                </span>
-              </summary>
-              {tool.diff && <ChatDiff diff={tool.diff} />}
-              {(tool.output !== undefined || !tool.diff) && (
-                <pre className={tool.isError ? "err" : ""}>{tool.output ?? text("(출력 없음)", "(no output)")}</pre>
-              )}
-            </details>
-          );
-        })}
-      </div>
+      {open && <div className="chat-tools">{tools.map((tool, index) => <ToolDetails key={index} tool={tool} />)}</div>}
     </details>
   );
 }
@@ -296,7 +275,7 @@ const AssistantTurn = memo(function AssistantTurn({ run, files, tool, onOpenPath
         }
         return null;
       })}
-      <ChatFiles files={files} onOpenPath={onOpenPath} />
+      <ChatFiles files={files} folder={folder} onOpenPath={onOpenPath} />
       {answer && <div className="chat-message-actions"><ChatCopyButton value={answer} label={text("답변 복사", "Copy response")} />{onQuote && <button type="button" className="chat-copy-button chat-quote-button" title={text("답변 인용", "Quote response")} aria-label={text("답변 인용", "Quote response")} onClick={() => { const selection = window.getSelection(); onQuote(selection?.toString().trim() && root.current?.contains(selection.anchorNode) && root.current?.contains(selection.focusNode) ? selection.toString().trim() : answer); }}><ChatIcon name="quote" /></button>}</div>}
     </div>
   );
@@ -345,6 +324,8 @@ export function ChatView({
   const { text } = useAppLanguage();
   const modelChanging = useChatSessionModelChanging(agentId);
   const storeKey = `${agentId}:${sessionId || "unbound"}`;
+  const currentStoreKey = useRef(storeKey);
+  currentStoreKey.current = storeKey;
   const openPathRef = useRef(onOpenPath);
   openPathRef.current = onOpenPath;
   const openPath = useCallback((path: string) => openPathRef.current?.(path), []);
@@ -433,7 +414,12 @@ export function ChatView({
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false, refreshAgain = false;
+    let followup: number | undefined;
     const fetchBlocks = async () => {
+      if (cancelled) return;
+      if (inFlight) { refreshAgain = true; return; }
+      inFlight = true;
       try {
         const result = await invoke("chat_blocks", {
           id: agentId,
@@ -466,7 +452,7 @@ export function ChatView({
         const userTexts = new Set(
           next.filter((b) => b.role === "user" && b.kind === "text").map((b) => b.text ?? "")
         );
-        setPending((prev) => prev.filter((t) => !userTexts.has(t)));
+        setPending((prev) => { const next = prev.filter((t) => !userTexts.has(t)); return next.length === prev.length ? prev : next; });
         const last = next[next.length - 1];
         const key = `${next.length}:${last?.sequence ?? "direct"}:${JSON.stringify(last ?? {}).slice(-160)}`;
         // After "/clear", keep the view empty until the transcript actually
@@ -476,7 +462,7 @@ export function ChatView({
           if (key === clearedSigRef.current) return;
           clearedSigRef.current = null;
         }
-        if (key === keyRef.current) return;
+        if (key === keyRef.current && next === blocksRef.current) return;
         keyRef.current = key;
         msgKeyRef.current = key;
         setMsgKey(key);
@@ -505,16 +491,20 @@ export function ChatView({
         }
       } catch {
         // Keep the last conversation on a transient IPC error.
+      } finally {
+        inFlight = false;
+        if (refreshAgain && !cancelled) { refreshAgain = false; followup = window.setTimeout(fetchBlocks, 250); }
       }
     };
     fetchRef.current = fetchBlocks;
     // Load once whenever the view is shown (even for an inactive pane in a
     // Screen split); only the focused pane keeps polling to limit work.
     void fetchBlocks();
-    if (!active) return () => { cancelled = true; };
+    if (!active) return () => { cancelled = true; window.clearTimeout(followup); };
     const timer = window.setInterval(fetchBlocks, 3000);
     return () => {
       cancelled = true;
+      window.clearTimeout(followup);
       window.clearInterval(timer);
     };
   }, [agentId, active, sessionId]);
@@ -525,34 +515,44 @@ export function ChatView({
     if (!active) return;
     let cancelled = false;
     let unlisten = () => {};
-    void listen("chat:changed", () => fetchRef.current()).then((fn) => {
+    let timer: number | undefined;
+    void listen<{ agentId?: string; path?: string }>("chat:changed", ({ payload }) => {
+      if (payload.agentId && payload.agentId !== agentId) return;
+      if (!payload.agentId && payload.path && sessionId && !payload.path.toLowerCase().includes(sessionId.toLowerCase())) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fetchRef.current(), 180);
+    }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       unlisten();
     };
-  }, [active]);
+  }, [active, agentId, sessionId]);
 
   // User images belong to the user, including an image-only message. Always
   // advance the cursor so an unknown block cannot trap the grouping loop.
-  const isUserBlock = (block: ChatBlock) => block.role === "user" && (block.kind === "text" || block.kind === "image");
-  const ranges: { user: boolean; start: number; end: number }[] = [];
-  let i = 0;
-  while (i < blocks.length) {
-    const b = blocks[i];
-    if (isUserBlock(b)) {
-      ranges.push({ user: true, start: i, end: i + 1 });
-      i += 1;
-    } else {
-      const start = i;
-      do {
+  const ranges = useMemo(() => {
+    const isUserBlock = (block: ChatBlock) => block.role === "user" && (block.kind === "text" || block.kind === "image");
+    const ranges: { user: boolean; start: number; end: number }[] = [];
+    let i = 0;
+    while (i < blocks.length) {
+      const b = blocks[i];
+      if (isUserBlock(b)) {
+        ranges.push({ user: true, start: i, end: i + 1 });
         i += 1;
-      } while (i < blocks.length && !isUserBlock(blocks[i]));
-      ranges.push({ user: false, start, end: i });
+      } else {
+        const start = i;
+        do {
+          i += 1;
+        } while (i < blocks.length && !isUserBlock(blocks[i]));
+        ranges.push({ user: false, start, end: i });
+      }
     }
-  }
+    return ranges;
+  }, [blocks]);
 
   const hidden = Math.max(0, ranges.length - visible);
   const historyAvailable = hidden > 0 || hasOlder;
@@ -580,6 +580,7 @@ export function ChatView({
         beforeSequence,
         limit: CHAT_DB_PAGE,
       });
+      if (currentStoreKey.current !== storeKey) return;
       const known = new Set(
         blocksRef.current.map((block) => block.sequence).filter((value) => value != null)
       );
@@ -597,9 +598,9 @@ export function ChatView({
       setHasOlder(result.hasOlder === true);
       if (result.artifacts) setArtifacts(previous => mergeChatFiles(previous, result.artifacts!, result.blocks ?? []));
     } catch {
-      anchorHeightRef.current = null;
+      if (currentStoreKey.current === storeKey) anchorHeightRef.current = null;
     } finally {
-      setLoadingOlder(false);
+      if (currentStoreKey.current === storeKey) setLoadingOlder(false);
     }
   };
 
@@ -667,7 +668,7 @@ export function ChatView({
     return () => observer.disconnect();
   }, [storeKey]);
 
-  const visibleTurns: ReactNode[] = ranges.slice(hidden).map((range) =>
+  const visibleTurns: ReactNode[] = useMemo(() => ranges.slice(hidden).map((range) =>
     range.user ? (
       <div key={`u-${blockRenderKey(blocks[range.start])}`} className="chat-turn user">
         <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
@@ -675,7 +676,7 @@ export function ChatView({
     ) : (
       <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} files={chatFilesForTurn(artifacts, blocks.slice(range.start, range.end))} tool={provider || tool} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
     )
-  );
+  ), [ranges, hidden, blocks, agentId, folder, stableOpenPath, reuseMessage, artifacts, provider, tool, quoteMessage]);
 
   // Combine current transcript work with fresh hooks. Completion timestamps
   // end stale work without concealing a turn that started after that completion.

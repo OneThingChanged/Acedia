@@ -103,6 +103,50 @@ async function exercise(win, directory) {
   await waitFor(win, "document.querySelector('.chat-files-more')?.textContent.includes('4')");
   await patch({ chat: { ...demo, blocks: [], artifacts: [] }, state: { sessionId: "another-session" } });
   await waitFor(win, "!document.querySelector('.chat-artifacts') && !document.querySelector('.chat-files-dialog')");
+  const changes = Array.from({ length: 19 }, (_, i) => ({ path: `G:/project/${i % 2 ? 'docs/guide' : 'src/feature'}-${i}.${i % 2 ? 'md' : 'ts'}`, kind:i % 2 ? 'md' : 'ts', sourceSequence:1003, usage:'output', size:100, modifiedAt:1,
+    change:{ operation:'edit', additions:i+1, deletions:1, diff:[{type:'del',text:'previous line'},{type:'add',text:'updated line'}] } }));
+  const diff = Array.from({length:160}, () => ({type:'add',text:'a sufficiently long example code line'}));
+  const busyHistory = { tool:'codex', lifecycle:'idle', artifacts:changes, blocks:[{sequence:1001,role:'user',kind:'text',text:'문서와 코드 변경 사항 정리'},
+    ...Array.from({length:160}, (_, i) => [{sequence:1002+i*2,role:'assistant',kind:'tool-call',name:'Edit',summary:`feature-${i}.ts`,diff}, {sequence:1003+i*2,role:'tool',kind:'tool-result',output:'updated'}]).flat(),
+    {sequence:1322,role:'assistant',kind:'text',text:'문서와 코드를 수정했습니다.'}] };
+  const start = Date.now();
+  await patch({ state:{sessionId:'changes',folder:'G:/project'}, chat:busyHistory });
+  await waitFor(win, "document.querySelectorAll('.chat-change-row').length===3");
+  const nodes = await win.webContents.executeJavaScript("document.querySelectorAll('*').length");
+  assert(nodes < 1000 && await win.webContents.executeJavaScript("document.querySelectorAll('.chat-tool,.chat-diff-line').length===0"), `Closed tools built their hidden contents: ${nodes} nodes`);
+  console.log(`CHAT_PERFORMANCE_UI: 160 edits / 25,600 diff lines, ${nodes} DOM nodes, first summary ${Date.now()-start}ms`);
+  for (const width of [1440,390,300]) {
+    win.setContentSize(width,900);
+    await win.webContents.executeJavaScript(`document.getElementById('root').className='app app-theme-${width === 300 ? 'light' : 'soft'}'`);
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert(await win.webContents.executeJavaScript("document.querySelector('.chat-changes-card').textContent.includes('19') && document.querySelector('.chat-changes-card').textContent.includes('+190') && document.querySelector('.chat-changes-more').textContent.includes('16') && document.documentElement.scrollWidth<=innerWidth"), `Changed file summary failed at ${width}`);
+    await fs.writeFile(path.resolve(appRoot, `../output/chat-files-ui/changes-${width}.png`), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("document.querySelector('.chat-change-row').click()");
+    await waitFor(win,"document.querySelectorAll('.chat-changed-file').length===19 && document.querySelectorAll('.chat-change-preview .chat-diff-line').length===2");
+    assert(await win.webContents.executeJavaScript("document.querySelector('.chat-files-dialog').scrollWidth<=document.querySelector('.chat-files-dialog').clientWidth"), 'Change dialog overflowed');
+    await fs.writeFile(path.resolve(appRoot, `../output/chat-files-ui/change-detail-${width}.png`), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+    await waitFor(win,"!document.querySelector('.chat-files-dialog')");
+  }
+  await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
+  await waitFor(win,"document.querySelectorAll('.chat-tool').length===160");
+  assert(await win.webContents.executeJavaScript("document.querySelectorAll('.chat-diff-line').length===0"), 'Opening the group eagerly rendered every diff');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-tool > summary').click()");
+  await waitFor(win,"document.querySelectorAll('.chat-diff-line').length===160");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
+  await waitFor(win,"document.querySelectorAll('.chat-tool').length===0");
+  await win.webContents.executeJavaScript("window.chatReadsBefore=window.questionFixture.chatReads.length;for(let i=0;i<50;i++)window.questionFixture.emit({agentId:'other-agent'});");
+  await new Promise(resolve=>setTimeout(resolve,220));
+  assert(await win.webContents.executeJavaScript("window.questionFixture.chatReads.length-window.chatReadsBefore<=1"), 'Unrelated sessions triggered refreshes');
+  await win.webContents.executeJavaScript("window.questionFixture.holdReads();window.questionFixture.emit({agentId:'fixture'});");
+  await new Promise(resolve=>setTimeout(resolve,250));
+  await win.webContents.executeJavaScript("window.chatReadsBefore=window.questionFixture.chatReads.length;for(let i=0;i<50;i++)window.questionFixture.emit({agentId:'fixture'});");
+  await new Promise(resolve=>setTimeout(resolve,300));
+  assert(await win.webContents.executeJavaScript("window.questionFixture.chatReads.length===window.chatReadsBefore"), 'Refresh requests overlapped');
+  await win.webContents.executeJavaScript("window.questionFixture.releaseReads()");
+  await new Promise(resolve=>setTimeout(resolve,450));
+  assert(await win.webContents.executeJavaScript("window.questionFixture.chatReads.length===window.chatReadsBefore+1"), 'Coalesced refresh was lost');
+  console.log('CHAT_CHANGES_UI_OK: 19 files, exact totals, 3 rows, popup diff, responsive, lazy tool contents, unrelated events, serialized refresh');
   console.log("CHAT_FILES_UI_OK: image/frame bounds, aspect ratios, response ownership, 3/4 threshold, 150-file popup, search, preview, Esc/focus, pagination, image stability, session isolation");
 }
 

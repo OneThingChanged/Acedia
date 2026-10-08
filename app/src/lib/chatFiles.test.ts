@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatFilesForTurn, mergeChatFiles } from "./chatFiles";
+import { chatFilesForTurn, mergeChatFiles, isChangedDocument } from "./chatFiles";
 import type { ChatBlock, ConversationArtifact } from "../platform/ipcContract";
 
 const block = (sequence: number): ChatBlock => ({ sequence, role: "assistant", kind: "text", text: "answer" });
@@ -7,6 +7,15 @@ const file = (sourceSequence: number, usage: "output" | "reference", path = "G:/
   path, kind: "html", size: 1024, modifiedAt: 1, sourceSequence, usage,
 });
 describe("files attached to chat responses", () => {
+  it("adds successful edits within one answer and keeps media previews separate", () => {
+    const first = { ...file(2, "output", "G:/project/code.ts"), kind:"ts", change: { operation:"edit" as const, additions:3, deletions:1, diff:[] } };
+    const second = { ...first, sourceSequence:4, change:{ ...first.change, additions:5, deletions:2 } };
+    const combined = chatFilesForTurn([first, second], [block(2), block(4)]);
+    expect(combined[0].change).toMatchObject({ additions:8, deletions:3 });
+    expect(isChangedDocument(combined[0])).toBe(true);
+    expect(isChangedDocument(file(5, "output"))).toBe(false);
+    expect(isChangedDocument({ ...first, usage:"reference" })).toBe(false);
+  });
   it("keeps a file under its own answer and distinguishes later references", () => {
     const files = [file(2, "output"), file(5, "reference")];
     expect(chatFilesForTurn(files, [block(2)])).toEqual([files[0]]);

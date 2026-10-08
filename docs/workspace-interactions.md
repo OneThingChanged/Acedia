@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 stale_after: 2026-11-30
 sources:
   - id: session-workers
@@ -426,8 +426,8 @@ copies assistant narrative only; code-block copy preserves the plain source
 without its language label or controls. Copy success and failure are announced
 on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
 
-Local Codex and Claude Chat composers show the current model and reasoning
-effort as separate buttons. Either opens a compact picker above the input;
+Local Codex and Claude Chat composers show a single current-model button.
+It opens a compact picker above the input for both model and reasoning effort;
 choose a model and one of its supported effort values, then select **Apply**.
 Changing the model retains a supported effort or uses the new model's default.
 Codex options come from that session's logged-in or routed account. Claude
@@ -439,7 +439,11 @@ Apply is available after work and questions finish, with no queued message
 waiting to send. The existing model service saves a session override, stops
 model inheritance for that session, and resumes the same conversation with the
 same account. Other sessions and provider defaults are unaffected. The host
-checks the replacement CLI's start hook before acknowledging success. Message
+checks the replacement CLI's start hook before acknowledging success. For Codex
+with missing hooks, the host can also verify its empty native composer after
+the input settles. This check rejects drafts, queued input, active work and
+questions, and runs again immediately before restart. Merely having a live
+process or an old completed transcript does not make it ready. Message
 send and queue draining are held during the change, including a terminal/chat
 toggle; draft text and attachments remain intact. Failure is visible in the
 picker. Auxiliary workspace windows can inspect the settings; changes use the
@@ -449,10 +453,21 @@ existing conversation when the transcript is available. See
 [session model execution rules](agent-launch-options.md#실행-규칙).
 [^chat-model-change][^chat-model-smoke]
 
+Unchanged settings, including an implicit default effort, keep Apply disabled
+with an "already applied" explanation. Changed settings distinguish active
+work/questions from readiness still being checked. An open picker refreshes
+unconfirmed readiness every two seconds while retaining the user's selection.
+The current effort remains in the model button's tooltip and the popup.
+
 After resuming with an explicit model, older transcript turns cannot overwrite
 the new launch label. A newer turn context can still reflect a model changed
 through the CLI. The picker supports Escape, focus return, keyboard option
 selection, outside dismissal, dark/light themes and narrow split panes.
+Model lookup scans backward in bounded chunks and caches the last record, so
+large image records or long tool runs do not turn the current model into
+"defaults". The popup shows the current model above the choices and scrolls to
+its selection. Active Chat also refreshes the model every 15 seconds to pick
+up CLI changes without a lifecycle transition.
 [^chat-model-picker][^chat-model-smoke]
 
 The user message's edit icon reuses its text in the composer for a new request;
@@ -470,18 +485,36 @@ Files whose creation cannot be confirmed remain related files. A later request
 does not repeat the previous answer's file cards. Cards use the workspace opener
 for document or image previews.[^chat-view][^chat-files][^chat-file-evidence][^pane-slot]
 
-Each answer shows up to three cards in total, prioritizing created/modified
-files. Four or more files add **View all N files**, opening a searchable dialog
+Confirmed code/document edits appear in an **Edited N files** summary with
+three relative paths and **View changes**. Additional files open a searchable
+dialog; expanding a file shows its recorded diff. Totals sum successful edits
+within the answer, before preview truncation. Unknown baselines (whole-file
+replacement, replace-all, old clipped inputs) omit totals. Deleted files remain
+in the change summary. There is no Undo action without a reliable prior-file
+snapshot. Images, HTML previews, archives and related files retain their cards.
+
+The remaining files show up to three cards, prioritizing created/modified
+files. Four or more add **View all N files**, opening a searchable dialog
 with paths, separate groups, scrolling and file preview actions. Esc or an
 outside click closes it; keyboard focus returns to the opener. Group counts and
 the dialog reflect all files detected for that response rather than the three
 inline cards. Loading older pages merges their file associations without
 replacing more recent answers. Existing stored history is read per page without
 reimporting transcripts, and no project-wide directory scan is performed.
-File-stat results are cached for five seconds. Paths are scoped to the owning
-agent/session; missing files are omitted. Markdown and file URLs decode once,
+File checks use asynchronous I/O (up to eight per page), deduplicate paths and
+cache existing files for five seconds and misses for thirty seconds. A newly
+confirmed write invalidates a cached miss. File association pages are cached;
+ingestion does not synchronously inspect linked files. Paths are scoped to the
+owning agent/session; missing references are omitted. Markdown and file URLs decode once,
 while literal tool paths and code spans preserve percent characters.
 [^chat-files][^chat-file-associations][^chat-file-evidence][^conversation-store]
+
+Chat coalesces file-change notifications, ignores other sessions' events and
+allows one refresh at a time. Indexed sequence IDs preserve unchanged history
+and update an existing block without duplication. Closed tool groups and
+individual diffs are rendered only when expanded; clock and status updates
+reuse the conversation elements. See the [UX review](chat-ux-review-2026-10-08.md)
+for measured timings and the source-only validation status.
 
 Desktop Chat opens Markdown file links, inline-code paths and recognizable bare
 file paths through the workspace file opener. Windows `/G:/...` notation is

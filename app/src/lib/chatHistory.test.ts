@@ -5,6 +5,17 @@ import { mergeChatHistory } from "./chatHistory";
 const textBlock = (text: string): ChatBlock => ({ role: "assistant", kind: "text", text });
 
 describe("mergeChatHistory", () => {
+  it("updates a sequence in place without duplicating a long indexed history and reuses unchanged blocks", () => {
+    const previous = Array.from({length:1000}, (_, i) => ({ ...textBlock(String(i)), sequence:i+1 }));
+    const incoming = structuredClone(previous.slice(-400));
+    expect(mergeChatHistory(previous, incoming)).toBe(previous);
+    incoming[10].text = "corrected";
+    const next = mergeChatHistory(previous, incoming);
+    expect(next).toHaveLength(1000);
+    expect(next[609]).toBe(previous[609]);
+    expect(next[610].text).toBe("corrected");
+    expect(next[611]).toBe(previous[611]);
+  });
   it("appends a growing full transcript without duplicating its prefix", () => {
     const previous = [textBlock("a"), textBlock("b")];
     const incoming = [textBlock("a"), textBlock("b"), textBlock("c")];

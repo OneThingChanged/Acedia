@@ -31,9 +31,16 @@ async function exercise(win, width) {
   await waitFor(win, "document.querySelector('.chat-model-trigger')?.textContent.includes('GPT-6 Sol')");
   await input("작성 중인 요청은 그대로 유지");
   await open(".chat-model-trigger");
+  check(await run("document.querySelectorAll('.chat-model-picker > button').length===1 && !document.querySelector('.chat-effort-trigger')"), "Composer must have one combined model/effort trigger");
+  check(await run("document.querySelector('.chat-model-apply').disabled && document.querySelector('.chat-model-notice').textContent.includes('이미 적용')"), "Unchanged settings need an accurate disabled explanation");
   await click('[data-model="fixture-astra"]');
   await click('[data-effort="ultra"]');
   await waitFor(win, "document.querySelector('[data-effort=ultra]').getAttribute('aria-checked')==='true'");
+  await patch({ catalog: { codex: { canRestart: false } }, state: { modelSettingsKey: "checking-ready" } });
+  await waitFor(win, "document.querySelector('.chat-model-apply').disabled && document.querySelector('.chat-model-notice').textContent.includes('입력 대기')");
+  await patch({ catalog: { codex: { canRestart: true } } });
+  await waitFor(win, "!document.querySelector('.chat-model-apply').disabled");
+  check(await run("document.querySelector('[data-model=fixture-astra]').getAttribute('aria-checked')==='true' && document.querySelector('[data-effort=ultra]').getAttribute('aria-checked')==='true'"), "Readiness refresh lost the user's selection");
   const layout = await run(`(() => { const root=document.querySelector('.chat-view').getBoundingClientRect(), panel=document.querySelector('.chat-model-popover').getBoundingClientRect(); const toolbar=document.querySelector('.chat-composer-toolbar'); return {fits:panel.left>=root.left && panel.right<=root.right && panel.top>=root.top && panel.bottom<=root.bottom, toolbar:toolbar.scrollWidth<=toolbar.clientWidth}; })()`);
   check(layout.fits && layout.toolbar, `Model controls overflow at ${width}px: ${JSON.stringify(layout)}`);
   await fs.writeFile(path.join(output, `codex-${width}.png`), (await win.webContents.capturePage()).toPNG());
@@ -49,13 +56,13 @@ async function exercise(win, width) {
   await waitFor(win, "document.querySelector('.chat-model-trigger')?.textContent.includes('GPT-6 Astra') && !document.querySelector('.chat-composer-send').disabled");
   const update = await run("window.modelFixture.modelUpdates.at(-1)");
   check(update.id === "codex-chat" && update.restart && update.settings.model === "fixture-astra" && update.settings.effort === "ultra", "Wrong Codex model/effort/session payload");
-  await open(".chat-effort-trigger");
+  await open(".chat-model-trigger");
   check(await run("document.querySelector('[data-effort=ultra]').getAttribute('aria-checked')==='true'"), "Applied effort was not selected");
-  await click(".chat-model-selected"); await click('[data-model="fixture-lite"]');
+  await click('[data-model="fixture-lite"]');
   check(await run("!document.querySelector('[data-effort=ultra]') && document.querySelector('[data-effort=medium]').getAttribute('aria-checked')==='true'"), "New model kept an unsupported effort");
   await run("document.querySelector('.chat-model-popover').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
   await waitFor(win, "!document.querySelector('.chat-model-popover')");
-  await waitFor(win, "document.activeElement===document.querySelector('.chat-effort-trigger')");
+  await waitFor(win, "document.activeElement===document.querySelector('.chat-model-trigger')");
   const count = await run("window.modelFixture.modelUpdates.length");
   await patch({ state: { agentStatus: "working" } });
   await waitFor(win, "!!document.querySelector('.chat-thinking')");
@@ -83,7 +90,7 @@ async function exercise(win, width) {
   const claude = await run("window.modelFixture.modelUpdates.at(-1)");
   check(claude.id === "claude-chat" && claude.settings.model === "opus" && claude.settings.effort === "max", "Wrong Claude session payload");
   await patch({ state: { agentStatus: "waiting", question: "로그인을 승인해 주세요" } });
-  await open(".chat-effort-trigger"); await click('[data-effort="low"]');
+  await open(".chat-model-trigger"); await click('[data-effort="low"]');
   check(await run("document.querySelector('.chat-model-apply').disabled"), "A waiting question could be interrupted by model selection");
   await click(".chat-model-footer button");
   await patch({ state: { agentStatus: "idle", question: null }, failRead: true });
@@ -94,8 +101,8 @@ async function exercise(win, width) {
   await waitFor(win, "!document.querySelector('.chat-model-error') && document.querySelector('.chat-model-popover').getAttribute('aria-busy')==='false'");
   await click(".chat-model-footer button");
   await patch({ theme: "light", language: "en" });
-  await open(".chat-effort-trigger");
-  check(await run("document.querySelector('.chat-model-head').textContent.includes('Reasoning effort')"), "English picker translation missing");
+  await open(".chat-model-trigger");
+  check(await run("document.querySelector('.chat-model-head').textContent.includes('Choose a model') && document.querySelector('.chat-effort-field legend').textContent==='Reasoning effort'"), "English picker translation missing");
   await run("(() => { const option=document.querySelector('[data-effort=max]'); option.focus(); option.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true})); })()");
   await waitFor(win, "document.querySelector('.chat-effort-options [role=radio]').getAttribute('aria-checked')==='true'");
   await run("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}))");
@@ -107,6 +114,15 @@ async function exercise(win, width) {
   await waitFor(win, "document.querySelector('.chat-model-trigger')?.disabled");
   await patch({ state: { modelEditingSupported: false } });
   await waitFor(win, "!document.querySelector('.chat-model-picker') && !!document.querySelector('.chat-composer-provider')");
+  const options = Array.from({ length:30 }, (_, i) => ({ model:`catalog-${i}`, label:`Catalog model ${i}`, efforts:[{effort:'max',description:''}], defaultEffort:'max', isDefault:false }));
+  await patch({ state:{ agentId:'long-catalog',provider:'codex',sessionId:'long-catalog',modelEditingSupported:true,modelSettingsKey:'long' },
+    catalog:{ codex:{ models:options,current:{model:'catalog-28'},saved:null,canEdit:true,canRestart:true } } });
+  await waitFor(win,"document.querySelector('.chat-model-trigger')?.textContent.includes('Catalog model 28')");
+  await open('.chat-model-trigger');
+  await waitFor(win,"document.querySelector('.chat-model-current')?.textContent.includes('Catalog model 28') && document.querySelector('.chat-model-options').scrollTop>0");
+  check(await run("(() => {const selected=document.querySelector('[data-model=catalog-28]').getBoundingClientRect(),list=document.querySelector('.chat-model-options').getBoundingClientRect();return selected.top>=list.top-1 && selected.bottom<=list.bottom+1 && document.querySelector('[data-effort=max]').getAttribute('aria-checked')==='true'})()"), 'Current model was hidden or effort was incorrect in a long catalog');
+  check(await run("document.querySelector('.chat-model-apply').disabled && document.querySelector('.chat-model-trigger').title.includes('max')"), 'An implicit default effort must not become a changed setting');
+  await fs.writeFile(path.join(output,`current-model-${width}.png`),(await win.webContents.capturePage()).toPNG());
   console.log(`Desktop Chat model/effort passed: ${width}px`);
 }
 

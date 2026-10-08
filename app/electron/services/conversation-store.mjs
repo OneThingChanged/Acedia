@@ -5,7 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseChatTranscript } from "./chat-transcript.mjs";
 import { transcriptImages } from "./chat-images.mjs";
-import { collectConversationFiles } from "./chat-files.mjs";
+import { conversationFileAssociations } from "./chat-files.mjs";
 
 const STORE_VERSION = 1;
 const CONFIG_VERSION = 1;
@@ -13,10 +13,6 @@ const DATABASE_NAME = "multiagent-conversations.db";
 const MARKER_NAME = ".multiagent-conversation-store.json";
 const READ_CHUNK_BYTES = 1024 * 1024;
 const MAX_BLOCKS_PER_PAGE = 1000;
-const ARTIFACT_EXTENSIONS = new Set([
-  ".md", ".markdown", ".html", ".htm", ".png", ".jpg", ".jpeg", ".gif",
-  ".webp", ".bmp", ".svg", ".pdf", ".docx", ".xlsx", ".csv", ".json",
-]);
 
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -98,29 +94,9 @@ function normalizeBlock(block) {
   }
   const normalized = JSON.parse(JSON.stringify(block));
   if (normalized.input !== undefined) normalized.input = sanitizeToolValue(normalized.input);
+  if (normalized.fileChanges) normalized.fileChanges = sanitizeToolValue(normalized.fileChanges);
   if (typeof normalized.output === "string") normalized.output = redactSecretText(normalized.output);
   return normalized;
-}
-
-function possibleArtifactPaths(block) {
-  const values = [];
-  for (const value of [block?.text, block?.output, block?.summary]) {
-    if (typeof value === "string") values.push(value);
-  }
-  if (block?.input && typeof block.input === "object") {
-    for (const key of ["file_path", "path", "output_path", "relativePath"]) {
-      if (typeof block.input[key] === "string") values.push(block.input[key]);
-    }
-  }
-  const candidates = new Set();
-  const pattern = /(?:[A-Za-z]:[\\/][^\r\n"'<>|]+|(?:\.\.?[\\/])?[^\s"'<>|]+\.(?:md|markdown|html?|png|jpe?g|gif|webp|bmp|svg|pdf|docx|xlsx|csv|json))/gi;
-  for (const value of values) {
-    for (const match of value.matchAll(pattern)) {
-      const candidate = String(match[0] || "").replace(/[),.;:]+$/, "").trim();
-      if (candidate) candidates.add(candidate);
-    }
-  }
-  return [...candidates];
 }
 
 async function directoryBytes(root) {
@@ -153,6 +129,7 @@ export class ConversationStore {
     this.database = null;
     this.ingestChains = new Map();
     this.fileStats = new Map();
+    this.filePages = new Map();
     fs.mkdirSync(this.rootPath, { recursive: true });
     this.writeMarker();
   }
@@ -296,14 +273,6 @@ export class ConversationStore {
       JSON.stringify(block),
       nowSeconds(),
     );
-    this.indexArtifacts({
-      insertArtifact: this.db().prepare(`INSERT OR IGNORE INTO conversation_artifacts
-        (conversation_id,block_id,kind,path,size,modified_at,created_at) VALUES (?,?,?,?,?,?,?)`),
-      conversationId,
-      blockId: Number(result.lastInsertRowid),
-      block,
-      projectPath,
-    });
     this.db().prepare("UPDATE conversations SET updated_at=? WHERE id=?")
       .run(nowSeconds(), conversationId);
     return { conversationId, sequence: Number(result.lastInsertRowid), block };
@@ -391,8 +360,6 @@ export class ConversationStore {
       ON CONFLICT(conversation_id,source_path) DO UPDATE SET
         provider=excluded.provider,generation=excluded.generation,
         last_offset=excluded.last_offset,last_size=excluded.last_size,updated_at=excluded.updated_at`);
-    const insertArtifact = database.prepare(`INSERT OR IGNORE INTO conversation_artifacts
-      (conversation_id,block_id,kind,path,size,modified_at,created_at) VALUES (?,?,?,?,?,?,?)`);
     let inserted = 0;
     let processedOffset = offset;
     let pending = Buffer.alloc(0);
@@ -454,13 +421,6 @@ export class ConversationStore {
               );
               if (Number(result.changes) > 0) {
                 inserted += 1;
-                this.indexArtifacts({
-                  insertArtifact,
-                  conversationId,
-                  blockId: Number(result.lastInsertRowid),
-                  block,
-                  projectPath,
-                });
               }
             }
           }
@@ -487,34 +447,7 @@ export class ConversationStore {
     return { conversationId, inserted };
   }
 
-  indexArtifacts({ insertArtifact, conversationId, blockId, block, projectPath }) {
-    for (const candidate of possibleArtifactPaths(block)) {
-      const resolved = path.isAbsolute(candidate)
-        ? path.resolve(candidate)
-        : projectPath
-          ? path.resolve(projectPath, candidate.replace(/^\.[\\/]/, ""))
-          : null;
-      if (!resolved || !ARTIFACT_EXTENSIONS.has(path.extname(resolved).toLowerCase())) continue;
-      let stat;
-      try {
-        stat = fs.statSync(resolved);
-        if (!stat.isFile()) continue;
-      } catch {
-        continue;
-      }
-      insertArtifact.run(
-        conversationId,
-        blockId,
-        path.extname(resolved).slice(1).toLowerCase() || "file",
-        resolved,
-        stat.size,
-        Math.floor(stat.mtimeMs / 1000),
-        nowSeconds(),
-      );
-    }
-  }
-
-  listBlocks({ agentId, sessionId, provider, beforeSequence = null, limit = 400 }) {
+  async listBlocks({ agentId, sessionId, provider, beforeSequence = null, limit = 400 }) {
     const conversation = this.db().prepare(`SELECT id,project_path projectPath FROM conversations
       WHERE agent_id=? AND provider=? AND provider_session_id=?`).get(
       String(agentId || "").trim(),
@@ -550,18 +483,46 @@ export class ConversationStore {
       WHERE conversation_id=? AND id<? ORDER BY id DESC LIMIT 64`).all(conversation.id, firstSequence).reverse()
       .map(row => ({ ...JSON.parse(row.payload), sequence: Number(row.id) }));
     const visibleSequences = new Set(blocks.map(block => block.sequence));
-    const artifacts = collectConversationFiles(context.concat(blocks), {
-      projectPath: conversation.projectPath,
-      statFile: (filePath, written) => {
-        const cached = this.fileStats.get(filePath);
-        if (cached && Date.now() - cached.at < 5000 && !(written && !cached.stat)) return cached.stat;
-        let stat = null;
-        try { stat = fs.statSync(filePath); } catch { /* Missing files are not links. */ }
-        if (this.fileStats.size >= 4000) this.fileStats.clear();
-        this.fileStats.set(filePath, { at: Date.now(), stat });
-        return stat;
-      },
-    }).filter(file => visibleSequences.has(file.sourceSequence));
+    const pageKey = `${conversation.id}:${conversation.projectPath}:${firstSequence}:${blocks.at(-1)?.sequence}:${blocks.length}`;
+    let candidates = this.filePages.get(pageKey);
+    if (!candidates) {
+      candidates = conversationFileAssociations(context.concat(blocks), { projectPath: conversation.projectPath })
+        .filter(file => visibleSequences.has(file.sourceSequence));
+      this.filePages.set(pageKey, candidates);
+      if (this.filePages.size > 24) this.filePages.delete(this.filePages.keys().next().value);
+    }
+    const uniquePaths = new Map();
+    for (const file of candidates) {
+      const previous = uniquePaths.get(file.path);
+      if (!previous || file.usage === "output" || previous.usage !== "output") uniquePaths.set(file.path, file);
+    }
+    const unique = [...uniquePaths.values()];
+    const stats = new Map();
+    let cursor = 0;
+    // File checks on network/mapped drives must never block Electron's main
+    // thread. Deduplicate per path and cap outstanding I/O, including misses.
+    await Promise.all(Array.from({ length: Math.min(8, unique.length) }, async () => {
+      while (cursor < unique.length) {
+        const file = unique[cursor++];
+        let cached = this.fileStats.get(file.path);
+        const written = file.usage === "output" ? file.sourceSequence : 0;
+        if (!cached || Date.now() - cached.at >= (cached.missing ? 30000 : 5000) || (cached.missing && written > cached.written)) {
+          cached = { at: Date.now(), written, missing: false };
+          cached.promise = fsPromises.stat(file.path).catch(() => null).then(stat => { cached.missing = !stat; return stat; });
+          this.fileStats.set(file.path, cached);
+          if (this.fileStats.size > 8000) this.fileStats.delete(this.fileStats.keys().next().value);
+        }
+        stats.set(file.path, await cached.promise);
+      }
+    }));
+    const artifacts = candidates.flatMap(file => {
+      const stat = stats.get(file.path);
+      if (!stat?.isFile() && file.change?.operation !== "delete") return [];
+      return [{ ...file, size: stat?.size ?? 0, modifiedAt: stat ? Math.floor(stat.mtimeMs / 1000) : null }];
+    });
+    const insertArtifact = this.db().prepare(`INSERT OR IGNORE INTO conversation_artifacts
+      (conversation_id,block_id,kind,path,size,modified_at,created_at) VALUES (?,?,?,?,?,?,?)`);
+    for (const file of artifacts) insertArtifact.run(conversation.id, file.sourceSequence, file.kind, file.path, file.size, file.modifiedAt, nowSeconds());
     return {
       conversationId: String(conversation.id),
       blocks,

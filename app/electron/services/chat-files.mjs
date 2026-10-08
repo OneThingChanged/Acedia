@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { changesFromToolCall } from "./chat-file-changes.mjs";
 
 function cleanPath(value, encoded = false) {
   let candidate = String(value ?? "").trim().replace(/^[<`]+|[>`]+$/g, "");
@@ -18,20 +19,24 @@ export function conversationFileCandidates(block) {
   const candidates = new Map();
   const add = (value, encoded = false) => {
     const candidate = String(value ?? "").trim();
-    if (candidate) candidates.set(`${encoded}:${candidate}`, { path: candidate, encoded });
+    if (candidate && candidate.length <= 2048 && candidates.size < 256) candidates.set(`${encoded}:${candidate}`, { path: candidate, encoded });
   };
   if (block.input && typeof block.input === "object") {
     for (const key of ["file_path", "path", "filePath", "output_path", "relativePath", "notebook_path"]) {
       if (typeof block.input[key] === "string") add(block.input[key]);
     }
   }
-  for (const value of [block.text, block.output, block.summary]) {
+  for (const value of [block.text, block.output]) {
     if (typeof value !== "string") continue;
     // Process links and code spans first so surrounding Markdown isn't part of a path.
     const plain = value.replace(/\]\((<[^>]+>|[^)\r\n]+)\)/g, (_, target) => { add(target.replace(/\s+["'][^"']*["']$/, ""), true); return " "; })
       .replace(/`([^`\r\n]+)`/g, (_, target) => { add(target); return " "; });
-    for (const match of plain.matchAll(/(?:\/?[a-z]:[\\/][^\r\n"'<>|`]+|(?:\.\.?[\\/])?[^\s"'<>|`()\[\]]+\.[a-z0-9]{1,12}(?::\d+(?::\d+)?)?)/gi)) {
-      add(match[0].replace(/[),.;]+$/, "").trim());
+    for (const match of plain.matchAll(/(?:^|\s)(\/?[a-z]:[\\/][^\r\n"'<>|`]+)/gi)) add(match[1].replace(/[),.;]+$/, "").trim());
+    // Tokenize before checking extensions: the previous unanchored greedy
+    // regex repeatedly rescanned long code/base64 lines (quadratic work).
+    for (const token of plain.split(/[\s"'<>|`()\[\]{};,=]+/)) {
+      const candidate = token.replace(/[),.;]+$/, "");
+      if (candidate.length <= 2048 && /\.[a-z0-9]{1,12}(?::\d+(?::\d+)?)?$/i.test(candidate)) add(candidate);
     }
   }
   return [...candidates.values()];
@@ -70,20 +75,18 @@ function succeeded(result) {
 // Associations are rebuilt from the requested history page, including old
 // stored transcripts. No global "first mention" record can move a file to a
 // different answer or mislabel an existing document as a new result.
-export function collectConversationFiles(blocks, { projectPath, statFile }) {
+export function conversationFileAssociations(blocks, { projectPath }) {
   const files = new Map();
   let pending = [];
-  const add = (candidate, block, usage) => {
+  const add = (candidate, block, usage, change) => {
     const cleaned = typeof candidate === "string" ? cleanPath(candidate) : cleanPath(candidate.path, candidate.encoded);
     if (!cleaned || !Number.isSafeInteger(block.sequence)) return;
     const resolved = path.isAbsolute(cleaned) ? path.resolve(cleaned) : projectPath ? path.resolve(projectPath, cleaned) : null;
     if (!resolved) return;
-    const stat = statFile(resolved, usage === "output");
-    if (!stat?.isFile()) return;
     const key = `${block.sequence}:${process.platform === "win32" ? resolved.toLowerCase() : resolved}`;
     if (files.get(key)?.usage === "output" && usage === "reference") return;
-    files.set(key, { path: resolved, kind: path.extname(resolved).slice(1).toLowerCase() || "file", size: stat.size,
-      modifiedAt: Math.floor(stat.mtimeMs / 1000), sourceSequence: block.sequence, usage });
+    files.set(key, { path: resolved, kind: path.extname(resolved).slice(1).toLowerCase() || "file",
+      sourceSequence: block.sequence, usage, ...(change ? { change } : {}) });
   };
   for (const block of blocks) {
     if (block.role === "user") { pending = []; continue; }
@@ -92,7 +95,28 @@ export function collectConversationFiles(blocks, { projectPath, statFile }) {
     if (block.kind !== "tool-result") continue;
     const index = block.callId ? pending.findIndex(call => call.callId === block.callId) : pending.findIndex(call => !call.callId);
     const call = index >= 0 ? pending.splice(index, 1)[0] : null;
-    if (succeeded(block)) for (const candidate of mutationPaths(call, block)) add(candidate, block, "output");
+    if (succeeded(block)) {
+      for (const candidate of mutationPaths(call, block)) add(candidate, block, "output");
+      // Count only edits whose matching result succeeded. Old indexed calls
+      // can be interpreted on demand; no transcript reimport is needed.
+      const wrapped = /(?:^|[.:/])exec$/.test(call?.name ?? "");
+      const changes = wrapped && !/Success\. Updated the following files:/i.test(String(block.output ?? "")) ? []
+        : call?.fileChanges ?? changesFromToolCall(call?.name, call?.input);
+      for (const change of changes) {
+        const { path: changedPath, ...details } = change;
+        add(changedPath, block, "output", details);
+      }
+    }
   }
   return [...files.values()];
+}
+
+export function collectConversationFiles(blocks, { projectPath, statFile }) {
+  const stats = new Map();
+  return conversationFileAssociations(blocks, { projectPath }).flatMap(file => {
+    if (!stats.has(file.path)) stats.set(file.path, statFile(file.path, file.usage === "output"));
+    const stat = stats.get(file.path);
+    if (!stat?.isFile() && file.change?.operation !== "delete") return [];
+    return [{ ...file, size: stat?.size ?? 0, modifiedAt: stat ? Math.floor(stat.mtimeMs / 1000) : null }];
+  });
 }

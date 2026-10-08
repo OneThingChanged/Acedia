@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeSessionModel, sessionModelArgs, readCodexModels, claudeModelCatalog } from "../shared/session-model.mjs";
-import { SessionModelService, lastTurnModel, modelRestartAllowed, verifyModelSessionStart } from "./session-model-service.mjs";
+import { SessionModelService, lastTurnModel, modelRestartAllowed, codexModelInputReady, verifyModelSessionStart } from "./session-model-service.mjs";
+import { CodexScrollbackFilter } from "./terminal-stream.mjs";
 import { RemoteSessionModelBroker } from "./remote-session-model-broker.mjs";
 import { LocalDashboardService, RemoteDashboardService } from "./web-services.mjs";
 
@@ -56,6 +57,56 @@ describe("session model controls", () => {
       active: () => true, catalog: async () => ({ models: [{ model: "account-only", efforts: [{ effort: "high" }] }], accountLabel: "Account A" }), update });
     return { service, agent, update };
   }
+  function readyTerminal() {
+    const filter = new CodexScrollbackFilter(8, 80);
+    resources.push(() => filter.dispose());
+    const entry = { aiToolId: "codex", filter, startedAt: 100, lastInputAt: 100 };
+    const screen = text => filter.push('\x1b[0m\x1b[2J\x1b[1;1H' + text);
+    screen('› \x1b[90mAsk Codex to do anything\x1b[0m\x1b[1;3H');
+    return { entry, screen, ready: () => codexModelInputReady(entry, { now: 1000 }) };
+  }
+  it("allows a resumed Codex session with an empty native composer even when hooks are missing", async () => {
+    const { service, agent, update } = fixture(), { ready } = readyTerminal();
+    agent.status = "running"; agent.hook = null;
+    expect((await service.read("session")).canRestart).toBe(false);
+    service.inputReady = ready;
+    expect((await service.read("session")).canRestart).toBe(true);
+    await expect(service.save({ id: "session", settings: { model: "account-only", effort: "high" }, restart: true })).resolves.toMatchObject({ restarted: true });
+    expect(update).toHaveBeenCalledOnce();
+  });
+  it("keeps work, questions, startup, drafts and just-submitted inputs protected without hooks", async () => {
+    const { service, agent, update } = fixture(), { entry, screen, ready } = readyTerminal();
+    service.inputReady = ready; agent.hook = null;
+    for (const status of ["starting", "recovering", "working", "question", "waiting", "attention", "blocked"]) {
+      agent.status = status; expect(service.canRestart("session")).toBe(false);
+    }
+    agent.status = "running";
+    for (const event of ["working", "tool-start", "tool-end", "waiting", "blocked"]) {
+      agent.hook = { event }; expect(service.canRestart("session")).toBe(false);
+    }
+    agent.hook = null;
+    for (const text of ['› existing draft\x1b[1;3H', 'Trust this folder?', '› \x1b[2;1Hesc to interrupt\x1b[1;3H', '› \x1b[2;1HQueued follow-up inputs\x1b[1;3H']) {
+      screen(text); expect(service.canRestart("session")).toBe(false);
+    }
+    screen('› \x1b[1;3H');
+    expect(codexModelInputReady(entry, { now: 1000, blocked: true })).toBe(false);
+    entry.lastInputAt = 990;
+    expect(service.canRestart("session")).toBe(false);
+    entry.lastInputAt = 100;
+    service.catalog = async () => { screen('› new draft\x1b[1;3H'); return { models: [{ model: "account-only", efforts: [] }] }; };
+    await expect(service.save({ id: "session", settings: { model: "account-only" }, restart: true })).rejects.toMatchObject({ statusCode: 409 });
+    expect(update).not.toHaveBeenCalled();
+    expect(codexModelInputReady({ ...entry, aiToolId: "claude" }, { now: 1000 })).toBe(false);
+  });
+  it("acknowledges a replacement Codex CLI without hooks only after its empty native composer is ready", async () => {
+    const { entry, ready } = readyTerminal();
+    entry.modelSettings = { model: "account-only", effort: "high" };
+    const options = { id: "session", settings: entry.modelSettings, entryFor: () => entry, hookFor: () => null, inputReady: ready };
+    await expect(verifyModelSessionStart(options)).resolves.toBeUndefined();
+    await expect(verifyModelSessionStart({ ...options, settings: { model: "different" } })).rejects.toThrow("모델 설정");
+    let calls = 0;
+    await expect(verifyModelSessionStart({ ...options, entryFor: () => ++calls === 1 ? entry : null })).rejects.toThrow("종료");
+  });
   it("saves for next start while working but refuses to restart an active turn", async () => {
     const { service, update } = fixture();
     await service.save({ id: "session", settings: { model: "account-only", effort: "high" }, restart: false });
@@ -92,6 +143,25 @@ describe("session model controls", () => {
     const file = path.join(root, "turn.jsonl");
     await fs.writeFile(file, 'x'.repeat(600000) + '\n' + JSON.stringify({ type: "turn_context", payload: { model: "account-only", effort: "high" } }) + '\n{"partial":');
     expect(await lastTurnModel(file)).toEqual({ model: "account-only", effort: "high" });
+  });
+  it.each(["codex", "claude"])("retains a model behind large images, partial records and later tool output (%s)", async provider => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-model-large-"));
+    resources.push(() => fs.rm(root, { recursive: true }));
+    const file = path.join(root, "turn.jsonl");
+    const row = model => JSON.stringify(provider === "codex"
+      ? { type: "turn_context", timestamp: "2026-10-08T10:00:00Z", payload: { model, effort: "max" } }
+      : { type: "assistant", timestamp: "2026-10-08T10:00:00Z", message: { model }, effort: "max" });
+    await fs.writeFile(file, row("actual-model") + '\n' + JSON.stringify({ image: "x".repeat(4 * 1024 * 1024) }) + '\n');
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "actual-model", effort: "max" });
+    await fs.appendFile(file, JSON.stringify({ output: "y".repeat(700000) }) + '\n');
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "actual-model", effort: "max" });
+    const changed = row("changed-in-terminal");
+    await fs.appendFile(file, changed.slice(0, 60));
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "actual-model", effort: "max" });
+    await fs.appendFile(file, changed.slice(60) + '\n');
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "changed-in-terminal", effort: "max" });
+    await fs.writeFile(file, row("replacement") + '\n');
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "replacement", effort: "max" });
   });
   it.each(["codex", "claude"])("does not replace new launch settings with an older resumed turn (%s)", async provider => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-model-age-"));

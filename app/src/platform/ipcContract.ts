@@ -236,6 +236,7 @@ export type PortsResult = {
 };
 
 export type ChatDiffLine = { type: "add" | "del" | "context" | "meta"; text: string };
+export type ChatFileChange = { operation: "add" | "edit" | "delete" | "rename"; additions?: number; deletions?: number; diff: ChatDiffLine[]; truncated?: boolean };
 export type ChatImageSource = { path?: string; dataUrl?: string; url?: string };
 export type TerminalPathResolution = { kind: "image" | "html" | "markdown" | "folder" | "file"; path: string };
 
@@ -251,6 +252,7 @@ export type ChatBlock = {
   isError?: boolean;
   sequence?: number;
   callId?: string;
+  fileChanges?: (ChatFileChange & { path: string })[];
 };
 
 export type ChatBlocksResult = {
@@ -279,6 +281,7 @@ export type ConversationArtifact = {
   modifiedAt: number | null;
   sourceSequence?: number;
   usage?: "output" | "reference";
+  change?: ChatFileChange;
 };
 
 export type ConversationStorageStatus = {

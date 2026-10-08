@@ -14,6 +14,9 @@ const imageClipboard = [];
 const openedPaths = [];
 const imageReads = [];
 const resolvedPaths = [];
+const chatReads = [];
+let holdChatReads = false;
+const heldChatReads = [];
 let imagesBySequence = {};
 let previewDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII=";
 let filesToSelect = [];
@@ -24,7 +27,11 @@ let changeScreenOnWrite = undefined;
 const readTerminalScreen = () => terminalScreen;
 window.multiAgentElectron = {
   invoke: async (command, args) => {
-    if (command === "chat_blocks") return (args.beforeSequence ? olderChat : null) ?? chat ?? new Promise(resolve => pendingReads.push(resolve));
+    if (command === "chat_blocks") {
+      chatReads.push(args);
+      if (holdChatReads) return new Promise(resolve => heldChatReads.push(resolve));
+      return (args.beforeSequence ? olderChat : null) ?? chat ?? new Promise(resolve => pendingReads.push(resolve));
+    }
     if (command === "write_pty") {
       writes.push(args.data);
       if (failWrites) throw new Error("fixture PTY write failure");
@@ -68,6 +75,10 @@ function Harness() {
     imageReads,
     openedPaths,
     resolvedPaths,
+    chatReads,
+    emit: payload => listeners.forEach(listener => listener(payload)),
+    holdReads: () => { holdChatReads = true; },
+    releaseReads: () => { holdChatReads = false; heldChatReads.splice(0).forEach(resolve => resolve(chat)); },
     patch: patch => {
       if (patch.state) setState(current => ({ ...current, ...patch.state }));
       if ("failWrites" in patch) failWrites = patch.failWrites;

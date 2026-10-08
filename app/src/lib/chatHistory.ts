@@ -7,6 +7,20 @@ export function mergeChatHistory(previous: ChatBlock[], incoming: ChatBlock[]): 
   if (incoming.length === 0) return previous;
   if (previous.length === 0) return incoming.slice();
 
+  if (incoming.every(block => block.sequence != null) && previous.every(block => block.sequence != null)) {
+    const bySequence = new Map(incoming.map(block => [block.sequence, block]));
+    let changed = false;
+    const next = previous.map(block => {
+      const fresh = bySequence.get(block.sequence);
+      bySequence.delete(block.sequence);
+      if (!fresh || chatBlockKey(block) === chatBlockKey(fresh)) return block;
+      changed = true;
+      return fresh;
+    });
+    if (!changed && !bySequence.size) return previous;
+    return next.concat([...bySequence.values()]).sort((a, b) => a.sequence! - b.sequence!);
+  }
+
   const previousOffset = Math.max(0, previous.length - incoming.length);
   const previousKeys = previous.slice(previousOffset).map(chatBlockKey);
   const incomingKeys = incoming.map(chatBlockKey);
@@ -21,7 +35,7 @@ export function mergeChatHistory(previous: ChatBlock[], incoming: ChatBlock[]): 
         break;
       }
     }
-    if (matches) return previous.concat(incoming.slice(overlap));
+    if (matches) return overlap === incoming.length ? previous : previous.concat(incoming.slice(overlap));
   }
 
   // More than one backend window may have arrived between polls. Preserve the

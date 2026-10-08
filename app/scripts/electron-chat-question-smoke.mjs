@@ -232,7 +232,9 @@ async function exerciseChatUX(win, directory) {
   await waitFor(win, "document.querySelector('.chat-user-actions .chat-copy-button.error') && window.questionFixture.clipboard.length===2");
   await patch({ failClipboard: false });
   await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
-  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools').open && document.querySelector('.chat-tool pre').textContent.includes('source inspected')"), 'Collapsed tool details could not be opened');
+    await waitFor(win, "!!document.querySelector('.chat-tool > summary')");
+    await win.webContents.executeJavaScript("document.querySelector('.chat-tool > summary').click()");
+    await waitFor(win, "document.querySelector('.chat-tool pre')?.textContent.includes('source inspected')");
   await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
   await new Promise(resolve => setTimeout(resolve, 2000));
   for (const [width, height, theme] of [[1280, 900, 'soft'], [1280, 900, 'light'], [800, 640, 'soft'], [420, 640, 'soft']]) {

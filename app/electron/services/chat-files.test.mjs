@@ -3,12 +3,39 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectConversationFiles } from "./chat-files.mjs";
 import { parseChatTranscript } from "./chat-transcript.mjs";
+import { changesFromToolCall } from "./chat-file-changes.mjs";
 
 const projectPath = path.resolve("project");
 const collect = blocks => collectConversationFiles(blocks, { projectPath, statFile: target => target.includes("missing") ? null : { isFile: () => true, size: 20, mtimeMs: 1000 } });
 const call = (sequence, name, input, callId) => ({ sequence, role: "assistant", kind: "tool-call", name, input, ...(callId ? { callId } : {}) });
 const result = (sequence, output, callId, isError = false) => ({ sequence, role: "tool", kind: "tool-result", output, isError, ...(callId ? { callId } : {}) });
 describe("conversation file evidence", () => {
+  it("counts full edits before clipping and includes deleted files without stat results", () => {
+    const patch = `*** Begin Patch\n*** Update File: docs/guide.md\n-old\n${Array.from({length:180}, () => "+new").join("\n")}\n*** Delete File: missing.ts\n*** End Patch`;
+    const files = collect([call(1, "apply_patch", patch, "edit"), result(2, "Done", "edit")]).filter(file => file.usage === "output");
+    expect(files).toHaveLength(2);
+    expect(files[0].change).toMatchObject({ additions: 180, deletions: 1, truncated: true });
+    expect(files[0].change.diff.length).toBeLessThan(180);
+    expect(files[1].change).toMatchObject({ operation: "delete" });
+    expect(files[1].change.additions).toBeUndefined();
+    expect(collect([call(1, "apply_patch", patch, "edit"), result(2, "Failed to apply", "edit")]).some(file => file.change)).toBe(false);
+  });
+  it("reads literal wrapped patches without executing code or inventing an unknown baseline", () => {
+    const patch = "*** Begin Patch\n*** Update File: docs/guide.md\n-old\n+new\n*** End Patch";
+    expect(changesFromToolCall("functions.exec", `text(await tools.apply_patch(${JSON.stringify(patch)}));`)[0]).toMatchObject({ path: "docs/guide.md", additions: 1, deletions: 1 });
+    expect(changesFromToolCall("functions.exec", 'tools.apply_patch(`*** Begin Patch\n${execute()}\n*** End Patch`)')).toEqual([]);
+    expect(changesFromToolCall("Write", { file_path: "existing.md", content: "new content" })[0].additions).toBeUndefined();
+    expect(changesFromToolCall("Edit", { file_path: "existing.md", old_string: "a", new_string: "b", replace_all: true })[0].additions).toBeUndefined();
+    expect(changesFromToolCall("apply_patch", patch.slice(0, -10))[0].additions).toBeUndefined();
+  });
+  it("checks repeated paths once and handles long non-path tokens in linear time", () => {
+    let reads = 0;
+    const blocks = Array.from({length:50}, (_, index) => ({ sequence:index + 1, role:"assistant", kind:"text", text: '`docs/guide.md` ' + "a".repeat(20000) }));
+    const start = performance.now();
+    const files = collectConversationFiles(blocks, { projectPath, statFile: () => { reads++; return {isFile:()=>true,size:1,mtimeMs:0}; } });
+    expect(files).toHaveLength(50); expect(reads).toBe(1);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
   it("keeps existing links as references and omits user attachments, reasoning and missing files", () => {
     const files = collect([
       { sequence: 1, role: "user", kind: "text", text: "attachment.png" },
@@ -25,6 +52,13 @@ describe("conversation file evidence", () => {
       call(2, "Read", { file_path: "literal%20.html" }),
     ], { projectPath, statFile: target => [literal, spaced].includes(target) ? { isFile: () => true, size: 20, mtimeMs: 1000 } : null });
     expect(files.map(file => [file.sourceSequence, file.path])).toEqual([[1, literal], [1, spaced], [2, literal]]);
+  });
+  it("keeps bare Windows image paths containing spaces", () => {
+    const target = path.resolve("C:/My Project/image preview.png");
+    const files = collectConversationFiles([{ sequence:1, role:"assistant", kind:"text", text:"C:/My Project/image preview.png" }], {
+      projectPath, statFile: file => file === target ? { isFile:()=>true, size:1, mtimeMs:0 } : null,
+    });
+    expect(files.map(file => file.path)).toEqual([target]);
   });
   it("pairs parallel tool IDs and marks only completed writes as outputs", () => {
     const files = collect([call(1, "Read", { file_path: "source.ts" }, "read"), call(2, "Edit", { file_path: "edited.ts" }, "edit"),
