@@ -86,7 +86,7 @@ import {
 } from "./services/ssh-service.mjs";
 import { resolveTerminalPath } from "./services/terminal-path-service.mjs";
 import { sanitizeTerminalOutput } from "./services/terminal-sanitize.mjs";
-import { parseChatTranscript, deriveTurnLifecycle, derivePendingQuestion } from "./services/chat-transcript.mjs";
+import { parseChatTranscript, deriveTurnLifecycleDetails, derivePendingQuestion } from "./services/chat-transcript.mjs";
 import { normalizeTranscriptPath, isTranscriptInsideRoot } from "./services/transcript-path.mjs";
 import { CodexTurnCompletion } from "./services/codex-turn-completion.mjs";
 import {
@@ -3434,13 +3434,13 @@ async function readChatTranscript(tool, transcriptPath) {
       let text = buffer.toString("utf8");
       const newline = text.indexOf("\n"); // drop the partial first line
       if (newline >= 0) text = text.slice(newline + 1);
-      result = { blocks: parseChatTranscript(text, toolId), truncated: true, missing: false, lifecycle: deriveTurnLifecycle(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
+      result = { blocks: parseChatTranscript(text, toolId), truncated: true, missing: false, ...deriveTurnLifecycleDetails(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
     } finally {
       await handle.close();
     }
   } else {
     const text = await fsPromises.readFile(resolved, "utf8");
-    result = { blocks: parseChatTranscript(text, toolId), truncated: false, missing: false, lifecycle: deriveTurnLifecycle(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
+    result = { blocks: parseChatTranscript(text, toolId), truncated: false, missing: false, ...deriveTurnLifecycleDetails(text, toolId), pendingQuestion: derivePendingQuestion(text, toolId) };
   }
   if (result.blocks.length > MAX_CHAT_BLOCKS) {
     result = { ...result, blocks: result.blocks.slice(-MAX_CHAT_BLOCKS), truncated: true };
@@ -3637,6 +3637,8 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
         truncated: stored.hasOlder,
         missing: false,
         lifecycle: result.lifecycle,
+        lifecycleAt: result.lifecycleAt,
+        activeTool: result.activeTool,
         pendingQuestion: result.pendingQuestion,
         tool,
         sessionId,
@@ -5384,6 +5386,8 @@ async function invokeCommand(event, command, rawArgs) {
         beforeSequence: args.beforeSequence,
         limit: args.limit,
       });
+    case "read_chat_images":
+      return conversationStoreManager.readImages({ agentId: asString(args.id), sequence: args.sequence });
     case "conversation_record_user_message": {
       const metadata = conversationMetadataForAgent(args.id);
       const sessionId =

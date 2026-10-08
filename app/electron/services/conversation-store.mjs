@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseChatTranscript } from "./chat-transcript.mjs";
+import { transcriptImages } from "./chat-images.mjs";
 
 const STORE_VERSION = 1;
 const CONFIG_VERSION = 1;
@@ -560,6 +561,44 @@ export class ConversationStore {
     };
   }
 
+  async readImages({ agentId, sequence }) {
+    if (!Number.isSafeInteger(sequence) || sequence <= 0) return [];
+    const row = this.db().prepare(`SELECT b.payload_json payload,b.source_path sourcePath,
+      b.source_offset sourceOffset,b.source_block_index blockIndex,b.source_generation generation,
+      c.provider,s.generation currentGeneration FROM conversation_blocks b
+      JOIN conversations c ON c.id=b.conversation_id
+      LEFT JOIN conversation_sources s ON s.conversation_id=c.id AND s.source_path=b.source_path
+      WHERE b.id=? AND c.agent_id=? AND b.role='user'`).get(sequence, String(agentId || "").trim());
+    if (!row?.sourcePath || row.sourceOffset == null || row.generation !== row.currentGeneration) return [];
+    const stored = JSON.parse(row.payload);
+    let handle;
+    try {
+      handle = await fsPromises.open(row.sourcePath, "r");
+      const chunks = [];
+      let length = 0, position = Number(row.sourceOffset), complete = false;
+      const max = 36 * 1024 * 1024;
+      while (length < max) {
+        const chunk = Buffer.alloc(Math.min(64 * 1024, max - length));
+        const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+        if (!bytesRead) break;
+        const newline = chunk.subarray(0, bytesRead).indexOf(0x0a);
+        const bytes = chunk.subarray(0, newline >= 0 ? newline : bytesRead);
+        chunks.push(bytes); length += bytes.length; position += bytesRead;
+        if (newline >= 0) { complete = true; break; }
+      }
+      if (!complete) return [];
+      const text = Buffer.concat(chunks).toString("utf8");
+      const parsed = parseChatTranscript(text, row.provider);
+      const sourceBlock = parsed[row.blockIndex];
+      if (!sourceBlock || sourceBlock.role !== stored.role || sourceBlock.kind !== stored.kind || sourceBlock.text !== stored.text) return [];
+      if (row.provider === "claude" && sourceBlock.kind !== "image") return [];
+      const imageIndex = row.provider === "claude"
+        ? parsed.slice(0, row.blockIndex).filter(block => block.kind === "image").length : row.blockIndex;
+      return transcriptImages(JSON.parse(text), row.provider, imageIndex);
+    } catch { return []; }
+    finally { await handle?.close(); }
+  }
+
   summary() {
     const database = this.db();
     const conversations = Number(database.prepare("SELECT COUNT(*) count FROM conversations").get()?.count) || 0;
@@ -681,6 +720,11 @@ export class ConversationStoreManager {
       firstSequence: null,
       total: 0,
     };
+  }
+
+  async readImages(input) {
+    await this.migration.catch(() => {});
+    return this.store?.readImages(input) ?? [];
   }
 
   async setRoot(requestedPath) {

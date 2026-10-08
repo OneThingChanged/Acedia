@@ -25,11 +25,55 @@ function codexLine(role, text) {
 
 afterEach(async () => {
   while (cleanup.length) {
-    await fsPromises.rm(cleanup.pop(), { recursive: true, force: true });
+    const root = cleanup.pop();
+    if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith("multiagent-conversations-")) throw Error("Unsafe test cleanup path");
+    await fsPromises.rm(root, { recursive: true });
   }
 });
 
 describe("ConversationStoreManager", () => {
+  it("recovers attachments from already indexed source offsets without bloating regular history", async () => {
+    const root = await tempRoot();
+    const manager = new ConversationStoreManager({ configDir: path.join(root, "config"), defaultRoot: path.join(root, "store") });
+    try {
+      const transcriptPath = path.join(root, "session.jsonl");
+      const input = { agentId: "image-owner", sessionId: "images", provider: "codex", transcriptPath };
+      const bitmap = "data:image/png;base64,YQ==";
+      const text = "[Image #1] 채팅 UX 확인해줘";
+      const record = JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }, { type: "input_image", image_url: bitmap }] } });
+      manager.store.recordUserMessage({ ...input, text });
+      await fsPromises.writeFile(transcriptPath, `${codexLine("assistant", "이전 답변")}\n${record}\n`);
+      await manager.store.ingestTranscript(input);
+      const page = manager.store.listBlocks(input);
+      const sequence = page.blocks.find(block => block.role === "user").sequence;
+      expect(JSON.stringify(page)).not.toContain("base64");
+      expect(await manager.readImages({ agentId: input.agentId, sequence })).toEqual([{ dataUrl: bitmap }]);
+      expect(await manager.readImages({ agentId: "another-agent", sequence })).toEqual([]);
+      expect(await manager.readImages({ agentId: input.agentId, sequence: page.blocks.find(block => block.role === "assistant").sequence })).toEqual([]);
+      await fsPromises.writeFile(transcriptPath, `${codexLine("user", "rewritten")}\n`);
+      expect(await manager.readImages({ agentId: input.agentId, sequence })).toEqual([]);
+      await manager.store.ingestTranscript(input);
+      expect(await manager.readImages({ agentId: input.agentId, sequence })).toEqual([]);
+    } finally { manager.close(); }
+  });
+  it("recovers each Claude image from a multi-part user message", async () => {
+    const root = await tempRoot();
+    const manager = new ConversationStoreManager({ configDir: path.join(root, "config"), defaultRoot: path.join(root, "store") });
+    try {
+      const input = { agentId: "claude-owner", sessionId: "images", provider: "claude", transcriptPath: path.join(root, "claude.jsonl") };
+      await fsPromises.writeFile(input.transcriptPath, JSON.stringify({ type: "user", message: { content: [{ type: "text", text: "두 이미지 확인해줘" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "YQ==" } },
+        { type: "text", text: "그리고 두 번째" },
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "Yg==" } }] } }) + "\n");
+      await manager.store.ingestTranscript(input);
+      const page = manager.store.listBlocks(input);
+      const images = page.blocks.filter(block => block.kind === "image");
+      expect(images).toHaveLength(2);
+      expect(await manager.readImages({ agentId: input.agentId, sequence: images[0].sequence })).toEqual([{ dataUrl: "data:image/png;base64,YQ==" }]);
+      expect(await manager.readImages({ agentId: input.agentId, sequence: images[1].sequence })).toEqual([{ dataUrl: "data:image/jpeg;base64,Yg==" }]);
+      expect(await manager.readImages({ agentId: input.agentId, sequence: page.blocks[0].sequence })).toEqual([]);
+    } finally { manager.close(); }
+  });
   it("persists one agent conversation incrementally without duplicating composer input", async () => {
     const root = await tempRoot();
     const configDir = path.join(root, "config");

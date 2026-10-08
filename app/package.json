@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.63",
+  "multiAgentReleaseVersion": "1.8.1.64",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -147,9 +147,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.63-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.64-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.63",
+      "uninstallDisplayName": "Acedia 1.8.1.64",
       "include": "electron/installer.nsh"
     },
     "publish": [

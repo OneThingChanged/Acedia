@@ -1186,6 +1186,8 @@ export function PaneSlot({
           projectName={ctx.projects.find(project => project.id === activeAgent?.projectId)?.name}
           connectionLabel={activeAgent?.sshHostId ? text("원격 · SSH", "Remote · SSH") : text("이 컴퓨터", "This computer")}
           questionToken={activeAgent?.activity?.stateStartedAt}
+          workStartedAt={activeAgent?.activity?.workStatus === "working" ? activeAgent.activity.stateStartedAt : undefined}
+          activeTool={activeAgent?.activity?.workStatus === "working" ? activeAgent.activity.toolName : undefined}
           readTerminalScreen={readChatTerminalScreen}
           onOpenTerminal={() => { ctx.setActivePath(path); ctx.onToggleChat(activeAgentId); }}
           onOpenPath={(filePath) => { void ctx.onOpenTerminalPath(activeAgentId, filePath); }}

@@ -75,6 +75,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "read_text_file",
   "read_chat_transcript",
   "chat_blocks",
+  "read_chat_images",
   "conversation_record_user_message",
   "conversation_storage_get",
   "conversation_storage_set",
@@ -588,6 +589,10 @@ function assertInvokeRequest(command, rawArgs) {
       if (args.limit !== undefined) {
         assertPositiveInteger(args.limit, "chat block limit", 1000);
       }
+      break;
+    case "read_chat_images":
+      if (typeof args.id !== "string" || !args.id.trim() || args.id.length > 256) throw new TypeError("Electron image agent id must be a non-empty string");
+      assertPositiveInteger(args.sequence, "chat image block", Number.MAX_SAFE_INTEGER);
       break;
     case "conversation_record_user_message":
       if (typeof args.id !== "string" || !args.id.trim() || args.id.length > 256) {

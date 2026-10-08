@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { parseChatTranscript, deriveTurnLifecycle, derivePendingQuestion } from "./chat-transcript.mjs";
+import { parseChatTranscript, deriveTurnLifecycle, deriveTurnLifecycleDetails, derivePendingQuestion } from "./chat-transcript.mjs";
+
+describe("live work lifecycle", () => {
+  const serialize = records => records.map(JSON.stringify).join("\n");
+  const at = timestamp => new Date(timestamp).toISOString();
+  it("recognizes new input and tools even when a tail omits task_started", () => {
+    const records = [
+      { timestamp: at(1000), type: "event_msg", payload: { type: "task_complete" } },
+      { timestamp: at(2000), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "계속 진행해" }] } },
+      { timestamp: at(3000), type: "response_item", payload: { type: "function_call", name: "functions.exec_command" } },
+    ];
+    expect(deriveTurnLifecycleDetails(serialize(records), "codex")).toEqual({ lifecycle: "working", lifecycleAt: 3000, activeTool: "functions.exec_command" });
+    records.push({ timestamp: at(4000), type: "response_item", payload: { type: "function_call_output", output: "done" } });
+    expect(deriveTurnLifecycleDetails(serialize(records), "codex")).toMatchObject({ lifecycle: "working", activeTool: undefined });
+    records.push({ timestamp: at(5000), type: "response_item", payload: { type: "message", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text: "완료" }] } });
+    expect(deriveTurnLifecycleDetails(serialize(records), "codex")).toEqual({ lifecycle: "idle", lifecycleAt: 5000, activeTool: undefined });
+  });
+  it("keeps a markerless tail inconclusive and skips injected setup messages", () => {
+    const records = [
+      { type: "session_meta", payload: {} },
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ text: "<environment_context>setup</environment_context>" }] } },
+    ];
+    expect(deriveTurnLifecycleDetails(serialize(records), "codex")).toEqual({ lifecycle: undefined, lifecycleAt: undefined, activeTool: undefined });
+  });
+  it("tracks Claude tools and ends on a timestamped final answer", () => {
+    const records = [{ timestamp: at(2000), type: "assistant", message: { stop_reason: "tool_use", content: [{ type: "tool_use", name: "Read" }] } }];
+    expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "working", lifecycleAt: 2000, activeTool: "Read" });
+    records.push({ timestamp: at(3000), type: "assistant", message: { stop_reason: "end_turn", content: [{ type: "text", text: "done" }] } });
+    expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "idle", lifecycleAt: 3000, activeTool: undefined });
+  });
+  it("recognizes image-only input, Claude tool results and explicit interruption", () => {
+    expect(deriveTurnLifecycleDetails(serialize([{ timestamp: at(1000), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,YQ==" }] } }]), "codex")).toMatchObject({ lifecycle: "working", lifecycleAt: 1000 });
+    const records = [{ timestamp: at(1000), type: "user", message: { content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "YQ==" } }] } }];
+    expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toMatchObject({ lifecycle: "working", lifecycleAt: 1000 });
+    records.push({ timestamp: at(2000), type: "user", message: { content: [{ type: "tool_result", content: "done" }] } });
+    expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "working", lifecycleAt: 2000, activeTool: undefined });
+    records.push({ timestamp: at(3000), type: "user", message: { content: "[Request interrupted by user]" } });
+    expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "idle", lifecycleAt: 3000, activeTool: undefined });
+  });
+});
+
+describe("image-only transcript messages", () => {
+  it("preserves a Codex user image without copying bitmap data to regular history", () => {
+    const line = JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,YQ==" }] } });
+    expect(parseChatTranscript(line, "codex")).toEqual([{ role: "user", kind: "image" }]);
+  });
+});
 
 describe("pending native questions", () => {
   const serialize = records => records.map(payload => JSON.stringify({ type: "response_item", payload })).join("\n");

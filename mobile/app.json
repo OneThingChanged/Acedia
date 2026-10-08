@@ -2,7 +2,7 @@
   "expo": {
     "name": "Acedia",
     "slug": "multiagent-mobile",
-    "version": "1.8.1.63",
+    "version": "1.8.1.64",
     "scheme": "multiagent",
     "orientation": "default",
     "icon": "./assets/icon.png",

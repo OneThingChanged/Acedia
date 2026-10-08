@@ -6,6 +6,12 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("requires an owned image block identity instead of a caller-provided transcript path", () => {
+    expect(contract.assertInvokeRequest("read_chat_images", { id: "session", sequence: 23 })).toEqual({ id: "session", sequence: 23 });
+    for (const args of [{ id: "", sequence: 23 }, { id: "session", sequence: -1 }, { id: "session", sequence: 0.5 }, { id: "session", sequence: "23" }, { id: "session" }]) {
+      expect(() => contract.assertInvokeRequest("read_chat_images", args)).toThrow();
+    }
+  });
   it("keeps renderer declarations aligned with the production preload allowlists", () => {
     const source = fs.readFileSync(new URL("../src/platform/ipcContract.ts", import.meta.url), "utf8");
     const names = type => new Set([...source.match(new RegExp(`export type ${type} =([\\s\\S]+?);`))[1].matchAll(/"([^"]+)"/g)].map(match => match[1]));

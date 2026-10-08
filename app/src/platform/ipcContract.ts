@@ -39,7 +39,7 @@ export type RuntimeCommand =
   | "document_browser_inspect" | "document_browser_attach_annotation" | "document_browser_close"
   | "read_markdown_file" | "resolve_markdown_path" | "list_directory"
   | "list_git_submodules"
-  | "subagent_list" | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "search_files"
+  | "subagent_list" | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "read_chat_images" | "search_files"
   | "conversation_record_user_message" | "conversation_storage_get" | "conversation_storage_set"
   | "session_storage_list" | "session_storage_delete"
   | "git_status" | "git_changes" | "git_stage"
@@ -236,6 +236,8 @@ export type PortsResult = {
 };
 
 export type ChatDiffLine = { type: "add" | "del" | "context" | "meta"; text: string };
+export type ChatImageSource = { path?: string; dataUrl?: string; url?: string };
+export type TerminalPathResolution = { kind: "image" | "html" | "markdown" | "folder" | "file"; path: string };
 
 export type ChatBlock = {
   role: "user" | "assistant" | "tool";
@@ -257,6 +259,8 @@ export type ChatBlocksResult = {
   unsupported?: boolean;
   tool?: string;
   lifecycle?: "working" | "idle";
+  lifecycleAt?: number;
+  activeTool?: string;
   pendingQuestion?: { id: string; toolName: string; question: string; async?: boolean; answeredIndices?: number[] } | null;
   sessionId?: string;
   conversationId?: string | null;
@@ -483,6 +487,10 @@ export type RuntimeCommandContract = {
   chat_blocks: {
     args: { id: string; sessionId?: string; beforeSequence?: number; limit?: number };
     result: ChatBlocksResult;
+  };
+  read_chat_images: {
+    args: { id: string; sequence: number };
+    result: ChatImageSource[];
   };
   conversation_record_user_message: {
     args: { id: string; sessionId?: string; text: string };

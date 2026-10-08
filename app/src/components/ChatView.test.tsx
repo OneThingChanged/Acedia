@@ -3,6 +3,12 @@ import type { ChatBlock } from "../platform/ipcContract";
 import { groupAssistantBlocks } from "./ChatView";
 
 describe("groupAssistantBlocks", () => {
+  it("requires a tool result before a proposed file diff counts as finished", () => {
+    const call: ChatBlock = { role: "assistant", kind: "tool-call", name: "edit", diff: [{ type: "add", text: "new source" }] };
+    const pending = groupAssistantBlocks([call])[0];
+    expect(pending.kind === "tools" ? pending.tools[0].completed : false).toBeUndefined();
+    expect(groupAssistantBlocks([call, { role: "tool", kind: "tool-result" }])[0]).toMatchObject({ kind: "tools", tools: [{ completed: true }] });
+  });
   it("keeps tool work between the assistant text blocks where it occurred", () => {
     const blocks: ChatBlock[] = [
       { role: "assistant", kind: "text", text: "먼저 확인하겠습니다." },

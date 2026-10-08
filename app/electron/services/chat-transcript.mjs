@@ -13,6 +13,7 @@
 import { toolSummary, diffFromToolCall, diffFromText } from "./chat-tool-format.mjs";
 import { isNoiseUserText } from "./chat-noise.mjs";
 import { isQuestionTool } from "../shared/chat-prompt.mjs";
+import { transcriptImages } from "./chat-images.mjs";
 
 const MAX_TOOL_OUTPUT = 4000;
 const MAX_TEXT = 20000;
@@ -126,7 +127,11 @@ function decodeCodexLine(obj, out) {
     }
     // Codex injects an <environment_context>/<user_instructions> wrapper as the
     // first "user" turn — skip those the way we skip Claude's reminders.
-    if (!text || (role === "user" && isNoiseUserText(text))) return;
+    if (!text) {
+      if (role === "user" && transcriptImages(obj, "codex", 0).length) out.push({ role: "user", kind: "image" });
+      return;
+    }
+    if (role === "user" && isNoiseUserText(text)) return;
     out.push({ role, kind: "text", text: clip(text, MAX_TEXT) });
     return;
   }
@@ -199,6 +204,41 @@ export function deriveTurnLifecycle(text, tool) {
     return "working";
   }
   return "idle";
+}
+
+// An old completion or a tail without task markers must not conceal new work.
+// Keep its timestamp and accept live user/tool records while hooks catch up.
+export function deriveTurnLifecycleDetails(text, tool) {
+  let lifecycle, lifecycleAt, activeTool;
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    const timestamp = Date.parse(record?.timestamp);
+    let next;
+    if (tool === "codex") {
+      const part = record?.payload;
+      if (part?.type === "task_started") next = "working";
+      else if (["task_complete", "turn_aborted"].includes(part?.type)) next = "idle";
+      else if (record.type === "response_item" && part?.type === "message" && part.role === "user"
+        && (!isNoiseUserText(contentToText(part.content)) || (Array.isArray(part.content) && part.content.some(item => ["input_image", "image", "image_url"].includes(item?.type))))) next = "working";
+      else if (record.type === "response_item" && ["function_call", "custom_tool_call", "local_shell_call", "reasoning"].includes(part?.type)) next = "working";
+      else if (record.type === "response_item" && part?.type === "message" && part.role === "assistant" && part.phase === "final_answer") next = "idle";
+      if (record.type === "response_item" && ["function_call", "custom_tool_call", "local_shell_call"].includes(part?.type)) activeTool = part.name || part.tool_name || "shell";
+      else if (next !== undefined || ["function_call_output", "custom_tool_call_output"].includes(part?.type)) activeTool = undefined;
+    } else if (tool === "claude" && ["user", "assistant"].includes(record.type)) {
+      const content = record.message?.content;
+      const messageText = contentToText(content);
+      const interrupted = /\[request interrupted/i.test(messageText);
+      if (record.type === "user" && !interrupted && isNoiseUserText(messageText)
+        && !(Array.isArray(content) && content.some(part => ["image", "tool_result"].includes(part?.type)))) continue;
+      const stop = record.message?.stop_reason;
+      next = record.type === "assistant" && stop && stop !== "tool_use" ? "idle" : "working";
+      if (interrupted) next = "idle";
+      activeTool = (Array.isArray(content) ? content : []).findLast(part => part?.type === "tool_use")?.name;
+    }
+    if (next !== undefined) { lifecycle = next; lifecycleAt = Number.isFinite(timestamp) ? timestamp : undefined; }
+  }
+  return { lifecycle, lifecycleAt, activeTool };
 }
 
 // A native Codex question can be logged without a PermissionRequest hook.

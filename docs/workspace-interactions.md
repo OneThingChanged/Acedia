@@ -64,6 +64,21 @@ sources:
   - id: chat-markdown
     resource: ../app/src/components/ChatMarkdown.tsx
     title: "Chat file links and fenced code rendering"
+  - id: chat-paths
+    resource: ../app/src/lib/chatPaths.ts
+    title: "Normalized Chat links and pasted image paths"
+  - id: chat-image
+    resource: ../app/src/components/ChatImage.tsx
+    title: "Inline image previews and attachment viewer"
+  - id: chat-images
+    resource: ../app/electron/services/chat-images.mjs
+    title: "Bounded native transcript image extraction"
+  - id: chat-work-state
+    resource: ../app/src/lib/chatWorkState.ts
+    title: "Live Chat work and completion precedence"
+  - id: chat-transcript
+    resource: ../app/electron/services/chat-transcript.mjs
+    title: "Provider transcript lifecycle and timestamp extraction"
   - id: chat-copy
     resource: ../app/src/components/ChatCopyButton.tsx
     title: "Chat clipboard actions and feedback"
@@ -334,6 +349,34 @@ copies assistant narrative only; code-block copy preserves the plain source
 without its language label or controls. Copy success and failure are announced
 on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
 
+Desktop Chat opens Markdown file links, inline-code paths and recognizable bare
+file paths through the workspace file opener. Windows `/G:/...` notation is
+normalized to its drive path; encoded Markdown targets decode once, while file
+URLs retain their own decoder. Spaces, Korean names, literal percent escapes,
+dot-relative paths and source line anchors are supported. Fenced source remains
+source, HTTP links retain browser behavior, and executable URL schemes stay
+blocked.[^chat-markdown][^chat-paths][^terminal-path-service]
+
+Local image links and pasted image paths show inline thumbnails, resolved
+against the session's project folder. Visible images load on demand and open
+the existing zoom/pan/copy viewer when clicked. Codex and Claude attachments
+already indexed in history can recover their bitmap from the original provider
+record using the stored source offset. The separate image read checks the
+owning agent, source generation and block content; bitmap data is excluded from
+normal history polling. Each image is capped at 25 MB and source-record reads
+at 36 MB. Missing originals show an unavailable preview. Native user images
+remain user messages, including image-only turns.[^chat-view][^chat-image][^chat-images][^conversation-store]
+
+A pinned work indicator above the composer shows work state, the current action
+and elapsed time while earlier messages are being read. Live transcript work
+appears even before a work hook arrives; a timestamped completion ends stale
+work, while a later work hook or a new submission starts the indicator again.
+A markerless transcript tail remains inconclusive. Stop/Esc ends the local
+indicator; closing an image viewer with Esc leaves the agent running. Synchronous
+questions retain their answer controls, and asynchronous questions can coexist
+with ongoing work. A tool call's proposed diff alone does not mark it completed;
+its result is required.[^chat-view][^chat-work-state][^chat-transcript]
+
 The rounded composer has session project/connection context, file attachment,
 provider label, queue/send and an interrupt button while work is active. The
 context labels describe the current session. Enter sends or queues; Shift+Enter
@@ -365,8 +408,20 @@ checked on desktop and Remote.[^chat-question-smoke]
 The same smoke also verifies readable columns at 420/800/1280px, dark/light
 themes, copy contents and failure feedback, file attachment, newline bindings,
 queue/stop behavior, authentication guards and draft preservation across view
-switches. Clipboard and file-picker delivery use fixtures; these checks do not
+switches. It also covers normalized file-link targets, native and Markdown image
+previews, attachment viewer/copy, progress during hook lag, completion and new
+submission, and pinned status visibility in dark/light and narrow layouts.
+Clipboard and file-picker delivery use fixtures; these checks do not
 replace an installed-app OS dialog/clipboard test.[^chat-question-smoke]
+
+2026-10-08 source validation passed 73 focused Chat/path/store/IPC checks,
+the native desktop/startup/Remote chat-question smoke, and the TypeScript/Vite
+build. The full app suite subsequently passed all 1,188 tests in 177 files.
+The usage-client distribution failure was traced to its six-second polling
+window: the independent watcher's account-quota probe and next collection cycle
+could deliver the event after the test's last snapshot. The regression now waits
+for fresh receiver state and verifies successful delivery and watcher shutdown.
+Details are recorded in the [collector guide](central-usage-collector.md).
 
 Runtime state and work state are distinct. Starting/recovering describes the
 process lifecycle; working/waiting/blocked/done comes from hooks. A completion
@@ -521,6 +576,11 @@ The domain invariants behind these interactions are documented in
 [^chat-view]: Persistent chat history and artifacts
 [^chat-styles]: Readable conversation columns and responsive composer
 [^chat-markdown]: Chat file links and fenced code rendering
+[^chat-paths]: Normalized Chat links and pasted image paths
+[^chat-image]: Inline image previews and attachment viewer
+[^chat-images]: Bounded native transcript image extraction
+[^chat-work-state]: Live Chat work and completion precedence
+[^chat-transcript]: Provider transcript lifecycle and timestamp extraction
 [^chat-copy]: Chat clipboard actions and feedback
 [^terminal-startup-prompt]: Live Codex startup questions and verified selection
 [^chat-question-smoke]: Desktop, native terminal startup and Remote question verification

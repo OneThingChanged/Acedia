@@ -6,9 +6,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveTerminalPath } from "./terminal-path-service.mjs";
 
 const roots = [];
-afterEach(() => roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+afterEach(() => roots.splice(0).forEach((root) => {
+  if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith("multiagent-path-")) throw Error("Unsafe test cleanup path");
+  fs.rmSync(root, { recursive: true });
+}));
 
 describe("terminal path resolver", () => {
+  it("opens Chat Markdown drive links, dot-relative files and source anchors", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-path-"));
+    roots.push(root);
+    const file = path.join(root, "미리보기 %20.html");
+    fs.writeFileSync(file, "<h1>Preview</h1>");
+    const candidates = ["./미리보기 %20.html", `${file}#L12C3-L15C2`, `${file}:12:3`];
+    if (process.platform === "win32") candidates.push(`/${file.replaceAll("\\", "/")}`);
+    for (const candidate of candidates) expect(resolveTerminalPath(root, candidate)).toEqual({ kind: "html", path: fs.realpathSync(file) });
+  });
   it('resolves generated output-relative links while preferring a matching project-relative file', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'multiagent-path-'));
     roots.push(root);

@@ -284,6 +284,66 @@ async function exerciseChatUX(win, directory) {
   console.log('Desktop chat UX passed (columns, themes, copy, files, newline, queue, stop, auth)');
 }
 
+async function exerciseChatMediaAndWork(win, directory) {
+  const patch = payload => win.webContents.executeJavaScript(`window.questionFixture.patch(${JSON.stringify(payload)})`);
+  const previewDataUrl = `data:image/png;base64,${(await fs.readFile(path.resolve(appRoot, '../output/chat-workspace-soft-1280.png'))).toString('base64')}`;
+  const started = Date.now() - 3000;
+  const media = { sessionId: 'fixture-session', tool: 'codex', lifecycle: 'working', lifecycleAt: started, activeTool: 'functions.exec_command', pendingQuestion: null, blocks: [
+    { sequence: 31, role: 'user', kind: 'text', text: '[Image #1] 채팅에서 이미지와 작업 진행을 확인해 줘.' },
+    { sequence: 32, role: 'assistant', kind: 'text', text: '[화면 미리보기](/G:/My%20Project/%EC%B4%88%EC%95%88%20%2520.html)\n\nG:/My Project/literal%20.html\n\n![결과 이미지](./output/result.png)' },
+  ] };
+  await win.loadFile(path.join(directory, 'index.html'));
+  win.setContentSize(1280, 1000);
+  await patch({ previewDataUrl, imagesBySequence: { 31: [{ dataUrl: previewDataUrl }] }, chat: media,
+    state: { agentStatus: 'running', provider: 'codex', question: null, folder: 'G:/My Project', projectName: 'Acedia' } });
+  await waitFor(win, "!!document.querySelector('.chat-work-status') && !!document.querySelector('.chat-composer-stop')");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-scroll').scrollTop=0");
+  await waitFor(win, "document.querySelector('.chat-user img')?.naturalWidth>1");
+  assert(await win.webContents.executeJavaScript("!document.querySelector('.chat-user-text').textContent.includes('[Image #1]')"), 'Native attachment still displayed only as an image placeholder');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-md .chat-image-preview').scrollIntoView({block:'center'})");
+  await waitFor(win, "document.querySelector('.chat-md .chat-image-preview img')?.naturalWidth>1");
+  assert(await win.webContents.executeJavaScript("window.questionFixture.resolvedPaths.some(p=>p.path==='./output/result.png' && p.folder==='G:/My Project')"), 'Markdown image did not resolve relative to the session project');
+  await win.webContents.executeJavaScript("document.querySelectorAll('.chat-md .chat-path-link').forEach(link=>link.click())");
+  const targets = await win.webContents.executeJavaScript('window.questionFixture.openedPaths');
+  assert(JSON.stringify(targets) === JSON.stringify(['G:/My Project/초안 %20.html', 'G:/My Project/literal%20.html']), `Local Markdown targets did not decode exactly once: ${JSON.stringify(targets)}`);
+  await win.webContents.executeJavaScript("document.querySelector('.chat-user .chat-image-open').click()");
+  await waitFor(win, "document.querySelector('.image-viewer-body img')?.naturalWidth>1");
+  const beforeZoom = await win.webContents.executeJavaScript("document.querySelector('.image-viewer-body img').style.transform");
+  await win.webContents.executeJavaScript("document.querySelectorAll('.image-viewer-actions button')[2].click()");
+  await waitFor(win, `document.querySelector('.image-viewer-body img').style.transform!==${JSON.stringify(beforeZoom)}`);
+  await win.webContents.executeJavaScript("document.querySelectorAll('.image-viewer-actions button')[3].click()");
+  await waitFor(win, "window.questionFixture.imageClipboard.length===1 && document.querySelector('.image-viewer-status')?.textContent.includes('복사했습니다')");
+  await win.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+  await waitFor(win, "!document.querySelector('.image-viewer')");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.writes.length===0 && !!document.querySelector(".chat-work-status")'), 'Closing the image viewer interrupted the running agent');
+  for (const [width, height, theme] of [[1280, 1000, 'soft'], [1280, 1000, 'light'], [420, 740, 'soft']]) {
+    win.setContentSize(width, height);
+    await win.webContents.executeJavaScript(`document.getElementById('root').className='app app-theme-${theme}';document.querySelector('.chat-scroll').scrollTop=0`);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const layout = await win.webContents.executeJavaScript(`(() => {
+      const status=document.querySelector('.chat-work-status').getBoundingClientRect(),composer=document.querySelector('.chat-composer-area').getBoundingClientRect();
+      return {overflow:document.documentElement.scrollWidth>innerWidth,visible:status.top>=0 && status.bottom<=composer.top && composer.bottom<=innerHeight,
+        previews:[...document.querySelectorAll('.chat-image-preview img')].every(img=>img.getBoundingClientRect().width<=document.querySelector('.chat-thread').getBoundingClientRect().width)};
+    })()`);
+    assert(!layout.overflow && layout.visible && layout.previews, `Images or persistent work status overflowed ${width}px ${theme}: ${JSON.stringify(layout)}`);
+    await fs.writeFile(path.resolve(appRoot, `../output/chat-media-work-${theme}-${width}.png`), (await win.webContents.capturePage()).toPNG());
+  }
+  assert(await win.webContents.executeJavaScript('window.questionFixture.imageReads.filter(p=>p.sequence===31).length===1'), 'Clock updates or history polling reloaded native bitmap data');
+  await patch({ state: { agentStatus: 'working', workStartedAt: started }, chat: { ...media, lifecycle: 'idle', lifecycleAt: started - 1000 } });
+  await waitFor(win, "!!document.querySelector('.chat-work-status')");
+  await patch({ chat: { ...media, lifecycle: 'idle', lifecycleAt: Date.now() } });
+  await waitFor(win, "!document.querySelector('.chat-work-status') && !document.querySelector('.chat-composer-stop')");
+  await patch({ state: { agentStatus: 'working', workStartedAt: Date.now() - 120000 }, chat: { ...media, lifecycle: 'idle', lifecycleAt: Date.now() } });
+  await win.webContents.executeJavaScript(`(() => { const el=document.querySelector('.chat-composer-input');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'작업 시작 표시 확인');el.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  await waitFor(win, "!document.querySelector('.chat-composer-send').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').click()");
+  await waitFor(win, "window.questionFixture.writes.length===2 && !!document.querySelector('.chat-work-status')");
+  assert(await win.webContents.executeJavaScript("/^0:0[0-2]$/.test(document.querySelector('.chat-work-elapsed').textContent)"), 'New work reused the elapsed time of a previously completed turn');
+  await patch({ chat: { ...media, lifecycle: 'idle', lifecycleAt: Date.now() } });
+  await waitFor(win, "!document.querySelector('.chat-work-status')");
+  console.log('Desktop chat media and live work passed (paths, native images, viewer, copy, progress, completion, themes, responsive layout)');
+}
+
 async function exerciseStartupPane(BrowserWindow, directory) {
   const win = new BrowserWindow({ width: 1024, height: 760, show: false, useContentSize: true, webPreferences: { offscreen: true, backgroundThrottling: false } });
   const errors = [];
@@ -339,6 +399,7 @@ if (process.versions.electron) {
       await fs.mkdir(path.resolve(appRoot, "../output"), { recursive: true });
       await exerciseDesktop(desktop, directory);
       await exerciseChatUX(desktop, directory);
+      await exerciseChatMediaAndWork(desktop, directory);
       desktop.destroy();
       await exerciseStartupPane(BrowserWindow, directory);
       await exerciseRemote(BrowserWindow, directory);

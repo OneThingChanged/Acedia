@@ -3,12 +3,16 @@ type: Integration
 title: Central usage collector
 description: Employee-attributed Codex collection, standalone packages and central receiver.
 status: draft
+last_updated: 2026-10-08
 sources:
   - resource: ../app/electron/usage-collector/collector.mjs
   - resource: ../app/electron/usage-collector/server.mjs
   - resource: ../app/electron/usage-collector/cli.mjs
   - resource: ../app/src/components/UsageCollectorPanel.tsx
   - resource: ../app/electron/usage-collector/collector.test.mjs
+  - resource: ../app/electron/usage-collector/distribution.test.mjs
+  - resource: ../app/electron/usage-collector/watcher.mjs
+  - resource: ../app/electron/usage-collector/quota.mjs
 ---
 
 # Central usage collector
@@ -156,7 +160,8 @@ of this implementation/verification request.
 Windows CLI teardown can terminate detached children in the same process job.
 The MCP adapter now starts an independent watcher through local WMI under the
 current Windows user, without elevation. A database lease keeps one watcher per
-collector profile; it scans every five seconds, keeps offline records and exits
+collector profile; it schedules the next scan five seconds after the previous
+collection cycle finishes, keeps offline records and exits
 when collection is paused. This is a user process, not an installed Windows service.
 Company policy must allow local WMI process creation for this independent watcher.
 The final package does not require lifecycle hooks or hook-trust bypass. A regression test writes a transcript
@@ -171,6 +176,26 @@ account attribution, replay, partial lines, offline retention, account isolation
 device revocation, duplicate ownership and MCP scope checks. The separate
 [Electron UI smoke](../app/scripts/electron-usage-collector-smoke.mjs) exercises real
 enrollment, settings mapping, protected credentials, upload, pause and dashboard.
+
+### Distribution regression follow-up — 2026-10-08
+
+The [Windows distribution test](../app/electron/usage-collector/distribution.test.mjs)
+occasionally reported zero usage instead of the fixture's 140 tokens. Reproduction
+showed one collected event, an empty outbox and a successful upload while the test
+still held its previous receiver snapshot. Its six-second polling window could
+expire during the startup account-quota probe (up to eight seconds) followed by
+the five-second watcher delay. This was a test timing failure, not evidence of
+lost usage.
+
+The test now polls fresh receiver state for up to 20 seconds, retaining the exact
+140-token assertion and checking a live independent watcher, one event, an empty
+outbox and Windows sender attribution. Failure diagnostics report collection and
+receiver counts, quota status and timing without authentication secrets. On pause,
+it waits for the watcher lease to disappear instead of sleeping a fixed duration;
+if shutdown fails, it preserves the fixture rather than deleting an active
+profile. Cleanup is restricted to its own verified temporary folder. The overall
+test limit is 60 seconds. The full app run passed **1,188 tests in 177 files** with
+four workers after this change; production collection behavior was unchanged.
 
 ### Calendar analysis and recent-history pagination
 

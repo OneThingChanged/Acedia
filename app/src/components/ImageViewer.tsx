@@ -11,10 +11,12 @@ function fileName(path: string) {
 export function ImageViewer({
   path,
   folder,
+  dataUrl: suppliedDataUrl,
   onClose,
 }: {
   path: string;
   folder: string | null;
+  dataUrl?: string;
   onClose: () => void;
 }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export function ImageViewer({
     setDataUrl(null);
     setError(null);
     setCopyStatus(""); setNatural({ width: 0, height: 0 }); reset();
+    if (suppliedDataUrl) { setDataUrl(suppliedDataUrl); return; }
     invoke<string>("read_image_data_url", { path, folder })
       .then((url) => {
         if (!cancelled) setDataUrl(url);
@@ -68,7 +71,7 @@ export function ImageViewer({
     return () => {
       cancelled = true;
     };
-  }, [path, folder]);
+  }, [path, folder, suppliedDataUrl]);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -125,7 +128,7 @@ export function ImageViewer({
           </button>
           </div>
         </div>
-        <div className="image-viewer-path" title={path}>{path}</div>
+        {!suppliedDataUrl && <div className="image-viewer-path" title={path}>{path}</div>}
         {copyStatus && <div className="image-viewer-status" role="status">{copyStatus}</div>}
         <div className="image-viewer-body" ref={bodyRef}
           onDoubleClick={reset}

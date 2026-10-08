@@ -2,6 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Clipboa
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatIcon } from "./ChatIcon";
+import { ChatImage } from "./ChatImage";
+import { splitChatImagePaths } from "../lib/chatPaths";
+import { isChatWorking } from "../lib/chatWorkState";
 import { openDialog } from "../platform/plugins";
 import { toolForId } from "../types";
 import "./ChatView.css";
@@ -19,7 +22,7 @@ import {
 } from "../lib/composerAutocomplete";
 import type { AppThemeId } from "../lib/appTheme";
 import { mergeChatHistory } from "../lib/chatHistory";
-import type { ChatBlock, ChatBlocksResult, ChatDiffLine, ConversationArtifact } from "../platform/ipcContract";
+import type { ChatBlock, ChatBlocksResult, ChatDiffLine, ConversationArtifact, ChatImageSource } from "../platform/ipcContract";
 import type { AgentStatus } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { QuestionForm } from './QuestionForm';
@@ -29,7 +32,6 @@ import { questionDetails } from '../../electron/shared/chat-prompt.mjs';
 // While the agent is working, composer sends are queued and drained one at a
 // time once it's ready for input (with a short cooldown so a message doesn't
 // fire during the brief lag before "working" registers).
-const BUSY_STATUSES: AgentStatus[] = ["working", "starting", "recovering"];
 const DEAD_STATUSES: AgentStatus[] = ["exited", "unreachable"];
 const QUEUE_COOLDOWN_MS = 1200;
 
@@ -61,54 +63,35 @@ type Status = "loading" | "unsupported" | "empty" | "ready";
 const CHAT_PAGE = 10;
 const CHAT_DB_PAGE = 400;
 
-// Pull image file paths (quoted, Windows, or POSIX absolute) out of a user
-// message so they can render as thumbnails in the bubble instead of raw paths.
-const IMAGE_PATH_RE =
-  /"([^"]+\.(?:png|jpe?g|gif|webp|bmp))"|([A-Za-z]:\\[^\s"]+\.(?:png|jpe?g|gif|webp|bmp))|(\/[^\s"]+\.(?:png|jpe?g|gif|webp|bmp))/gi;
-
-function splitImagePaths(text: string): { rest: string; images: string[] } {
-  const images: string[] = [];
-  const rest = text
-    .replace(IMAGE_PATH_RE, (_m, quoted, win, unix) => {
-      images.push(quoted || win || unix);
-      return "";
-    })
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
-  return { rest, images };
-}
-
-function ChatImage({ path }: { path: string }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    let ok = true;
-    void invoke<string | { dataUrl?: string } | null>("read_image_data_url", { path })
-      .then((r) => {
-        if (ok) setUrl(typeof r === "string" ? r : r?.dataUrl ?? "");
-      })
-      .catch(() => {});
-    return () => {
-      ok = false;
-    };
-  }, [path]);
-  const name = path.split(/[\\/]/).pop() || path;
-  return url ? (
-    <img className="chat-user-img" src={url} alt={name} title={name} />
-  ) : (
-    <span className="chat-user-file" title={path}>🖼 {name}</span>
-  );
-}
-
-function UserMessage({ text: message }: { text: string }) {
+function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, imageOnly = false }: {
+  text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: (path: string) => void;
+}) {
   const { text } = useAppLanguage();
-  const { rest, images } = splitImagePaths(message);
+  const { rest, images } = splitChatImagePaths(message);
+  const [nativeImages, setNativeImages] = useState<ChatImageSource[]>([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+  const hasPaths = images.length > 0;
+  useEffect(() => {
+    let cancelled = false;
+    setNativeImages([]);
+    setLoadingImages(false);
+    if (hasPaths || !agentId || !sequence) return;
+    setLoadingImages(true);
+    void invoke<ChatImageSource[]>("read_chat_images", { id: agentId, sequence }).then(result => {
+      if (!cancelled && Array.isArray(result)) setNativeImages(result);
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoadingImages(false); });
+    return () => { cancelled = true; };
+  }, [agentId, sequence, hasPaths]);
+  const visibleText = nativeImages.length ? rest.replace(/\[Image\s+#?\d+\]/gi, "").trim() : rest;
   return (
     <div className="chat-user">
-      {rest && <div className="chat-user-text">{rest}</div>}
+      {visibleText && <div className="chat-user-text">{visibleText}</div>}
       {images.map((p, i) => (
-        <ChatImage key={`${p}-${i}`} path={p} />
+        <ChatImage key={`${p}-${i}`} path={p} folder={folder} onOpenPath={onOpenPath} />
       ))}
-      <div className="chat-user-actions"><ChatCopyButton value={message} label={text("메시지 복사", "Copy message")} /></div>
+      {nativeImages.map((source, i) => <ChatImage key={`native-${i}`} {...source} alt={text(`첨부 이미지 ${i + 1}`, `Attached image ${i + 1}`)} folder={folder} onOpenPath={onOpenPath} />)}
+      {imageOnly && !nativeImages.length && <span className="chat-image-note">{loadingImages ? text("이미지 불러오는 중…", "Loading image…") : text("이미지 · 원본을 불러올 수 없습니다", "Image · original unavailable")}</span>}
+      {message && <div className="chat-user-actions"><ChatCopyButton value={message} label={text("메시지 복사", "Copy message")} /></div>}
     </div>
   );
 }
@@ -165,6 +148,16 @@ function toolLabel(block: { name?: string; summary?: string; input?: unknown }):
   return arg ? `${block.name ?? "tool"} · ${arg}` : block.name ?? "tool";
 }
 
+function workLabel(name: string, text: (ko: string, en: string) => string): string {
+  const tool = name.split(/[.:/]/).pop() || name;
+  if (/^(?:exec_command|run_command|bash|shell|local_shell_call|write_stdin)$/i.test(tool)) return text("명령 실행", "Running command");
+  if (/^(?:web|browse|fetch)/i.test(tool)) return text("웹 확인", "Browsing");
+  if (/^(?:read|view|open)/i.test(tool)) return text("파일 확인", "Reading files");
+  if (/^(?:apply_patch|write|edit)/i.test(tool)) return text("파일 수정", "Editing files");
+  if (/^(?:search|find|grep|glob)/i.test(tool)) return text("검색", "Searching");
+  return text("도구 실행", "Using tools");
+}
+
 function ChatDiff({ diff }: { diff: ChatDiffLine[] }) {
   return (
     <div className="chat-diff">
@@ -187,6 +180,7 @@ type ToolPair = {
   diff?: ChatDiffLine[];
   output?: string;
   isError?: boolean;
+  completed?: boolean;
 };
 
 type AssistantSegment =
@@ -214,11 +208,13 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
       const pending = awaitingResults.shift();
       if (pending) {
         pending.output = block.output;
+        pending.completed = true;
         pending.isError = block.isError;
         if (!pending.diff && block.diff) pending.diff = block.diff;
       } else {
         toolsForCurrentPosition().push({
           name: "result",
+          completed: true,
           output: block.output,
           isError: block.isError,
           diff: block.diff,
@@ -237,7 +233,7 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
 function ToolGroup({ tools }: { tools: ToolPair[] }) {
   const { text } = useAppLanguage();
   const failed = tools.filter((tool) => tool.isError).length;
-  const finished = tools.filter((tool) => tool.output !== undefined || tool.diff).length;
+  const finished = tools.filter((tool) => tool.completed).length;
   return (
     <details className="chat-work chat-work-tools">
       <summary>
@@ -252,7 +248,7 @@ function ToolGroup({ tools }: { tools: ToolPair[] }) {
       </summary>
       <div className="chat-tools">
         {tools.map((tool, index) => {
-          const state = tool.isError ? "error" : tool.output !== undefined || tool.diff ? "done" : "pending";
+          const state = tool.isError ? "error" : tool.completed ? "done" : "pending";
           return (
             <details key={index} className="chat-tool">
               <summary>
@@ -281,7 +277,7 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-function AssistantTurn({ run, tool, onOpenPath }: { run: ChatBlock[]; tool?: string; onOpenPath?: (path: string) => void }) {
+function AssistantTurn({ run, tool, onOpenPath, folder }: { run: ChatBlock[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
@@ -307,7 +303,7 @@ function AssistantTurn({ run, tool, onOpenPath }: { run: ChatBlock[]; tool?: str
         if (block.kind === "text") {
           return (
             <div key={`t${sourceIndex}`} className="chat-md">
-              <ChatMarkdown onOpenPath={onOpenPath}>
+              <ChatMarkdown onOpenPath={onOpenPath} folder={folder}>
                 {block.text ?? ""}
               </ChatMarkdown>
             </div>
@@ -334,6 +330,8 @@ export function ChatView({
   projectName,
   connectionLabel,
   provider,
+  workStartedAt,
+  activeTool,
   questionToken,
   readTerminalScreen,
   onOpenTerminal,
@@ -350,6 +348,8 @@ export function ChatView({
   projectName?: string;
   connectionLabel?: string;
   provider?: string;
+  workStartedAt?: number;
+  activeTool?: string;
   questionToken?: number;
   readTerminalScreen?: () => string;
   onOpenTerminal: () => void;
@@ -367,6 +367,11 @@ export function ChatView({
   const [tool, setTool] = useState<string | undefined>(undefined);
   // Turn lifecycle from the transcript — overrides a stale hook "working".
   const [lifecycle, setLifecycle] = useState<"working" | "idle" | undefined>(undefined);
+  const [lifecycleAt, setLifecycleAt] = useState<number | undefined>();
+  const [transcriptTool, setTranscriptTool] = useState<string | undefined>();
+  const [dispatchAt, setDispatchAt] = useState(0);
+  const [workClock, setWorkClock] = useState(Date.now());
+  const [busySince, setBusySince] = useState(0);
   const [pendingQuestion, setPendingQuestion] = useState<ChatBlocksResult["pendingQuestion"]>(null);
   // Transcript signature + the value at the moment the user hit 중단/Esc, so an
   // interrupt immediately unsticks a stuck "working" until genuinely new content
@@ -423,6 +428,7 @@ export function ChatView({
     setPendingQuestion(null);
     setPromptError("");
     setStoppedKey(null);
+    setLifecycle(undefined); setLifecycleAt(undefined); setTranscriptTool(undefined); setDispatchAt(0);
     firstLoadRef.current = true;
     clearedSigRef.current = null;
   }, [agentId, sessionId, storeKey]);
@@ -454,6 +460,8 @@ export function ChatView({
         if (result.artifacts) setArtifacts(result.artifacts);
         if (result.tool) setTool(result.tool);
         setLifecycle(result.lifecycle);
+        setLifecycleAt(result.lifecycleAt);
+        setTranscriptTool(result.activeTool);
         setPendingQuestion(result.pendingQuestion ?? null);
         // Drop optimistic echoes now present in the transcript (exact match on
         // a user text block) so we don't show them twice.
@@ -529,23 +537,21 @@ export function ChatView({
     };
   }, [active]);
 
-  // Group blocks into turns as [start, end) ranges. A new turn begins at a user
-  // *text* block; everything else — assistant text/reasoning/tools and user
-  // images (role:"user", kind:"image") — folds into the preceding run. The
-  // do…while always advances `i`: a user block whose kind isn't "text" MUST be
-  // consumed here or the loop spins forever (runaway-memory freeze).
+  // User images belong to the user, including an image-only message. Always
+  // advance the cursor so an unknown block cannot trap the grouping loop.
+  const isUserBlock = (block: ChatBlock) => block.role === "user" && (block.kind === "text" || block.kind === "image");
   const ranges: { user: boolean; start: number; end: number }[] = [];
   let i = 0;
   while (i < blocks.length) {
     const b = blocks[i];
-    if (b.role === "user" && b.kind === "text") {
+    if (isUserBlock(b)) {
       ranges.push({ user: true, start: i, end: i + 1 });
       i += 1;
     } else {
       const start = i;
       do {
         i += 1;
-      } while (i < blocks.length && !(blocks[i].role === "user" && blocks[i].kind === "text"));
+      } while (i < blocks.length && !isUserBlock(blocks[i]));
       ranges.push({ user: false, start, end: i });
     }
   }
@@ -645,17 +651,15 @@ export function ChatView({
   const visibleTurns: ReactNode[] = ranges.slice(hidden).map((range) =>
     range.user ? (
       <div key={`u${range.start}`} className="chat-turn user">
-        <UserMessage text={blocks[range.start].text ?? ""} />
+        <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={onOpenPath} />
       </div>
     ) : (
-      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} onOpenPath={onOpenPath} />
+      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} folder={folder} onOpenPath={onOpenPath} />
     )
   );
 
-  // The transcript's turn lifecycle is authoritative: if it says the last turn
-  // finished, treat the session as not-busy even when the hook status is stuck
-  // at "working" (missed Stop hook). This stops a phantom "작업 중…" that traps
-  // composer sends in the queue.
+  // Combine current transcript work with fresh hooks. Completion timestamps
+  // end stale work without concealing a turn that started after that completion.
   const stoppedHere = stoppedKey !== null && stoppedKey === msgKey;
   const initializing = agentStatus === "starting" || agentStatus === "recovering";
   const alive = !DEAD_STATUSES.includes(agentStatus);
@@ -680,9 +684,17 @@ export function ChatView({
     : `${storeKey}|${nativeQuestion?.id || questionToken || ""}|${promptSignature(prompt)}` : "";
   promptSigRef.current = promptSig;
   useEffect(() => { setAnsweredPromptSig(""); setPromptError(""); }, [promptSig]);
-  const busy = initializing || (
-    BUSY_STATUSES.includes(agentStatus) && lifecycle !== "idle" && !stoppedHere && (!prompt || nativeQuestion?.async)
-  );
+  const busy = isChatWorking({ status: agentStatus, lifecycle, lifecycleAt, workStartedAt,
+    dispatchAt, now: Math.max(workClock, Date.now()), stopped: stoppedHere, waiting: !!prompt && !nativeQuestion?.async && !initializing });
+  useEffect(() => {
+    if (!busy) { setBusySince(0); return; }
+    setBusySince(Math.max(workStartedAt || 0, dispatchAt || 0) || Date.now());
+    setWorkClock(Date.now());
+    const timer = window.setInterval(() => setWorkClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy, workStartedAt, dispatchAt]);
+  const elapsed = busySince ? Math.max(0, Math.floor((workClock - busySince) / 1000)) : 0;
+  const runningTool = transcriptTool || (agentStatus === "working" ? activeTool : undefined);
 
   // Cancel the in-progress turn by sending Esc to the PTY — same as pressing
   // Esc in the Codex/Claude TUI. Re-poll so the transcript updates promptly.
@@ -748,7 +760,7 @@ export function ChatView({
   useEffect(() => {
     if (!active || !busy || initializing || startupPrompt) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(".image-viewer-backdrop")) {
         e.preventDefault();
         interrupt();
       }
@@ -763,6 +775,9 @@ export function ChatView({
   const dispatch = useCallback(
     (value: string) => {
       lastDispatchRef.current = Date.now();
+      setDispatchAt(lastDispatchRef.current);
+      setWorkClock(lastDispatchRef.current);
+      setStoppedKey(null);
       if (value.trim() === "/clear") {
         // /clear resets the agent's conversation — mirror it in the view right
         // away and suppress the pre-clear transcript until it changes on disk.
@@ -864,7 +879,7 @@ export function ChatView({
           {status === "ready" && visibleTurns}
           {pending.map((t, i) => (
             <div key={`pending-${i}`} className="chat-turn user pending">
-              <UserMessage text={t} />
+              <UserMessage text={t} folder={folder} onOpenPath={onOpenPath} />
             </div>
           ))}
           {busy && !startupPrompt && status !== "unsupported" && status !== "loading" && (
@@ -944,8 +959,16 @@ export function ChatView({
         </div>
       )}
       {status !== "unsupported" && (
+        <>
+        {busy && !startupPrompt && <div className="chat-work-status" role="status">
+          <span className="chat-thinking-dots" aria-hidden="true"><i /><i /><i /></span>
+          <strong>{agentStatus === "recovering" ? text("복구 중", "Recovering") : initializing ? text("세션 시작 중", "Starting session") : text("작업 중", "Working")}</strong>
+          {runningTool && <span className="chat-work-current" title={runningTool}>{workLabel(runningTool, text)}</span>}
+          <span className="chat-work-elapsed" aria-hidden="true">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+        </div>}
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
           projectName={projectName} connectionLabel={connectionLabel} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
+        </>
       )}
     </div>
   );

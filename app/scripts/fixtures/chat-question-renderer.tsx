@@ -9,6 +9,12 @@ const listeners = new Set();
 const writes = [];
 const answers = [];
 const clipboard = [];
+const imageClipboard = [];
+const openedPaths = [];
+const imageReads = [];
+const resolvedPaths = [];
+let imagesBySequence = {};
+let previewDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII=";
 let filesToSelect = [];
 let failClipboard = false;
 let failWrites = false;
@@ -37,7 +43,10 @@ window.multiAgentElectron = {
     }
     if (command === 'answer_question') { answers.push(args); if (failWrites) throw new Error('fixture answer failure'); return { status: 'sent' }; }
     if (command === "clipboard_write_text") { if (failClipboard) throw Error("fixture clipboard failure"); clipboard.push(args.text); }
-    if (command === "read_image_data_url") return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII=";
+    if (command === "read_image_data_url") return previewDataUrl;
+    if (command === "read_chat_images") { imageReads.push(args); return imagesBySequence[args.sequence] || []; }
+    if (command === "resolve_terminal_path") { resolvedPaths.push(args); return { kind: "image", path: args.path }; }
+    if (command === "clipboard_write_image") { imageClipboard.push(args.dataUrl); return; }
     if (command === "search_files") return ["src/ChatView.tsx"];
     return null;
   },
@@ -54,6 +63,10 @@ function Harness() {
     writes,
     answers,
     clipboard,
+    imageClipboard,
+    imageReads,
+    openedPaths,
+    resolvedPaths,
     patch: patch => {
       if (patch.state) setState(current => ({ ...current, ...patch.state }));
       if ("failWrites" in patch) failWrites = patch.failWrites;
@@ -61,6 +74,8 @@ function Harness() {
       if ("filesToSelect" in patch) filesToSelect = patch.filesToSelect;
       if ("terminalScreen" in patch) terminalScreen = patch.terminalScreen;
       if ("changeScreenOnWrite" in patch) changeScreenOnWrite = patch.changeScreenOnWrite;
+      if ("imagesBySequence" in patch) imagesBySequence = patch.imagesBySequence;
+      if ("previewDataUrl" in patch) previewDataUrl = patch.previewDataUrl;
       if (patch.chat) {
         chat = patch.chat;
         pendingReads.splice(0).forEach(resolve => resolve(chat));
@@ -70,6 +85,7 @@ function Harness() {
   };
   return <ChatView {...state} agentId="fixture" sessionId="fixture-session" active theme="soft"
     readTerminalScreen={readTerminalScreen}
+    onOpenPath={path => openedPaths.push(path)}
     onOpenTerminal={() => { window.questionTerminalOpened = true; }} />;
 }
 createRoot(document.getElementById("root")).render(<Harness />);

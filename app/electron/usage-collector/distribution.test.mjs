@@ -8,6 +8,21 @@ import { serverUrl, request, token } from './protocol.mjs';
 import { createUsageServer } from './server.mjs';
 import { Collector } from './collector.mjs';
 
+async function waitUntil(check, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (await check()) return true;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await new Promise(resolve => setTimeout(resolve, Math.min(500, remaining)));
+  }
+}
+
+function watcherState(collector) {
+  return collector.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='watcher'").get()
+    ? collector.db.prepare('SELECT expires FROM watcher WHERE id=1').get() : null;
+}
+
 it('requires opt-in for RFC1918 HTTP and still refuses public IPs and arbitrary hostnames', () => {
   const old = process.env.ACEDIA_USAGE_ALLOW_LAN_HTTP;
   try {
@@ -66,12 +81,29 @@ it.skipIf(process.platform !== 'win32')('packages a clean server and installs an
     ];
     fs.writeFileSync(path.join(codex, 'sessions/fixture.jsonl'), records.map(r => JSON.stringify(r)).join('\n') + '\n');
     let summary;
-    for (let attempt = 0; attempt < 12; attempt++) {
+    // Startup may be inside an account-quota probe (up to eight seconds),
+    // followed by the five-second watcher cycle. Keep polling fresh receiver
+    // state rather than asserting an earlier snapshot after a fixed six seconds.
+    const started = Date.now();
+    await waitUntil(async () => {
       summary = await request(origin, '/v1/summary', { credential: admin });
-      if (summary.total === 140) break;
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    expect(summary.total).toBe(140);
+      return summary.total === 140;
+    }, 20000);
+    const status = collector.status();
+    const watcher = watcherState(collector);
+    expect(summary.total, JSON.stringify({
+      enabled: status.enabled, pending: status.pending, events: status.events,
+      error: status.error, warnings: status.warnings, lastSuccess: status.lastSuccess,
+      watcherExpires: watcher?.expires,
+      collectorLeaseExpires: collector.db.prepare('SELECT expires FROM lease WHERE id=1').get()?.expires,
+      sourceCount: collector.db.prepare('SELECT COUNT(*) count FROM sources').get().count,
+      quotaStatus: collector.db.prepare('SELECT json_extract(json,\'$.status\') status FROM local_account_reports').get()?.status,
+      elapsedMs: Date.now() - started,
+      receiverTotal: service.db.prepare('SELECT COALESCE(SUM(total),0) total FROM events').get().total,
+    })).toBe(140);
+    expect(watcher?.expires).toBeGreaterThan(Date.now());
+    expect(status.events).toBe(1);
+    expect(status.pending).toBe(0);
     expect(summary.recent[0].sender.windowsUser).toBeTruthy();
     const codexExe = (process.env.PATH || '').split(path.delimiter).map(p => path.join(p, 'codex.exe')).find(p => fs.existsSync(p));
     if (codexExe) {
@@ -82,9 +114,16 @@ it.skipIf(process.platform !== 'win32')('packages a clean server and installs an
       expect(added).toContain('acedia-usage');
     }
   } finally {
+    let watcherStopped = true;
     if (!collector && fs.existsSync(path.join(local, 'AcediaUsage/collector.db'))) collector = new Collector(path.join(local, 'AcediaUsage'));
-    if (collector) { collector.pause(); await new Promise(resolve => setTimeout(resolve, 6000)); await collector.stop(); }
+    if (collector) {
+      collector.pause();
+      watcherStopped = await waitUntil(() => !watcherState(collector), 20000);
+      await collector.stop();
+    }
     if (service) await service.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    if (!watcherStopped) throw Error('Usage watcher did not stop after pause; fixture preserved at ' + root);
+    if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-distribution-')) throw Error('Unexpected fixture cleanup path');
+    fs.rmSync(root, { recursive: true, maxRetries: 5, retryDelay: 100 });
   }
-}, 30000);
+}, 60000);

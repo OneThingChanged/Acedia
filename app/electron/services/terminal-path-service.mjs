@@ -11,6 +11,7 @@ function cleanCandidate(value) {
     .trim()
     .replace(/^[`"'(<\[]+/, "")
     .replace(/[>`"')\].,;]+$/, "")
+    .replace(/#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i, "")
     .replace(/(:\d+)(?::\d+)?$/, "")
     .trim();
 }
@@ -46,7 +47,10 @@ function absolutePrefix(candidate) {
 }
 
 export function resolveTerminalPath(folder, rawPath) {
-  const candidate = cleanCandidate(rawPath);
+  const cleaned = cleanCandidate(rawPath);
+  // Markdown file links commonly use /C:/... on Windows. That leading slash
+  // belongs to the link notation, not to the filesystem drive path.
+  const candidate = process.platform === "win32" ? cleaned.replace(/^\/(?=[a-z]:[\\/])/i, "") : cleaned;
   if (!candidate) throw new Error("경로가 비어 있습니다.");
   if (/^file:/i.test(candidate)) {
     let filePath;
@@ -63,7 +67,7 @@ export function resolveTerminalPath(folder, rawPath) {
   }
 
   const segments = candidate.split(/[\\/]/);
-  if (segments.includes("..") || segments.includes(".")) {
+  if (segments.includes("..")) {
     throw new Error("상대경로가 올바르지 않습니다.");
   }
   const root = existing(folder);
