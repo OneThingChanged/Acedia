@@ -31,6 +31,10 @@ window.multiAgentElectron = {
     if (command === "runtime_flags") return { build_variant: "standard", update_provider: "github", advanced_launch_options: true };
     if (command === "get_agent_window_usage") return { in_use_agent_ids: [], owned_agent_ids: [] };
     if (command === "get_detached_agents") return {};
+    if (command === "claim_agent_for_window") return { claimed: true };
+    if (command === "spawn_pty") return { reattached: true };
+    if (command === "attach_terminal") return { data: "", sequenceStart: 0, sequenceEnd: 0 };
+    if (command === "account_session_status") return { mode: "direct", label: "Fixture login" };
     if (command === "document_browser_list") return { browsers: [] };
     if (command === "account_pool_choices") return { enabled: false, accounts: [] };
     if (command === "usage_rate_limits_get") return { updatedAt: Date.now(), limits: [] };

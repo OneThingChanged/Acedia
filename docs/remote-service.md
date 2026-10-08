@@ -8,6 +8,7 @@ tags:
   - android
   - security
 status: stable
+last_updated: 2026-10-08
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -22,6 +23,12 @@ sources:
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
+  - id: remote-attachments
+    resource: ../app/electron/shared/remote-attachments.mjs
+    title: "Shared image and ZIP attachment classification, limits and message paths"
+  - id: remote-attachments-smoke
+    resource: ../app/scripts/electron-remote-attachments-smoke.mjs
+    title: "Real Remote and Dashboard attachment selection, upload and submission"
   - id: session-filters
     resource: ../app/electron/shared/session-state.mjs
     title: "Shared Remote session lifecycle filters and PTY projection"
@@ -139,6 +146,7 @@ the extracted modules have these responsibilities:
 | `remote-pwa/chat-render.js` | User/assistant turns, tool details and diffs |
 | `remote-pwa/chat-history.js` | Pure sequence deduplication, ordering and overlapping-page merging |
 | `remote-pwa/i18n.js`, `remote-pwa/translations.js` | App-language messages, trusted initial-shell bindings and locale-aware usage dates |
+| `shared/remote-attachments.mjs` (served as `/pwa/attachments.js`) | Shared image/ZIP MIME classification, per-file limits and quoted attachment-path messages |
 | `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, original file downloads, HTML capabilities and one shared document API dispatcher |
 | `services/remote-http.mjs` | JSON headers, body length and response serialization |
 | `services/web-services.mjs` | Server lifecycle, authentication, session APIs, static asset allowlist and tunnel orchestration |
@@ -457,6 +465,37 @@ of the page, so changing the selected session does not move a draft or discard
 an accepted queue. Selecting a session keeps the desktop/tablet navigation pane open. The pane
 collapses only when the user uses its toggle; the mobile drawer still closes
 after selection so the conversation is visible.
+
+The shared composer accepts PNG, JPEG, GIF, WebP and BMP images up to **8 MiB**,
+and ZIP archives up to **32 MiB**, with **four files** per draft. Selection, file
+drop and browser-provided clipboard files use the same upload path. Images show
+thumbnails; archives show a ZIP badge and their original name. An empty or generic
+browser MIME and Windows' `application/x-zip-compressed` are normalized for ZIPs.
+The host verifies the content signature and size, then saves the original bytes
+under a generated filename in its private `remote-attachments` directory. Image
+paths retain the image section of the message; ZIP paths are sent in a separate
+file section to the selected session. Uploading keeps Send disabled. Failed
+uploads remain removable, and unsupported or oversized files show an error.
+SSH sessions retain their existing attachment restriction.[^remote-attachments][^remote-client][^web-services]
+
+ZIP support is part of [EXE 1.8.1.65](release-1-8-1-65.md). The earlier picker, client
+validation and server allowed images only. The server now bounds the JSON request
+for a 32 MiB base64 payload, while preserving the 8 MiB image limit, Remote login
+and same-origin checks. The shared module is allowlisted and included in the
+PWA's network-first app-shell cache (v93).[^web-tests]
+
+2026-10-08 validation passed **1,193 tests in 177 files**, including the HTTP
+regressions for Remote and Dashboard. `npm run electron:remote-attachments-smoke`
+uses real Electron pages at **1024/390px**, a genuine uncompressed **9 MiB ZIP**,
+an image and isolated mock sessions. It checks Chromium file selection, drop,
+clipboard-file events, MIME normalization, saved-byte equality, thumbnails and
+archive badges, draft removal, size/count limits, spoof rejection and file-only
+submission. Clipboard events and the PTY recipient use fixtures; this does not
+verify an OS clipboard or a deployed tunnel. Local evidence is in
+`output/remote-zip-attachment-smoke.log`, `output/tests-remote-zip.log`,
+`output/full-suite-exe-1.8.1.65.json` and the
+four `output/remote-zip-{remote,dashboard}-{1024,390}.png` captures.[^remote-attachments-smoke]
+
 Normal chat submission uses one same-origin HTTP operation;
 the desktop then writes the text and the discrete Enter key to the same verified
 PTY. Multiline input, including image-tagged messages, is normalized and enclosed
@@ -696,6 +735,8 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker
 [^remote-client]: Remote PWA client
+[^remote-attachments]: Shared image and ZIP attachment classification, limits and message paths
+[^remote-attachments-smoke]: Real Remote and Dashboard attachment selection, upload and submission
 [^session-filters]: Shared Remote session lifecycle filters and PTY projection
 [^session-filter-tests]: Desktop classification parity and runtime projection checks
 [^session-filter-smoke]: Remote and Dashboard session filter runtime verification

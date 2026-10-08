@@ -50,7 +50,24 @@
 .sidebar-project-navigation .project-item .sidebar-icon { width: 16px; height: 16px; color: var(--app-muted); }
 .sidebar-project-navigation .project-item .project-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-project-navigation .project-node-active > .project-row { background: var(--sidebar-selected); }
-.sidebar-project-count { color: var(--app-soft-text); font-size: 10px; }
+.sidebar-project-count { align-self: center; padding-right: 2px; color: var(--app-soft-text); font-size: 10px; line-height: 1; }
+.sidebar-project-toggle-icon { position: relative; width: 16px; height: 16px; flex-shrink: 0; }
+.sidebar-project-toggle-icon > .sidebar-icon { position: absolute; inset: 0; }
+.sidebar-project-toggle-icon > .sidebar-icon:last-child { opacity: 0; }
+.project-item[aria-expanded="false"] .sidebar-project-toggle-icon > .sidebar-icon:last-child { transform: rotate(-90deg); }
+.sidebar-project-navigation .project-row:hover .sidebar-project-toggle-icon > .sidebar-icon:first-child,
+.sidebar-project-navigation .project-row:focus-within .sidebar-project-toggle-icon > .sidebar-icon:first-child { opacity: 0; }
+.sidebar-project-navigation .project-row:hover .sidebar-project-toggle-icon > .sidebar-icon:last-child,
+.sidebar-project-navigation .project-row:focus-within .sidebar-project-toggle-icon > .sidebar-icon:last-child { opacity: 1; }
+.sidebar-workspace .sidebar-project-new-session { width: 23px; height: 25px; margin-right: 3px; opacity: 0; }
+.sidebar-project-new-session .sidebar-icon { width: 14px; height: 14px; }
+.sidebar-project-navigation .project-row:hover .sidebar-project-new-session,
+.sidebar-project-navigation .project-row:focus-within .sidebar-project-new-session { opacity: 1; }
+.sidebar-project-navigation .project-session-list { list-style: none; margin: 2px 0 5px 17px; padding: 0 0 0 6px; border-left: 1px solid var(--app-border); }
+.sidebar-workspace .sidebar-recent-row.sidebar-project-session-row { min-height: 31px; padding: 3px 4px 3px 8px; gap: 7px; }
+.sidebar-workspace .sidebar-recent-row.sidebar-project-session-row .agent-name { font-size: 11px; }
+.sidebar-project-navigation .project-empty-hint { display: grid; gap: 3px; padding: 7px 8px; text-align: left; }
+.sidebar-project-empty-action { width: fit-content; padding: 0; border: 0; background: none; color: var(--app-accent) !important; font-size: 10px; }
 .sidebar-project-navigation .project-folder-node { margin: 2px 0; }
 .sidebar-project-navigation .project-folder-row { margin: 0; padding: 3px 0; }
 .sidebar-project-navigation .project-folder-projects { padding-left: 8px; border: 0; }

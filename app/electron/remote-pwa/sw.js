@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v92";
+const CACHE_NAME = "multiagent-remote-v93";
 const STATIC_ASSETS = [
   "/",
   "/pwa/styles.css",
@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   "/pwa/chat-prompt.js",
   "/pwa/question-form.js",
   "/pwa/requests.js",
+  "/pwa/attachments.js",
   "/pwa/xterm.js",
   "/pwa/xterm.css",
   "/manifest.webmanifest",
@@ -77,6 +78,7 @@ self.addEventListener("fetch", (event) => {
      url.pathname === "/pwa/chat-prompt.js" ||
      url.pathname === "/pwa/question-form.js" ||
     url.pathname === "/pwa/requests.js" ||
+    url.pathname === "/pwa/attachments.js" ||
     url.pathname === "/pwa/styles.css" ||
     url.pathname === "/pwa/terminal-touch.js";
   if (isAppShell) {

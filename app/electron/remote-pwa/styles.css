@@ -1244,6 +1244,7 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .composer-attachment { display: grid; grid-template-columns: 30px minmax(0, 1fr) 22px; align-items: center; flex: 0 1 190px; min-width: 130px; gap: 6px; padding: 4px; border: 1px solid rgba(80, 223, 208, 0.26); border-radius: 8px; background: rgba(5, 13, 20, 0.78); }
 .composer-attachment.error { border-color: rgba(255, 125, 125, 0.4); }
 .composer-attachment img { width: 30px; height: 30px; border-radius: 5px; object-fit: cover; background: var(--panel); }
+.composer-attachment-file { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 5px; color: var(--cyan); background: var(--panel); font-size: 10px; font-weight: 700; }
 .composer-attachment-name { min-width: 0; overflow: hidden; color: #cfe0ec; font-size: var(--font-caption); text-overflow: ellipsis; white-space: nowrap; }
 .composer-attachment.error .composer-attachment-name { color: var(--red); }
 .composer-attachment-remove { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 16px; cursor: pointer; }

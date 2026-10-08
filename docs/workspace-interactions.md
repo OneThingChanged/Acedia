@@ -140,8 +140,11 @@ field. The bell opens the existing notification center and displays its unread
 count. The window titlebar omits duplicate Quick Open and attention controls.
 **New conversation**, **All conversations**, **Browsers**, and **Project board**
 sit below the header. Projects form a compact folder/SSH
-navigation tree; selecting a project scopes the recent-conversation list.
-Collapsing a project folder does not hide its conversations from that list.
+navigation tree. Clicking a project toggles its inline conversation list and
+scopes the recent-conversation list to that project. Clicking it again folds
+the inline list while keeping that scope; **All conversations** or the scope's
+**All** link returns to the global recent list. Folding a project or its parent
+folder does not hide conversations from the recent list.
 Split views have a separate, initially collapsed section. Archived conversations
 stay in the footer while the middle list scrolls; the footer is absent when there
 are no archived conversations. Settings open from the window's top-right button.
@@ -152,6 +155,20 @@ the collapse/expand button; the window titlebar omits duplicate brand/navigation
 controls.
 The approved [interactive HTML draft](mockups/sidebar-workspace.html) remains
 available as a design reference.[^sidebar][^sidebar-project-tree]
+
+Each project starts folded on first use. Its expanded state is saved separately
+from the session picker's expansion and restored after reopening; selecting a
+conversation or receiving session updates does not reopen a deliberately folded
+project. Several projects can remain open at once. Inline conversations use
+compact, indented title rows with status dots, selected state, completion/split
+badges and the existing conversation menu; they sort by sidebar pin and recent
+visit time and omit archived entries. Pointer selection and Enter/Space open the
+same conversation as the recent list, respecting sessions in use in other
+windows. Hover/focus shows a chevron on the project icon and exposes its menu
+and **New conversation** button. The new-conversation button expands that
+project and opens its existing creation flow; an empty project also offers
+**Start a conversation**. Project-only navigation changes do not start or stop
+terminal processes.[^sidebar][^sidebar-project-tree][^sidebar-navigation]
 
 Recent conversations sort by the last time the user opened them, falling back
 to creation time; background progress does not reorder the list. Sidebar pins
@@ -184,9 +201,14 @@ with a saved default of 286px. Drag the edge or focus it and use Left/Right to
 resize. Search and New conversation show the user's configured shortcuts. The
 header actions also remain available in the collapsed rail. The sidebar follows
 the current application theme. The Electron sidebar smoke uses a separate
-profile and checks pin/archive/restore, scopes, Quick Open, notifications, split rename/ungroup,
-collapse/resize, settings, reload and 800–1440px layouts without launching or
-killing terminal processes.[^sidebar][^sidebar-smoke]
+profile and checks pin/archive/restore, scopes, independent project folds,
+project menus/new conversations, nested pointer/keyboard selection, Quick Open,
+notifications, split rename/ungroup, collapse/resize, settings, reload and
+800–1440px layouts. IPC is simulated: no real terminal processes or user
+accounts are used. Source validation for project folding passed 33 focused
+sidebar/navigation tests, TypeScript checking and the native sidebar smoke;
+captures are in `output/sidebar-workspace-app/`. Project folding is recorded in
+the [1.8.1.65 release notes](release-1-8-1-65.md).[^sidebar][^sidebar-smoke]
 
 The shared Dashboard/Remote sidebar uses these same All/Active/Sleeping categories,
 with global counts and a browser-local saved selection. Search stays within the

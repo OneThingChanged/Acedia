@@ -19,6 +19,38 @@ describe("workspace sidebar", () => {
     expect(html).toContain("새 대화"); expect(html).toContain("최근 대화");
     expect(html).not.toContain("project-session-list");
   });
+  it("starts projects folded independently of the session picker's saved expansion", () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.expandedProjects.v1" ? '["p"]' : null, setItem: vi.fn() });
+    const html = render([agent("RECENT")]);
+    expect(html).toContain('aria-expanded="false" aria-controls="sidebar-project-sessions-p"');
+    expect(html).not.toContain('class="project-session-list"');
+    expect(html).toContain('data-sidebar-agent-id="RECENT"');
+  });
+  it("restores only expanded projects, orders their conversations and excludes archived entries", () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.sidebarExpandedProjects.v1" ? '["p","deleted"]' : null, setItem: vi.fn() });
+    const html = render([
+      agent("old", { createdAt: 1 }), agent("recent", { lastOpenedAt: 20 }),
+      agent("pinned", { sidebarPinned: true }), agent("archived", { sidebarArchived: true }),
+      agent("other", { projectId: "q" }),
+    ], { projects: [project, { ...project, id: "q", name: "Other project" }], detachedAgentIds: new Set(["recent"]) });
+    const nested = html.match(/<ul class="project-session-list"[^>]*>([\s\S]*?)<\/ul>/)?.[1] || "";
+    expect(nested.indexOf('data-sidebar-agent-id="pinned"')).toBeLessThan(nested.indexOf('data-sidebar-agent-id="recent"'));
+    expect(nested.indexOf('data-sidebar-agent-id="recent"')).toBeLessThan(nested.indexOf('data-sidebar-agent-id="old"'));
+    expect(nested).not.toContain('data-sidebar-agent-id="archived"');
+    expect(nested).not.toContain('data-sidebar-agent-id="other"');
+    expect(nested).toMatch(/data-sidebar-agent-id="recent"[^>]+tabindex="-1" aria-disabled="true"/);
+    expect(nested).not.toContain('aria-label="recent 대화 메뉴"');
+    expect(html).not.toContain('id="sidebar-project-sessions-q"');
+    expect(nested).not.toContain("deactivate-btn");
+  });
+  it("applies the selected status to folded project sessions as well as recents", () => {
+    const saved: Record<string, string> = { "multiagent.sidebarExpandedProjects.v1": '["p"]', "multiagent.sessionFilter.v1": "sleeping" };
+    vi.stubGlobal("localStorage", { getItem: (key: string) => saved[key] ?? null, setItem: vi.fn() });
+    const html = render([agent("sleeping", { deferredStart: true, resumeEligible: true }), agent("running", { status: "working", runtimeStatus: "running" })]);
+    const nested = html.match(/<ul class="project-session-list"[^>]*>([\s\S]*?)<\/ul>/)?.[1] || "";
+    expect(nested).toContain('data-sidebar-agent-id="sleeping"');
+    expect(nested).not.toContain('data-sidebar-agent-id="running"');
+  });
   it("offers archived restoration without rendering hidden conversations in navigation", () => {
     const html = render([agent("hidden", { sidebarArchived: true }), agent("visible", { sidebarPinned: true })]);
     expect(html).not.toContain('data-sidebar-agent-id="hidden"');

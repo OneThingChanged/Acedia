@@ -11,7 +11,10 @@ const services = [];
 const roots = [];
 afterEach(async () => {
   await Promise.all(services.splice(0).map((service) => service.stop()));
-  roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true }));
+  roots.splice(0).forEach((root) => {
+    if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith("multiagent-")) throw Error("Unexpected web test cleanup path");
+    fs.rmSync(root, { recursive: true, maxRetries: 5, retryDelay: 100 });
+  });
 });
 
 describe("Electron dashboard server", () => {
@@ -226,7 +229,7 @@ describe("Electron dashboard server", () => {
     expect(pageBody).toContain("/pwa/terminal-touch.js");
     expect(pageBody).toContain('id="attachmentButton"');
     expect(pageBody).toContain('id="attachmentInput"');
-    expect(pageBody).toContain('aria-label="이미지 첨부, 붙여넣기 또는 드래그 앤 드롭"');
+    expect(pageBody).toContain('aria-label="이미지 또는 ZIP 첨부, 붙여넣기 또는 드래그 앤 드롭"');
     expect(pageBody).toContain('id="filePreviewOverlay"');
     expect(pageBody).toContain('id="filePreviewMarkdown"');
     expect(pageBody).not.toContain('id="filePreviewHtml"');
@@ -309,7 +312,7 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain('fetch("/api/attachment"');
     expect(appScriptBody).toContain("refreshPending");
     expect(appScriptBody).toContain("usageRefreshPollTimer");
-    expect(appScriptBody).toContain("function clipboardImageFiles(event)");
+    expect(appScriptBody).toContain("function clipboardAttachmentFiles(event)");
     expect(appScriptBody).toContain("function handleComposerImagePaste(event)");
     expect(appScriptBody).toContain('addEventListener("paste", handleComposerImagePaste)');
     expect(appScriptBody).toContain('addAttachments(files, { source: "clipboard" })');
@@ -396,10 +399,10 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v92');
+    expect(workerBody).toContain('multiagent-remote-v93');
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
-    for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "session-model.js", "session-state.js"]) {
+    for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "attachments.js", "session-model.js", "session-state.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
       expect(module.status).toBe(200);
       expect(module.headers.get("content-type")).toContain("javascript");
@@ -1301,6 +1304,63 @@ describe("Electron dashboard server", () => {
     expect(spoofed.status).toBe(415);
     expect(blocked.status).toBe(403);
   });
+
+  it.each(["Remote", "Dashboard"])("%s transfers ZIP bytes, accepts browser MIME variants and enforces attachment boundaries", async (kind) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-zip-attachment-"));
+    roots.push(root);
+    const submissions = [];
+    const submitPty = async (id, message) => { submissions.push({ id, message }); return true; };
+    const service = kind === "Remote"
+      ? new RemoteDashboardService({ baseDir: root, stateProvider: () => ({}), submitPty })
+      : new LocalDashboardService({ baseDir: root, defaultPort: 0, configName: "zip-test.json", providers: { submitPty } });
+    if (kind === "Remote") { service.config.server_port = 0; service.config.owner = "zip-fixture-owner"; }
+    services.push(service);
+    const { url } = await service.start();
+    const remoteHeaders = kind === "Remote" ? { "cf-connecting-ip": "203.0.113.10", cookie: `multiagent_remote=${service.sign("zip-fixture-owner")}` } : {};
+    const post = (route, body, origin = url) => fetch(url + route, { method: "POST",
+      headers: { "content-type": "application/json", origin, ...remoteHeaders }, body: JSON.stringify(body) });
+    const zip = Buffer.alloc(22); zip.writeUInt32LE(0x06054b50);
+    const body = { id: "agent-1", name: "자료 묶음.ZIP", type: "application/zip",
+      data: `data:application/zip;base64,${zip.toString("base64")}` };
+    if (kind === "Remote") {
+      const unauthorized = await fetch(url + "/api/attachment", { method: "POST",
+        headers: { "content-type": "application/json", origin: url, "cf-connecting-ip": "203.0.113.10" }, body: JSON.stringify(body) });
+      expect(unauthorized.status).toBe(401);
+    }
+    const paths = [];
+    for (const type of ["application/zip", "application/x-zip-compressed", "application/x-zip", "application/octet-stream", ""]) {
+      const response = await post("/api/attachment", { ...body, type, data: `data:${type};base64,${zip.toString("base64")}` });
+      expect(response.status).toBe(201);
+      const uploaded = await response.json();
+      expect(uploaded).toMatchObject({ name: body.name, type: "application/zip", size: zip.length });
+      expect(path.dirname(uploaded.path)).toBe(path.join(root, "remote-attachments"));
+      expect(path.extname(uploaded.path)).toBe(".zip");
+      expect(fs.readFileSync(uploaded.path)).toEqual(zip);
+      paths.push(uploaded.path);
+    }
+    expect(new Set(paths).size).toBe(5);
+    const modules = await fetch(url + "/pwa/attachments.js");
+    expect(modules.status).toBe(200);
+    expect(modules.headers.get("content-type")).toContain("javascript");
+    for (const bad of [Buffer.from("not a ZIP"), zip.subarray(0, 4), Buffer.from("89504e470d0a1a0a", "hex")]) {
+      expect((await post("/api/attachment", { ...body, data: `data:application/zip;base64,${bad.toString("base64")}` })).status).toBe(415);
+    }
+    expect((await post("/api/attachment", { ...body, name: "payload.exe", type: "application/octet-stream",
+      data: `data:application/octet-stream;base64,${Buffer.from("MZ executable").toString("base64")}` })).status).toBe(415);
+    expect((await post("/api/attachment", body, "https://attacker.invalid")).status).toBe(403);
+    expect((await post("/api/attachment", null)).status).toBe(400);
+    const image = Buffer.alloc(8 * 1024 * 1024 + 1); Buffer.from("89504e470d0a1a0a", "hex").copy(image);
+    expect((await post("/api/attachment", { ...body, name: "large.png", type: "image/png",
+      data: `data:image/png;base64,${image.toString("base64")}` })).status).toBe(413);
+    const oversized = Buffer.alloc(32 * 1024 * 1024 + 1); zip.copy(oversized);
+    expect((await post("/api/attachment", { ...body, data: `data:application/zip;base64,${oversized.toString("base64")}` })).status).toBe(413);
+    expect(fs.readdirSync(path.join(root, "remote-attachments"))).toHaveLength(5);
+    const message = `첨부 파일:\n"${paths[0]}"`;
+    const request = { id: body.id, requestId: `${Date.now()}-0123456789abcdef`, message };
+    expect((await post("/api/session/submit", request)).status).toBe(200);
+    expect((await post("/api/session/submit", request)).status).toBe(200);
+    expect(submissions).toEqual([{ id: body.id, message }]);
+  }, 30000);
 
   it("serves the full Remote PWA + chat/input from the local Dashboard when providers are given", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-dash-pwa-"));

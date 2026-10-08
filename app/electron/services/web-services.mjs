@@ -2,6 +2,7 @@ import { RemoteHosting } from './remote-hosting.mjs';
 import { assertTunnelConfigured } from "../shared/tunnel-config.mjs";
 import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
+import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes } from "../shared/remote-attachments.mjs";
 import { sendJson } from "./remote-http.mjs";
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
 import crypto from "node:crypto";
@@ -92,8 +93,7 @@ function remoteMobileSessionSnapshot(agentsValue, viewValue) {
     }),
   };
 }
-const MAX_REMOTE_ATTACHMENT_BYTES = 8 * 1024 * 1024;
-const MAX_REMOTE_ATTACHMENT_REQUEST_BYTES = 12 * 1024 * 1024;
+const MAX_REMOTE_ATTACHMENT_REQUEST_BYTES = Math.ceil(MAX_REMOTE_ZIP_BYTES / 3) * 4 + 16 * 1024;
 const REMOTE_SESSION_TOOLS = new Map([
   ["claude", { id: "claude", label: "Claude Code", supportsDangerous: true }],
   ["codex", { id: "codex", label: "Codex", supportsDangerous: true }],
@@ -111,6 +111,9 @@ const REMOTE_ATTACHMENT_TYPES = new Map([
   ["image/gif", { extension: ".gif", signature: (buffer) => ["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii")) }],
   ["image/webp", { extension: ".webp", signature: (buffer) => buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP" }],
   ["image/bmp", { extension: ".bmp", signature: (buffer) => buffer.subarray(0, 2).toString("ascii") === "BM" }],
+  ["application/zip", { extension: ".zip", signature: (buffer) =>
+    (buffer.length >= 30 && buffer.readUInt32LE(0) === 0x04034b50)
+    || (buffer.length >= 22 && buffer.readUInt32LE(0) === 0x06054b50) }],
 ]);
 const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/dom.js", { file: "dom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -128,6 +131,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/usage-sessions.js", { file: "usage-sessions.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-state.js", { file: "../shared/session-state.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/attachments.js", { file: "../shared/remote-attachments.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/lan-login", { file: "lan-login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -604,34 +608,41 @@ async function saveRemoteAttachment(request, baseDir) {
     body = await readJson(request, MAX_REMOTE_ATTACHMENT_REQUEST_BYTES);
   } catch (error) {
     if (error?.message === "request too large") {
-      throw new RemoteDocumentError(413, "이미지는 8MB 이하여야 합니다.");
+      throw new RemoteDocumentError(413, "첨부 요청이 너무 큽니다. 이미지는 8MB, ZIP은 32MB 이하여야 합니다.");
     }
-    throw new RemoteDocumentError(400, "올바른 이미지 요청이 아닙니다.");
+    throw new RemoteDocumentError(400, "올바른 첨부 파일 요청이 아닙니다.");
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new RemoteDocumentError(400, "올바른 첨부 파일 요청이 아닙니다.");
   }
   const id = String(body.id || "").trim();
-  const declaredType = String(body.type || "").trim().toLowerCase();
-  const match = String(body.data || "").match(/^data:([^;,]+);base64,([a-z0-9+/]+={0,2})$/i);
-  const mime = String(match?.[1] || "").toLowerCase();
+  const name = String(body.name || "").trim();
+  const declaredType = remoteAttachmentType({ name, type: body.type });
+  const match = String(body.data || "").match(/^data:([^;,]*);base64,([a-z0-9+/]+={0,2})$/i);
+  const mime = match ? remoteAttachmentType({ name, type: match[1] }) : "";
   const encoded = match?.[2] || "";
-  const imageType = REMOTE_ATTACHMENT_TYPES.get(mime);
-  if (!id || !imageType || declaredType !== mime || encoded.length % 4 !== 0) {
-    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지만 첨부할 수 있습니다.");
+  const attachmentType = REMOTE_ATTACHMENT_TYPES.get(mime);
+  if (!id || !attachmentType || declaredType !== mime || encoded.length % 4 !== 0) {
+    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지 또는 ZIP 파일만 첨부할 수 있습니다.");
   }
+  const maxBytes = remoteAttachmentMaxBytes(mime);
+  const sizeError = mime === "application/zip" ? "ZIP 파일은 32MB 이하여야 합니다." : "이미지는 8MB 이하여야 합니다.";
+  if (encoded.length > Math.ceil(maxBytes / 3) * 4) throw new RemoteDocumentError(413, sizeError);
   const content = Buffer.from(encoded, "base64");
-  if (!content.length || content.length > MAX_REMOTE_ATTACHMENT_BYTES) {
-    throw new RemoteDocumentError(413, "이미지는 8MB 이하여야 합니다.");
+  if (!content.length || content.length > maxBytes) {
+    throw new RemoteDocumentError(413, sizeError);
   }
-  if (!imageType.signature(content)) {
-    throw new RemoteDocumentError(415, "파일 내용이 선택한 이미지 형식과 일치하지 않습니다.");
+  if (!attachmentType.signature(content)) {
+    throw new RemoteDocumentError(415, "파일 내용이 선택한 형식과 일치하지 않습니다.");
   }
   const directory = path.join(baseDir, "remote-attachments");
   await fsPromises.mkdir(directory, { recursive: true });
-  const storedName = `${Date.now()}-${crypto.randomUUID()}${imageType.extension}`;
+  const storedName = `${Date.now()}-${crypto.randomUUID()}${attachmentType.extension}`;
   const storedPath = path.join(directory, storedName);
   await fsPromises.writeFile(storedPath, content, { flag: "wx" });
   return {
     path: storedPath,
-    name: path.basename(String(body.name || "").trim()).slice(0, 160) || storedName,
+    name: path.basename(name).slice(0, 160) || storedName,
     type: mime,
     size: content.length,
   };
@@ -639,7 +650,7 @@ async function saveRemoteAttachment(request, baseDir) {
 
 function sendRemoteAttachmentError(response, error) {
   const status = Number.isInteger(error?.status) ? error.status : 500;
-  sendJson(response, status, { error: error?.message || "이미지를 첨부하지 못했습니다." });
+  sendJson(response, status, { error: error?.message || "파일을 첨부하지 못했습니다." });
 }
 
 async function respondToSessionRestart(response, restartSession, id) {

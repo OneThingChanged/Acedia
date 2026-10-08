@@ -16,10 +16,15 @@ async function exercise() {
   const stored = id => JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(agent => agent.id === id);
   for (let attempt = 0; attempt < 40 && !document.querySelector('.sidebar-workspace'); attempt++) await wait();
   await wait();
-  const rows = () => document.querySelectorAll('[data-sidebar-agent-id]').length;
+  const rows = () => document.querySelectorAll('.sidebar-recents [data-sidebar-agent-id]').length;
+  const projectSelector = id => `[data-sidebar-project-id="${id}"]`;
+  const projectButton = id => `${projectSelector(id)} .project-item`;
+  const projectRows = id => [...document.querySelectorAll(`${projectSelector(id)} .project-session-list [data-sidebar-agent-id]`)];
+  const expanded = id => find(projectButton(id)).getAttribute('aria-expanded') === 'true';
   check(find('.sidebar-brand-icon').naturalWidth > 0, 'Acedia icon did not load');
   check(!document.querySelector('.topbar-logo, .app-topbar [aria-label="Toggle left sidebar"]'), 'Duplicate titlebar branding or sidebar toggle');
   check(rows() === 5 && !document.querySelector('[data-sidebar-agent-id="archived"]'), 'Archive projection');
+  check(!document.querySelector('.project-session-list'), 'Projects should start folded');
   const row = find('[data-sidebar-agent-id="ux"]');
   check(getComputedStyle(row).flexDirection === 'row' && row.getBoundingClientRect().height < 65, 'Conversation row layout');
   check(!document.querySelector('.sidebar-routing, .sidebar-account'), 'Removed account footer still visible');
@@ -34,8 +39,25 @@ async function exercise() {
   check(restore, 'Archived conversation unavailable'); restore.querySelector('button').click(); await wait();
   check(rows() === 5 && !stored('image').sidebarArchived, 'Restore not saved');
   find('.sidebar-archive-dialog header button').click(); await wait();
-  const project = [...document.querySelectorAll('.sidebar-project-navigation .project-item')].find(element => element.textContent.includes('ToonShader'));
-  project.click(); await wait(); check(rows() === 1, 'Project scope');
+  await click(projectButton('toon')); check(rows() === 1, 'Project scope');
+  check(expanded('toon') && projectRows('toon').map(row => row.dataset.sidebarAgentId).join() === 'shader', 'Project did not reveal its sessions');
+  await click(projectButton('toon'));
+  check(!expanded('toon') && projectRows('toon').length === 0 && rows() === 1, 'Folding changed scope or reopened selected project');
+  check(JSON.parse(localStorage.getItem('multiagent.sidebarExpandedProjects.v1')).length === 0, 'Fold state not saved');
+  await click(projectButton('toon'));
+  await click(`${projectSelector('toon')} .sidebar-row-menu`);
+  check(expanded('toon') && document.querySelector('.ctx-menu'), 'Project menu toggled fold state');
+  window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); await wait();
+  await click(`${projectSelector('toon')} .sidebar-project-new-session`);
+  check(document.querySelector('.new-session-modal, .modal') && expanded('toon'), 'Project new conversation action');
+  const projectCancel = [...document.querySelectorAll('.modal button')].find(button => ['취소', 'Cancel'].includes(button.textContent.trim()));
+  check(projectCancel, 'Project new conversation cancel'); projectCancel.click(); await wait();
+  await click(projectButton('acedia'));
+  check(expanded('toon') && expanded('acedia') && projectRows('acedia').length === 3 && rows() === 3, 'Independent project folds');
+  const nested = projectRows('acedia')[0];
+  check(nested.dataset.sidebarAgentId === 'ux' && nested.getAttribute('aria-current') === 'page', 'Nested conversation order or active state');
+  check(nested.getBoundingClientRect().height <= 34 && !nested.querySelector('.sidebar-session-meta'), 'Nested rows are not compact');
+  await click(projectButton('acedia')); check(!expanded('acedia') && expanded('toon'), 'Closing one project folded another');
   await click('.sidebar-primary-nav > button'); check(rows() === 5, 'All conversations');
   const setInput = (selector, value) => { const input = find(selector); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
   await click('.sidebar-search-button'); check(document.querySelector('.quick-open'), 'Sidebar search did not open Quick Open');
@@ -73,6 +95,19 @@ async function exercise() {
   check(find('.app').classList.contains('app-theme-light'), 'Theme application');
   find('.app-settings-back').click(); await wait();
   check(window.layoutCalls.filter(call => ['spawn_pty', 'kill_pty'].includes(call.command)).length === beforeRuntime, 'Settings changed runtime');
+  await click(projectButton('acedia'));
+  await click('.sidebar-primary-nav > button');
+  check(expanded('acedia') && expanded('toon'), 'All conversations changed fold state');
+  find(`${projectSelector('toon')} [data-sidebar-agent-id="shader"]`).dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); await wait();
+  check(find(`${projectSelector('toon')} [data-sidebar-agent-id="shader"]`).getAttribute('aria-current') === 'page', 'Nested keyboard selection did not open conversation');
+  const pointerRow = find(`${projectSelector('acedia')} [data-sidebar-agent-id="ux"]`);
+  pointerRow.dispatchEvent(new PointerEvent('pointerdown', {pointerId: 7, button: 0, bubbles: true, clientX: 45, clientY: 45}));
+  pointerRow.dispatchEvent(new PointerEvent('pointerup', {pointerId: 7, button: 0, bubbles: true, clientX: 45, clientY: 45})); await wait();
+  check(find(`${projectSelector('acedia')} [data-sidebar-agent-id="ux"]`).getAttribute('aria-current') === 'page', 'Nested pointer selection did not open conversation');
+  check(expanded('acedia') && expanded('toon'), 'Selecting a session changed project folds');
+  check(['ux', 'shader'].every(id => stored(id).status !== 'exited'), 'Fixture failed to attach selected session');
+  check(window.layoutCalls.filter(call => call.command === 'spawn_pty').every(call => ['ux', 'shader'].includes(call.args.id)), 'Selecting a session activated another conversation');
+  check(!window.layoutCalls.some(call => call.command === 'kill_pty'), 'Session selection stopped another process');
   return 'SIDEBAR_REAL_APP_INTERACTIONS_OK';
 }
 
@@ -94,7 +129,11 @@ if (process.versions.electron) {
     await new Promise(resolve => setTimeout(resolve, 500));
     console.log(await win.webContents.executeJavaScript(`(() => {
       const saved = JSON.parse(localStorage.getItem('multiagent.agents.v1'));
-      if (!saved.find(agent => agent.id === 'image').sidebarPinned || document.querySelectorAll('[data-sidebar-agent-id]').length !== 5) throw Error('Sidebar data lost on reload');
+      if (!saved.find(agent => agent.id === 'image').sidebarPinned || document.querySelectorAll('.sidebar-recents [data-sidebar-agent-id]').length !== 5) throw Error('Sidebar data lost on reload');
+      const folded = JSON.parse(localStorage.getItem('multiagent.sidebarExpandedProjects.v1'));
+      if (!['acedia', 'toon'].every(id => folded.includes(id) && document.querySelector('[data-sidebar-project-id="'+id+'"] .project-item').getAttribute('aria-expanded') === 'true')) throw Error('Project fold state lost on reload');
+      if (document.querySelector('[data-sidebar-project-id="assets"] .project-item').getAttribute('aria-expanded') !== 'false') throw Error('Collapsed project reopened on reload');
+      if (document.querySelector('[data-sidebar-agent-id="archived"]')) throw Error('Archive leaked into nested sessions');
       if (document.querySelector('.screen-groups')) throw Error('Unsplit lost on reload');
       return 'SIDEBAR_RELOAD_OK';
     })()`));

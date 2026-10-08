@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { toolForId } from "../types";
 import type {
@@ -23,8 +24,11 @@ import { isAgentRuntimeActive } from "../lib/agentActivity";
 import { isStandbySession } from "../lib/sessionStandby";
 import { loadSshHosts, sshHostSummary } from "../lib/sshHosts";
 import { useAppLanguage } from "../lib/appLanguage";
+import { recentSidebarSessions } from "../lib/sidebarNavigation";
+import { SidebarIcon } from "./SidebarIcon";
 
 const LS_EXPANDED_PROJECTS = "multiagent.expandedProjects.v1";
+const LS_NAVIGATION_EXPANDED_PROJECTS = "multiagent.sidebarExpandedProjects.v1";
 const LS_COLLAPSED_MACHINES = "multiagent.collapsedMachines.v1";
 const LS_COLLAPSED_PROJECT_FOLDERS =
   "multiagent.collapsedProjectFolders.v1";
@@ -116,16 +120,16 @@ type PendingSessionClick = {
   dragging: boolean;
 };
 
-function loadExpandedProjects(projects: Project[]) {
+function loadExpandedProjects(projects: Project[], navigationOnly: boolean) {
   try {
-    const raw = localStorage.getItem(LS_EXPANDED_PROJECTS);
+    const raw = localStorage.getItem(navigationOnly ? LS_NAVIGATION_EXPANDED_PROJECTS : LS_EXPANDED_PROJECTS);
     if (raw) {
       const saved = JSON.parse(raw) as string[];
       return new Set(saved.filter((id) => projects.some((p) => p.id === id)));
     }
   } catch {}
 
-  return new Set(projects.map((project) => project.id));
+  return new Set(navigationOnly ? [] : projects.map((project) => project.id));
 }
 
 export function SidebarProjectTree({
@@ -166,6 +170,7 @@ export function SidebarProjectTree({
   navigationOnly = false,
   navigationSearch = "",
   navigationFilter = "all",
+  renderProjectSession,
 }: {
   projects: Project[];
   projectFolders: ProjectFolder[];
@@ -217,12 +222,13 @@ export function SidebarProjectTree({
   navigationOnly?: boolean;
   navigationSearch?: string;
   navigationFilter?: SessionFilter;
+  renderProjectSession?: (agent: Agent) => ReactNode;
 }) {
   const { text } = useAppLanguage();
   const localizedDetachedLabel =
     detachedLabel === "다른 창" ? text("다른 창", "Other window") : detachedLabel;
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
-    () => loadExpandedProjects(projects)
+    () => loadExpandedProjects(projects, navigationOnly)
   );
   const [projectDropTarget, setProjectDropTarget] = useState<{
     id: string;
@@ -249,19 +255,20 @@ export function SidebarProjectTree({
       const next = new Set(
         Array.from(current).filter((id) => validProjectIds.has(id))
       );
-      if (activeProjectId) next.add(activeProjectId);
+      if (!navigationOnly && activeProjectId) next.add(activeProjectId);
+      if (next.size === current.size && [...next].every(id => current.has(id))) return current;
       return next;
     });
-  }, [activeProjectId, projects]);
+  }, [activeProjectId, projects, navigationOnly]);
 
   useEffect(() => {
     try {
       localStorage.setItem(
-        LS_EXPANDED_PROJECTS,
+        navigationOnly ? LS_NAVIGATION_EXPANDED_PROJECTS : LS_EXPANDED_PROJECTS,
         JSON.stringify(Array.from(expandedProjectIds))
       );
     } catch {}
-  }, [expandedProjectIds]);
+  }, [expandedProjectIds, navigationOnly]);
 
   // Machines are expanded by default; we persist the set of *collapsed* ids so
   // a newly-appearing machine starts expanded without needing its id upfront.
@@ -407,6 +414,17 @@ export function SidebarProjectTree({
       const seen = new Set<string>();
       const sections: Section[] = [];
 
+      if (navigationOnly) {
+        sections.push({
+          groupId: `${project.id}__navigation__`,
+          multi: false,
+          sessionLocked: false,
+          members: recentSidebarSessions(projectAgents, projects, projectFolders, { projectId: project.id, filter: "all", query: "" }),
+        });
+        result.set(project.id, sections);
+        continue;
+      }
+
       for (const group of groups) {
         const ids = collectAgentIdsInOrder(group.layout);
         const members: Agent[] = [];
@@ -441,7 +459,7 @@ export function SidebarProjectTree({
     }
 
     return result;
-  }, [agents, groups, projects]);
+  }, [agents, groups, projects, projectFolders, navigationOnly]);
 
   const searchTerm = normalizeSessionSearch(searchQuery);
 
@@ -495,8 +513,13 @@ export function SidebarProjectTree({
   // active (so the + button targets it / Docs scans its folder). It does NOT open
   // a session anymore — sessions open only when a session row is clicked.
   const selectProject = (projectId: string) => {
-    if (!navigationOnly) toggleProjectExpanded(projectId);
+    toggleProjectExpanded(projectId);
     onSelectProject(projectId);
+  };
+
+  const startProjectSession = (projectId: string) => {
+    setExpandedProjectIds(current => new Set([...current, projectId]));
+    onNewSessionForProject(projectId);
   };
 
   // Group projects by machine: local (no sshHostId) + one group per SSH host.
@@ -795,6 +818,7 @@ export function SidebarProjectTree({
     return (
       <div
         key={project.id}
+        data-sidebar-project-id={project.id}
         className={[
           "project-node",
           project.id === activeProjectId ? "project-node-active" : "",
@@ -887,13 +911,16 @@ export function SidebarProjectTree({
           <button
             className="project-item project-tree-project"
             onClick={() => selectProject(project.id)}
+            aria-expanded={expanded}
+            aria-controls={`sidebar-project-sessions-${project.id}`}
+            aria-label={text(`${project.name} 대화 목록 ${expanded ? "접기" : "펼치기"}`, `${expanded ? "Collapse" : "Expand"} ${project.name} conversations`)}
             title={`${project.name}\n${
               project.sshHostId
                 ? `SSH: ${project.remoteFolder || "(remote)"}`
                 : project.folder
             }`}
           >
-            {navigationOnly && <svg className="sidebar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>}
+            {navigationOnly && <span className="sidebar-project-toggle-icon"><SidebarIcon name="folder" /><SidebarIcon name="chevron" /></span>}
             <span className="project-name">{project.name}</span>
             {project.sshHostId && (
               <span className="project-ssh-badge">SSH</span>
@@ -911,15 +938,15 @@ export function SidebarProjectTree({
               +
             </button>
           )}
-          {navigationOnly && <><span className="sidebar-project-count">{sessionCount}</span><button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${project.name} 프로젝트 메뉴`, `${project.name} project menu`)} title={text("프로젝트 메뉴", "Project menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onProjectContextMenu(project.id, rect.left, rect.bottom); }}>···</button></>}
+          {navigationOnly && <><span className="sidebar-project-count">{sessionCount}</span><button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${project.name} 프로젝트 메뉴`, `${project.name} project menu`)} title={text("프로젝트 메뉴", "Project menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onProjectContextMenu(project.id, rect.left, rect.bottom); }}>···</button><button className="sidebar-icon-button sidebar-project-new-session" aria-label={text(`${project.name}에 새 대화`, `New conversation in ${project.name}`)} title={text(`${project.name}에 새 대화`, `New conversation in ${project.name}`)} onClick={event => { event.stopPropagation(); startProjectSession(project.id); }}><SidebarIcon name="compose" /></button></>}
         </div>
-        {!navigationOnly && expanded && (
-          <ul className="project-session-list">
+        {expanded && (
+          <ul className="project-session-list" id={`sidebar-project-sessions-${project.id}`} aria-label={text(`${project.name} 대화`, `${project.name} conversations`)}>
             {sections.map((section, idx) => (
               <Fragment key={`${project.id}-${section.groupId}`}>
-                {idx > 0 && <li className="group-separator" />}
+                {!navigationOnly && idx > 0 && <li className="group-separator" />}
                 {section.members.map((agent) =>
-                  renderItem(
+                  navigationOnly && renderProjectSession ? renderProjectSession(agent) : renderItem(
                     agent,
                     section.groupId,
                     section.multi,
@@ -931,7 +958,7 @@ export function SidebarProjectTree({
             ))}
             {sessionCount === 0 && (
               <li className="empty-hint project-empty-hint">
-                {text("프로젝트 행의 + 버튼으로 세션을 시작하세요", "Use the + button on the project row to start a session")}
+                {navigationOnly ? <><span>{text("대화가 없습니다.", "No conversations yet.")}</span><button className="sidebar-project-empty-action" onClick={() => startProjectSession(project.id)}>{text("새 대화 시작", "Start a conversation")}</button></> : text("프로젝트 행의 + 버튼으로 세션을 시작하세요", "Use the + button on the project row to start a session")}
               </li>
             )}
           </ul>

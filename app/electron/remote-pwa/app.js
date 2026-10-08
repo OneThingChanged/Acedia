@@ -12,6 +12,7 @@ import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts } from "./session-state.js";
+import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage } from "./attachments.js";
 
 bindShellTranslations(document);
 
@@ -3468,15 +3469,13 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
   }
 }
 
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
-const MAX_ATTACHMENTS = 4;
-const ACCEPTED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"]);
 const ATTACHMENT_EXTENSIONS = new Map([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
   ["image/gif", "gif"],
   ["image/webp", "webp"],
   ["image/bmp", "bmp"],
+  ["application/zip", "zip"],
 ]);
 
 function currentAttachments() {
@@ -3509,12 +3508,12 @@ function updateComposerSendState() {
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
-    ? t("SSH 세션은 이미지 첨부를 지원하지 않습니다")
+    ? t("SSH 세션은 파일 첨부를 지원하지 않습니다")
     : inactiveTerminal
       ? initializingTerminal
         ? t("세션 초기화가 끝나면 첨부할 수 있습니다")
         : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : t("이미지 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
+    : t("이미지 또는 ZIP 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
 }
 
 function resizeComposerInput() {
@@ -3545,15 +3544,17 @@ function renderComposerAttachments() {
   ui.composerAttachments.hidden = attachments.length === 0;
   attachments.forEach((attachment) => {
     const item = make("div", `composer-attachment${attachment.error ? " error" : ""}`);
-    const image = document.createElement("img");
-    if (attachment.preview) image.src = attachment.preview;
-    else image.hidden = true;
-    image.alt = "";
+    const icon = attachment.type === "application/zip"
+      ? make("span", "composer-attachment-file", "ZIP") : document.createElement("img");
+    if (attachment.preview) { icon.src = attachment.preview; icon.alt = ""; }
+    else if (icon.tagName === "IMG") icon.hidden = true;
+    else icon.setAttribute("aria-hidden", "true");
     const meta = make("span", "composer-attachment-name", attachment.uploading
       ? t("{0} · 업로드 중", [attachment.name])
       : attachment.error
         ? t("{0} · 실패", [attachment.name])
         : attachment.name);
+    meta.title = attachment.error || attachment.name;
     const remove = make("button", "composer-attachment-remove", "×");
     remove.type = "button";
     remove.title = t("첨부 제거");
@@ -3562,35 +3563,35 @@ function renderComposerAttachments() {
       const draft = currentAttachments();
       const index = draft.findIndex((candidate) => candidate.token === attachment.token);
       if (index >= 0) {
-        URL.revokeObjectURL(draft[index].preview);
+        if (draft[index].preview) URL.revokeObjectURL(draft[index].preview);
         draft.splice(index, 1);
       }
       renderComposerAttachments();
     });
-    item.append(image, meta, remove);
+    item.append(icon, meta, remove);
     ui.composerAttachments.appendChild(item);
   });
   updateComposerSendState();
   restoreChatScroll(chatScroll);
 }
 
-function readFileDataUrl(file) {
+function readFileDataUrl(file, type = file.type) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(String(reader.result || "")));
     reader.addEventListener("error", () => reject(reader.error || new Error(t("파일을 읽지 못했습니다."))));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(file.type === type ? file : new Blob([file], { type }));
   });
 }
 
 async function uploadAttachment(agentId, attachment, file) {
   try {
-    const data = await readFileDataUrl(file);
+    const data = await readFileDataUrl(file, attachment.type);
     const response = await fetch("/api/attachment", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: agentId, name: attachment.name, type: file.type, data }),
+      body: JSON.stringify({ id: agentId, name: attachment.name, type: attachment.type, data }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
@@ -3599,7 +3600,7 @@ async function uploadAttachment(agentId, attachment, file) {
   } catch (error) {
     attachment.uploading = false;
     attachment.error = error.message || t("업로드하지 못했습니다.");
-    showToast(t("이미지 첨부 실패: {0}", [attachment.error]));
+    showToast(t("파일 첨부 실패: {0}", [t(attachment.error)]));
   }
   renderComposerAttachments();
 }
@@ -3607,10 +3608,11 @@ async function uploadAttachment(agentId, attachment, file) {
 function attachmentFileName(file, source, index) {
   const name = String(file?.name || "").trim();
   if (name) return name;
-  const extension = ATTACHMENT_EXTENSIONS.get(file?.type) || "png";
+  const extension = ATTACHMENT_EXTENSIONS.get(remoteAttachmentType(file)) || "png";
+  const kind = extension === "zip" ? "file" : "image";
   return source === "clipboard"
-    ? `clipboard-image-${Date.now()}-${index + 1}.${extension}`
-    : `image-${Date.now()}-${index + 1}.${extension}`;
+    ? `clipboard-${kind}-${Date.now()}-${index + 1}.${extension}`
+    : `${kind}-${Date.now()}-${index + 1}.${extension}`;
 }
 
 function addAttachments(files, { source = "picker" } = {}) {
@@ -3620,35 +3622,37 @@ function addAttachments(files, { source = "picker" } = {}) {
     return 0;
   }
   if (agent.sshHostId) {
-    showToast(t("SSH 세션에는 로컬 이미지를 첨부할 수 없습니다."));
+    showToast(t("SSH 세션에는 로컬 파일을 첨부할 수 없습니다."));
     return 0;
   }
   if (
     sessionViewMode === "term" &&
     ["offline", "recovering", "starting"].includes(statusOf(agent))
   ) {
-    showToast(t("세션이 활성화된 뒤 이미지를 첨부할 수 있습니다."));
+    showToast(t("세션이 활성화된 뒤 파일을 첨부할 수 있습니다."));
     return 0;
   }
   const draft = currentAttachments();
   let added = 0;
   for (const [index, file] of files.entries()) {
     if (draft.length >= MAX_ATTACHMENTS) {
-      showToast(t("이미지는 최대 {0}개까지 첨부할 수 있습니다.", [MAX_ATTACHMENTS]));
+      showToast(t("파일은 최대 {0}개까지 첨부할 수 있습니다.", [MAX_ATTACHMENTS]));
       break;
     }
-    if (!ACCEPTED_ATTACHMENT_TYPES.has(file.type)) {
-      showToast(t("{0}: 지원하지 않는 이미지 형식입니다.", [file.name]));
+    const type = remoteAttachmentType(file);
+    if (!type) {
+      showToast(t("{0}: 이미지 또는 ZIP 파일만 첨부할 수 있습니다.", [file.name]));
       continue;
     }
-    if (!file.size || file.size > MAX_ATTACHMENT_BYTES) {
-      showToast(t("{0}: 이미지는 8MB 이하여야 합니다.", [file.name]));
+    if (!file.size || file.size > remoteAttachmentMaxBytes(type)) {
+      showToast(t(type === "application/zip" ? "{0}: ZIP 파일은 32MB 이하여야 합니다." : "{0}: 이미지는 8MB 이하여야 합니다.", [file.name]));
       continue;
     }
     const attachment = {
       token: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
       name: attachmentFileName(file, source, index),
-      preview: URL.createObjectURL(file),
+      type,
+      preview: type.startsWith("image/") ? URL.createObjectURL(file) : "",
       path: "",
       uploading: true,
       error: "",
@@ -3661,24 +3665,24 @@ function addAttachments(files, { source = "picker" } = {}) {
   return added;
 }
 
-function clipboardImageFiles(event) {
+function clipboardAttachmentFiles(event) {
   const clipboard = event.clipboardData;
   if (!clipboard) return [];
   const itemFiles = Array.from(clipboard.items || [])
     .filter((item) => item.kind === "file")
     .map((item) => item.getAsFile())
-    .filter((file) => file && ACCEPTED_ATTACHMENT_TYPES.has(file.type));
+    .filter((file) => file && remoteAttachmentType(file));
   if (itemFiles.length) return itemFiles;
   return Array.from(clipboard.files || [])
-    .filter((file) => ACCEPTED_ATTACHMENT_TYPES.has(file.type));
+    .filter((file) => remoteAttachmentType(file));
 }
 
 function handleComposerImagePaste(event) {
-  const files = clipboardImageFiles(event);
+  const files = clipboardAttachmentFiles(event);
   if (!files.length) return;
   event.preventDefault();
   const added = addAttachments(files, { source: "clipboard" });
-  if (added > 0) showToast(t("클립보드 이미지 {0}개를 첨부했습니다.", [added]));
+  if (added > 0) showToast(t("클립보드 파일 {0}개를 첨부했습니다.", [added]));
 }
 
 function hasDraggedFiles(event) {
@@ -3713,14 +3717,7 @@ function handleComposerImageDrop(event) {
   event.stopPropagation();
   clearComposerDragState();
   const added = addAttachments(files, { source: "drop" });
-  if (added > 0) showToast(t("드롭한 이미지 {0}개를 첨부했습니다.", [added]));
-}
-
-function attachmentMessage(message, attachments) {
-  const paths = attachments
-    .filter((attachment) => attachment.path && !attachment.error)
-    .map((attachment) => `"${String(attachment.path).replaceAll('"', '\\"')}"`);
-  return [message, paths.length ? `첨부 이미지:\n${paths.join("\n")}` : ""].filter(Boolean).join("\n\n");
+  if (added > 0) showToast(t("드롭한 파일 {0}개를 첨부했습니다.", [added]));
 }
 
 async function sendRaw(agentId, data) {
@@ -3821,7 +3818,7 @@ function clearAcceptedComposer(agentId, snapshot) {
   }
   const attachments = attachmentDrafts.get(agentId) || [];
   const accepted = snapshot ? snapshot.attachments : attachments;
-  accepted.forEach((attachment) => URL.revokeObjectURL(attachment.preview));
+  accepted.forEach((attachment) => { if (attachment.preview) URL.revokeObjectURL(attachment.preview); });
   attachmentDrafts.set(agentId, attachments.filter(attachment => !accepted.includes(attachment)));
   if (selectedAgent()?.id === agentId) renderComposerAttachments();
   restoreChatScroll(chatScroll);
@@ -3989,7 +3986,7 @@ async function sendSelectedMessage() {
   const message = ui.messageInput.value.trim();
   const attachments = currentAttachments();
   if (!agent || sendingAgents.has(agent.id) || attachments.some((attachment) => attachment.uploading)) return;
-  const outgoing = attachmentMessage(message, attachments);
+  const outgoing = remoteAttachmentMessage(message, attachments);
   if (!outgoing) return;
   const snapshot = { revision: composerRevisions.get(agent.id) || 0, draft: ui.messageInput.value, attachments: attachments.slice() };
   const previous = pendingSubmissions.get(agent.id);

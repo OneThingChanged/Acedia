@@ -20,6 +20,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.65 EXE release](release-1-8-1-65.md) - Fold project conversations inline with saved expansion and compact session selection; send ZIP attachments from Remote and Dashboard.
 * [Acedia 1.8.1.64 EXE release](release-1-8-1-64.md) - Correct Chat file links, inline image previews and visible work progress; repair Windows usage-client regression timing and verify public EXE delivery.
 * [Acedia 1.8.1.63 EXE release](release-1-8-1-63.md) - Modern sidebar and conversation layout, shared Quick Open and notifications, clipboard actions and visible Codex startup questions in Chat.
 * [Acedia 1.8.1.62 EXE release](release-1-8-1-62.md) - Stable LAN codes and client IPs, clear routing status, clickable file paths and desktop/Remote image viewing.
