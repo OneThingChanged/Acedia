@@ -60,7 +60,7 @@ export type RuntimeCommand =
   | "resolve_cli_session" | "resolve_cline_session" | "relink_cli_session" | "sync_remote_agents"
   | "sync_remote_view" | "sync_usage_catalog" | "sync_monitor_state"
   | "complete_remote_session_create" | "complete_remote_session_activation"
-  | "complete_remote_session_model" | "restart_session_model"
+  | "complete_remote_session_model" | "restart_session_model" | "get_session_model" | "set_session_model"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
   | "usage_profile_visibility_set"
@@ -250,6 +250,7 @@ export type ChatBlock = {
   output?: string;
   isError?: boolean;
   sequence?: number;
+  callId?: string;
 };
 
 export type ChatBlocksResult = {
@@ -276,6 +277,8 @@ export type ConversationArtifact = {
   path: string;
   size: number;
   modifiedAt: number | null;
+  sourceSequence?: number;
+  usage?: "output" | "reference";
 };
 
 export type ConversationStorageStatus = {
@@ -411,6 +414,14 @@ export type RuntimeCommandContract = {
   restart_session_model: {
     args: { id: string; expectedSessionId?: string };
     result: { sessionId: string | null; poolResumeOwnerId?: string };
+  };
+  get_session_model: {
+    args: { id: string };
+    result: import("../../electron/shared/session-model.mjs").SessionModelCatalog;
+  };
+  set_session_model: {
+    args: { id: string; settings: import("../../electron/shared/session-model.mjs").SessionModel; restart: true };
+    result: { id: string; restarted: boolean };
   };
   document_browser_open: {
     args: {

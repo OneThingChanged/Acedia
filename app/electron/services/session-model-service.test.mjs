@@ -93,6 +93,21 @@ describe("session model controls", () => {
     await fs.writeFile(file, 'x'.repeat(600000) + '\n' + JSON.stringify({ type: "turn_context", payload: { model: "account-only", effort: "high" } }) + '\n{"partial":');
     expect(await lastTurnModel(file)).toEqual({ model: "account-only", effort: "high" });
   });
+  it.each(["codex", "claude"])("does not replace new launch settings with an older resumed turn (%s)", async provider => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-model-age-"));
+    resources.push(() => fs.rm(root, { recursive: true }));
+    const file = path.join(root, "turn.jsonl"), since = Date.parse("2026-10-08T08:00:00Z");
+    const row = (model, timestamp) => provider === "codex"
+      ? { type: "turn_context", timestamp, payload: { model, effort: "high" } }
+      : { type: "assistant", timestamp, message: { model }, effort: "high" };
+    await fs.writeFile(file, JSON.stringify(row("previous", "2026-10-08T07:00:00Z")) + "\n");
+    expect(await lastTurnModel(file, provider)).toEqual({ model: "previous", effort: "high" });
+    expect(await lastTurnModel(file, provider, since)).toBeNull();
+    await fs.appendFile(file, JSON.stringify(row("new-or-manually-changed", "2026-10-08T08:01:00Z")) + "\n");
+    expect(await lastTurnModel(file, provider, since)).toEqual({ model: "new-or-manually-changed", effort: "high" });
+    await fs.appendFile(file, JSON.stringify(row("undated", undefined)) + "\n");
+    expect(await lastTurnModel(file, provider, since)).toEqual({ model: "new-or-manually-changed", effort: "high" });
+  });
   it("acknowledges the matching renderer result, serializes updates, and rejects shutdown", async () => {
     const dispatch = vi.fn(() => true), broker = new RemoteSessionModelBroker({ dispatch });
     resources.push(() => broker.close());

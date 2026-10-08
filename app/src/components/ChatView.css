@@ -13,7 +13,7 @@
 .chat-view-modern .chat-user-images:empty { display: none; }
 .chat-view-modern .chat-user-images .chat-image-preview { flex: 0 1 auto; min-width: 0; }
 .chat-view-modern .chat-user-images:has(.chat-image-preview:nth-child(2)) .chat-image-preview { width: 220px; }
-.chat-view-modern .chat-user-images:has(.chat-image-preview:nth-child(2)) img { max-height: 160px; }
+.chat-view-modern .chat-user-images:has(.chat-image-preview:nth-child(2)) { --chat-image-max-height: 160px; }
 .chat-view-modern .chat-role { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; gap: 8px; }
 .chat-view-modern .chat-av { width: 23px; height: 23px; padding: 2px; background: var(--app-panel); border-radius: 6px; }
 .chat-view-modern .chat-av img { width: 19px; height: 19px; object-fit: contain; }
@@ -47,12 +47,12 @@
 .chat-view-modern .chat-codeblock > pre { margin: 0; border: 0; border-radius: 0; padding: 14px 16px; }
 .chat-view-modern .chat-empty { padding: 40px 0; }
 .chat-view-modern .chat-image-link { display: inline; }
-.chat-view-modern .chat-image-preview { display: block; width: fit-content; max-width: 100%; margin: 10px 0; }
-.chat-view-modern .chat-image-open { display: block; max-width: 100%; padding: 0; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-panel); cursor: zoom-in; overflow: hidden; }
+.chat-view-modern .chat-image-preview { display: block; width: min(600px, var(--chat-image-natural-width, 600px), calc(var(--chat-image-max-height, 360px) * var(--chat-image-ratio, 1.667))); max-width: min(100%, var(--chat-image-natural-width, 600px), calc(var(--chat-image-max-height, 360px) * var(--chat-image-ratio, 1.667))); margin: 10px 0; }
+.chat-view-modern .chat-image-open { display: block; width: 100%; max-width: 100%; padding: 0; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-panel); cursor: zoom-in; overflow: hidden; }
 .chat-view-modern .chat-image-open:hover { border-color: var(--app-accent); }
 .chat-view-modern .chat-image-open:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
-.chat-view-modern .chat-image-preview img { display: block; max-width: min(100%, 600px); max-height: 360px; width: auto; height: auto; object-fit: contain; border-radius: 9px; }
-.chat-view-modern .chat-user .chat-image-preview img { max-height: 260px; }
+.chat-view-modern .chat-image-preview img { display: block; max-width: 100%; width: 100%; height: auto; object-fit: contain; border-radius: 9px; }
+.chat-view-modern .chat-user { --chat-image-max-height: 260px; }
 .chat-view-modern .chat-image-placeholder { display: block; padding: 14px; min-height: 80px; color: var(--app-muted); font-size: 12px; }
 .chat-view-modern .chat-image-name { display: block; color: var(--app-muted); font-size: 11px; overflow-wrap: anywhere; }
 .chat-view-modern .chat-work-status { align-self: center; display: flex; align-items: center; gap: 9px; width: calc(100% - 64px); max-width: var(--chat-column-width); min-height: 42px; margin: 4px 0 0; padding: 8px 12px; border: 1px solid var(--app-border); border-radius: 9px; background: var(--app-panel); color: var(--app-muted); font-size: 11px; }

@@ -26,7 +26,7 @@ export async function verifyModelSessionStart({ id, settings, entryFor, hookFor,
 }
 
 // Read only a bounded transcript tail, never disclose conversation contents.
-export async function lastTurnModel(file, provider = "codex") {
+export async function lastTurnModel(file, provider = "codex", since) {
   if (!file) return null;
   let handle;
   try {
@@ -39,6 +39,7 @@ export async function lastTurnModel(file, provider = "codex") {
     for (let i = lines.length - 1; i >= (offset ? 1 : 0); i--) {
       try {
         const row = JSON.parse(lines[i]);
+        if (since != null && !(Date.parse(row.timestamp) >= since)) continue;
         if (provider === "claude" && row.type === "assistant") {
           const result = normalizeSessionModel({ model: row.message?.model, effort: row.effort ?? row.message?.effort });
           if (result) return result;

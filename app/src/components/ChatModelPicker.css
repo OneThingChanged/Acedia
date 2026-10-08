@@ -1,0 +1,44 @@
+.chat-view-modern .chat-model-picker { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.chat-view-modern .chat-model-trigger, .chat-view-modern .chat-effort-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 6px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--app-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.chat-view-modern .chat-model-trigger > span, .chat-view-modern .chat-effort-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-view-modern .chat-model-trigger { flex: 0 1 auto; max-width: 230px; }
+.chat-view-modern .chat-effort-trigger { flex-shrink: 0; max-width: 96px; background: var(--app-panel-hover); }
+.chat-view-modern .chat-model-trigger .chat-icon, .chat-view-modern .chat-effort-trigger .chat-icon { width: 11px; height: 11px; transform: rotate(90deg); }
+.chat-view-modern .chat-model-trigger:hover:not(:disabled), .chat-view-modern .chat-effort-trigger:hover:not(:disabled) { background: var(--app-panel-hover); color: var(--app-heading); }
+.chat-view-modern .chat-model-picker button:disabled { cursor: default; opacity: .55; }
+.chat-view-modern .chat-model-popover { position: absolute; z-index: 30; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--app-border); border-radius: 13px; background: var(--app-panel); color: var(--app-text); box-shadow: 0 8px 32px var(--app-shadow); font-size: 12px; }
+.chat-view-modern .chat-model-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; flex-shrink: 0; }
+.chat-view-modern .chat-model-head strong { font-size: 13px; font-weight: 600; color: var(--app-heading); }
+.chat-view-modern .chat-model-body { padding: 0 12px 12px; overflow: auto; min-height: 0; scrollbar-width: thin; }
+.chat-view-modern .chat-model-account { color: var(--app-muted); font-size: 10px; padding: 2px 1px 10px; overflow-wrap: anywhere; }
+.chat-view-modern .chat-model-options { display: flex; flex-direction: column; gap: 2px; max-height: 225px; overflow: auto; scrollbar-width: thin; }
+.chat-view-modern .chat-model-option, .chat-view-modern .chat-model-selected { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; color: var(--app-text); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.chat-view-modern .chat-model-option strong { font-size: 12px; font-weight: 500; }
+.chat-view-modern .chat-model-option small { display: block; color: var(--app-muted); font-size: 10px; margin-top: 3px; overflow-wrap: anywhere; }
+.chat-view-modern .chat-model-option > span, .chat-view-modern .chat-model-selected > span { min-width: 0; overflow-wrap: anywhere; }
+.chat-view-modern .chat-model-option:hover:not(:disabled), .chat-view-modern .chat-model-selected:hover:not(:disabled) { background: var(--app-panel-hover); }
+.chat-view-modern .chat-model-option[aria-checked="true"] { background: color-mix(in srgb, var(--app-accent) 12%, var(--app-panel)); border-color: color-mix(in srgb, var(--app-accent) 40%, var(--app-border)); }
+.chat-view-modern .chat-model-option[aria-checked="true"] .chat-icon { color: var(--app-accent); width: 15px; height: 15px; }
+.chat-view-modern .chat-model-selected { background: var(--app-input-bg); border-color: var(--app-border); }
+.chat-view-modern .chat-model-selected .chat-icon { width: 13px; height: 13px; }
+.chat-view-modern .chat-effort-field { min-width: 0; border: 0; margin: 13px 0 0; padding: 0; }
+.chat-view-modern .chat-effort-field legend { padding: 0; margin-bottom: 8px; color: var(--app-muted); font-size: 11px; }
+.chat-view-modern .chat-effort-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.chat-view-modern .chat-effort-options button { padding: 7px 4px; border: 1px solid var(--app-border); border-radius: 7px; color: var(--app-muted); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
+.chat-view-modern .chat-effort-options button[aria-checked="true"] { border-color: var(--app-accent); color: var(--app-heading); background: color-mix(in srgb, var(--app-accent) 14%, var(--app-panel)); }
+.chat-view-modern .chat-effort-options button:hover:not(:disabled) { color: var(--app-heading); background: var(--app-panel-hover); }
+.chat-view-modern .chat-effort-field > small { display: block; margin-top: 7px; color: var(--app-muted); font-size: 10px; }
+.chat-view-modern .chat-model-notice { margin: 10px 1px 0; line-height: 1.65; color: var(--app-muted); font-size: 11px; }
+.chat-view-modern .chat-model-error { margin-top: 10px; color: var(--app-danger); line-height: 1.6; overflow-wrap: anywhere; }
+.chat-view-modern .chat-model-error button { display: block; margin-top: 6px; border: 0; padding: 4px 0; color: var(--app-accent); background: none; font: inherit; cursor: pointer; }
+.chat-view-modern .chat-model-footer { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--app-border); flex-shrink: 0; }
+.chat-view-modern .chat-model-footer button { padding: 7px 13px; border: 1px solid var(--app-border); border-radius: 7px; background: transparent; color: var(--app-text); font: inherit; font-size: 11px; cursor: pointer; }
+.chat-view-modern .chat-model-footer .chat-model-apply { background: var(--app-heading); color: var(--app-bg); border-color: var(--app-heading); }
+.chat-view-modern .chat-model-popover button:disabled { opacity: .4; cursor: default; }
+.chat-view-modern .chat-model-popover button:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; }
+@container (max-width: 400px) {
+  .chat-view-modern .chat-model-picker { gap: 2px; }
+  .chat-view-modern .chat-model-trigger, .chat-view-modern .chat-effort-trigger { padding-inline: 5px; font-size: 10px; }
+  .chat-view-modern .chat-composer-toolbar { gap: 3px; }
+  .chat-view-modern .chat-composer-controls { flex-shrink: 0; gap: 4px; }
+}

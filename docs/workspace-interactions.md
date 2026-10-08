@@ -67,6 +67,15 @@ sources:
   - id: chat-styles
     resource: ../app/src/components/ChatView.css
     title: "Readable conversation columns and responsive composer"
+  - id: chat-model-picker
+    resource: ../app/src/components/ChatModelPicker.tsx
+    title: "Chat model and reasoning-effort selection"
+  - id: chat-model-change
+    resource: ../app/src/lib/chatSessionModel.ts
+    title: "Per-session model application and send locking"
+  - id: chat-model-smoke
+    resource: ../app/scripts/electron-chat-model-smoke.mjs
+    title: "Native Chat picker and full workspace model application"
   - id: chat-markdown
     resource: ../app/src/components/ChatMarkdown.tsx
     title: "Chat file links and fenced code rendering"
@@ -76,6 +85,18 @@ sources:
   - id: chat-image
     resource: ../app/src/components/ChatImage.tsx
     title: "Inline image previews and attachment viewer"
+  - id: chat-files
+    resource: ../app/src/components/ChatFiles.tsx
+    title: "Response-specific file cards and searchable file dialog"
+  - id: chat-file-associations
+    resource: ../app/src/lib/chatFiles.ts
+    title: "Response ownership, file deduplication and history-page merging"
+  - id: chat-file-evidence
+    resource: ../app/electron/services/chat-files.mjs
+    title: "Referenced file paths and confirmed write-tool results"
+  - id: chat-files-smoke
+    resource: ../app/scripts/electron-chat-files-smoke.mjs
+    title: "Native image bounds and response file dialog verification"
   - id: chat-images
     resource: ../app/electron/services/chat-images.mjs
     title: "Bounded native transcript image extraction"
@@ -389,11 +410,11 @@ readiness before delivery.[^terminal-area]
 Chat history is loaded from a durable SQLite index keyed by MultiAgent agent,
 provider, and provider session ID. Recent blocks appear first, older blocks are
 paged on demand, and local composer text is recorded before PTY delivery then
-confirmed against the provider transcript without duplication. Referenced local
-files appear as session artifacts that can be opened from the chat view. The
+confirmed against the provider transcript without duplication. Local files are
+attached to the assistant response that created, modified or referenced them. The
 rendered thread keeps tool calls in transcript order, groups only adjacent tool
 work, labels assistant output by provider, and exposes a jump-to-latest control
-when the operator reads above newly arriving output.[^chat-view][^conversation-store]
+when the operator reads above newly arriving output.[^chat-view][^chat-files][^conversation-store]
 
 Desktop Chat centers the conversation and composer in a shared 760px reading
 column with a proportional UI font; code and tool output retain a monospace
@@ -405,6 +426,35 @@ copies assistant narrative only; code-block copy preserves the plain source
 without its language label or controls. Copy success and failure are announced
 on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
 
+Local Codex and Claude Chat composers show the current model and reasoning
+effort as separate buttons. Either opens a compact picker above the input;
+choose a model and one of its supported effort values, then select **Apply**.
+Changing the model retains a supported effort or uses the new model's default.
+Codex options come from that session's logged-in or routed account. Claude
+options come from installed CLI help, with availability checked by Claude at
+launch. Unsupported providers and SSH retain their provider label.
+[^chat-model-picker][^chat-model-smoke]
+
+Apply is available after work and questions finish, with no queued message
+waiting to send. The existing model service saves a session override, stops
+model inheritance for that session, and resumes the same conversation with the
+same account. Other sessions and provider defaults are unaffected. The host
+checks the replacement CLI's start hook before acknowledging success. Message
+send and queue draining are held during the change, including a terminal/chat
+toggle; draft text and attachments remain intact. Failure is visible in the
+picker. Auxiliary workspace windows can inspect the settings; changes use the
+main workspace. The local picker also works in Company without enabling Remote
+or Tunnel. A stopped session can also apply a different model and resume its
+existing conversation when the transcript is available. See
+[session model execution rules](agent-launch-options.md#실행-규칙).
+[^chat-model-change][^chat-model-smoke]
+
+After resuming with an explicit model, older transcript turns cannot overwrite
+the new launch label. A newer turn context can still reflect a model changed
+through the CLI. The picker supports Escape, focus return, keyboard option
+selection, outside dismissal, dark/light themes and narrow split panes.
+[^chat-model-picker][^chat-model-smoke]
+
 The user message's edit icon reuses its text in the composer for a new request;
 it preserves an existing draft and leaves stored conversation history intact.
 The assistant quote icon references selected text within that answer, or the
@@ -412,8 +462,26 @@ answer text when no selection belongs to it, capped at 2,000 characters. The
 composer shows a removable reference banner and retains it with the draft per
 session. An empty request cannot send a quote by itself. Sending a quoted
 request includes the reference as Markdown blockquote text. Conversation
-artifacts appear as visible filename/type/size cards after the thread and use
-the workspace opener for document or image previews.[^chat-view][^pane-slot]
+files appear below the assistant response that used them, with filename, type
+and size. Confirmed write/edit/patch or image-generation results are grouped as
+**Created or modified files**; existing paths read or mentioned in the response
+are **Related files**. A proposed or failed edit does not prove a saved result.
+Files whose creation cannot be confirmed remain related files. A later request
+does not repeat the previous answer's file cards. Cards use the workspace opener
+for document or image previews.[^chat-view][^chat-files][^chat-file-evidence][^pane-slot]
+
+Each answer shows up to three cards in total, prioritizing created/modified
+files. Four or more files add **View all N files**, opening a searchable dialog
+with paths, separate groups, scrolling and file preview actions. Esc or an
+outside click closes it; keyboard focus returns to the opener. Group counts and
+the dialog reflect all files detected for that response rather than the three
+inline cards. Loading older pages merges their file associations without
+replacing more recent answers. Existing stored history is read per page without
+reimporting transcripts, and no project-wide directory scan is performed.
+File-stat results are cached for five seconds. Paths are scoped to the owning
+agent/session; missing files are omitted. Markdown and file URLs decode once,
+while literal tool paths and code spans preserve percent characters.
+[^chat-files][^chat-file-associations][^chat-file-evidence][^conversation-store]
 
 Desktop Chat opens Markdown file links, inline-code paths and recognizable bare
 file paths through the workspace file opener. Windows `/G:/...` notation is
@@ -432,6 +500,20 @@ owning agent, source generation and block content; bitmap data is excluded from
 normal history polling. Each image is capped at 25 MB and source-record reads
 at 36 MB. Missing originals show an unavailable preview. Native user images
 remain user messages, including image-only turns.[^chat-view][^chat-image][^chat-images][^conversation-store]
+
+Preview width follows the image's natural dimensions and aspect ratio while
+respecting the available message width and height limit. The image, rounded
+frame and background share the same size. Wide and portrait images remain
+inside user bubbles and narrow panes. Sizing updates on image load and does not
+restart reads during history or work-state polling.[^chat-image][^chat-styles]
+
+The native file/image smoke checks frame bounds and preserved aspect ratios at
+1440/390/300px, dark/light themes, 150 files in the searchable dialog, the
+three-card threshold, file preview routing, focus/Esc, live list refresh,
+older-page merges, session isolation and loaded-image identity. Source validation
+passed all 1,214 tests in 180 files and the TypeScript/Vite build; the
+[2026-10-08 review](chat-ux-review-2026-10-08.md) records the evidence separately
+from published EXE releases.[^chat-files-smoke]
 
 Markdown renderer component types and transcript turn keys remain stable during
 status polling, new answer blocks and older-history prepends. A loaded image is
@@ -672,9 +754,16 @@ The domain invariants behind these interactions are documented in
 [^terminal-path-service]: Local filesystem and file URL resolution
 [^chat-view]: Persistent chat history and artifacts
 [^chat-styles]: Readable conversation columns and responsive composer
+[^chat-model-picker]: Chat model and reasoning-effort selection
+[^chat-model-change]: Per-session model application and send locking
+[^chat-model-smoke]: Native Chat picker and full workspace model application
 [^chat-markdown]: Chat file links and fenced code rendering
 [^chat-paths]: Normalized Chat links and pasted image paths
 [^chat-image]: Inline image previews and attachment viewer
+[^chat-files]: Response-specific file cards and searchable file dialog
+[^chat-file-associations]: Response ownership, file deduplication and history-page merging
+[^chat-file-evidence]: Referenced file paths and confirmed write-tool results
+[^chat-files-smoke]: Native image bounds and response file dialog verification
 [^chat-images]: Bounded native transcript image extraction
 [^chat-work-state]: Live Chat work and completion precedence
 [^chat-transcript]: Provider transcript lifecycle and timestamp extraction

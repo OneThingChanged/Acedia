@@ -368,7 +368,7 @@ async function exerciseConversationActions(win, directory) {
   const demo = { sessionId: 'fixture-session', tool: 'codex', lifecycle: 'idle', pendingQuestion: null, blocks: [
     { sequence: 71, role: 'user', kind: 'text', text: '원래 요청을 확인해줘.' },
     { sequence: 72, role: 'assistant', kind: 'text', text: '확인한 답변입니다.' },
-  ], artifacts: [{ kind: 'html', path: 'G:/Acedia/output/layout.html', size: 1024, modifiedAt: null }] };
+  ], artifacts: [{ kind: 'html', path: 'G:/Acedia/output/layout.html', size: 1024, modifiedAt: null, sourceSequence: 72, usage: 'output' }] };
   await win.loadFile(path.join(directory, 'index.html'));
   win.setContentSize(1280, 900);
   await patch({ chat: demo, state: { agentStatus: 'running', provider: 'codex', question: null, projectName: 'Acedia' } });

@@ -219,8 +219,6 @@ const COMPANY_DISABLED_COMMANDS = new Set([
   "remote_access_revoke",
   "complete_remote_session_create",
   "complete_remote_session_activation",
-  "complete_remote_session_model",
-  "restart_session_model",
 ]);
 const preloadContractArguments = [
   `--multiagent-invoke-commands=${ipcContract.INVOKE_COMMANDS.join(",")}`,
@@ -1065,7 +1063,10 @@ async function sessionModelCatalog(agent) {
   const sessionId = agentSessionIds.get(agent.id) || agent.lastSessionId;
   const transcript = agentTranscripts.get(agent.id) || resolveChatTranscriptBySession(provider, sessionId,
     { toolId: provider, accountId })?.path;
-  const current = await lastTurnModel(transcript, provider);
+  // A resumed transcript can still end with the old model. Explicit settings
+  // on the replacement CLI take precedence until it emits a new turn context.
+  const current = await lastTurnModel(transcript, provider,
+    normalizeSessionModel(live?.modelSettings) ? live.startedAt : undefined);
   // Include a model actually used by this Claude session (full IDs, 3P models)
   // in addition to the installed CLI's documented aliases.
   const models = provider === "claude" ? [...result.models] : result.models;
@@ -5761,6 +5762,21 @@ async function invokeCommand(event, command, rawArgs) {
         throw new Error("세션 활성화 결과는 coordinator 창에서만 전달할 수 있습니다.");
       }
       return remoteSessionActivationBroker.complete(args);
+    }
+    case "get_session_model": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (!runtime?.workspace_window) throw new Error("작업창에서 모델 설정을 확인하세요.");
+      const result = await sessionModels.read(args.id);
+      const owner = detachedAgents.get(args.id);
+      return { ...result, canEdit: event.sender.id === coordinatorWebContentsId
+        && (!owner || owner === event.sender.id) };
+    }
+    case "set_session_model": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      const owner = detachedAgents.get(args.id);
+      if (!runtime?.workspace_window || event.sender.id !== coordinatorWebContentsId
+        || (owner && owner !== event.sender.id)) throw new Error("기본 작업창에서 모델 설정을 변경하세요.");
+      return sessionModels.save(args);
     }
     case "complete_remote_session_model": {
       const runtime = runtimeByWebContents.get(event.sender.id);

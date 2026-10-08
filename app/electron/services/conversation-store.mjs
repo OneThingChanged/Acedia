@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseChatTranscript } from "./chat-transcript.mjs";
 import { transcriptImages } from "./chat-images.mjs";
+import { collectConversationFiles } from "./chat-files.mjs";
 
 const STORE_VERSION = 1;
 const CONFIG_VERSION = 1;
@@ -151,6 +152,7 @@ export class ConversationStore {
     this.databasePath = path.join(this.rootPath, DATABASE_NAME);
     this.database = null;
     this.ingestChains = new Map();
+    this.fileStats = new Map();
     fs.mkdirSync(this.rootPath, { recursive: true });
     this.writeMarker();
   }
@@ -513,7 +515,7 @@ export class ConversationStore {
   }
 
   listBlocks({ agentId, sessionId, provider, beforeSequence = null, limit = 400 }) {
-    const conversation = this.db().prepare(`SELECT id FROM conversations
+    const conversation = this.db().prepare(`SELECT id,project_path projectPath FROM conversations
       WHERE agent_id=? AND provider=? AND provider_session_id=?`).get(
       String(agentId || "").trim(),
       String(provider || "").trim().toLowerCase(),
@@ -542,15 +544,24 @@ export class ConversationStore {
     ));
     const total = Number(this.db().prepare(`SELECT COUNT(*) count FROM conversation_blocks
       WHERE conversation_id=?`).get(conversation.id)?.count) || 0;
-    const artifacts = this.db().prepare(`SELECT kind,path,size,modified_at modifiedAt
-      FROM conversation_artifacts WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 100`)
-      .all(conversation.id)
-      .map((row) => ({
-        kind: String(row.kind),
-        path: String(row.path),
-        size: Math.max(0, Number(row.size) || 0),
-        modifiedAt: row.modifiedAt == null ? null : Number(row.modifiedAt),
-      }));
+    // A page can start at a tool result. Include bounded preceding context for
+    // pairing, but only return associations belonging to this page's blocks.
+    const context = firstSequence == null ? [] : this.db().prepare(`SELECT id,payload_json payload FROM conversation_blocks
+      WHERE conversation_id=? AND id<? ORDER BY id DESC LIMIT 64`).all(conversation.id, firstSequence).reverse()
+      .map(row => ({ ...JSON.parse(row.payload), sequence: Number(row.id) }));
+    const visibleSequences = new Set(blocks.map(block => block.sequence));
+    const artifacts = collectConversationFiles(context.concat(blocks), {
+      projectPath: conversation.projectPath,
+      statFile: (filePath, written) => {
+        const cached = this.fileStats.get(filePath);
+        if (cached && Date.now() - cached.at < 5000 && !(written && !cached.stat)) return cached.stat;
+        let stat = null;
+        try { stat = fs.statSync(filePath); } catch { /* Missing files are not links. */ }
+        if (this.fileStats.size >= 4000) this.fileStats.clear();
+        this.fileStats.set(filePath, { at: Date.now(), stat });
+        return stat;
+      },
+    }).filter(file => visibleSequences.has(file.sourceSequence));
     return {
       conversationId: String(conversation.id),
       blocks,

@@ -18,7 +18,7 @@ import { transcriptImages } from "./chat-images.mjs";
 const MAX_TOOL_OUTPUT = 4000;
 const MAX_TEXT = 20000;
 
-function toolCallBlock(name, rawInput) {
+function toolCallBlock(name, rawInput, callId) {
   // Codex passes function-call arguments as a JSON string — parse so the
   // summary/diff can read fields; keep the parsed object as the block input.
   let input = rawInput;
@@ -33,6 +33,7 @@ function toolCallBlock(name, rawInput) {
     }
   }
   const block = { role: "assistant", kind: "tool-call", name, input };
+  if (typeof callId === "string" && callId) block.callId = callId;
   const summary = toolSummary(name, input);
   if (summary) block.summary = summary;
   const diff = diffFromToolCall(name, input);
@@ -40,8 +41,9 @@ function toolCallBlock(name, rawInput) {
   return block;
 }
 
-function toolResultBlock(output, isError) {
+function toolResultBlock(output, isError, callId) {
   const block = { role: "tool", kind: "tool-result", output };
+  if (typeof callId === "string" && callId) block.callId = callId;
   if (isError) block.isError = true;
   const diff = diffFromText(output);
   if (diff) block.diff = diff;
@@ -84,7 +86,7 @@ function decodeClaudeLine(obj, out) {
           out.push({ role: "user", kind: "text", text: clip(part.text, MAX_TEXT) });
         } else if (part.type === "tool_result") {
           out.push(
-            toolResultBlock(clip(contentToText(part.content), MAX_TOOL_OUTPUT), Boolean(part.is_error))
+            toolResultBlock(clip(contentToText(part.content), MAX_TOOL_OUTPUT), Boolean(part.is_error), part.tool_use_id)
           );
         } else if (part.type === "image") {
           out.push({ role: "user", kind: "image" });
@@ -100,7 +102,7 @@ function decodeClaudeLine(obj, out) {
       } else if (part.type === "thinking" && part.thinking?.trim()) {
         out.push({ role: "assistant", kind: "reasoning", text: clip(part.thinking, MAX_TEXT) });
       } else if (part.type === "tool_use") {
-        out.push(toolCallBlock(part.name || "tool", part.input));
+        out.push(toolCallBlock(part.name || "tool", part.input, part.id));
       }
     }
   }
@@ -139,7 +141,8 @@ function decodeCodexLine(obj, out) {
     out.push(
       toolCallBlock(
         p.name || p.tool_name || (p.type === "local_shell_call" ? "shell" : "tool"),
-        p.arguments ?? p.action ?? p.input ?? null
+        p.arguments ?? p.action ?? p.input ?? null,
+        p.call_id ?? p.id
       )
     );
     return;
@@ -147,7 +150,7 @@ function decodeCodexLine(obj, out) {
   if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
     const raw = p.output;
     const text = typeof raw === "string" ? raw : contentToText(raw?.content) || JSON.stringify(raw ?? "");
-    out.push(toolResultBlock(clip(text, MAX_TOOL_OUTPUT), false));
+    out.push(toolResultBlock(clip(text, MAX_TOOL_OUTPUT), Boolean(raw?.isError), p.call_id));
     return;
   }
   if (p.type === "reasoning") {

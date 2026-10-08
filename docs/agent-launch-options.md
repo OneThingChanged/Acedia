@@ -4,6 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 CLI 실행 파일, 추가 인수, 환경변수와 기본값 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
+last_updated: 2026-10-08
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -13,6 +14,10 @@ sources:
   - resource: ../app/electron/shared/launch-options.mjs
   - resource: ../app/electron/services/agent-launch.mjs
   - resource: ../app/scripts/electron-advanced-launch-smoke.mjs
+  - resource: ../app/src/components/ChatModelPicker.tsx
+  - resource: ../app/src/lib/chatSessionModel.ts
+  - resource: ../app/electron/services/session-model-service.mjs
+  - resource: ../app/scripts/electron-chat-model-smoke.mjs
 ---
 
 # 에이전트 고급 실행 설정
@@ -57,6 +62,16 @@ Alt-screen, 작업자 프리셋은 기존 실행 옵션에서 설정한다.
 
 ## 실행 규칙
 
+데스크톱 채팅 입력창 아래의 **모델** 또는 **effort** 버튼에서 세션 설정을 변경한다.
+모델과 추론 강도를 선택하고 **적용**을 누르면 같은 계정·대화 ID를 유지한 채 CLI를
+다시 시작해 다음 메시지부터 사용한다. 진행 중인 작업, 질문·로그인 확인, 예약 메시지가
+있으면 적용할 수 없다. 적용 중에는 전송과 대기열 처리를 잠시 막으며 작성한 메시지와
+첨부를 유지한다. 터미널로 전환했다 돌아와도 적용 중 전송 차단을 유지한다.
+종료된 세션도 기존 대화 파일이 확인되면 다른 모델을 선택해 다시 시작할 수 있다.
+자식 세션에서 변경하면 모델 상속을 끄고 해당 세션에만 저장하며 부모 설정은 유지한다.
+보조 작업창은 설정 확인을 지원하고 변경은 기본 작업창에서 진행한다. Company에서도
+로컬 채팅 설정을 변경할 수 있으며 Remote·Tunnel 기능은 기존 비활성 상태를 유지한다.
+
 Remote와 로컬 Dashboard에서는 Codex·Claude 세션을 우클릭한 뒤 **모델 / effort 변경**을
 선택한다. 모바일은 세션 상단 **모델 / effort** 버튼을 사용한다. 선택창에 프로젝트·세션명,
 최근 대화 또는 실행 시 확인된 모델, 저장된 다음 실행 설정과 계정 이름을 표시한다.
@@ -75,6 +90,10 @@ Codex는 해당 세션의 실제 로그인 또는 분산 계정에서 `model/lis
 
 검증 명령은 `app/`에서 `npm run electron:session-model-smoke`다. 실제 Remote 화면의
 1024px·390px 메뉴, 모델별 effort 변경, 우클릭 대상, 작업 중 저장과 재시작 제한을 확인한다.
+데스크톱은 `npm run electron:chat-model-smoke`로 별도 검증한다. 940·390·300px,
+다크·라이트, Codex·Claude 옵션, 적용 실패, 입력 보존과 전송 차단을 확인하며 실제 App
+렌더러의 저장·상속 해제·동일 대화 실행 인자까지 검사한다. IPC·CLI·클립보드는 검사용으로
+대체하므로 사용자 세션을 실행하거나 실제 계정으로 모델 요청을 보내지 않는다.
 
 추가 환경변수는 세션별 환경 복사본에 반영한다. Windows에서는 같은 이름의 기존 키를
 대소문자 구분 없이 교체하며 부모 앱이나 다른 세션의 환경은 변경하지 않는다.

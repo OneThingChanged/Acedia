@@ -32,6 +32,35 @@ afterEach(async () => {
 });
 
 describe("ConversationStoreManager", () => {
+  it("rebuilds per-block file associations for stored history, older pages and more than 100 files", async () => {
+    const root = await tempRoot();
+    const config = { configDir: path.join(root, "config"), defaultRoot: path.join(root, "store") };
+    let manager = new ConversationStoreManager(config);
+    try {
+      const names = ["guide.html", "result.mp4", ...Array.from({ length: 105 }, (_, i) => `reference-${i}.ts`)];
+      await Promise.all(names.map(name => fsPromises.writeFile(path.join(root, name), "contents")));
+      const input = { agentId: "files", sessionId: "one", provider: "codex", projectPath: root, transcriptPath: path.join(root, "session.jsonl") };
+      const tool = (payload) => JSON.stringify({ type: "response_item", payload });
+      const records = [codexLine("user", "Read the existing guide"), codexLine("assistant", "[guide](guide.html)"),
+        codexLine("user", "Create a movie"), tool({ type: "function_call", name: "Write", arguments: '{"file_path":"result.mp4"}', call_id: "movie" }),
+        tool({ type: "function_call_output", output: "Done", call_id: "movie" }), codexLine("assistant", "[movie](result.mp4)")];
+      await fsPromises.writeFile(input.transcriptPath, records.join("\n") + "\n");
+      await manager.store.ingestTranscript(input);
+      manager.close();
+      manager = new ConversationStoreManager(config);
+      const page = manager.store.listBlocks({ ...input, limit: 3 });
+      expect(page.artifacts.some(file => file.usage === "output" && file.path === path.join(root, "result.mp4"))).toBe(true);
+      expect(page.artifacts.some(file => file.path.endsWith("guide.html"))).toBe(false);
+      const older = manager.store.listBlocks({ ...input, beforeSequence: page.firstSequence, limit: 3 });
+      expect(older.artifacts).toEqual([expect.objectContaining({ path: path.join(root, "guide.html"), usage: "reference", sourceSequence: older.blocks[1].sequence })]);
+      expect(manager.store.listBlocks({ ...input, agentId: "other" }).artifacts).toEqual([]);
+      await fsPromises.appendFile(input.transcriptPath, codexLine("user", "Review the source files") + "\n" + codexLine("assistant", names.slice(2).map(name => `\`${name}\``).join("\n")) + "\n");
+      await manager.store.ingestTranscript(input);
+      const last = manager.store.listBlocks({ ...input, limit: 2 });
+      expect(last.artifacts).toHaveLength(105);
+      expect(last.artifacts.every(file => file.usage === "reference" && file.sourceSequence === last.blocks[1].sequence)).toBe(true);
+    } finally { manager.close(); }
+  });
   it("recovers attachments from already indexed source offsets without bloating regular history", async () => {
     const root = await tempRoot();
     const manager = new ConversationStoreManager({ configDir: path.join(root, "config"), defaultRoot: path.join(root, "store") });

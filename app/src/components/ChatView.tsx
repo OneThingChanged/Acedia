@@ -2,9 +2,13 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type C
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatIcon } from "./ChatIcon";
+import { ChatModelPicker } from "./ChatModelPicker";
 import { ChatImage } from "./ChatImage";
+import { ChatFiles } from "./ChatFiles";
+import { chatFilesForTurn, mergeChatFiles, sameChatFiles } from "../lib/chatFiles";
 import { splitChatImagePaths } from "../lib/chatPaths";
 import { isChatWorking } from "../lib/chatWorkState";
+import { isChatSessionModelChanging, useChatSessionModelChanging } from "../lib/chatSessionModel";
 import { openDialog } from "../platform/plugins";
 import "./ChatView.css";
 import { invoke, listen } from "../platform/runtime";
@@ -110,49 +114,6 @@ const UserMessage = memo(function UserMessage({ text: message, agentId, sequence
     </>
   );
 });
-
-function artifactBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function ConversationArtifacts({ artifacts, onOpenPath }: { artifacts: ConversationArtifact[]; onOpenPath?: (path: string) => void }) {
-  const { text } = useAppLanguage();
-  const [error, setError] = useState("");
-  if (!artifacts.length) return null;
-  const openArtifact = async (artifact: ConversationArtifact) => {
-    setError("");
-    try {
-      if (onOpenPath) onOpenPath(artifact.path);
-      else await invoke("open_local_path", { path: artifact.path });
-    } catch { setError(text("결과물을 열지 못했습니다. 경로를 확인해 주세요.", "Could not open the artifact. Check its path.")); }
-  };
-  return (
-    <section className="chat-artifacts" aria-label={text("결과물", "Artifacts")}>
-      <div className="chat-artifacts-heading">{text(`결과물 · ${artifacts.length}개`, `Artifacts · ${artifacts.length}`)}</div>
-      <div className="chat-artifact-list">
-        {artifacts.map((artifact) => {
-          const name = artifact.path.split(/[\\/]/).pop() || artifact.path;
-          return (
-            <button
-              type="button"
-              className="chat-artifact"
-              key={artifact.path}
-              title={artifact.path}
-              onClick={() => { void openArtifact(artifact); }}
-            >
-              <span className="chat-artifact-icon" aria-hidden="true"><ChatIcon name="file" /></span>
-              <span className="chat-artifact-copy"><span className="chat-artifact-name">{name}</span><span className="chat-artifact-caption">{artifact.kind.toUpperCase()} · {artifactBytes(artifact.size)}</span></span>
-              <ChatIcon name="open" />
-            </button>
-          );
-        })}
-      </div>
-      {error && <div className="chat-composer-error" role="alert">{error}</div>}
-    </section>
-  );
-}
 
 function toolLabel(block: { name?: string; summary?: string; input?: unknown }): string {
   // Prefer the server-computed summary; fall back to deriving from input.
@@ -298,7 +259,7 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-const AssistantTurn = memo(function AssistantTurn({ run, tool, onOpenPath, onQuote, folder }: { run: ChatBlock[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
+const AssistantTurn = memo(function AssistantTurn({ run, files, tool, onOpenPath, onQuote, folder }: { run: ChatBlock[]; files: ConversationArtifact[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
@@ -335,10 +296,11 @@ const AssistantTurn = memo(function AssistantTurn({ run, tool, onOpenPath, onQuo
         }
         return null;
       })}
+      <ChatFiles files={files} onOpenPath={onOpenPath} />
       {answer && <div className="chat-message-actions"><ChatCopyButton value={answer} label={text("답변 복사", "Copy response")} />{onQuote && <button type="button" className="chat-copy-button chat-quote-button" title={text("답변 인용", "Quote response")} aria-label={text("답변 인용", "Quote response")} onClick={() => { const selection = window.getSelection(); onQuote(selection?.toString().trim() && root.current?.contains(selection.anchorNode) && root.current?.contains(selection.focusNode) ? selection.toString().trim() : answer); }}><ChatIcon name="quote" /></button>}</div>}
     </div>
   );
-}, (previous, next) => previous.tool === next.tool && previous.folder === next.folder && previous.onOpenPath === next.onOpenPath && previous.onQuote === next.onQuote && previous.run.length === next.run.length && previous.run.every((block, index) => block === next.run[index]));
+}, (previous, next) => previous.tool === next.tool && previous.folder === next.folder && previous.onOpenPath === next.onOpenPath && previous.onQuote === next.onQuote && sameChatFiles(previous.files, next.files) && previous.run.length === next.run.length && previous.run.every((block, index) => block === next.run[index]));
 
 export function ChatView({
   agentId,
@@ -351,6 +313,8 @@ export function ChatView({
   projectName,
   connectionLabel,
   provider,
+  modelEditingSupported = true,
+  modelSettingsKey,
   workStartedAt,
   activeTool,
   questionToken,
@@ -369,6 +333,8 @@ export function ChatView({
   projectName?: string;
   connectionLabel?: string;
   provider?: string;
+  modelEditingSupported?: boolean;
+  modelSettingsKey?: string;
   workStartedAt?: number;
   activeTool?: string;
   questionToken?: number;
@@ -377,6 +343,7 @@ export function ChatView({
   onOpenPath?: (path: string) => void;
 }) {
   const { text } = useAppLanguage();
+  const modelChanging = useChatSessionModelChanging(agentId);
   const storeKey = `${agentId}:${sessionId || "unbound"}`;
   const openPathRef = useRef(onOpenPath);
   openPathRef.current = onOpenPath;
@@ -488,7 +455,7 @@ export function ChatView({
           : mergeChatHistory(blocksRef.current, incoming);
         setHasOlder(result.hasOlder === true);
         setIndexing(result.indexing === true);
-        if (result.artifacts) setArtifacts(result.artifacts);
+        if (result.artifacts) setArtifacts(previous => mergeChatFiles(previous, result.artifacts!, incoming));
         if (result.tool) setTool(result.tool);
         setLifecycle(result.lifecycle);
         setLifecycleAt(result.lifecycleAt);
@@ -628,7 +595,7 @@ export function ChatView({
         anchorHeightRef.current = null;
       }
       setHasOlder(result.hasOlder === true);
-      if (result.artifacts) setArtifacts(result.artifacts);
+      if (result.artifacts) setArtifacts(previous => mergeChatFiles(previous, result.artifacts!, result.blocks ?? []));
     } catch {
       anchorHeightRef.current = null;
     } finally {
@@ -706,7 +673,7 @@ export function ChatView({
         <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
       </div>
     ) : (
-      <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
+      <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} files={chatFilesForTurn(artifacts, blocks.slice(range.start, range.end))} tool={provider || tool} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
     )
   );
 
@@ -881,6 +848,7 @@ export function ChatView({
   // Composer submit: send now if the agent is ready and nothing is queued;
   // otherwise reserve it in the queue to be drained when the agent frees up.
   const sendMessage = (raw: string) => {
+    if (isChatSessionModelChanging(agentId)) return;
     const value = raw.trim();
     if (!value) return;
     const cooled = Date.now() - lastDispatchRef.current >= QUEUE_COOLDOWN_MS;
@@ -891,15 +859,16 @@ export function ChatView({
 
   // Drain the queue one message per cooldown while the agent is ready.
   useEffect(() => {
-    if (busy || prompt || !alive || queue.length === 0) return;
+    if (busy || prompt || modelChanging || !alive || queue.length === 0) return;
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
+      if (isChatSessionModelChanging(agentId)) return;
       if (canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex")) return;
       dispatch(queue[0]);
       mutateQueue((q) => q.slice(1));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [busy, promptSig, alive, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
+  }, [busy, promptSig, modelChanging, agentId, alive, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
 
   const cancelQueued = (index: number) =>
     mutateQueue((q) => q.filter((_, i) => i !== index));
@@ -928,7 +897,6 @@ export function ChatView({
         )}
         <div className="chat-thread" ref={threadRef}>
           {status === "ready" && visibleTurns}
-          <ConversationArtifacts artifacts={artifacts} onOpenPath={stableOpenPath} />
           {pending.map((t, i) => (
             <div key={`pending-${i}`} className="chat-turn user pending">
               <UserMessage text={t} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
@@ -1020,6 +988,8 @@ export function ChatView({
           <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
         </div>}
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
+          agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} modelSettingsKey={modelSettingsKey}
+          modelBusy={busy || !!prompt || initializing || queue.length > 0}
           projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
         </>
       )}
@@ -1034,6 +1004,12 @@ export function ChatView({
 type AcItem = { value: string; label: string; desc?: string };
 
 function ChatComposer({
+  agentId,
+  active,
+  sessionId,
+  modelEditingSupported,
+  modelSettingsKey,
+  modelBusy,
   storageKey,
   onSend,
   busy,
@@ -1046,6 +1022,12 @@ function ChatComposer({
   onInterrupt,
   intent,
 }: {
+  agentId: string;
+  active: boolean;
+  sessionId?: string;
+  modelEditingSupported: boolean;
+  modelSettingsKey?: string;
+  modelBusy: boolean;
   storageKey: string;
   onSend: (text: string) => void;
   busy: boolean;
@@ -1059,6 +1041,7 @@ function ChatComposer({
   intent?: ComposerIntent | null;
 }) {
   const { text: localize } = useAppLanguage();
+  const modelChanging = useChatSessionModelChanging(agentId);
   const [text, setText] = useState(() => draftStore.get(storageKey) ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>(
     () => attachStore.get(storageKey) ?? []
@@ -1168,7 +1151,7 @@ function ChatComposer({
   };
 
   const send = () => {
-    if (authenticationRequired) return;
+    if (authenticationRequired || isChatSessionModelChanging(agentId)) return;
     // Expand attachments on send: pasted-text blocks and image paths join the
     // typed text so the agent receives everything.
     const texts = attachments.filter((a) => a.kind === "text").map((a) => a.text);
@@ -1303,7 +1286,7 @@ function ChatComposer({
     send();
   };
 
-  const canSend = !authenticationRequired && Boolean(text.trim() || attachments.length);
+  const canSend = !authenticationRequired && !modelChanging && Boolean(text.trim() || attachments.length);
   const sendLabel = busy ? localize("대기열에 예약", "Queue message") : localize("메시지 전송", "Send message");
   const contextName = projectName || folder?.split(/[\\/]/).filter(Boolean).pop();
 
@@ -1399,7 +1382,9 @@ function ChatComposer({
       </div>
       <div className="chat-composer-toolbar">
         <button type="button" className="chat-composer-attach" title={localize("파일 또는 이미지 첨부", "Attach files or images")} aria-label={localize("파일 또는 이미지 첨부", "Attach files or images")} disabled={attaching} onClick={() => { void attachFiles(); }}><ChatIcon name="plus" /></button>
-        <span className="chat-composer-provider">{assistantLabel(tool)}</span>
+        {modelEditingSupported && (tool === "codex" || tool === "claude")
+          ? <ChatModelPicker agentId={agentId} provider={tool} active={active} busy={modelBusy} sessionId={sessionId} settingsKey={modelSettingsKey} />
+          : <span className="chat-composer-provider">{assistantLabel(tool)}</span>}
         <div className="chat-composer-controls">
         {onInterrupt && <button type="button" className="chat-composer-stop" onClick={onInterrupt} title={localize("진행 중단 (Esc)", "Stop progress (Esc)")} aria-label={localize("진행 중단", "Stop progress")}><ChatIcon name="stop" /></button>}
         <button
@@ -1414,6 +1399,7 @@ function ChatComposer({
         </div>
       </div>
       {attachmentError && <div className="chat-composer-error" role="alert">{attachmentError}</div>}
+      {modelChanging && <div className="chat-model-notice" role="status">{localize("모델을 적용하고 있습니다. 작성한 메시지는 유지됩니다.", "Applying model settings. Your draft is kept.")}</div>}
       </div>
       <div className="chat-composer-hint">{busy ? localize("Enter 예약", "Enter to queue") : localize("Enter 전송", "Enter to send")}<span aria-hidden="true">·</span>{localize("Shift + Enter 줄바꿈", "Shift + Enter for a new line")}<span aria-hidden="true">·</span>{localize("/명령  @파일", "/commands  @files")}</div>
     </div>

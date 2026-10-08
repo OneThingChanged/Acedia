@@ -127,6 +127,8 @@ const INVOKE_COMMANDS = Object.freeze([
   "complete_remote_session_activation",
   "complete_remote_session_model",
   "restart_session_model",
+  "get_session_model",
+  "set_session_model",
   "repair_active_hooks",
   "export_diagnostics",
   "usage_ingest_now",
@@ -264,6 +266,17 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "get_session_model":
+      assertId(args);
+      break;
+    case "set_session_model":
+      assertId(args);
+      if (args.restart !== true) throw new TypeError("Chat model changes must apply to the session");
+      if (!args.settings || typeof args.settings.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(args.settings.model)
+        || (args.settings.effort != null && (typeof args.settings.effort !== "string" || !/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(args.settings.effort)))) {
+        throw new TypeError("Invalid session model settings");
+      }
+      break;
     case "monitor_lan_set":
       if (args.allowedNetworks !== undefined) {
         if (args.enabled !== undefined || !Array.isArray(args.allowedNetworks) || args.allowedNetworks.length > 32 ||

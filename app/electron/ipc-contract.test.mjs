@@ -6,6 +6,15 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("requires a valid session and an immediate model change from Chat", () => {
+    const args = { id: "session", settings: { model: "gpt-fixture", effort: "xhigh" }, restart: true };
+    expect(contract.assertInvokeRequest("get_session_model", { id: "session" })).toEqual({ id: "session" });
+    expect(contract.assertInvokeRequest("set_session_model", args)).toEqual(args);
+    for (const invalid of [{ ...args, id: "" }, { ...args, restart: false }, { ...args, settings: null },
+      { ...args, settings: { model: "$(unsafe)" } }, { ...args, settings: { model: "safe", effort: "invalid" } }]) {
+      expect(() => contract.assertInvokeRequest("set_session_model", invalid)).toThrow();
+    }
+  });
   it("requires an owned image block identity instead of a caller-provided transcript path", () => {
     expect(contract.assertInvokeRequest("read_chat_images", { id: "session", sequence: 23 })).toEqual({ id: "session", sequence: 23 });
     for (const args of [{ id: "", sequence: 23 }, { id: "session", sequence: -1 }, { id: "session", sequence: 0.5 }, { id: "session", sequence: "23" }, { id: "session" }]) {

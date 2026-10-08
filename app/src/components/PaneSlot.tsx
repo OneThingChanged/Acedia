@@ -16,6 +16,7 @@ import type {
 import { toolForId, toolSupportsChat } from "../types";
 import { readTerminalScreen } from "../lib/terminalStartupPrompt";
 import { buildSpawnArgs } from "../lib/spawn";
+import { resolveSessionSettings } from "../lib/sessionHierarchy";
 import { subscribeTerminalSettings } from "../lib/terminalSettings";
 import type {
   Agent,
@@ -1182,6 +1183,8 @@ export function PaneSlot({
           question={activeAgent?.activity?.interactiveQuestion ?? null}
           assistantMessage={activeAgent?.activity?.lastAssistantMessage ?? null}
           provider={activeAgent?.aiToolId}
+          modelEditingSupported={!activeAgent?.sshHostId}
+          modelSettingsKey={activeAgent ? JSON.stringify(resolveSessionSettings(activeAgent, ctx.agents, ctx.projects).modelSettings ?? null) : undefined}
           folder={activeAgent?.sshHostId ? undefined : activeAgent?.folder}
           projectName={ctx.projects.find(project => project.id === activeAgent?.projectId)?.name}
           connectionLabel={activeAgent?.sshHostId ? text("원격 · SSH", "Remote · SSH") : text("이 컴퓨터", "This computer")}

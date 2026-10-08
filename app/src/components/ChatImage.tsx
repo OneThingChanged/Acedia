@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "../platform/runtime";
 import { normalizeChatPath } from "../lib/chatPaths";
@@ -18,10 +18,12 @@ export function ChatImage({ path, dataUrl, url, alt, folder, onOpenPath }: {
   const [src, setSrc] = useState(dataUrl || url || "");
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const name = alt || path?.split(/[\\/]/).pop() || text("첨부 이미지", "Attached image");
   useEffect(() => {
     let cancelled = false, started = false;
     setSrc(dataUrl || url || ""); setFailed(false); setOpen(false);
+    setSize(null);
     // Supplied attachments are ready to paint; only disk reads need the
     // viewport observer. Never replace a ready data URL with a loading label.
     if (dataUrl || url) return;
@@ -51,9 +53,14 @@ export function ChatImage({ path, dataUrl, url, alt, folder, onOpenPath }: {
     else if (src) setOpen(true);
   };
   const picture = src && !failed
-    ? <img src={src} alt={name} decoding="async" loading="lazy" onError={() => setFailed(true)} />
+    ? <img src={src} alt={name} decoding="async" loading="lazy" onLoad={event => {
+      const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
+      if (width && height) setSize(previous => previous?.width === width && previous.height === height ? previous : { width, height });
+    }} onError={() => setFailed(true)} />
     : <span className="chat-image-placeholder">{failed ? text("이미지 미리보기를 불러오지 못했습니다", "Could not load image preview") : text("이미지 불러오는 중…", "Loading image…")}</span>;
-  return <span className="chat-image-preview" ref={root} title={path || name}>
+  return <span className="chat-image-preview" ref={root} title={path || name} style={size ? {
+    "--chat-image-natural-width": `${size.width}px`, "--chat-image-ratio": size.width / size.height,
+  } as CSSProperties : undefined}>
     {linked ? picture : <button type="button" className="chat-image-open" onClick={show} disabled={!src && !path} aria-label={text(`${name} 이미지 열기`, `Open image ${name}`)}>{picture}</button>}
     {failed && <span className="chat-image-name">{name}</span>}
     {open && src && createPortal(<ImageViewer path={name} folder={null} dataUrl={src} onClose={() => setOpen(false)} />, root.current?.closest(".app") || document.body)}
