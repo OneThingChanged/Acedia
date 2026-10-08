@@ -364,12 +364,24 @@ work, labels assistant output by provider, and exposes a jump-to-latest control
 when the operator reads above newly arriving output.[^chat-view][^conversation-store]
 
 Desktop Chat centers the conversation and composer in a shared 760px reading
-column. User messages use right-aligned bubbles; assistant narrative flows
-without an outer card. Consecutive tool work and reasoning remain collapsed
+column with a proportional UI font; code and tool output retain a monospace
+font. User messages use right-aligned bubbles with a quiet author label below;
+assistant narrative starts on the left with the Acedia icon and provider label.
+Multiple user image previews wrap within the bubble. Consecutive tool work and reasoning remain collapsed
 until opened, keeping their transcript position and full details. Reply copy
 copies assistant narrative only; code-block copy preserves the plain source
 without its language label or controls. Copy success and failure are announced
 on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
+
+The user message's edit icon reuses its text in the composer for a new request;
+it preserves an existing draft and leaves stored conversation history intact.
+The assistant quote icon references selected text within that answer, or the
+answer text when no selection belongs to it, capped at 2,000 characters. The
+composer shows a removable reference banner and retains it with the draft per
+session. An empty request cannot send a quote by itself. Sending a quoted
+request includes the reference as Markdown blockquote text. Conversation
+artifacts appear as visible filename/type/size cards after the thread and use
+the workspace opener for document or image previews.[^chat-view][^pane-slot]
 
 Desktop Chat opens Markdown file links, inline-code paths and recognizable bare
 file paths through the workspace file opener. Windows `/G:/...` notation is
@@ -389,8 +401,17 @@ normal history polling. Each image is capped at 25 MB and source-record reads
 at 36 MB. Missing originals show an unavailable preview. Native user images
 remain user messages, including image-only turns.[^chat-view][^chat-image][^chat-images][^conversation-store]
 
+Markdown renderer component types and transcript turn keys remain stable during
+status polling, new answer blocks and older-history prepends. A loaded image is
+not unmounted or reread merely because the conversation refreshes. Supplied
+bitmap data paints directly; disk images retain on-demand loading. Thread size
+changes follow the latest message only while the reader is already at the
+bottom, keeping older-history reading in place.[^chat-view][^chat-markdown][^chat-image]
+
 A pinned work indicator above the composer shows work state, the current action
-and elapsed time while earlier messages are being read. Live transcript work
+and elapsed time while earlier messages are being read. Its work-details button
+opens and reveals the latest tool group, or jumps to the latest message when
+there is no tool group. Live transcript work
 appears even before a work hook arrives; a timestamped completion ends stale
 work, while a later work hook or a new submission starts the indicator again.
 A markerless transcript tail remains inconclusive. Stop/Esc ends the local
@@ -433,6 +454,11 @@ queue/stop behavior, authentication guards and draft preservation across view
 switches. It also covers normalized file-link targets, native and Markdown image
 previews, attachment viewer/copy, progress during hook lag, completion and new
 submission, and pinned status visibility in dark/light and narrow layouts.
+Image regressions assert the same loaded DOM image survives status updates,
+answer-block appends and older-history prepends without additional disk reads
+or native-attachment reads. Conversation action checks cover role alignment,
+request reuse, quote submission, per-session draft/reference isolation and
+artifact preview routing.
 Clipboard and file-picker delivery use fixtures; these checks do not
 replace an installed-app OS dialog/clipboard test.[^chat-question-smoke]
 
@@ -444,6 +470,14 @@ window: the independent watcher's account-quota probe and next collection cycle
 could deliver the event after the test's last snapshot. The regression now waits
 for fresh receiver state and verifies successful delivery and watcher shutdown.
 Details are recorded in the [collector guide](central-usage-collector.md).
+
+The subsequent chat UX implementation passed 18 focused tests in five files,
+the TypeScript/Vite build, and the extended native desktop/startup/Remote smoke.
+Remote was checked at 1024px and 390px; desktop theme and geometry checks cover
+420/800/1280px. The earlier full-suite result above belongs to the previous
+validation, not a rerun of all tests for this UX change. The implementation and
+image-flicker reproduction are recorded in the
+[chat UX review](chat-ux-review-2026-10-08.md).
 
 Runtime state and work state are distinct. Starting/recovering describes the
 process lifecycle; working/waiting/blocked/done comes from hooks. A completion

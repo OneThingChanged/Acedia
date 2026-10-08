@@ -4,6 +4,7 @@ import { ChatView } from "../../src/components/ChatView";
 import "../../src/App.css";
 
 let chat = null;
+let olderChat = null;
 const pendingReads = [];
 const listeners = new Set();
 const writes = [];
@@ -23,7 +24,7 @@ let changeScreenOnWrite = undefined;
 const readTerminalScreen = () => terminalScreen;
 window.multiAgentElectron = {
   invoke: async (command, args) => {
-    if (command === "chat_blocks") return chat ?? new Promise(resolve => pendingReads.push(resolve));
+    if (command === "chat_blocks") return (args.beforeSequence ? olderChat : null) ?? chat ?? new Promise(resolve => pendingReads.push(resolve));
     if (command === "write_pty") {
       writes.push(args.data);
       if (failWrites) throw new Error("fixture PTY write failure");
@@ -58,7 +59,7 @@ window.multiAgentElectron = {
 };
 
 function Harness() {
-  const [state, setState] = useState({ agentStatus: "waiting", provider: "codex", question: null, questionToken: 1 });
+  const [state, setState] = useState({ agentStatus: "waiting", provider: "codex", question: null, questionToken: 1, sessionId: "fixture-session" });
   window.questionFixture = {
     writes,
     answers,
@@ -75,6 +76,7 @@ function Harness() {
       if ("terminalScreen" in patch) terminalScreen = patch.terminalScreen;
       if ("changeScreenOnWrite" in patch) changeScreenOnWrite = patch.changeScreenOnWrite;
       if ("imagesBySequence" in patch) imagesBySequence = patch.imagesBySequence;
+      if ("olderChat" in patch) olderChat = patch.olderChat;
       if ("previewDataUrl" in patch) previewDataUrl = patch.previewDataUrl;
       if (patch.chat) {
         chat = patch.chat;
@@ -83,7 +85,7 @@ function Harness() {
       }
     },
   };
-  return <ChatView {...state} agentId="fixture" sessionId="fixture-session" active theme="soft"
+  return <ChatView {...state} agentId="fixture" active theme="soft"
     readTerminalScreen={readTerminalScreen}
     onOpenPath={path => openedPaths.push(path)}
     onOpenTerminal={() => { window.questionTerminalOpened = true; }} />;

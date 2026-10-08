@@ -1,7 +1,7 @@
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { isValidElement, type ReactNode } from "react";
+import { createContext, isValidElement, useContext, useMemo, type ReactNode } from "react";
 import { useAppLanguage } from "../lib/appLanguage";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatImage, ChatImageLinkContext } from "./ChatImage";
@@ -49,12 +49,15 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   </div>;
 }
 
-export function ChatMarkdown({ children, onOpenPath, folder }: { children: string; folder?: string; onOpenPath?: (path: string) => void }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkChatPaths]} rehypePlugins={[rehypeHighlight]}
-    urlTransform={(url, key) => isChatLocalPath(normalizeChatPath(url, true)) || (key === "src" && /^data:image\/(?:png|jpe?g|gif|webp|bmp|svg\+xml|x-icon|avif);base64,[a-z\d+/=]+$/i.test(url)) ? url : defaultUrlTransform(url)}
-    components={{
-      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-      a: ({ href, children, node }) => {
+type MarkdownContext = { folder?: string; onOpenPath?: (path: string) => void };
+const ChatMarkdownContext = createContext<MarkdownContext>({});
+// Component types must remain stable across polls, streamed text and hook
+// updates. Inline render functions remount images (and clear their loaded src)
+// even when the Markdown image path itself has not changed.
+const markdownComponents: Components = {
+      pre: CodeBlock,
+      a: function ChatLink({ href, children, node }) {
+        const { folder, onOpenPath } = useContext(ChatMarkdownContext);
         const target = normalizeChatPath(href || "", true);
         const local = isChatLocalPath(target);
         const link = local && onOpenPath
@@ -66,17 +69,29 @@ export function ChatMarkdown({ children, onOpenPath, folder }: { children: strin
           {local && isChatImagePath(target) && !hasImage && <ChatImage path={target} folder={folder} onOpenPath={onOpenPath} />}
         </span>;
       },
-      img: ({ src, alt }) => {
+      img: function MarkdownImage({ src, alt }) {
+        const { folder, onOpenPath } = useContext(ChatMarkdownContext);
         if (!src) return <span className="chat-image-placeholder">{alt}</span>;
         const target = normalizeChatPath(src, true);
         return isChatLocalPath(target) ? <ChatImage path={target} alt={alt} folder={folder} onOpenPath={onOpenPath} />
           : <ChatImage dataUrl={src.startsWith("data:") ? src : undefined} url={src.startsWith("data:") ? undefined : src} alt={alt} />;
       },
-      code: ({ children, className }) => {
+      code: function MarkdownCode({ children, className }) {
+        const { folder, onOpenPath } = useContext(ChatMarkdownContext);
         const path = String(children).trim();
         return !className && !String(children).includes('\n') && isChatLocalPath(path) && onOpenPath
           ? <span className={isChatImagePath(path) ? "chat-image-link" : undefined}><button type="button" className="chat-path-link chat-path-code" title={path} onClick={() => onOpenPath(normalizeChatPath(path))}><code>{children}</code></button>{isChatImagePath(path) && <ChatImage path={normalizeChatPath(path)} folder={folder} onOpenPath={onOpenPath} />}</span>
           : <code className={className}>{children}</code>;
       },
-    }}>{children}</ReactMarkdown>;
+};
+const remarkPlugins = [remarkGfm, remarkChatPaths];
+const rehypePlugins = [rehypeHighlight];
+function chatUrlTransform(url: string, key: string) {
+  return isChatLocalPath(normalizeChatPath(url, true)) || (key === "src" && /^data:image\/(?:png|jpe?g|gif|webp|bmp|svg\+xml|x-icon|avif);base64,[a-z\d+/=]+$/i.test(url)) ? url : defaultUrlTransform(url);
+}
+
+export function ChatMarkdown({ children, onOpenPath, folder }: { children: string; folder?: string; onOpenPath?: (path: string) => void }) {
+  const context = useMemo(() => ({ folder, onOpenPath }), [folder, onOpenPath]);
+  return <ChatMarkdownContext.Provider value={context}><ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}
+    urlTransform={chatUrlTransform} components={markdownComponents}>{children}</ReactMarkdown></ChatMarkdownContext.Provider>;
 }

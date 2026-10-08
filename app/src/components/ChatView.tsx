@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatIcon } from "./ChatIcon";
@@ -6,7 +6,6 @@ import { ChatImage } from "./ChatImage";
 import { splitChatImagePaths } from "../lib/chatPaths";
 import { isChatWorking } from "../lib/chatWorkState";
 import { openDialog } from "../platform/plugins";
-import { toolForId } from "../types";
 import "./ChatView.css";
 import { invoke, listen } from "../platform/runtime";
 import { electronBridge } from "../platform/electronBridge";
@@ -47,6 +46,18 @@ type Attachment =
   | { kind: "image"; path: string; dataUrl: string }
   | { kind: "text"; text: string };
 const attachStore = new Map<string, Attachment[]>();
+type ComposerContext = { mode: "reuse" | "quote"; value: string };
+type ComposerIntent = ComposerContext & { storageKey: string };
+const composerContextStore = new Map<string, ComposerContext>();
+const appliedComposerIntents = new WeakSet<ComposerIntent>();
+const directBlockKeys = new WeakMap<ChatBlock, number>();
+let nextDirectBlockKey = 0;
+function blockRenderKey(block: ChatBlock) {
+  if (block.sequence != null) return `sequence-${block.sequence}`;
+  let key = directBlockKeys.get(block);
+  if (key === undefined) { key = ++nextDirectBlockKey; directBlockKeys.set(block, key); }
+  return `direct-${key}`;
+}
 // A text paste at/above this size collapses into a chip instead of filling the
 // input inline.
 const PASTE_COLLAPSE_CHARS = 300;
@@ -63,8 +74,8 @@ type Status = "loading" | "unsupported" | "empty" | "ready";
 const CHAT_PAGE = 10;
 const CHAT_DB_PAGE = 400;
 
-function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, imageOnly = false }: {
-  text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: (path: string) => void;
+const UserMessage = memo(function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, onReuse, imageOnly = false }: {
+  text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: (path: string) => void; onReuse?: (message: string) => void;
 }) {
   const { text } = useAppLanguage();
   const { rest, images } = splitChatImagePaths(message);
@@ -84,17 +95,21 @@ function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, ima
   }, [agentId, sequence, hasPaths]);
   const visibleText = nativeImages.length ? rest.replace(/\[Image\s+#?\d+\]/gi, "").trim() : rest;
   return (
+    <>
     <div className="chat-user">
       {visibleText && <div className="chat-user-text">{visibleText}</div>}
+      <div className="chat-user-images">
       {images.map((p, i) => (
         <ChatImage key={`${p}-${i}`} path={p} folder={folder} onOpenPath={onOpenPath} />
       ))}
       {nativeImages.map((source, i) => <ChatImage key={`native-${i}`} {...source} alt={text(`첨부 이미지 ${i + 1}`, `Attached image ${i + 1}`)} folder={folder} onOpenPath={onOpenPath} />)}
+      </div>
       {imageOnly && !nativeImages.length && <span className="chat-image-note">{loadingImages ? text("이미지 불러오는 중…", "Loading image…") : text("이미지 · 원본을 불러올 수 없습니다", "Image · original unavailable")}</span>}
-      {message && <div className="chat-user-actions"><ChatCopyButton value={message} label={text("메시지 복사", "Copy message")} /></div>}
     </div>
+    <div className="chat-user-footer"><span>{text("나", "You")}</span>{message && <div className="chat-user-actions"><ChatCopyButton value={message} label={text("메시지 복사", "Copy message")} />{onReuse && <button type="button" className="chat-copy-button chat-user-reuse" onClick={() => onReuse(message)} title={text("수정해서 다시 요청", "Edit and send again")} aria-label={text("수정해서 다시 요청", "Edit and send again")}><ChatIcon name="edit" /></button>}</div>}</div>
+    </>
   );
-}
+});
 
 function artifactBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -102,15 +117,20 @@ function artifactBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ConversationArtifacts({ artifacts }: { artifacts: ConversationArtifact[] }) {
+function ConversationArtifacts({ artifacts, onOpenPath }: { artifacts: ConversationArtifact[]; onOpenPath?: (path: string) => void }) {
   const { text } = useAppLanguage();
+  const [error, setError] = useState("");
   if (!artifacts.length) return null;
-  const openArtifact = (artifact: ConversationArtifact) => {
-    void invoke("open_local_path", { path: artifact.path }).catch(() => {});
+  const openArtifact = async (artifact: ConversationArtifact) => {
+    setError("");
+    try {
+      if (onOpenPath) onOpenPath(artifact.path);
+      else await invoke("open_local_path", { path: artifact.path });
+    } catch { setError(text("결과물을 열지 못했습니다. 경로를 확인해 주세요.", "Could not open the artifact. Check its path.")); }
   };
   return (
-    <details className="chat-artifacts">
-      <summary>{text(`결과물 · ${artifacts.length}개`, `Artifacts · ${artifacts.length}`)}</summary>
+    <section className="chat-artifacts" aria-label={text("결과물", "Artifacts")}>
+      <div className="chat-artifacts-heading">{text(`결과물 · ${artifacts.length}개`, `Artifacts · ${artifacts.length}`)}</div>
       <div className="chat-artifact-list">
         {artifacts.map((artifact) => {
           const name = artifact.path.split(/[\\/]/).pop() || artifact.path;
@@ -120,16 +140,17 @@ function ConversationArtifacts({ artifacts }: { artifacts: ConversationArtifact[
               className="chat-artifact"
               key={artifact.path}
               title={artifact.path}
-              onClick={() => openArtifact(artifact)}
+              onClick={() => { void openArtifact(artifact); }}
             >
-              <span className="chat-artifact-kind">{artifact.kind.toUpperCase()}</span>
-              <span className="chat-artifact-name">{name}</span>
-              <span className="chat-artifact-size">{artifactBytes(artifact.size)}</span>
+              <span className="chat-artifact-icon" aria-hidden="true"><ChatIcon name="file" /></span>
+              <span className="chat-artifact-copy"><span className="chat-artifact-name">{name}</span><span className="chat-artifact-caption">{artifact.kind.toUpperCase()} · {artifactBytes(artifact.size)}</span></span>
+              <ChatIcon name="open" />
             </button>
           );
         })}
       </div>
-    </details>
+      {error && <div className="chat-composer-error" role="alert">{error}</div>}
+    </section>
   );
 }
 
@@ -277,15 +298,15 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-function AssistantTurn({ run, tool, onOpenPath, folder }: { run: ChatBlock[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void }) {
+const AssistantTurn = memo(function AssistantTurn({ run, tool, onOpenPath, onQuote, folder }: { run: ChatBlock[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
-  const providerIcon = toolForId(tool || "none");
+  const root = useRef<HTMLDivElement>(null);
   return (
-    <div className="chat-turn assistant">
+    <div className="chat-turn assistant" ref={root}>
       <div className="chat-role">
-        <span className="chat-av" style={{ color: providerIcon.iconColor }} aria-hidden="true">{providerIcon.icon}</span> {assistantLabel(tool)}
+        <span className="chat-av" aria-hidden="true"><img src="app-icon.png" alt="" /></span> {assistantLabel(tool)}<span className="chat-role-meta">· Acedia</span>
       </div>
       {segments.map((segment, index) => {
         if (segment.kind === "tools") {
@@ -314,10 +335,10 @@ function AssistantTurn({ run, tool, onOpenPath, folder }: { run: ChatBlock[]; to
         }
         return null;
       })}
-      {answer && <div className="chat-message-actions"><ChatCopyButton value={answer} label={text("답변 복사", "Copy response")} /></div>}
+      {answer && <div className="chat-message-actions"><ChatCopyButton value={answer} label={text("답변 복사", "Copy response")} />{onQuote && <button type="button" className="chat-copy-button chat-quote-button" title={text("답변 인용", "Quote response")} aria-label={text("답변 인용", "Quote response")} onClick={() => { const selection = window.getSelection(); onQuote(selection?.toString().trim() && root.current?.contains(selection.anchorNode) && root.current?.contains(selection.focusNode) ? selection.toString().trim() : answer); }}><ChatIcon name="quote" /></button>}</div>}
     </div>
   );
-}
+}, (previous, next) => previous.tool === next.tool && previous.folder === next.folder && previous.onOpenPath === next.onOpenPath && previous.onQuote === next.onQuote && previous.run.length === next.run.length && previous.run.every((block, index) => block === next.run[index]));
 
 export function ChatView({
   agentId,
@@ -357,6 +378,13 @@ export function ChatView({
 }) {
   const { text } = useAppLanguage();
   const storeKey = `${agentId}:${sessionId || "unbound"}`;
+  const openPathRef = useRef(onOpenPath);
+  openPathRef.current = onOpenPath;
+  const openPath = useCallback((path: string) => openPathRef.current?.(path), []);
+  const stableOpenPath = onOpenPath ? openPath : undefined;
+  const [composerIntent, setComposerIntent] = useState<ComposerIntent | null>(null);
+  const reuseMessage = useCallback((value: string) => setComposerIntent({ storageKey: storeKey, mode: "reuse", value }), [storeKey]);
+  const quoteMessage = useCallback((value: string) => setComposerIntent({ storageKey: storeKey, mode: "quote", value: value.slice(0, 2000) }), [storeKey]);
   const [blocks, setBlocks] = useState<ChatBlock[]>([]);
   const blocksRef = useRef<ChatBlock[]>([]);
   const [status, setStatus] = useState<Status>("loading");
@@ -398,6 +426,8 @@ export function ChatView({
   const [pending, setPending] = useState<string[]>([]);
   const keyRef = useRef("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const followBottomRef = useRef(true);
   const fetchRef = useRef<() => void>(() => {});
   // First paint (session open / terminal→chat switch) should land at the
   // bottom (most recent), not the top.
@@ -430,6 +460,7 @@ export function ChatView({
     setStoppedKey(null);
     setLifecycle(undefined); setLifecycleAt(undefined); setTranscriptTool(undefined); setDispatchAt(0);
     firstLoadRef.current = true;
+    followBottomRef.current = true;
     clearedSigRef.current = null;
   }, [agentId, sessionId, storeKey]);
 
@@ -561,6 +592,7 @@ export function ChatView({
 
   const loadOlder = async () => {
     if (loadingOlder) return;
+    followBottomRef.current = false;
     const el = scrollRef.current;
     anchorHeightRef.current = el ? el.scrollHeight : null;
     if (hidden > 0) {
@@ -611,6 +643,7 @@ export function ChatView({
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    followBottomRef.current = distanceFromBottom < 80;
     setShowJumpToLatest(distanceFromBottom > 160);
     if (status === "ready" && historyAvailable && el.scrollTop < 80 && anchorHeightRef.current === null) {
       void loadOlder();
@@ -621,6 +654,7 @@ export function ChatView({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    followBottomRef.current = true;
     setShowJumpToLatest(false);
   };
 
@@ -644,17 +678,35 @@ export function ChatView({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+    followBottomRef.current = true;
     setShowJumpToLatest(false);
     firstLoadRef.current = false;
   }, [status, blocks, visible]);
 
+  // A lazy image can grow after the first transcript paint. Keep the latest
+  // message visible only while following the bottom; never pull someone away
+  // from earlier history when an image finishes loading.
+  useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const el = scrollRef.current;
+      if (el && followBottomRef.current && !firstLoadRef.current && anchorHeightRef.current === null) {
+        el.scrollTop = el.scrollHeight;
+        setShowJumpToLatest(false);
+      }
+    });
+    observer.observe(thread);
+    return () => observer.disconnect();
+  }, [storeKey]);
+
   const visibleTurns: ReactNode[] = ranges.slice(hidden).map((range) =>
     range.user ? (
-      <div key={`u${range.start}`} className="chat-turn user">
-        <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={onOpenPath} />
+      <div key={`u-${blockRenderKey(blocks[range.start])}`} className="chat-turn user">
+        <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
       </div>
     ) : (
-      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} folder={folder} onOpenPath={onOpenPath} />
+      <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
     )
   );
 
@@ -874,12 +926,12 @@ export function ChatView({
         {indexing && (
           <div className="chat-indexing">{text("이전 대화를 저장소에 정리하는 중… 최근 대화는 바로 볼 수 있습니다.", "Indexing earlier conversation in storage… Recent conversation is available immediately.")}</div>
         )}
-        <div className="chat-thread">
-          <ConversationArtifacts artifacts={artifacts} />
+        <div className="chat-thread" ref={threadRef}>
           {status === "ready" && visibleTurns}
+          <ConversationArtifacts artifacts={artifacts} onOpenPath={stableOpenPath} />
           {pending.map((t, i) => (
             <div key={`pending-${i}`} className="chat-turn user pending">
-              <UserMessage text={t} folder={folder} onOpenPath={onOpenPath} />
+              <UserMessage text={t} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
             </div>
           ))}
           {busy && !startupPrompt && status !== "unsupported" && status !== "loading" && (
@@ -965,9 +1017,10 @@ export function ChatView({
           <strong>{agentStatus === "recovering" ? text("복구 중", "Recovering") : initializing ? text("세션 시작 중", "Starting session") : text("작업 중", "Working")}</strong>
           {runningTool && <span className="chat-work-current" title={runningTool}>{workLabel(runningTool, text)}</span>}
           <span className="chat-work-elapsed" aria-hidden="true">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+          <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
         </div>}
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
-          projectName={projectName} connectionLabel={connectionLabel} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
+          projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
         </>
       )}
     </div>
@@ -991,6 +1044,7 @@ function ChatComposer({
   projectName,
   connectionLabel,
   onInterrupt,
+  intent,
 }: {
   storageKey: string;
   onSend: (text: string) => void;
@@ -1002,12 +1056,14 @@ function ChatComposer({
   projectName?: string;
   connectionLabel?: string;
   onInterrupt?: () => void;
+  intent?: ComposerIntent | null;
 }) {
   const { text: localize } = useAppLanguage();
   const [text, setText] = useState(() => draftStore.get(storageKey) ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>(
     () => attachStore.get(storageKey) ?? []
   );
+  const [context, setContext] = useState<ComposerContext | null>(() => composerContextStore.get(storageKey) ?? null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
@@ -1081,7 +1137,21 @@ function ChatComposer({
   useEffect(() => {
     setText(draftStore.get(storageKey) ?? "");
     setAttachments(attachStore.get(storageKey) ?? []);
+    setContext(composerContextStore.get(storageKey) ?? null);
   }, [storageKey]);
+
+  useEffect(() => {
+    if (!intent || intent.storageKey !== storageKey || appliedComposerIntents.has(intent)) return;
+    appliedComposerIntents.add(intent);
+    const next = { mode: intent.mode, value: intent.value };
+    composerContextStore.set(storageKey, next);
+    setContext(next);
+    if (intent.mode === "reuse") {
+      const existing = draftStore.get(storageKey)?.trim();
+      updateText(existing ? `${existing}\n\n${intent.value}` : intent.value);
+    }
+    requestAnimationFrame(() => taRef.current?.focus());
+  }, [intent, storageKey]);
 
   const updateText = (value: string) => {
     setText(value);
@@ -1106,11 +1176,13 @@ function ChatComposer({
       .filter((a) => a.kind === "image")
       .map((a) => formatDroppedPathForTerminal((a as { path: string }).path))
       .filter(Boolean);
-    const value = [text.trim(), ...texts, ...paths].filter(Boolean).join("\n").trim();
-    if (!value) return;
+    const request = [text.trim(), ...texts, ...paths].filter(Boolean).join("\n").trim();
+    if (!request) return;
+    const value = context?.mode === "quote" ? `${context.value.split(/\r?\n/).map(line => `> ${line}`).join("\n")}\n\n${request}` : request;
     onSend(value);
     updateText("");
     updateAttachments(() => []);
+    setContext(null); composerContextStore.delete(storageKey);
   };
 
   const addImage = (filePath: string) => {
@@ -1239,6 +1311,11 @@ function ChatComposer({
     <div className="chat-composer-area">
       {contextName && <div className="chat-composer-context"><span title={folder}><ChatIcon name="folder" />{contextName}</span>{connectionLabel && <><span aria-hidden="true">·</span><span><ChatIcon name="computer" />{connectionLabel}</span></>}</div>}
       <div className="chat-composer">
+      {context && <div className="chat-composer-reference">
+        <ChatIcon name={context.mode === "quote" ? "quote" : "edit"} />
+        <span><strong>{context.mode === "quote" ? localize("답변 인용", "Quoted response") : localize("수정해서 다시 요청 · 새 메시지로 전송", "Edit and send again · sends a new message")}</strong><span className="chat-composer-reference-text" title={context.value}>{context.value}</span></span>
+        <button type="button" className="chat-copy-button chat-reference-clear" onClick={() => { setContext(null); composerContextStore.delete(storageKey); }} title={localize("인용·다시 요청 취소", "Remove quote or reused request")} aria-label={localize("인용·다시 요청 취소", "Remove quote or reused request")}><ChatIcon name="close" /></button>
+      </div>}
       {attachments.length > 0 && (
         <div className="chat-attachments">
           {attachments.map((a, i) =>

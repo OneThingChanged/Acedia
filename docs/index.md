@@ -17,9 +17,11 @@ configuration that supports it.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
 * [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
+* [대화 UX HTML 초안 02](mockups/chat-workspace-v2.html) - 요청·답변 구분, 상단 Quick Search와 사이드바 프로젝트·세션 통합 검색. [기본 화면](mockups/chat-workspace-v2.png), [검색 화면](mockups/chat-workspace-v2-search.png), [관찰·앱 적용·검사](chat-ux-review-2026-10-08.md).
 
 ## Settings and review
 
+* [Acedia 1.8.1.66 EXE release](release-1-8-1-66.md) - Readable chat roles, response quotation, request reuse and artifact previews; retain loaded images across transcript updates.
 * [Acedia 1.8.1.65 EXE release](release-1-8-1-65.md) - Fold project conversations inline with saved expansion and compact session selection; send ZIP attachments from Remote and Dashboard; public EXE delivery verified.
 * [Acedia 1.8.1.64 EXE release](release-1-8-1-64.md) - Correct Chat file links, inline image previews and visible work progress; repair Windows usage-client regression timing and verify public EXE delivery.
 * [Acedia 1.8.1.63 EXE release](release-1-8-1-63.md) - Modern sidebar and conversation layout, shared Quick Open and notifications, clipboard actions and visible Codex startup questions in Chat.

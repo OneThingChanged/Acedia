@@ -303,6 +303,24 @@ async function exerciseChatMediaAndWork(win, directory) {
   await win.webContents.executeJavaScript("document.querySelector('.chat-md .chat-image-preview').scrollIntoView({block:'center'})");
   await waitFor(win, "document.querySelector('.chat-md .chat-image-preview img')?.naturalWidth>1");
   assert(await win.webContents.executeJavaScript("window.questionFixture.resolvedPaths.some(p=>p.path==='./output/result.png' && p.folder==='G:/My Project')"), 'Markdown image did not resolve relative to the session project');
+  await win.webContents.executeJavaScript(`window.chatImageBeforeRefresh=document.querySelector('.chat-md .chat-image-preview img');window.chatImageReadsBeforeRefresh=window.questionFixture.resolvedPaths.length;`);
+  for (let tick = 0; tick < 3; tick += 1) {
+    await patch({ state: { questionToken: 100 + tick } });
+    await new Promise(resolve => setTimeout(resolve, 80));
+  }
+  assert(await win.webContents.executeJavaScript("window.chatImageBeforeRefresh.isConnected && document.querySelector('.chat-md .chat-image-preview img')===window.chatImageBeforeRefresh && window.questionFixture.resolvedPaths.length===window.chatImageReadsBeforeRefresh"), 'Existing image remounted or reread during conversation refresh');
+  media.blocks.push({ sequence: 33, role: 'assistant', kind: 'text', text: '다음 파일도 확인하고 있습니다.' });
+  await patch({ chat: media });
+  await waitFor(win, "document.querySelector('.chat-thread').textContent.includes('다음 파일도')");
+  assert(await win.webContents.executeJavaScript("window.chatImageBeforeRefresh.isConnected && document.querySelector('.chat-md .chat-image-preview img')===window.chatImageBeforeRefresh"), 'Streaming assistant text replaced a loaded image');
+  await patch({ olderChat: { ...media, blocks: [
+    { sequence: 1, role: 'user', kind: 'text', text: '이전 요청' },
+    { sequence: 2, role: 'assistant', kind: 'text', text: '이전 답변' },
+  ], hasOlder: false }, chat: { ...media, hasOlder: true } });
+  await waitFor(win, "!!document.querySelector('.chat-more') || document.querySelector('.chat-thread').textContent.includes('이전 답변')");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-more')?.click()");
+  await waitFor(win, "document.querySelector('.chat-thread').textContent.includes('이전 답변')");
+  assert(await win.webContents.executeJavaScript("window.chatImageBeforeRefresh.isConnected && document.querySelector('.chat-md .chat-image-preview img')===window.chatImageBeforeRefresh && window.questionFixture.imageReads.filter(p=>p.sequence===31).length===1"), 'Prepending older turns replaced the existing image or reloaded native attachments');
   await win.webContents.executeJavaScript("document.querySelectorAll('.chat-md .chat-path-link').forEach(link=>link.click())");
   const targets = await win.webContents.executeJavaScript('window.questionFixture.openedPaths');
   assert(JSON.stringify(targets) === JSON.stringify(['G:/My Project/초안 %20.html', 'G:/My Project/literal%20.html']), `Local Markdown targets did not decode exactly once: ${JSON.stringify(targets)}`);
@@ -342,6 +360,45 @@ async function exerciseChatMediaAndWork(win, directory) {
   await patch({ chat: { ...media, lifecycle: 'idle', lifecycleAt: Date.now() } });
   await waitFor(win, "!document.querySelector('.chat-work-status')");
   console.log('Desktop chat media and live work passed (paths, native images, viewer, copy, progress, completion, themes, responsive layout)');
+}
+
+async function exerciseConversationActions(win, directory) {
+  const patch = payload => win.webContents.executeJavaScript(`window.questionFixture.patch(${JSON.stringify(payload)})`);
+  const input = value => win.webContents.executeJavaScript(`(() => { const el=document.querySelector('.chat-composer-input');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  const demo = { sessionId: 'fixture-session', tool: 'codex', lifecycle: 'idle', pendingQuestion: null, blocks: [
+    { sequence: 71, role: 'user', kind: 'text', text: '원래 요청을 확인해줘.' },
+    { sequence: 72, role: 'assistant', kind: 'text', text: '확인한 답변입니다.' },
+  ], artifacts: [{ kind: 'html', path: 'G:/Acedia/output/layout.html', size: 1024, modifiedAt: null }] };
+  await win.loadFile(path.join(directory, 'index.html'));
+  win.setContentSize(1280, 900);
+  await patch({ chat: demo, state: { agentStatus: 'running', provider: 'codex', question: null, projectName: 'Acedia' } });
+  await waitFor(win, "!!document.querySelector('.chat-user-reuse') && !!document.querySelector('.chat-quote-button')");
+  const roles = await win.webContents.executeJavaScript(`(() => { const u=document.querySelector('.chat-user').getBoundingClientRect(),a=document.querySelector('.chat-turn.assistant').getBoundingClientRect(),t=document.querySelector('.chat-thread').getBoundingClientRect();return {right:Math.abs(u.right-t.right)<2,left:Math.abs(a.left-t.left)<2,separated:u.left>a.left+100,font:getComputedStyle(document.querySelector('.chat-md')).fontFamily}; })()`);
+  assert(roles.right && roles.left && roles.separated && roles.font.includes('Segoe UI'), `Message roles or body font not distinct: ${JSON.stringify(roles)}`);
+  await input('작성 중인 요청');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-user-reuse').click()");
+  await waitFor(win, "document.querySelector('.chat-composer-reference')?.textContent.includes('새 메시지')");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-composer-input').value.includes('작성 중인 요청') && document.querySelector('.chat-composer-input').value.includes('원래 요청') && window.questionFixture.writes.length===0 && document.querySelector('.chat-user-text').textContent==='원래 요청을 확인해줘.'"), 'Reusing a request erased the draft, edited history, or sent automatically');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-reference-clear').click()");
+  await input('');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-quote-button').click()");
+  await waitFor(win, "document.querySelector('.chat-composer-reference')?.textContent.includes('답변 인용')");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').disabled && window.questionFixture.writes.length===0"), 'Quote without a request submitted automatically');
+  await input('새로운 질문');
+  await patch({ state: { sessionId: 'other-fixture-session' }, chat: { ...demo, blocks: [], artifacts: [] } });
+  await waitFor(win, "document.querySelector('.chat-composer-input').value==='' && !document.querySelector('.chat-composer-reference')");
+  await input('다른 세션 초안');
+  await patch({ state: { sessionId: 'fixture-session' }, chat: demo });
+  await waitFor(win, "document.querySelector('.chat-composer-input').value==='새로운 질문' && !!document.querySelector('.chat-composer-reference')");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-artifact').click()");
+  await waitFor(win, "window.questionFixture.openedPaths.length===1");
+  assert(await win.webContents.executeJavaScript("window.questionFixture.openedPaths[0]==='G:/Acedia/output/layout.html'"), 'Artifact bypassed workspace preview path');
+  await fs.writeFile(path.resolve(appRoot, '../output/chat-conversation-actions.png'), (await win.webContents.capturePage()).toPNG());
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').click()");
+  await waitFor(win, "window.questionFixture.writes.length===2");
+  assert(JSON.stringify(await win.webContents.executeJavaScript('window.questionFixture.writes')) === JSON.stringify(['> 확인한 답변입니다.\n\n새로운 질문','\r']), 'Quoted request changed PTY delivery');
+  assert(await win.webContents.executeJavaScript("!document.querySelector('.chat-composer-reference') && document.querySelector('.chat-composer-input').value===''"), 'Sent quote stayed in the composer');
+  console.log('Desktop conversation actions passed (role alignment, request reuse, quote, draft isolation, artifact preview)');
 }
 
 async function exerciseStartupPane(BrowserWindow, directory) {
@@ -400,6 +457,7 @@ if (process.versions.electron) {
       await exerciseDesktop(desktop, directory);
       await exerciseChatUX(desktop, directory);
       await exerciseChatMediaAndWork(desktop, directory);
+      await exerciseConversationActions(desktop, directory);
       desktop.destroy();
       await exerciseStartupPane(BrowserWindow, directory);
       await exerciseRemote(BrowserWindow, directory);
@@ -413,6 +471,7 @@ if (process.versions.electron) {
     await build({ entryPoints: [path.join(appRoot, "scripts/fixtures/chat-question-renderer.tsx")], bundle: true,
       define: { "import.meta.env": "{}" }, jsx: "automatic", outfile: path.join(directory, "renderer.js") });
     await fs.writeFile(path.join(directory, "index.html"), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><style>html,body,#root{margin:0;height:100%;width:100%}#root{display:flex;background:var(--app-bg);color:var(--app-text)}</style><div id="root" class="app app-theme-soft"></div><script src="renderer.js"></script>');
+    await fs.copyFile(path.join(appRoot, "public/app-icon.png"), path.join(directory, "app-icon.png"));
     await build({ entryPoints: [path.join(appRoot, "scripts/fixtures/chat-startup-renderer.tsx")], bundle: true,
       define: { "import.meta.env": "{}" }, jsx: "automatic", outfile: path.join(directory, "startup-renderer.js") });
     await fs.writeFile(path.join(directory, "startup.html"), '<meta charset="utf-8"><link rel="stylesheet" href="startup-renderer.css"><style>html,body,#root{margin:0;height:100%;width:100%}#root{display:flex;background:var(--app-bg);color:var(--app-text);overflow:hidden}</style><div id="root" class="app app-theme-soft"></div><script src="startup-renderer.js"></script>');

@@ -15,13 +15,16 @@ export function ChatImage({ path, dataUrl, url, alt, folder, onOpenPath }: {
   const { text } = useAppLanguage();
   const linked = useContext(ChatImageLinkContext);
   const root = useRef<HTMLSpanElement>(null);
-  const [src, setSrc] = useState("");
+  const [src, setSrc] = useState(dataUrl || url || "");
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const name = alt || path?.split(/[\\/]/).pop() || text("첨부 이미지", "Attached image");
   useEffect(() => {
     let cancelled = false, started = false;
-    setSrc(""); setFailed(false); setOpen(false);
+    setSrc(dataUrl || url || ""); setFailed(false); setOpen(false);
+    // Supplied attachments are ready to paint; only disk reads need the
+    // viewport observer. Never replace a ready data URL with a loading label.
+    if (dataUrl || url) return;
     const load = async () => {
       if (started) return;
       started = true;
