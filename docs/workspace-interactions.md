@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-04
+last_updated: 2026-10-08
 stale_after: 2026-11-30
 sources:
   - id: session-workers
@@ -27,7 +27,16 @@ sources:
     title: "Active terminal focus recovery"
   - id: sidebar
     resource: ../app/src/components/Sidebar.tsx
-    title: "Project and session sidebar"
+    title: "Workspace navigation and recent conversations"
+  - id: sidebar-project-tree
+    resource: ../app/src/components/SidebarProjectTree.tsx
+    title: "Project folders, SSH machines and session picker"
+  - id: sidebar-navigation
+    resource: ../app/src/lib/sidebarNavigation.ts
+    title: "Recent conversation ordering, scopes and saved preferences"
+  - id: sidebar-smoke
+    resource: ../app/scripts/electron-sidebar-workspace-smoke.mjs
+    title: "Native sidebar actions, persistence, themes and geometry"
   - id: pane-slot
     resource: ../app/src/components/PaneSlot.tsx
     title: "Pane and tab host"
@@ -49,6 +58,21 @@ sources:
   - id: chat-view
     resource: ../app/src/components/ChatView.tsx
     title: "Persistent chat history and artifacts"
+  - id: chat-styles
+    resource: ../app/src/components/ChatView.css
+    title: "Readable conversation columns and responsive composer"
+  - id: chat-markdown
+    resource: ../app/src/components/ChatMarkdown.tsx
+    title: "Chat file links and fenced code rendering"
+  - id: chat-copy
+    resource: ../app/src/components/ChatCopyButton.tsx
+    title: "Chat clipboard actions and feedback"
+  - id: terminal-startup-prompt
+    resource: ../app/src/lib/terminalStartupPrompt.ts
+    title: "Live Codex startup questions and verified selection"
+  - id: chat-question-smoke
+    resource: ../app/scripts/electron-chat-question-smoke.mjs
+    title: "Desktop, native terminal startup and Remote question verification"
   - id: file-tree
     resource: ../app/src/components/FileTreePanel.tsx
     title: "File tree panel"
@@ -94,21 +118,60 @@ sources:
 
 ## Navigation and visibility
 
-The left sidebar organizes project folders, projects, configured sessions, and
-Screens. The session filters below search offer **All / Active / Sleeping**, with
-counts of all configured sessions in each category. Active includes running,
+The desktop sidebar header holds collapse/expand, notifications, and search
+icons beside the Acedia brand. Search opens the existing global **Quick Open**
+dialog, using the same configured shortcut; there is no inline sidebar search
+field. The bell opens the existing notification center and displays its unread
+count. The window titlebar omits duplicate Quick Open and attention controls.
+**New conversation**, **All conversations**, **Browsers**, and **Project board**
+sit below the header. Projects form a compact folder/SSH
+navigation tree; selecting a project scopes the recent-conversation list.
+Collapsing a project folder does not hide its conversations from that list.
+Split views have a separate, initially collapsed section. Archived conversations
+stay in the footer while the middle list scrolls; the footer is absent when there
+are no archived conversations. Settings open from the window's top-right button.
+Multi-account
+usage remains in the existing bottom status bar, with no sidebar account card or
+routing status. The sidebar header uses the application's Acedia icon and owns
+the collapse/expand button; the window titlebar omits duplicate brand/navigation
+controls.
+The approved [interactive HTML draft](mockups/sidebar-workspace.html) remains
+available as a design reference.[^sidebar][^sidebar-project-tree]
+
+Recent conversations sort by the last time the user opened them, falling back
+to creation time; background progress does not reorder the list. Sidebar pins
+appear first, followed by Today, Yesterday, This week and Earlier. A name-sort
+toggle is also available. Sidebar pins are independent of terminal-tab pins.
+The item menu exposes pin/unpin, rename, archive and the existing session/layout
+actions. Archiving hides a conversation from sidebar navigation while retaining
+its history, layout and runtime; the footer's Archived conversations dialog can
+restore it. Pin/archive flags and visit times survive reopening and synchronize
+through the shared session catalog.[^sidebar][^sidebar-navigation][^app-shell]
+
+The recent-list filters offer **All / Active / Sleeping**, with counts for the
+selected project scope, excluding archived entries.
+Active includes running,
 starting, recovering, working, and question/permission-waiting sessions.
 Sleeping means the steady blue, deferred session that can start or resume when
 selected; it has no active process. Never-started, explicitly deactivated,
 exited, and unreachable entries remain available in All.[^sidebar]
 
-Search by project, folder, session, or path stays within the chosen status.
 Projects, virtual folders, and machines with no matching sessions are hidden
-under Active or Sleeping. An empty result offers a reset to All and clears the
-search. The selected status survives reopening the app; the previous active-only
-preference migrates to Active. Screen shortcuts remain available above the
-project tree. Filtering and folder/project collapse change visibility without
-deleting or activating sessions.[^sidebar]
+under Active or Sleeping. An empty result offers a reset to All. The selected
+status survives reopening the app; the previous active-only preference migrates
+to Active. Split shortcuts remain available independently of status. Global
+Quick Open searches sessions and projects independently of the recent-list
+filters. Filtering and folder/project collapse change
+visibility without deleting or activating sessions.[^sidebar]
+
+The sidebar collapses to a 66px navigation rail and resizes from 244px to 360px,
+with a saved default of 286px. Drag the edge or focus it and use Left/Right to
+resize. Search and New conversation show the user's configured shortcuts. The
+header actions also remain available in the collapsed rail. The sidebar follows
+the current application theme. The Electron sidebar smoke uses a separate
+profile and checks pin/archive/restore, scopes, Quick Open, notifications, split rename/ungroup,
+collapse/resize, settings, reload and 800–1440px layouts without launching or
+killing terminal processes.[^sidebar][^sidebar-smoke]
 
 The shared Dashboard/Remote sidebar uses these same All/Active/Sleeping categories,
 with global counts and a browser-local saved selection. Search stays within the
@@ -123,8 +186,8 @@ or Git history, returns the center surface to the preserved session layout.
 Browser creation and closure in the Hub update every workspace window through
 the main-process browser catalog.[^app-shell][^sidebar]
 
-Removing a session from the sidebar deactivates its live PTY. Permanent session
-deletion is a separate confirmed action from the session context menu. Project
+The session menu's Deactivate action stops its live PTY. Permanent session
+deletion is a separate confirmed action from that menu. Project
 creation can create an initial session using the tool and dangerous-mode choice
 made in the creation flow.[^app-shell]
 
@@ -165,7 +228,10 @@ keyboard interaction, in addition to React lifecycle assertions.
 
 ## Screens, tabs, and splits
 
-Right-click a **SCREENS → Screen** shortcut and choose **스크린 해제 / Ungroup screen**
+Expand **분할 화면 / Split views** and use a shortcut's item menu or right-click it.
+**분할 화면 이름 변경 / Rename split view** saves a descriptive name with the
+workspace layout. Unnamed shortcuts show their project and conversation names.
+Choose **스크린 해제 / Ungroup screen**
 to turn each split pane into an independent screen. Tabs within a pane, including
 documents and Git history, stay together. The currently selected pane stays visible;
 ungrouping another screen does not switch the current screen. Session processes,
@@ -259,6 +325,48 @@ files appear as session artifacts that can be opened from the chat view. The
 rendered thread keeps tool calls in transcript order, groups only adjacent tool
 work, labels assistant output by provider, and exposes a jump-to-latest control
 when the operator reads above newly arriving output.[^chat-view][^conversation-store]
+
+Desktop Chat centers the conversation and composer in a shared 760px reading
+column. User messages use right-aligned bubbles; assistant narrative flows
+without an outer card. Consecutive tool work and reasoning remain collapsed
+until opened, keeping their transcript position and full details. Reply copy
+copies assistant narrative only; code-block copy preserves the plain source
+without its language label or controls. Copy success and failure are announced
+on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
+
+The rounded composer has session project/connection context, file attachment,
+provider label, queue/send and an interrupt button while work is active. The
+context labels describe the current session. Enter sends or queues; Shift+Enter
+and Ctrl/Cmd+Enter insert a newline. Text, image attachment and draft persistence
+keep the existing delivery flow; choosing files does not submit a message.
+Slash/file autocomplete opens above the card. A required Claude sign-in disables
+composer submission and directs the user to the terminal. Startup questions,
+structured questions and reserved messages retain their own pinned controls
+above the composer.[^chat-view][^pane-slot][^chat-styles]
+
+Codex folder trust and hook-review dialogs appear before the transcript and
+SessionStart hook. Desktop Chat reads the current fitted xterm screen and shows
+these questions with the original warning, choices and a terminal fallback,
+including during starting/recovering. The hidden terminal keeps its geometry so
+a session first opened in Chat can attach and receive output. This does not
+approve either dialog automatically. Selecting a choice moves from the current
+terminal selection, verifies the resulting selection, then sends Enter. A
+changed question, missing selector or failed write stops delivery; reviewing
+hook details opens the terminal. Old scrollback and exited/inactive sessions do
+not supply startup questions. Ordinary queued messages remain held while a
+startup question is visible.[^chat-view][^pane-slot][^terminal-startup-prompt]
+
+The native chat-question smoke covers transcript-free startup, the hook dialog's
+default second selection, refusal/skip choices, duplicate clicks, changed
+questions, first Chat attach, wrapped terminal rows and switching views without
+restarting the PTY. Existing structured and asynchronous questions are also
+checked on desktop and Remote.[^chat-question-smoke]
+
+The same smoke also verifies readable columns at 420/800/1280px, dark/light
+themes, copy contents and failure feedback, file attachment, newline bindings,
+queue/stop behavior, authentication guards and draft preservation across view
+switches. Clipboard and file-picker delivery use fixtures; these checks do not
+replace an installed-app OS dialog/clipboard test.[^chat-question-smoke]
 
 Runtime state and work state are distinct. Starting/recovering describes the
 process lifecycle; working/waiting/blocked/done comes from hooks. A completion
@@ -400,7 +508,10 @@ The domain invariants behind these interactions are documented in
 [^worker-role-config]: Per-worker Codex configuration layers
 [^session-lifecycle-actions]: Session deletion and runtime lifecycle actions
 [^workspace-focus]: Active terminal focus recovery
-[^sidebar]: Project and session sidebar
+[^sidebar]: Workspace navigation and recent conversations
+[^sidebar-project-tree]: Project folders, SSH machines and session picker
+[^sidebar-navigation]: Recent conversation ordering, scopes and saved preferences
+[^sidebar-smoke]: Native sidebar actions, persistence, themes and geometry
 [^pane-slot]: Pane and tab host
 [^context-menus]: Workspace context menus
 [^terminal-area]: Terminal and chat surface
@@ -408,6 +519,11 @@ The domain invariants behind these interactions are documented in
 [^terminal-links-smoke]: Native terminal link pointer verification
 [^terminal-path-service]: Local filesystem and file URL resolution
 [^chat-view]: Persistent chat history and artifacts
+[^chat-styles]: Readable conversation columns and responsive composer
+[^chat-markdown]: Chat file links and fenced code rendering
+[^chat-copy]: Chat clipboard actions and feedback
+[^terminal-startup-prompt]: Live Codex startup questions and verified selection
+[^chat-question-smoke]: Desktop, native terminal startup and Remote question verification
 [^file-tree]: File tree panel
 [^git-discovery]: Child Git repository discovery
 [^git-runtime]: Installed and bundled Git executable selection

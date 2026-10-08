@@ -176,6 +176,9 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         modelSettings: normalizeSessionModel(c.modelSettings),
         pinned: c.pinned || undefined,
         tabColor: c.tabColor || undefined,
+        sidebarPinned: c.sidebarPinned === true || undefined,
+        sidebarArchived: c.sidebarArchived === true || undefined,
+        lastOpenedAt: typeof c.lastOpenedAt === "number" && Number.isFinite(c.lastOpenedAt) && c.lastOpenedAt > 0 ? c.lastOpenedAt : undefined,
         createdAt: c.createdAt,
         // Migrate legacy fields: prefer new lastSessionId, fall back to either
         // older field (both held the same session UUID).
@@ -365,6 +368,7 @@ export function normalizeStoredGroups(
     const sessionPins = sanitizeSessionPins(candidate.group.sessionPins, layout);
     groups.push({
       id: candidate.group.id,
+      name: typeof candidate.group.name === "string" ? candidate.group.name.trim().slice(0, 120) || undefined : undefined,
       projectId:
         candidate.group.projectId ||
         Array.from(actualAgentIds)

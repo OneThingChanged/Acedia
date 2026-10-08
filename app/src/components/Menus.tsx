@@ -37,10 +37,11 @@ function useClampedMenuPosition(x: number, y: number) {
   return { ref, pos };
 }
 
-export function ScreenContextMenu({ state, onClose, onDissolve }: {
+export function ScreenContextMenu({ state, onClose, onDissolve, onRename }: {
   state: ScreenContextMenuState;
   onClose: () => void;
   onDissolve: () => void;
+  onRename?: () => void;
 }) {
   const { ref, pos } = useClampedMenuPosition(state.x, state.y);
   const { text } = useAppLanguage();
@@ -62,6 +63,7 @@ export function ScreenContextMenu({ state, onClose, onDissolve }: {
     }} />
     <div ref={ref} className="ctx-menu" role="menu" aria-label={text("스크린 메뉴", "Screen menu")}
       style={{ left: pos.left, top: pos.top }} onContextMenu={(event) => event.preventDefault()}>
+      {onRename && <button className="ctx-item" role="menuitem" onClick={onRename}>{text("분할 화면 이름 변경", "Rename split view")}</button>}
       <button className="ctx-item" role="menuitem" onClick={onDissolve}>
         {text("스크린 해제", "Ungroup screen")}
       </button>
@@ -115,10 +117,12 @@ export function ProjectContextMenu({
   state,
   onClose,
   onAction,
+  onNewSession,
 }: {
   state: ProjectContextMenuState;
   onClose: () => void;
   onAction: (action: "rename" | "delete" | "properties") => void;
+  onNewSession?: () => void;
 }) {
   const { ref, pos } = useClampedMenuPosition(state.x, state.y);
   const { text } = useAppLanguage();
@@ -138,6 +142,7 @@ export function ProjectContextMenu({
         style={{ left: pos.left, top: pos.top }}
         onContextMenu={(e) => e.preventDefault()}
       >
+        {onNewSession && <button className="ctx-item" onClick={onNewSession}>{text("새 대화", "New conversation")}</button>}
         <button className="ctx-item" onClick={() => onAction("rename")}>
           {text("프로젝트 이름 변경", "Rename project")}
         </button>
@@ -367,6 +372,8 @@ export function ContextMenu({
   canDeactivate,
   onClose,
   onAction,
+  sidebarPinned = false,
+  sidebarArchived = false,
 }: {
   state: ContextMenuState;
   hasActive: boolean;
@@ -378,6 +385,8 @@ export function ContextMenu({
   onAction: (
     action: SessionContextAction
   ) => void;
+  sidebarPinned?: boolean;
+  sidebarArchived?: boolean;
 }) {
   const { ref, pos } = useClampedMenuPosition(state.x, state.y);
   const { text } = useAppLanguage();
@@ -426,6 +435,12 @@ export function ContextMenu({
         </button>
         <button className="ctx-item" onClick={() => onAction("rename")}>
           {text("세션 별명 변경", "Rename session")}
+        </button>
+        <button className="ctx-item" onClick={() => onAction("sidebar-pin")}>
+          {sidebarPinned ? text("대화 고정 해제", "Unpin conversation") : text("대화 고정", "Pin conversation")}
+        </button>
+        <button className="ctx-item" onClick={() => onAction("sidebar-archive")}>
+          {sidebarArchived ? text("대화 보관 해제", "Restore conversation") : text("대화 보관", "Archive conversation")}
         </button>
         <button
           className="ctx-item"

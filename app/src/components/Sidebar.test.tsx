@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Sidebar } from "./Sidebar";
+import { SidebarProjectTree as Sidebar } from "./SidebarProjectTree";
 import type { Agent, Group, Project, ProjectFolder } from "../types";
 
 function renderSidebar(

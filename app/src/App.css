@@ -244,27 +244,6 @@ body,
   app-region: drag;
 }
 
-.topbar-logo {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-right: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--app-heading);
-  white-space: nowrap;
-}
-.topbar-logo-mark {
-  color: #cc785c;
-  font-size: 13px;
-}
-.topbar-logo-img {
-  width: 17px;
-  height: 17px;
-  display: block;
-  object-fit: contain;
-}
-
 .topbar-icon {
   display: block;
 }
@@ -309,65 +288,6 @@ body,
   align-items: center;
   justify-content: center;
   gap: 6px;
-}
-
-.topbar-attention {
-  position: relative;
-  width: 26px;
-  font-size: 12px;
-  font-weight: 700;
-}
-.topbar-attention-unread {
-  color: var(--app-warning);
-}
-.topbar-attention-count {
-  position: absolute;
-  top: 1px;
-  right: -2px;
-  min-width: 13px;
-  height: 13px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--app-warning);
-  color: var(--app-bg);
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 13px;
-  text-align: center;
-}
-
-.topbar-quick-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 24px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: 1px solid var(--app-border);
-  background: var(--app-bg);
-  color: var(--app-muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-.topbar-quick-open:hover {
-  border-color: var(--app-accent);
-  color: var(--app-heading);
-}
-.topbar-kbd {
-  font-family: Consolas, ui-monospace, monospace;
-  font-size: 9px;
-  border: 1px solid var(--app-border);
-  border-radius: 3px;
-  padding: 1px 4px;
-}
-@media (max-width: 760px) {
-  .topbar-quick-open {
-    display: none;
-  }
 }
 
 .usage-status-bar {
@@ -5489,7 +5409,7 @@ body.files-resizing .files-resizer::after {
 }
 
 /* Desktop conversation (chat) view — toggled per pane; the terminal stays
-   mounted underneath (display:none). */
+   fitted and mounted underneath, hidden with visibility:hidden. */
 .pane-chat-toggle {
   margin-left: auto;
   align-self: center;
@@ -5667,6 +5587,7 @@ body.files-resizing .files-resizer::after {
 .chat-prompt.authentication {
   background: color-mix(in srgb, var(--app-danger, #f85149) 8%, var(--app-panel, var(--app-bg)));
 }
+.chat-prompt-startup { max-height: 65%; }
 .chat-prompt-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; font-size: 13px; color: var(--app-text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .chat-prompt-heading { flex: 0 0 auto; color: var(--app-warning, #e3b341); font-size: 13px; }
 .chat-prompt-hint { flex: 0 0 auto; color: var(--app-muted); font-size: 12px; }

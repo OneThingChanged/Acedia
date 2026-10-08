@@ -16,9 +16,11 @@ configuration that supports it.
 * [Project managed files](project-managed-files.md) - Acedia settings registry, Git/Perforce ignores, and read-only repair at local session startup.
 * [Workspace interactions](workspace-interactions.md) - Navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
+* [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
 
 ## Settings and review
 
+* [Acedia 1.8.1.63 EXE release](release-1-8-1-63.md) - Modern sidebar and conversation layout, shared Quick Open and notifications, clipboard actions and visible Codex startup questions in Chat.
 * [Acedia 1.8.1.62 EXE release](release-1-8-1-62.md) - Stable LAN codes and client IPs, clear routing status, clickable file paths and desktop/Remote image viewing.
 * [Acedia 1.8.1.61 EXE release](release-1-8-1-61.md) - Additional private Dashboard networks and saved-configuration guards for Remote and tunnels.
 * [Acedia 1.8.1.60 EXE release](release-1-8-1-60.md) - Screen ungrouping, browser themes, Claude authentication prompts and generated project configuration management.

@@ -1,5 +1,6 @@
 import { markIdleSuspended } from './lib/idleSessions';
 import { viewedImagePaths } from './lib/viewedImagePath';
+import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
@@ -17,6 +18,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type CSSProperties,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -326,6 +328,9 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     modelSettings: normalizeSessionModel(agent.modelSettings),
     pinned: agent.pinned || undefined,
     tabColor: agent.tabColor || undefined,
+    sidebarPinned: agent.sidebarPinned || undefined,
+    sidebarArchived: agent.sidebarArchived || undefined,
+    lastOpenedAt: agent.lastOpenedAt,
     createdAt: agent.createdAt,
     codexAccountId: agent.codexAccountId,
     codexPoolAccountId: agent.codexPoolAccountId,
@@ -471,6 +476,9 @@ function agentFromStored(
     modelSettings: normalizeSessionModel(stored.modelSettings),
     pinned: stored.pinned || undefined,
     tabColor: stored.tabColor || undefined,
+    sidebarPinned: stored.sidebarPinned === true || undefined,
+    sidebarArchived: stored.sidebarArchived === true || undefined,
+    lastOpenedAt: typeof stored.lastOpenedAt === "number" && Number.isFinite(stored.lastOpenedAt) && stored.lastOpenedAt > 0 ? stored.lastOpenedAt : undefined,
     createdAt: stored.createdAt || existing?.createdAt || Date.now(),
     lastSessionId:
       stored.lastSessionId ??
@@ -663,6 +671,8 @@ function App() {
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(loadFilesOpen);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
+  const [sidebarNavWidth, setSidebarNavWidth] = useState(loadSidebarWidth);
+  const [renameScreenId, setRenameScreenId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   useNativeViewOcclusion(settingsOpen);
   const [appTheme, setAppTheme] = useState<AppThemeId>(loadAppTheme);
@@ -1434,6 +1444,10 @@ function App() {
       localStorage.setItem(LS_SIDEBAR_OPEN, String(sidebarOpen));
     } catch {}
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_SIDEBAR_WIDTH, String(sidebarNavWidth)); } catch {}
+  }, [sidebarNavWidth]);
 
   // Keep the native window-control overlay colors in sync with the theme.
   useEffect(() => {
@@ -2259,6 +2273,7 @@ function App() {
     if (!agent) return null;
     setWorkspaceMode("sessions");
     setActiveProjectId(agent.projectId);
+    setAgents(previous => previous.map(candidate => candidate.id === agentId ? { ...candidate, lastOpenedAt: Date.now() } : candidate));
     setProjects((prev) =>
       prev.map((project) =>
         project.id === agent.projectId
@@ -2584,6 +2599,10 @@ function App() {
         a.id === agentId ? { ...a, pinned: pinned || undefined } : a
       )
     );
+  }, []);
+
+  const setSidebarPreference = useCallback((agentId: string, field: "sidebarPinned" | "sidebarArchived", value?: boolean) => {
+    setAgents(previous => previous.map(agent => agent.id === agentId ? { ...agent, [field]: (value ?? !agent[field]) || undefined } : agent));
   }, []);
 
   const setAgentTabColor = useCallback(
@@ -3205,6 +3224,8 @@ function App() {
       else if (action === "split-h") splitWith(id, "h");
       else if (action === "split-v") splitWith(id, "v");
       else if (action === "rename") setRenameSessionId(id);
+      else if (action === "sidebar-pin") setSidebarPreference(id, "sidebarPinned");
+      else if (action === "sidebar-archive") setSidebarPreference(id, "sidebarArchived");
       else if (action === "pin-session") pinContextGroupSessions(id);
       else if (action === "clear-session-pin") clearContextGroupSessionPins(id);
       else if (action === "deactivate") {
@@ -3227,6 +3248,7 @@ function App() {
       dismissTransientMenus,
       removeAgent,
       relinkSession,
+      setSidebarPreference,
     ]
   );
 
@@ -4330,14 +4352,13 @@ function App() {
 
   return (
     <div
-      className={`app app-theme-${appTheme} ${isElectronRuntime() ? "app-desktop" : ""} ${
+      className={`app app-sidebar-modern app-theme-${appTheme} ${isElectronRuntime() ? "app-desktop" : ""} ${
         isElectronRuntime() && showUsageBar ? "app-with-usage-status" : ""
       } ${!sidebarOpen ? "app-sidebar-collapsed" : ""}`}
+      style={{ "--sidebar-width": `${sidebarNavWidth}px` } as CSSProperties}
     >
       {isElectronRuntime() && (
         <TopBar
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
           filesOpen={filesOpen}
           onToggleFiles={() => setFilesOpen((open) => !open)}
           desktopPetEnabled={desktopPetEnabled}
@@ -4350,13 +4371,21 @@ function App() {
           alwaysOnTop={alwaysOnTop}
           onToggleAlwaysOnTop={toggleAlwaysOnTop}
           onOpenNewWindow={openNewAppWindow}
-          onQuickOpen={() => setQuickOpen(true)}
-          quickOpenShortcut={commandShortcuts["quick-open"]}
-          onOpenAttention={() => setAttentionOpen(true)}
-          attentionUnreadCount={attentionUnreadCount}
         />
       )}
       <Sidebar
+        collapsed={!sidebarOpen}
+        onToggleCollapsed={() => setSidebarOpen(open => !open)}
+        width={sidebarNavWidth}
+        onWidthChange={setSidebarNavWidth}
+        onNewSession={() => { if (activeProjectIdRef.current) openNewSessionModal(); else setShowProjectModal(true); }}
+        onRestoreSession={id => setSidebarPreference(id, "sidebarArchived", false)}
+        onShowSessions={() => setWorkspaceMode("sessions")}
+        onQuickOpen={() => setQuickOpen(true)}
+        onOpenAttention={() => setAttentionOpen(true)}
+        attentionUnreadCount={attentionUnreadCount}
+        quickOpenShortcut={commandShortcuts["quick-open"]}
+        newSessionShortcut={commandShortcuts["new-session"]}
         projects={sidebarProjects}
         projectFolders={projectFolders}
         agents={sidebarAgents}
@@ -4606,6 +4635,13 @@ function App() {
           onCancel={() => finishSessionAccountLaunch(null)}
         />
       )}
+      {renameScreenId && (() => {
+        const target = groups.find(group => group.id === renameScreenId);
+        if (!target) return null;
+        return <RenameSessionModal key={target.id} title={text("분할 화면 이름 변경", "Rename split view")} fieldLabel={text("분할 화면 이름", "Split view name")}
+          currentName={target.name || text("분할 화면", "Split view")} onCancel={() => setRenameScreenId(null)}
+          onRename={name => { applyGroupOp(state => ({ ...state, groups: state.groups.map(group => group.id === target.id ? { ...group, name: name.trim().slice(0, 120) } : group) })); setRenameScreenId(null); }} />;
+      })()}
       {renameSession && (
         <RenameSessionModal
           currentName={renameSession.name}
@@ -4763,6 +4799,8 @@ function App() {
       {visibleContextMenu && (
         <ContextMenu
           state={visibleContextMenu}
+          sidebarPinned={!!agents.find(agent => agent.id === visibleContextMenu.agentId)?.sidebarPinned}
+          sidebarArchived={!!agents.find(agent => agent.id === visibleContextMenu.agentId)?.sidebarArchived}
           hasActive={!!activeGroupLayout && !!activePath}
           canPlaceInActive={canPlaceContextAgentInActiveGroup}
           isSessionLocked={!!contextGroup?.sessionLocked}
@@ -4780,6 +4818,7 @@ function App() {
       {visibleScreenContextMenu && (
         <ScreenContextMenu
           state={visibleScreenContextMenu}
+          onRename={() => { setRenameScreenId(visibleScreenContextMenu.groupId); dismissTransientMenus(); }}
           onClose={dismissTransientMenus}
           onDissolve={() => {
             const groupId = visibleScreenContextMenu.groupId;
@@ -4795,6 +4834,7 @@ function App() {
       {visibleProjectContextMenu && (
         <ProjectContextMenu
           state={visibleProjectContextMenu}
+          onNewSession={() => { const id = visibleProjectContextMenu.projectId; dismissTransientMenus(); openNewSessionModal(id); }}
           onClose={dismissTransientMenus}
           onAction={(action) => {
             const projectId = visibleProjectContextMenu.projectId;

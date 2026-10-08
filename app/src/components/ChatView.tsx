@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ChatCopyButton } from "./ChatCopyButton";
+import { ChatIcon } from "./ChatIcon";
+import { openDialog } from "../platform/plugins";
+import { toolForId } from "../types";
+import "./ChatView.css";
 import { invoke, listen } from "../platform/runtime";
 import { electronBridge } from "../platform/electronBridge";
 import { extractDroppedFilePaths, formatDroppedPathForTerminal, hasExternalFiles } from "../lib/fileDrop";
 import { parseChatPrompt, promptSignature, type ChatPromptOption } from "../lib/chatPrompt";
+import { answerTerminalStartupPrompt, parseTerminalStartupPrompt, type TerminalStartupPrompt } from "../lib/terminalStartupPrompt";
 import {
   applyAutocomplete,
   detectAutocomplete,
@@ -93,14 +99,16 @@ function ChatImage({ path }: { path: string }) {
   );
 }
 
-function UserMessage({ text }: { text: string }) {
-  const { rest, images } = splitImagePaths(text);
+function UserMessage({ text: message }: { text: string }) {
+  const { text } = useAppLanguage();
+  const { rest, images } = splitImagePaths(message);
   return (
     <div className="chat-user">
       {rest && <div className="chat-user-text">{rest}</div>}
       {images.map((p, i) => (
         <ChatImage key={`${p}-${i}`} path={p} />
       ))}
+      <div className="chat-user-actions"><ChatCopyButton value={message} label={text("메시지 복사", "Copy message")} /></div>
     </div>
   );
 }
@@ -276,10 +284,12 @@ function assistantLabel(tool?: string) {
 function AssistantTurn({ run, tool, onOpenPath }: { run: ChatBlock[]; tool?: string; onOpenPath?: (path: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
+  const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
+  const providerIcon = toolForId(tool || "none");
   return (
     <div className="chat-turn assistant">
       <div className="chat-role">
-        <span className="chat-av">✦</span> {assistantLabel(tool)}
+        <span className="chat-av" style={{ color: providerIcon.iconColor }} aria-hidden="true">{providerIcon.icon}</span> {assistantLabel(tool)}
       </div>
       {segments.map((segment, index) => {
         if (segment.kind === "tools") {
@@ -308,6 +318,7 @@ function AssistantTurn({ run, tool, onOpenPath }: { run: ChatBlock[]; tool?: str
         }
         return null;
       })}
+      {answer && <div className="chat-message-actions"><ChatCopyButton value={answer} label={text("답변 복사", "Copy response")} /></div>}
     </div>
   );
 }
@@ -320,8 +331,11 @@ export function ChatView({
   question,
   assistantMessage,
   folder,
+  projectName,
+  connectionLabel,
   provider,
   questionToken,
+  readTerminalScreen,
   onOpenTerminal,
   onOpenPath,
 }: {
@@ -333,8 +347,11 @@ export function ChatView({
   question?: string | null;
   assistantMessage?: string | null;
   folder?: string;
+  projectName?: string;
+  connectionLabel?: string;
   provider?: string;
   questionToken?: number;
+  readTerminalScreen?: () => string;
   onOpenTerminal: () => void;
   onOpenPath?: (path: string) => void;
 }) {
@@ -363,6 +380,7 @@ export function ChatView({
   const [promptError, setPromptError] = useState("");
   const promptSigRef = useRef("");
   const respondingRef = useRef(false);
+  const [terminalPromptState, setTerminalPromptState] = useState<{ agentId: string; prompt: TerminalStartupPrompt | null }>({ agentId, prompt: null });
   const [visible, setVisible] = useState(CHAT_PAGE);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   // Reserved (queued) messages waiting to be sent while the agent is working.
@@ -630,7 +648,7 @@ export function ChatView({
         <UserMessage text={blocks[range.start].text ?? ""} />
       </div>
     ) : (
-      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={tool} onOpenPath={onOpenPath} />
+      <AssistantTurn key={`a${range.start}`} run={blocks.slice(range.start, range.end)} tool={provider || tool} onOpenPath={onOpenPath} />
     )
   );
 
@@ -641,10 +659,25 @@ export function ChatView({
   const stoppedHere = stoppedKey !== null && stoppedKey === msgKey;
   const initializing = agentStatus === "starting" || agentStatus === "recovering";
   const alive = !DEAD_STATUSES.includes(agentStatus);
+  const canReadStartupPrompt = alive && agentStatus !== "idle" && (provider || tool) === "codex" && !!readTerminalScreen;
+  useEffect(() => {
+    const refresh = () => {
+      const next = canReadStartupPrompt ? parseTerminalStartupPrompt(readTerminalScreen!(), "codex") : null;
+      setTerminalPromptState(previous => previous.agentId === agentId && JSON.stringify(previous.prompt) === JSON.stringify(next)
+        ? previous : { agentId, prompt: next });
+    };
+    refresh();
+    if (!canReadStartupPrompt) return;
+    const timer = window.setInterval(refresh, 200);
+    return () => window.clearInterval(timer);
+  }, [agentId, canReadStartupPrompt, readTerminalScreen]);
+  const startupPrompt = canReadStartupPrompt && terminalPromptState.agentId === agentId ? terminalPromptState.prompt : null;
   const nativeQuestion = alive && !initializing && agentStatus !== "idle" && !stoppedHere ? pendingQuestion : null;
   const questionRaw = nativeQuestion?.answeredIndices?.length ? JSON.stringify({ questions: questionDetails(nativeQuestion.question).questions.filter((_, i) => !nativeQuestion.answeredIndices!.includes(i)).map(q => ({ id: q.id, question: q.text, options: q.options })) }) : nativeQuestion?.question || question;
-  const prompt = parseChatPrompt(nativeQuestion ? "waiting" : agentStatus, questionRaw, assistantMessage, provider || tool);
-  const promptSig = prompt ? `${storeKey}|${nativeQuestion?.id || questionToken || ""}|${promptSignature(prompt)}` : "";
+  const prompt = startupPrompt || parseChatPrompt(nativeQuestion ? "waiting" : agentStatus, questionRaw, assistantMessage, provider || tool);
+  const promptSig = prompt ? startupPrompt
+    ? `${agentId}|startup|${promptSignature(startupPrompt)}`
+    : `${storeKey}|${nativeQuestion?.id || questionToken || ""}|${promptSignature(prompt)}` : "";
   promptSigRef.current = promptSig;
   useEffect(() => { setAnsweredPromptSig(""); setPromptError(""); }, [promptSig]);
   const busy = initializing || (
@@ -673,10 +706,20 @@ export function ChatView({
       ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
       : [option.send, "\r"];
     try {
-      for (const key of keys) {
-        if (promptSigRef.current !== promptSig) return;
-        await invoke("write_pty", { id: agentId, data: key });
-        await new Promise(resolve => window.setTimeout(resolve, 60));
+      if (startupPrompt) {
+        await answerTerminalStartupPrompt(startupPrompt, Number(option.send) - 1,
+          () => promptSigRef.current === promptSig ? parseTerminalStartupPrompt(readTerminalScreen!(), "codex") : null,
+          key => invoke("write_pty", { id: agentId, data: key }),
+          () => new Promise(resolve => window.setTimeout(resolve, 60)));
+        lastDispatchRef.current = Date.now();
+        // The hook review opens a full-screen details view; keep it visible.
+        if (startupPrompt.startupKind === "hook-review" && option.send === "1") onOpenTerminal();
+      } else {
+        for (const key of keys) {
+          if (promptSigRef.current !== promptSig) return;
+          await invoke("write_pty", { id: agentId, data: key });
+          await new Promise(resolve => window.setTimeout(resolve, 60));
+        }
       }
       if (promptSigRef.current === promptSig) setAnsweredPromptSig(promptSig);
       window.setTimeout(() => fetchRef.current(), 400);
@@ -703,7 +746,7 @@ export function ChatView({
   // Esc cancels the in-progress turn from anywhere in the focused chat pane
   // (not just when the composer has focus) while the agent is working.
   useEffect(() => {
-    if (!active || !busy || initializing) return;
+    if (!active || !busy || initializing || startupPrompt) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -712,7 +755,7 @@ export function ChatView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, busy, initializing, interrupt]);
+  }, [active, busy, initializing, startupPrompt, interrupt]);
 
   // Actually write a message to the PTY + echo it instantly. Text and Enter go
   // as separate writes (80ms apart) so Codex/Claude don't treat "text\r" as a
@@ -774,7 +817,8 @@ export function ChatView({
     const value = raw.trim();
     if (!value) return;
     const cooled = Date.now() - lastDispatchRef.current >= QUEUE_COOLDOWN_MS;
-    if (alive && !busy && !prompt && queue.length === 0 && cooled) dispatch(value);
+    const liveStartup = canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex");
+    if (alive && !busy && !prompt && !liveStartup && queue.length === 0 && cooled) dispatch(value);
     else mutateQueue((q) => [...q, value]);
   };
 
@@ -783,17 +827,18 @@ export function ChatView({
     if (busy || prompt || !alive || queue.length === 0) return;
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
+      if (canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex")) return;
       dispatch(queue[0]);
       mutateQueue((q) => q.slice(1));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [busy, promptSig, alive, queue, dispatch, mutateQueue]);
+  }, [busy, promptSig, alive, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
 
   const cancelQueued = (index: number) =>
     mutateQueue((q) => q.filter((_, i) => i !== index));
 
   return (
-    <div className="chat-view">
+    <div className="chat-view chat-view-modern">
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {status === "unsupported" && (
           <div className="chat-empty">{text("대화 보기를 지원하지 않는 세션입니다 (codex/claude).", "This session does not support conversation view (codex/claude).")}</div>
@@ -822,7 +867,7 @@ export function ChatView({
               <UserMessage text={t} />
             </div>
           ))}
-          {busy && status !== "unsupported" && status !== "loading" && (
+          {busy && !startupPrompt && status !== "unsupported" && status !== "loading" && (
             <div className="chat-thinking" aria-live="polite">
               <span className="chat-thinking-dots">
                 <i />
@@ -834,16 +879,6 @@ export function ChatView({
                 : initializing
                   ? text("시작 중…", "Starting…")
                   : text("작업 중…", "Working…")}
-              {!initializing && (
-                <button
-                  type="button"
-                  className="chat-stop"
-                  onClick={interrupt}
-                  title={text("진행 취소 (Esc)", "Cancel progress (Esc)")}
-                >
-                  ■ {text("중단", "Stop")}
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -854,8 +889,8 @@ export function ChatView({
         </button>
       )}
       {prompt && (
-        <div className={`chat-prompt ${prompt.kind}`} role="status" aria-live="polite">
-          <strong className="chat-prompt-heading">{prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
+        <div className={`chat-prompt ${prompt.kind}${startupPrompt ? " chat-prompt-startup" : ""}`} role="status" aria-live="polite">
+          <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
           {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
@@ -866,6 +901,7 @@ export function ChatView({
             ? text("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.", "Run /login in this session's terminal and sign in through the browser. Then resend your request.")
             : answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
+            : startupPrompt && prompt.options.length ? text("내용을 확인한 뒤 아래에서 선택해 주세요. 선택한 답변만 터미널에 전달합니다.", "Review the details and choose below. Your selected answer will be sent to the terminal.")
             : nativeQuestion?.async ? text('작업은 계속 진행됩니다. 보내기를 누르면 Codex 질문에 답합니다.', 'Work continues. Send your answers to the queued Codex question.')
             : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
             : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
@@ -908,7 +944,8 @@ export function ChatView({
         </div>
       )}
       {status !== "unsupported" && (
-        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={tool} folder={folder} />
+        <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
+          projectName={projectName} connectionLabel={connectionLabel} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
       )}
     </div>
   );
@@ -928,6 +965,9 @@ function ChatComposer({
   authenticationRequired,
   tool,
   folder,
+  projectName,
+  connectionLabel,
+  onInterrupt,
 }: {
   storageKey: string;
   onSend: (text: string) => void;
@@ -936,6 +976,9 @@ function ChatComposer({
   authenticationRequired: boolean;
   tool?: string;
   folder?: string;
+  projectName?: string;
+  connectionLabel?: string;
+  onInterrupt?: () => void;
 }) {
   const { text: localize } = useAppLanguage();
   const [text, setText] = useState(() => draftStore.get(storageKey) ?? "");
@@ -943,6 +986,8 @@ function ChatComposer({
     () => attachStore.get(storageKey) ?? []
   );
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
   // Autocomplete popup (/slash or @file).
   const [ac, setAc] = useState<{ items: AcItem[]; index: number; trigger: AutocompleteTrigger } | null>(null);
   const acTriggerRef = useRef<AutocompleteTrigger | null>(null);
@@ -1030,6 +1075,7 @@ function ChatComposer({
   };
 
   const send = () => {
+    if (authenticationRequired) return;
     // Expand attachments on send: pasted-text blocks and image paths join the
     // typed text so the agent receives everything.
     const texts = attachments.filter((a) => a.kind === "text").map((a) => a.text);
@@ -1057,6 +1103,18 @@ function ChatComposer({
   const insertSnippet = (snippet: string) => {
     if (!snippet) return;
     updateText(text.trim() ? `${text.replace(/\s*$/, "")} ${snippet} ` : `${snippet} `);
+  };
+
+  const attachFiles = async () => {
+    setAttaching(true); setAttachmentError("");
+    try {
+      const selection = await openDialog({ multiple: true });
+      const paths = typeof selection === "string" ? [selection] : selection || [];
+      const files = paths.filter(path => !/\.(?:png|jpe?g|gif|webp|bmp)$/i.test(path));
+      if (files.length) insertSnippet(files.map(formatDroppedPathForTerminal).join(" "));
+      paths.filter(path => /\.(?:png|jpe?g|gif|webp|bmp)$/i.test(path)).forEach(addImage);
+    } catch { setAttachmentError(localize("파일을 선택하지 못했습니다. 다시 시도해 주세요.", "Could not select files. Please try again.")); }
+    finally { setAttaching(false); }
   };
 
   // Ctrl+V: a clipboard image saves to a temp file and shows as a chip; a large
@@ -1130,7 +1188,7 @@ function ChatComposer({
       }
     }
     // Esc-to-cancel is handled by a window listener in ChatView.
-    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    if (e.key !== "Enter" || e.nativeEvent.isComposing || e.shiftKey) return;
     if (e.ctrlKey || e.metaKey) {
       // Ctrl/Cmd+Enter inserts a newline at the cursor (a textarea has no
       // default newline for this combo, so do it manually).
@@ -1150,10 +1208,14 @@ function ChatComposer({
     send();
   };
 
-  const canSend = Boolean(text.trim() || attachments.length);
+  const canSend = !authenticationRequired && Boolean(text.trim() || attachments.length);
+  const sendLabel = busy ? localize("대기열에 예약", "Queue message") : localize("메시지 전송", "Send message");
+  const contextName = projectName || folder?.split(/[\\/]/).filter(Boolean).pop();
 
   return (
-    <div className="chat-composer">
+    <div className="chat-composer-area">
+      {contextName && <div className="chat-composer-context"><span title={folder}><ChatIcon name="folder" />{contextName}</span>{connectionLabel && <><span aria-hidden="true">·</span><span><ChatIcon name="computer" />{connectionLabel}</span></>}</div>}
+      <div className="chat-composer">
       {attachments.length > 0 && (
         <div className="chat-attachments">
           {attachments.map((a, i) =>
@@ -1216,6 +1278,7 @@ function ChatComposer({
         <textarea
           ref={taRef}
           className="chat-composer-input"
+          aria-label={localize("메시지 입력", "Message input")}
           value={text}
           onChange={(e) => {
             updateText(e.target.value);
@@ -1228,20 +1291,31 @@ function ChatComposer({
           onDrop={onDrop}
           placeholder={
             authenticationRequired ? localize('로그인 필요 · 터미널에서 /login을 실행하세요', 'Sign-in required · run /login in the terminal') : waitingForAnswer ? localize('답변 대기 중 · 새 메시지는 예약됩니다', 'Waiting for an answer · new messages will be queued') : busy
-              ? localize("작업 중 — Enter로 예약(대기열에 추가) · Ctrl+Enter 줄바꿈", "Working — Enter queues · Ctrl+Enter inserts a line break")
-              : localize("이 세션으로 전송…  (Enter 전송 · Ctrl+Enter 줄바꿈 · /명령 @파일)", "Send to this session… (Enter sends · Ctrl+Enter line break · /command @file)")
+              ? localize("작업 중입니다. 다음 메시지를 예약해 보세요", "Work is in progress. Queue your next message")
+              : localize("이어서 이야기해 보세요…", "Continue the conversation…")
           }
           rows={1}
         />
+      </div>
+      <div className="chat-composer-toolbar">
+        <button type="button" className="chat-composer-attach" title={localize("파일 또는 이미지 첨부", "Attach files or images")} aria-label={localize("파일 또는 이미지 첨부", "Attach files or images")} disabled={attaching} onClick={() => { void attachFiles(); }}><ChatIcon name="plus" /></button>
+        <span className="chat-composer-provider">{assistantLabel(tool)}</span>
+        <div className="chat-composer-controls">
+        {onInterrupt && <button type="button" className="chat-composer-stop" onClick={onInterrupt} title={localize("진행 중단 (Esc)", "Stop progress (Esc)")} aria-label={localize("진행 중단", "Stop progress")}><ChatIcon name="stop" /></button>}
         <button
           type="button"
           className="chat-composer-send"
           onClick={send}
           disabled={!canSend}
+          aria-label={sendLabel} title={sendLabel}
         >
-          {busy ? localize("예약", "Queue") : localize("전송", "Send")}
+          <ChatIcon name={busy ? "queue" : "send"} />
         </button>
+        </div>
       </div>
+      {attachmentError && <div className="chat-composer-error" role="alert">{attachmentError}</div>}
+      </div>
+      <div className="chat-composer-hint">{busy ? localize("Enter 예약", "Enter to queue") : localize("Enter 전송", "Enter to send")}<span aria-hidden="true">·</span>{localize("Shift + Enter 줄바꿈", "Shift + Enter for a new line")}<span aria-hidden="true">·</span>{localize("/명령  @파일", "/commands  @files")}</div>
     </div>
   );
 }

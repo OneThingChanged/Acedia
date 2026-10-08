@@ -1,1414 +1,192 @@
-import { matchesSessionSearch, normalizeSessionSearch } from "../lib/sessionSearch";
-import {
-  Fragment,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import type { Agent } from "../types";
 import { toolForId } from "../types";
-import type {
-  Agent,
-  DragState,
-  Group,
-  LayoutNode,
-  LeafNode,
-  Project,
-  ProjectFolder,
-} from "../types";
-import { collectAgentIdsInOrder } from "../lib/layout";
-import { isAgentRuntimeActive } from "../lib/agentActivity";
-import { isStandbySession } from "../lib/sessionStandby";
-import { loadSshHosts, sshHostSummary } from "../lib/sshHosts";
 import { useAppLanguage } from "../lib/appLanguage";
+import { isStandbySession } from "../lib/sessionStandby";
+import { LS_SIDEBAR_FILTER, loadSidebarFilter, matchesSidebarFilter, recentSidebarSessions, sidebarDateGroup, sidebarScreens, sidebarWidth, type SidebarDateGroup } from "../lib/sidebarNavigation";
+import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
+import { SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
+import { SidebarIcon } from "./SidebarIcon";
+import "./Sidebar.css";
 
-const LS_EXPANDED_PROJECTS = "multiagent.expandedProjects.v1";
-const LS_COLLAPSED_MACHINES = "multiagent.collapsedMachines.v1";
-const LS_COLLAPSED_PROJECT_FOLDERS =
-  "multiagent.collapsedProjectFolders.v1";
-const LS_ACTIVE_ONLY = "multiagent.activeOnly.v1";
-const LS_SESSION_FILTER = "multiagent.sessionFilter.v1";
-type SessionFilter = "all" | "active" | "sleeping";
-
-const SCREEN_COLORS = [
-  "#58a6ff",
-  "#bc8cff",
-  "#39c5cf",
-  "#f0883e",
-  "#d2a8ff",
-  "#4f9cf9",
-];
-
-function loadSessionFilter(): SessionFilter {
-  try {
-    const saved = localStorage.getItem(LS_SESSION_FILTER);
-    if (saved === "all" || saved === "active" || saved === "sleeping") return saved;
-    return localStorage.getItem(LS_ACTIVE_ONLY) === "1" ? "active" : "all";
-  } catch {
-    return "all";
-  }
-}
-
-function matchesSessionFilter(agent: Agent, filter: SessionFilter): boolean {
-  if (filter === "all") return true;
-  const sleeping = isStandbySession(agent);
-  return filter === "sleeping" ? sleeping : !sleeping && isAgentRuntimeActive(agent);
-}
-
-type MachineGroup = {
-  id: string; // "local" or "ssh:<hostId>"
-  kind: "local" | "ssh";
-  label: string;
-  hostSummary?: string;
-  projects: Project[];
+type SidebarProps = SidebarProjectTreeProps & {
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  width?: number;
+  onWidthChange?: (width: number) => void;
+  onNewSession?: () => void;
+  onRestoreSession?: (id: string) => void;
+  onShowSessions?: () => void;
+  onQuickOpen?: () => void;
+  onOpenAttention?: () => void;
+  attentionUnreadCount?: number;
+  quickOpenShortcut?: string;
+  newSessionShortcut?: string;
 };
 
-function loadCollapsedMachines(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_COLLAPSED_MACHINES);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch {}
-  return new Set();
+export function Sidebar(props: SidebarProps) {
+  return props.sessionPickerMode ? <SidebarProjectTree {...props} /> : <WorkspaceSidebar {...props} />;
 }
 
-function loadCollapsedProjectFolders(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_COLLAPSED_PROJECT_FOLDERS);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch {}
-  return new Set();
-}
-
-type Section = {
-  groupId: string;
-  multi: boolean;
-  sessionLocked: boolean;
-  members: Agent[];
-};
-
-type ScreenSummary = {
-  groupId: string;
-  number: number;
-  color: string;
-  direction: "h" | "v";
-  label: string;
-  title: string;
-  memberIds: string[];
-  targetAgentId: string;
-};
-
-function collectLeaves(node: LayoutNode, out: LeafNode[] = []): LeafNode[] {
-  if (node.type === "leaf") {
-    out.push(node);
-    return out;
-  }
-  for (const child of node.children) collectLeaves(child, out);
-  return out;
-}
-
-type PendingSessionClick = {
-  agentId: string;
-  pointerId: number;
-  x: number;
-  y: number;
-  dragging: boolean;
-};
-
-function loadExpandedProjects(projects: Project[]) {
-  try {
-    const raw = localStorage.getItem(LS_EXPANDED_PROJECTS);
-    if (raw) {
-      const saved = JSON.parse(raw) as string[];
-      return new Set(saved.filter((id) => projects.some((p) => p.id === id)));
-    }
-  } catch {}
-
-  return new Set(projects.map((project) => project.id));
-}
-
-export function Sidebar({
-  projects,
-  projectFolders,
-  agents,
-  groups,
-  activeProjectId,
-  activeGroupId,
-  activeAgentId,
-  inGroupAgentIds,
-  detachedAgentIds,
-  unreadCompletedAgentIds,
-  dragState,
-  browserHubActive = false,
-  browserCount = 0,
-  onOpenBrowserHub,
-  organizationActive = false,
-  onOpenOrganization,
-  onSelectProject,
-  onSelect,
-  onSelectScreen,
-  onScreenContextMenu,
-  onRenameSession,
-  onContextMenu,
-  onNewProject,
-  onNewProjectFolder,
-  onNewSessionForProject,
-  onDeactivate,
-  onDragStart,
-  onDragEnd,
-  onMoveProject,
-  onReorderProjectFolder,
-  onProjectContextMenu,
-  onProjectFolderContextMenu,
-  sessionPickerMode = false,
-  detachedLabel = "다른 창",
-}: {
-  projects: Project[];
-  projectFolders: ProjectFolder[];
-  agents: Agent[];
-  groups: Group[];
-  activeProjectId: string | null;
-  activeGroupId: string | null;
-  activeAgentId: string | null;
-  inGroupAgentIds: Set<string>;
-  detachedAgentIds: Set<string>;
-  unreadCompletedAgentIds: Set<string>;
-  dragState: DragState | null;
-  browserHubActive?: boolean;
-  browserCount?: number;
-  onOpenBrowserHub?: () => void;
-  organizationActive?: boolean;
-  onOpenOrganization?: () => void;
-  onSelectProject: (id: string) => void;
-  onSelect: (id: string) => void;
-  onSelectScreen: (groupId: string, agentId: string) => void;
-  onScreenContextMenu?: (groupId: string, x: number, y: number) => void;
-  onRenameSession: (id: string) => void;
-  onContextMenu: (id: string, x: number, y: number) => void;
-  onNewProject: () => void;
-  onNewProjectFolder: (machineKey: string) => void;
-  onNewSessionForProject: (projectId: string) => void;
-  onDeactivate: (id: string) => void;
-  onDragStart: (id: string) => void;
-  onDragEnd: () => void;
-  onMoveProject: (
-    projectId: string,
-    projectFolderId: string | null,
-    targetProjectId?: string,
-    before?: boolean
-  ) => void;
-  onReorderProjectFolder: (
-    draggedId: string,
-    targetId: string,
-    before: boolean
-  ) => void;
-  onProjectContextMenu: (projectId: string, x: number, y: number) => void;
-  onProjectFolderContextMenu: (
-    projectFolderId: string,
-    x: number,
-    y: number
-  ) => void;
-  sessionPickerMode?: boolean;
-  detachedLabel?: string;
+function ArchiveSessionsDialog({ agents, projects, onRestore, onClose }: {
+  agents: Agent[]; projects: SidebarProps["projects"]; onRestore?: (id: string) => void; onClose: () => void;
 }) {
+  useNativeViewOcclusion();
   const { text } = useAppLanguage();
-  const localizedDetachedLabel =
-    detachedLabel === "다른 창" ? text("다른 창", "Other window") : detachedLabel;
-  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
-    () => loadExpandedProjects(projects)
-  );
-  const [projectDropTarget, setProjectDropTarget] = useState<{
-    id: string;
-    before: boolean;
-  } | null>(null);
-  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
-  const [draggingProjectFolderId, setDraggingProjectFolderId] = useState<
-    string | null
-  >(null);
-  const [projectFolderDropTarget, setProjectFolderDropTarget] = useState<{
-    id: string;
-    before: boolean;
-  } | null>(null);
-  const [projectIntoFolderTarget, setProjectIntoFolderTarget] = useState<
-    string | null
-  >(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const pendingSessionClickRef = useRef<PendingSessionClick | null>(null);
-
+  const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    setExpandedProjectIds((current) => {
-      const validProjectIds = new Set(projects.map((project) => project.id));
-      const next = new Set(
-        Array.from(current).filter((id) => validProjectIds.has(id))
-      );
-      if (activeProjectId) next.add(activeProjectId);
-      return next;
-    });
-  }, [activeProjectId, projects]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        LS_EXPANDED_PROJECTS,
-        JSON.stringify(Array.from(expandedProjectIds))
-      );
-    } catch {}
-  }, [expandedProjectIds]);
-
-  // Machines are expanded by default; we persist the set of *collapsed* ids so
-  // a newly-appearing machine starts expanded without needing its id upfront.
-  const [collapsedMachineIds, setCollapsedMachineIds] = useState<Set<string>>(
-    () => loadCollapsedMachines()
-  );
-  const [collapsedProjectFolderIds, setCollapsedProjectFolderIds] = useState<
-    Set<string>
-  >(() => loadCollapsedProjectFolders());
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        LS_COLLAPSED_MACHINES,
-        JSON.stringify(Array.from(collapsedMachineIds))
-      );
-    } catch {}
-  }, [collapsedMachineIds]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        LS_COLLAPSED_PROJECT_FOLDERS,
-        JSON.stringify(Array.from(collapsedProjectFolderIds))
-      );
-    } catch {}
-  }, [collapsedProjectFolderIds]);
-
-  const toggleMachineExpanded = (machineId: string) => {
-    setCollapsedMachineIds((current) => {
-      const next = new Set(current);
-      if (next.has(machineId)) next.delete(machineId);
-      else next.add(machineId);
-      return next;
-    });
-  };
-
-  const toggleProjectFolderExpanded = (projectFolderId: string) => {
-    setCollapsedProjectFolderIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectFolderId)) next.delete(projectFolderId);
-      else next.add(projectFolderId);
-      return next;
-    });
-  };
-
-  const [sessionFilter, setSessionFilter] = useState<SessionFilter>(loadSessionFilter);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_SESSION_FILTER, sessionFilter);
-    } catch {}
-  }, [sessionFilter]);
-
-  const sessionFilterCounts = useMemo(() => {
-    const counts = { all: agents.length, active: 0, sleeping: 0 };
-    for (const agent of agents) {
-      if (matchesSessionFilter(agent, "sleeping")) counts.sleeping += 1;
-      else if (matchesSessionFilter(agent, "active")) counts.active += 1;
-    }
-    return counts;
-  }, [agents]);
-
-  const projectSessionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const agent of agents) {
-      counts.set(agent.projectId, (counts.get(agent.projectId) ?? 0) + 1);
-    }
-    return counts;
-  }, [agents]);
-
-  const screens = useMemo<ScreenSummary[]>(() => {
-    const agentById = new Map(agents.map((agent) => [agent.id, agent]));
-    const projectById = new Map(
-      projects.map((project) => [project.id, project])
-    );
-    const result: ScreenSummary[] = [];
-
-    for (const group of groups) {
-      if (group.layout.type !== "split") continue;
-      const leaves = collectLeaves(group.layout);
-      if (leaves.length < 2) continue;
-
-      const memberIds = collectAgentIdsInOrder(group.layout).filter((id) =>
-        agentById.has(id)
-      );
-      if (memberIds.length < 2) continue;
-
-      const paneLabels = leaves.map((leaf) => {
-        const knownTabs = leaf.tabs.filter((id) => agentById.has(id));
-        const activeId = agentById.has(leaf.tabs[leaf.activeIndex])
-          ? leaf.tabs[leaf.activeIndex]
-          : knownTabs[0];
-        const activeName = activeId
-          ? agentById.get(activeId)?.name ?? activeId
-          : "Empty";
-        const extraTabs = Math.max(0, knownTabs.length - 1);
-        return extraTabs > 0 ? `${activeName}(+${extraTabs})` : activeName;
-      });
-      const number = result.length + 1;
-      const targetAgentId =
-        activeAgentId && memberIds.includes(activeAgentId)
-          ? activeAgentId
-          : memberIds[0];
-      const memberDescriptions = memberIds.map((id) => {
-        const agent = agentById.get(id)!;
-        const projectName = projectById.get(agent.projectId)?.name ?? "Unknown";
-        return `${projectName} / ${agent.name}`;
-      });
-
-      result.push({
-        groupId: group.id,
-        number,
-        color: SCREEN_COLORS[(number - 1) % SCREEN_COLORS.length],
-        direction: group.layout.direction,
-        label: `(${paneLabels.join(" + ")})`,
-        title: [`Screen ${number}`, ...memberDescriptions].join("\n"),
-        memberIds,
-        targetAgentId,
-      });
-    }
-
-    return result;
-  }, [activeAgentId, agents, groups, projects]);
-
-  const screenByAgentId = useMemo(() => {
-    const result = new Map<string, ScreenSummary>();
-    for (const screen of screens) {
-      for (const agentId of screen.memberIds) result.set(agentId, screen);
-    }
-    return result;
-  }, [screens]);
-
-  const sectionsByProject = useMemo(() => {
-    const result = new Map<string, Section[]>();
-
-    for (const project of projects) {
-      const projectAgents = agents.filter(
-        (agent) => agent.projectId === project.id
-      );
-      const agentById = new Map(projectAgents.map((agent) => [agent.id, agent]));
-      const seen = new Set<string>();
-      const sections: Section[] = [];
-
-      for (const group of groups) {
-        const ids = collectAgentIdsInOrder(group.layout);
-        const members: Agent[] = [];
-        for (const id of ids) {
-          const agent = agentById.get(id);
-          if (agent && !seen.has(id)) {
-            members.push(agent);
-            seen.add(id);
-          }
-        }
-        if (members.length > 0) {
-          sections.push({
-            groupId: group.id,
-            multi: ids.length > 1,
-            sessionLocked: !!group.sessionLocked,
-            members,
-          });
-        }
-      }
-
-      const orphans = projectAgents.filter((agent) => !seen.has(agent.id));
-      if (orphans.length > 0) {
-        sections.push({
-          groupId: `${project.id}__orphans__`,
-          multi: false,
-          sessionLocked: false,
-          members: orphans,
-        });
-      }
-
-      result.set(project.id, sections);
-    }
-
-    return result;
-  }, [agents, groups, projects]);
-
-  const searchTerm = normalizeSessionSearch(searchQuery);
-
-  // Search and status filters intersect. Project/folder matches include only
-  // sessions in the selected status. Returns null to hide the whole project.
-  const filterSections = (
-    projectId: string,
-    projectName: string,
-    ancestorMatchesSearch = false
-  ): Section[] | null => {
-    const sections = sectionsByProject.get(projectId) ?? [];
-    const project = projects.find(p => p.id === projectId);
-    const projectMatchesSearch =
-      ancestorMatchesSearch ||
-      (searchTerm.length > 0 && matchesSessionSearch(searchTerm, projectName, project?.folder, project?.remoteFolder));
-    let result = sections;
-    if (searchTerm && !projectMatchesSearch) {
-      result = sections
-        .map((s) => ({
-          ...s,
-          members: s.members.filter((m) =>
-            matchesSessionSearch(searchTerm, m.name, m.folder, m.remoteFolder)
-          ),
-        }))
-        .filter((s) => s.members.length > 0);
-    }
-    if (sessionFilter !== "all") {
-      result = result
-        .map((s) => ({
-          ...s,
-          members: s.members.filter((agent) => matchesSessionFilter(agent, sessionFilter)),
-        }))
-        .filter((s) => s.members.length > 0);
-      return result.length > 0 ? result : null;
-    }
-    if (result.length > 0) return result;
-    if (!searchTerm || projectMatchesSearch) return [];
-    return null;
-  };
-
-  const toggleProjectExpanded = (projectId: string) => {
-    setExpandedProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      return next;
-    });
-  };
-
-  // Clicking a project row toggles expand/collapse (like the caret) and marks it
-  // active (so the + button targets it / Docs scans its folder). It does NOT open
-  // a session anymore — sessions open only when a session row is clicked.
-  const selectProject = (projectId: string) => {
-    toggleProjectExpanded(projectId);
-    onSelectProject(projectId);
-  };
-
-  // Group projects by machine: local (no sshHostId) + one group per SSH host.
-  const machineGroups = useMemo<MachineGroup[]>(() => {
-    const hosts = loadSshHosts();
-    const hostById = new Map(hosts.map((h) => [h.id, h]));
-    const local: Project[] = [];
-    const byHost = new Map<string, Project[]>();
-    for (const project of projects) {
-      if (project.sshHostId) {
-        const list = byHost.get(project.sshHostId) ?? [];
-        list.push(project);
-        byHost.set(project.sshHostId, list);
-      } else {
-        local.push(project);
-      }
-    }
-    const result: MachineGroup[] = [];
-    if (
-      local.length > 0 ||
-      projectFolders.some((folder) => folder.machineKey === "local")
-    ) {
-      result.push({ id: "local", kind: "local", label: "This PC", projects: local });
-    }
-    const hostIds = Array.from(
-      new Set([
-        ...byHost.keys(),
-        ...projectFolders
-          .filter((folder) => folder.machineKey.startsWith("ssh:"))
-          .map((folder) => folder.machineKey.slice(4)),
-      ])
-    ).sort((a, b) => {
-      const la = hostById.get(a)?.label ?? a;
-      const lb = hostById.get(b)?.label ?? b;
-      return la.localeCompare(lb);
-    });
-    for (const hostId of hostIds) {
-      const host = hostById.get(hostId);
-      result.push({
-        id: `ssh:${hostId}`,
-        kind: "ssh",
-        label: host?.label ?? "(unknown host)",
-        hostSummary: host ? sshHostSummary(host) : undefined,
-        projects: byHost.get(hostId) ?? [],
-      });
-    }
-    return result;
-  }, [projectFolders, projects]);
-
-  // Only show machine headers once at least one remote project exists; a
-  // local-only setup stays flat as before.
-  const groupByMachine =
-    projects.some((p) => p.sshHostId) ||
-    projectFolders.some((folder) => folder.machineKey.startsWith("ssh:"));
-  const machineExpanded = (machineId: string) =>
-    searchTerm.length > 0 || !collapsedMachineIds.has(machineId);
-
-  const startSessionPointer = (
-    agentId: string,
-    event: ReactPointerEvent<HTMLElement>
-  ) => {
-    if (event.button !== 0) return;
-    if ((event.target as HTMLElement).closest("button")) return;
-    const pending: PendingSessionClick = {
-      agentId,
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      dragging: false,
-    };
-    pendingSessionClickRef.current = pending;
-
-    const cleanup = () => {
-      window.removeEventListener("pointermove", handleMove, true);
-      window.removeEventListener("pointerup", handleUp, true);
-      window.removeEventListener("pointercancel", handleCancel, true);
-    };
-
-    const handleMove = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pending.pointerId) return;
-      if (
-        !sessionPickerMode &&
-        !pending.dragging &&
-        Math.hypot(moveEvent.clientX - pending.x, moveEvent.clientY - pending.y) >
-          4
-      ) {
-        pending.dragging = true;
-        moveEvent.preventDefault();
-        onDragStart(agentId);
-      }
-      if (pending.dragging) {
-        moveEvent.preventDefault();
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+      if (event.key === "Tab") {
+        const buttons = [...(closeRef.current?.closest('[role="dialog"]')?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || [])];
+        const first = buttons[0], last = buttons[buttons.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     };
+    window.addEventListener("keydown", key, true);
+    return () => { window.removeEventListener("keydown", key, true); if (previous?.isConnected) previous.focus(); };
+  }, [onClose]);
+  return <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="modal sidebar-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="sidebar-archive-title">
+      <header><div><h2 id="sidebar-archive-title">{text("보관한 대화", "Archived conversations")}</h2><p>{text("목록에서 보관한 대화입니다. 대화 기록과 실행 상태는 유지됩니다.", "Archived from navigation. Conversation history and runtime are preserved.")}</p></div><button ref={closeRef} className="sidebar-icon-button" onClick={onClose} aria-label={text("닫기", "Close")}><SidebarIcon name="close" /></button></header>
+      <div className="sidebar-archive-list">{agents.length ? agents.map(agent => <div key={agent.id}><span><strong>{agent.name}</strong><small>{projects.find(project => project.id === agent.projectId)?.name} · {toolForId(agent.aiToolId).label}</small></span><button className="btn-secondary" disabled={!onRestore} onClick={() => onRestore?.(agent.id)}>{text("복원", "Restore")}</button></div>) : <p>{text("보관한 대화가 없습니다.", "No archived conversations.")}</p>}</div>
+    </section>
+  </div>;
+}
 
-    const handleUp = (upEvent: PointerEvent) => {
-      if (upEvent.pointerId !== pending.pointerId) return;
-      cleanup();
-      pendingSessionClickRef.current = null;
-      if (pending.dragging) {
-        upEvent.preventDefault();
-        return;
-      }
-      if ((upEvent.target as HTMLElement | null)?.closest("button")) return;
-      onSelect(agentId);
+function WorkspaceSidebar(props: SidebarProps) {
+  const { text } = useAppLanguage();
+  const { agents, projects, projectFolders, activeAgentId, activeGroupId, collapsed = false } = props;
+  const [filter, setFilter] = useState(loadSidebarFilter);
+  const [scope, setScope] = useState<string | null>(null);
+  const [sortByName, setSortByName] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const closeArchive = useCallback(() => setShowArchive(false), []);
+  const [projectsOpen, setProjectsOpen] = useState(() => readBoolean("multiagent.sidebarProjectsOpen.v1", true));
+  const [screensOpen, setScreensOpen] = useState(() => readBoolean("multiagent.sidebarScreensOpen.v1", false));
+  const sidebarRef = useRef<HTMLElement>(null);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
+  const [today, setToday] = useState(Date.now);
+  useEffect(() => () => pointerCleanupRef.current?.(), []);
+  useEffect(() => { const timer = window.setInterval(() => setToday(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { try { localStorage.setItem(LS_SIDEBAR_FILTER, filter); } catch {} }, [filter]);
+  useEffect(() => { try { localStorage.setItem("multiagent.sidebarProjectsOpen.v1", String(projectsOpen)); } catch {} }, [projectsOpen]);
+  useEffect(() => { try { localStorage.setItem("multiagent.sidebarScreensOpen.v1", String(screensOpen)); } catch {} }, [screensOpen]);
+  useEffect(() => { if (scope && !projects.some(project => project.id === scope)) setScope(null); }, [projects, scope]);
+  const archived = useMemo(() => agents.filter(agent => agent.sidebarArchived), [agents]);
+  const navigable = useMemo(() => agents.filter(agent => !agent.sidebarArchived), [agents]);
+  const scoped = useMemo(() => navigable.filter(agent => !scope || agent.projectId === scope), [navigable, scope]);
+  const counts = { all: scoped.length, active: scoped.filter(agent => matchesSidebarFilter(agent, "active")).length, sleeping: scoped.filter(agent => matchesSidebarFilter(agent, "sleeping")).length };
+  const recent = useMemo(() => recentSidebarSessions(agents, projects, projectFolders, { projectId: scope, filter, query: "", sortByName }), [agents, projects, projectFolders, scope, filter, sortByName]);
+  const screens = useMemo(() => sidebarScreens(props.groups, agents, projects, activeAgentId), [props.groups, agents, projects, activeAgentId]);
+  const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects]);
+  const screenByAgent = new Map(screens.flatMap((screen, index) => screen.members.map(agent => [agent.id, index + 1] as const)));
+  const labels: Record<SidebarDateGroup, string> = { pinned: text("고정", "Pinned"), today: text("오늘", "Today"), yesterday: text("어제", "Yesterday"), week: text("이번 주", "This week"), older: text("이전 대화", "Earlier") };
+  const clearFilters = () => { setScope(null); setFilter("all"); };
+  const newSession = () => {
+    setFilter("all");
+    if (scope) props.onNewSessionForProject(scope);
+    else if (props.onNewSession) props.onNewSession();
+    else if (props.activeProjectId) props.onNewSessionForProject(props.activeProjectId);
+    else props.onNewProject();
+  };
+  const menuPosition = (event: React.MouseEvent<HTMLButtonElement>) => { const rect = event.currentTarget.getBoundingClientRect(); return [rect.left, rect.bottom] as const; };
+  const startPointer = (agent: Agent, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || props.detachedAgentIds.has(agent.id) || (event.target as HTMLElement).closest("button")) return;
+    pointerCleanupRef.current?.();
+    const start = { id: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
+    const cleanup = () => { window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); window.removeEventListener("pointercancel", cancel, true); pointerCleanupRef.current = null; };
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== start.id) return;
+      if (!start.dragging && Math.hypot(next.clientX - start.x, next.clientY - start.y) > 4) { start.dragging = true; props.onDragStart(agent.id); }
+      if (start.dragging) next.preventDefault();
     };
-
-    const handleCancel = (cancelEvent: PointerEvent) => {
-      if (cancelEvent.pointerId !== pending.pointerId) return;
-      cleanup();
-      pendingSessionClickRef.current = null;
-      if (pending.dragging) onDragEnd();
-    };
-
-    window.addEventListener("pointermove", handleMove, true);
-    window.addEventListener("pointerup", handleUp, true);
-    window.addEventListener("pointercancel", handleCancel, true);
+    const up = (next: PointerEvent) => { if (next.pointerId !== start.id) return; cleanup(); if (start.dragging) next.preventDefault(); else if (!(next.target as HTMLElement)?.closest("button")) props.onSelect(agent.id); };
+    const cancel = (next: PointerEvent) => { if (next.pointerId !== start.id) return; cleanup(); if (start.dragging) props.onDragEnd(); };
+    pointerCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", cancel, true);
   };
 
-  const renderItem = (
-    a: Agent,
-    groupId: string,
-    multi: boolean,
-    sessionLocked: boolean,
-    compact: boolean
-  ) => {
-    const inGroup = inGroupAgentIds.has(a.id);
-    const isDetached = detachedAgentIds.has(a.id);
-    const hasUnreadCompletion = unreadCompletedAgentIds.has(a.id);
-    const isDragging = dragState?.fromAgentId === a.id;
-    const isActiveGroup = groupId === activeGroupId;
-    const screen = screenByAgentId.get(a.id);
-    const sleeping = isStandbySession(a);
-    const statusTitle = sleeping
-      ? a.idleResumeSessionId
-        ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
-        : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
-      : a.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : text(a.status, a.status);
-    return (
-      <li
-        key={a.id}
-        className={[
-          "agent-item",
-          "agent-item-nested",
-          compact ? "agent-item-compact" : "",
-          activeAgentId === a.id ? "active" : "",
-          inGroup ? "in-group" : "",
-          isDragging ? "agent-dragging" : "",
-          multi ? "agent-grouped" : "",
-          multi && isActiveGroup ? "agent-grouped-active" : "",
-          isDetached ? "agent-detached" : "",
-          hasUnreadCompletion ? "agent-completion-unread" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        style={
-          screen
-            ? ({ "--screen-color": screen.color } as CSSProperties)
-            : undefined
-        }
-        draggable={false}
-        onDragStart={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onPointerDown={(e) => {
-          if (isDetached) return;
-          startSessionPointer(a.id, e);
-        }}
-        onDoubleClick={(e) => {
-          if (isDetached || sessionPickerMode) return;
-          if ((e.target as HTMLElement).closest("button")) return;
-          pendingSessionClickRef.current = null;
-          e.preventDefault();
-          e.stopPropagation();
-          onRenameSession(a.id);
-        }}
-        onContextMenu={(e) => {
-          if (isDetached || sessionPickerMode) return;
-          pendingSessionClickRef.current = null;
-          e.preventDefault();
-          onContextMenu(a.id, e.clientX, e.clientY);
-        }}
-      >
-        <div className="agent-row-top">
-          <span
-            className={`status status-${sleeping ? "sleeping" : a.status}`}
-            title={statusTitle}
-            role="img"
-            aria-label={statusTitle}
-          />
-          <span
-            className="agent-tool-icon"
-            style={{ color: toolForId(a.aiToolId).iconColor }}
-            title={a.aiLabel}
-          >
-            {toolForId(a.aiToolId).icon}
-          </span>
-          <span
-            className="agent-name"
-            title={
-              compact
-                ? `${a.name} · ${
-                    a.lastSessionId
-                      ? `session ${a.lastSessionId.slice(0, 8)}`
-                      : "new session"
-                  } - ${text("더블클릭으로 별명 변경", "double-click to rename")}`
-                : `${a.name} - ${text("더블클릭으로 별명 변경", "double-click to rename")}`
-            }
-          >
-            {a.name}
-          </span>
-          {hasUnreadCompletion && (
-            <span
-              className="agent-completion-dot"
-              title={text("작업 완료 · 클릭해서 확인", "Work completed · click to review")}
-              aria-label={text("읽지 않은 작업 완료", "Unread completion")}
-            />
-          )}
-          {screen && (
-            <span
-              className="agent-screen-badge"
-              title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}
-            >
-              S{screen.number}
-            </span>
-          )}
-          {sessionLocked && (
-            <span
-              className="agent-session-pin"
-              title={text("이 그룹은 고정된 세션으로 열립니다", "This group opens with pinned sessions")}
-            >
-              PIN
-            </span>
-          )}
-          {isDetached && (
-            <span
-              className="agent-detached-badge"
-              title={text("다른 창에서 사용 중", "In use in another window")}
-            >
-              {localizedDetachedLabel}
-            </span>
-          )}
-          {a.dangerous && (
-            <span
-              className="agent-danger"
-              title="Dangerous mode - running without permission prompts"
-            >
-              !
-            </span>
-          )}
-          {!isDetached && !sessionPickerMode && (
-            <button
-              className="deactivate-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeactivate(a.id);
-              }}
-              title={text("세션 비활성화", "Deactivate session")}
-              aria-label={text(`${a.name} 세션 비활성화`, `Deactivate ${a.name} session`)}
-            >
-              x
-            </button>
-          )}
-        </div>
-        {!compact && (
-          <div className="agent-folder" title={a.lastSessionId ?? ""}>
-            {a.lastSessionId
-              ? `session ${a.lastSessionId.slice(0, 8)}`
-              : "new session"}
-          </div>
-        )}
-      </li>
-    );
+  const renderAgent = (agent: Agent) => {
+    const sleeping = isStandbySession(agent);
+    const detached = props.detachedAgentIds.has(agent.id);
+    const unread = props.unreadCompletedAgentIds.has(agent.id);
+    const project = projectById.get(agent.projectId);
+    const statusTitle = sleeping ? agent.idleResumeSessionId
+      ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
+      : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
+      : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : agent.status;
+    return <li key={agent.id} data-sidebar-agent-id={agent.id} className={`agent-item sidebar-recent-row${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}`}
+      role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
+      title={`${agent.name}\n${project?.name || ""} · ${project?.sshHostId ? `SSH: ${agent.remoteFolder || project.remoteFolder}` : agent.folder}\n${statusTitle}`}
+      onPointerDown={event => startPointer(agent, event)}
+      onKeyDown={event => { if (event.target !== event.currentTarget || detached) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); props.onSelect(agent.id); } }}
+      onDoubleClick={event => { if (!detached && !(event.target as HTMLElement).closest("button")) { pointerCleanupRef.current?.(); props.onRenameSession(agent.id); } }}
+      onContextMenu={event => { if (detached) return; event.preventDefault(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, event.clientX, event.clientY); }}>
+      <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
+      <div className="sidebar-session-copy"><span className="agent-name">{agent.name}</span><span className="sidebar-session-meta"><span title={project?.folder}>{project?.name || text("미분류", "Uncategorized")}</span><span aria-hidden="true">·</span><span>{toolForId(agent.aiToolId).label}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null}</span></div>
+      {unread && <span className="agent-completion-dot" title={text("작업 완료 · 클릭해서 확인", "Work completed · click to review")} aria-label={text("읽지 않은 작업 완료", "Unread completion")} />}
+      {screenByAgent.has(agent.id) && <span className="agent-screen-badge" title={text("분할 화면에 포함된 대화", "Conversation in a split view")}>S{screenByAgent.get(agent.id)}</span>}
+      {agent.dangerous && <span className="agent-danger" title={text("권한 확인을 생략하는 세션", "Session skips permission prompts")}>!</span>}
+      {detached ? <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span> : <button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${agent.name} 대화 메뉴`, `${agent.name} conversation menu`)} title={text("대화 메뉴", "Conversation menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, ...menuPosition(event)); }}>···</button>}
+    </li>;
   };
 
-  const renderProject = (
-    project: Project,
-    effectiveProjectFolderId: string | null = null,
-    ancestorMatchesSearch = false
-  ) => {
-    const sections = filterSections(
-      project.id,
-      project.name,
-      ancestorMatchesSearch
-    );
-    if (sections === null) return null;
-    const expanded =
-      searchTerm.length > 0 || expandedProjectIds.has(project.id);
-    const sessionCount = projectSessionCounts.get(project.id) ?? 0;
-
-    const isDropTarget = projectDropTarget?.id === project.id;
-    const dropBefore = isDropTarget && projectDropTarget?.before;
-    const dropAfter = isDropTarget && !projectDropTarget?.before;
-    const isDraggingThis = draggingProjectId === project.id;
-    return (
-      <div
-        key={project.id}
-        className={[
-          "project-node",
-          project.id === activeProjectId ? "project-node-active" : "",
-          dropBefore ? "project-node-drop-before" : "",
-          dropAfter ? "project-node-drop-after" : "",
-          isDraggingThis ? "project-node-dragging" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        draggable={false}
-        onDragStart={(e) => {
-          if (sessionPickerMode) {
-            e.preventDefault();
-            return;
-          }
-          if ((e.target as HTMLElement).closest(".project-session-list")) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("application/x-multiagent-project", project.id);
-          setDraggingProjectId(project.id);
-        }}
-        onDragOver={(e) => {
-          if (
-            !e.dataTransfer.types.includes("application/x-multiagent-project")
-          ) {
-            return;
-          }
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          const rect = e.currentTarget.getBoundingClientRect();
-          const before = e.clientY - rect.top < rect.height / 2;
-          setProjectDropTarget((cur) =>
-            cur?.id === project.id && cur.before === before
-              ? cur
-              : { id: project.id, before }
-          );
-        }}
-        onDragLeave={(e) => {
-          const next = e.relatedTarget as Node | null;
-          if (next && e.currentTarget.contains(next)) return;
-          setProjectDropTarget((cur) => (cur?.id === project.id ? null : cur));
-        }}
-        onDrop={(e) => {
-          const draggedId = e.dataTransfer.getData(
-            "application/x-multiagent-project"
-          );
-          if (!draggedId) return;
-          e.preventDefault();
-          const target = projectDropTarget;
-          setProjectDropTarget(null);
-          setDraggingProjectId(null);
-          if (target && draggedId !== project.id) {
-            onMoveProject(
-              draggedId,
-              effectiveProjectFolderId,
-              project.id,
-              target.before
-            );
-          }
-        }}
-        onDragEnd={() => {
-          setProjectDropTarget(null);
-          setDraggingProjectId(null);
-        }}
-      >
-        <div
-          className="project-row"
-          draggable={!sessionPickerMode}
-          onContextMenu={(e) => {
-            if (sessionPickerMode) return;
-            if (
-              (e.target as HTMLElement).closest("button.project-caret-btn")
-            ) {
-              return;
-            }
-            e.preventDefault();
-            onProjectContextMenu(project.id, e.clientX, e.clientY);
-          }}
-        >
-          <button
-            className="project-caret-btn"
-            onClick={() => toggleProjectExpanded(project.id)}
-            title={expanded ? "Collapse project" : "Expand project"}
-          >
-            {expanded ? "v" : ">"}
+  return <>
+    <aside ref={sidebarRef} className={`sidebar sidebar-workspace${collapsed ? " sidebar-workspace-collapsed" : ""}`} aria-label={text("작업 공간 탐색", "Workspace navigation")}>
+      <header className="sidebar-workspace-head">
+        <span className="sidebar-brand"><img className="sidebar-brand-icon" src="app-icon.png" alt="" /><strong>Acedia</strong></span>
+        <div className="sidebar-header-actions">
+          <button className="sidebar-icon-button sidebar-collapse" onClick={props.onToggleCollapsed}
+            aria-label={collapsed ? text("사이드바 펼치기", "Expand sidebar") : text("사이드바 접기", "Collapse sidebar")}
+            aria-expanded={!collapsed} title={collapsed ? text("사이드바 펼치기", "Expand sidebar") : text("사이드바 접기", "Collapse sidebar")}>
+            <SidebarIcon name="panel" />
           </button>
-          <button
-            className="project-item project-tree-project"
-            onClick={() => selectProject(project.id)}
-            title={`${project.name}\n${
-              project.sshHostId
-                ? `SSH: ${project.remoteFolder || "(remote)"}`
-                : project.folder
-            }`}
-          >
-            <span className="project-name">{project.name}</span>
-            {project.sshHostId && (
-              <span className="project-ssh-badge">SSH</span>
-            )}
+          <button className={`sidebar-icon-button sidebar-notifications${props.attentionUnreadCount ? " sidebar-notifications-unread" : ""}`}
+            onClick={props.onOpenAttention} disabled={!props.onOpenAttention} aria-haspopup="dialog"
+            title={text("알림 센터", "Notifications")}
+            aria-label={text(`알림 센터 · 읽지 않은 항목 ${props.attentionUnreadCount || 0}개`, `Notifications · ${props.attentionUnreadCount || 0} unread`)}>
+            <SidebarIcon name="bell" />
+            {!!props.attentionUnreadCount && <span className="sidebar-notification-count" aria-hidden="true">{props.attentionUnreadCount > 99 ? "99+" : props.attentionUnreadCount}</span>}
           </button>
-          {!sessionPickerMode && (
-            <button
-              className="project-add-session-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNewSessionForProject(project.id);
-              }}
-              title={text(`${project.name}에 새 세션`, `New session in ${project.name}`)}
-            >
-              +
-            </button>
-          )}
+          <button className="sidebar-icon-button sidebar-search-button" onClick={props.onQuickOpen} disabled={!props.onQuickOpen}
+            aria-haspopup="dialog" aria-label={text("통합 검색 · Quick Open", "Search · Quick Open")}
+            title={`${text("통합 검색 · Quick Open", "Search · Quick Open")}${props.quickOpenShortcut ? ` · ${props.quickOpenShortcut}` : ""}`}>
+            <SidebarIcon name="search" />
+          </button>
         </div>
-        {expanded && (
-          <ul className="project-session-list">
-            {sections.map((section, idx) => (
-              <Fragment key={`${project.id}-${section.groupId}`}>
-                {idx > 0 && <li className="group-separator" />}
-                {section.members.map((agent) =>
-                  renderItem(
-                    agent,
-                    section.groupId,
-                    section.multi,
-                    section.sessionLocked,
-                    true
-                  )
-                )}
-              </Fragment>
-            ))}
-            {sessionCount === 0 && (
-              <li className="empty-hint project-empty-hint">
-                {text("프로젝트 행의 + 버튼으로 세션을 시작하세요", "Use the + button on the project row to start a session")}
-              </li>
-            )}
-          </ul>
-        )}
+      </header>
+      <div className="sidebar-workspace-top"><button className="sidebar-new-chat" onClick={newSession} title={text("새 대화", "New conversation")}><SidebarIcon name="plus" /><span className="sidebar-nav-label">{text("새 대화", "New conversation")}</span>{props.newSessionShortcut && <kbd>{props.newSessionShortcut}</kbd>}</button>
+        <nav className="sidebar-primary-nav" aria-label={text("주요 메뉴", "Main navigation")}><button className="sidebar-nav-row" aria-current={!props.browserHubActive && !props.organizationActive && !scope ? "page" : undefined} onClick={() => { clearFilters(); props.onShowSessions?.(); }} title={text("모든 대화", "All conversations")}><SidebarIcon name="chat" /><span className="sidebar-nav-label">{text("모든 대화", "All conversations")}</span></button>
+          {props.onOpenBrowserHub && <div className="browser-hub-sidebar-slot"><button className="sidebar-nav-row browser-hub-sidebar-btn" onClick={props.onOpenBrowserHub} aria-current={props.browserHubActive ? "page" : undefined} title={text("브라우저 모아보기", "Browser hub")}><SidebarIcon name="globe" /><span className="sidebar-nav-label">{text("브라우저", "Browsers")}</span><span className="sidebar-nav-count browser-hub-sidebar-count">{props.browserCount || 0}</span></button></div>}
+          {props.onOpenOrganization && <div className="organization-sidebar-slot"><button className="sidebar-nav-row" onClick={props.onOpenOrganization} aria-current={props.organizationActive ? "page" : undefined} title={text("프로젝트 보드 · 조직도", "Project board · Organization")}><SidebarIcon name="board" /><span className="sidebar-nav-label">{text("프로젝트 보드", "Project board")}</span></button></div>}
+        </nav>
       </div>
-    );
-  };
-
-  const renderMachineProjects = (machine: MachineGroup) => {
-    const machineFolders = projectFolders.filter(
-      (folder) => folder.machineKey === machine.id
-    );
-    if (machineFolders.length === 0) {
-      return machine.projects.map((project) => renderProject(project));
-    }
-
-    const validFolderIds = new Set(machineFolders.map((folder) => folder.id));
-    const buckets: Array<{
-      key: string;
-      folder: ProjectFolder | null;
-      name: string;
-      projects: Project[];
-    }> = machineFolders.map((folder) => ({
-      key: folder.id,
-      folder,
-      name: folder.name,
-      projects: machine.projects.filter(
-        (project) => project.projectFolderId === folder.id
-      ),
-    }));
-    const uncategorized = machine.projects.filter(
-      (project) =>
-        !project.projectFolderId || !validFolderIds.has(project.projectFolderId)
-    );
-    if (uncategorized.length > 0) {
-      buckets.push({
-        key: `uncategorized:${machine.id}`,
-        folder: null,
-        name: text("미분류", "Uncategorized"),
-        projects: uncategorized,
-      });
-    }
-
-    return buckets.map((bucket) => {
-      const folderMatchesSearch =
-        searchTerm.length > 0 && bucket.name.toLowerCase().includes(searchTerm);
-      const visibleProjects = bucket.projects.filter(
-        (project) =>
-          filterSections(
-            project.id,
-            project.name,
-            folderMatchesSearch
-          ) !== null
-      );
-      if (
-        (searchTerm || sessionFilter !== "all") &&
-        visibleProjects.length === 0 &&
-        (sessionFilter !== "all" || !folderMatchesSearch)
-      ) {
-        return null;
-      }
-
-      const expanded =
-        searchTerm.length > 0 ||
-        !collapsedProjectFolderIds.has(bucket.key);
-      const isIntoTarget = projectIntoFolderTarget === bucket.key;
-      const isFolderDropTarget =
-        bucket.folder && projectFolderDropTarget?.id === bucket.folder.id;
-      const dropBefore =
-        isFolderDropTarget && projectFolderDropTarget?.before;
-      const dropAfter =
-        isFolderDropTarget && !projectFolderDropTarget?.before;
-
-      return (
-        <div
-          key={bucket.key}
-          className={[
-            "project-folder-node",
-            isIntoTarget ? "project-folder-drop-inside" : "",
-            dropBefore ? "project-folder-drop-before" : "",
-            dropAfter ? "project-folder-drop-after" : "",
-            draggingProjectFolderId === bucket.folder?.id
-              ? "project-folder-dragging"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          <div
-            className="project-folder-row"
-            draggable={!sessionPickerMode && !!bucket.folder}
-            onDragStart={(event) => {
-              if (!bucket.folder || sessionPickerMode) {
-                event.preventDefault();
-                return;
-              }
-              event.stopPropagation();
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData(
-                "application/x-multiagent-project-folder",
-                bucket.folder.id
-              );
-              setDraggingProjectFolderId(bucket.folder.id);
-            }}
-            onDragOver={(event) => {
-              if (
-                event.dataTransfer.types.includes(
-                  "application/x-multiagent-project"
-                )
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                event.dataTransfer.dropEffect = "move";
-                setProjectIntoFolderTarget(bucket.key);
-                return;
-              }
-              if (
-                bucket.folder &&
-                event.dataTransfer.types.includes(
-                  "application/x-multiagent-project-folder"
-                )
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                const before = event.clientY - rect.top < rect.height / 2;
-                setProjectFolderDropTarget({
-                  id: bucket.folder.id,
-                  before,
-                });
-              }
-            }}
-            onDragLeave={(event) => {
-              const next = event.relatedTarget as Node | null;
-              if (next && event.currentTarget.contains(next)) return;
-              setProjectIntoFolderTarget((current) =>
-                current === bucket.key ? null : current
-              );
-              if (bucket.folder) {
-                setProjectFolderDropTarget((current) =>
-                  current?.id === bucket.folder!.id ? null : current
-                );
-              }
-            }}
-            onDrop={(event) => {
-              const draggedProjectId = event.dataTransfer.getData(
-                "application/x-multiagent-project"
-              );
-              if (draggedProjectId) {
-                event.preventDefault();
-                event.stopPropagation();
-                onMoveProject(
-                  draggedProjectId,
-                  bucket.folder?.id ?? null
-                );
-              } else if (bucket.folder) {
-                const draggedFolderId = event.dataTransfer.getData(
-                  "application/x-multiagent-project-folder"
-                );
-                if (draggedFolderId && draggedFolderId !== bucket.folder.id) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onReorderProjectFolder(
-                    draggedFolderId,
-                    bucket.folder.id,
-                    projectFolderDropTarget?.before ?? true
-                  );
-                }
-              }
-              setProjectIntoFolderTarget(null);
-              setProjectDropTarget(null);
-              setProjectFolderDropTarget(null);
-              setDraggingProjectId(null);
-              setDraggingProjectFolderId(null);
-            }}
-            onDragEnd={() => {
-              setProjectIntoFolderTarget(null);
-              setProjectDropTarget(null);
-              setProjectFolderDropTarget(null);
-              setDraggingProjectFolderId(null);
-            }}
-            onContextMenu={(event) => {
-              if (!bucket.folder || sessionPickerMode) return;
-              event.preventDefault();
-              onProjectFolderContextMenu(
-                bucket.folder.id,
-                event.clientX,
-                event.clientY
-              );
-            }}
-          >
-            <button
-              className="project-folder-caret-btn"
-              onClick={() => toggleProjectFolderExpanded(bucket.key)}
-              title={expanded ? text("폴더 접기", "Collapse folder") : text("폴더 펼치기", "Expand folder")}
-            >
-              {expanded ? "v" : ">"}
-            </button>
-            <button
-              className="project-folder-item"
-              onClick={() => toggleProjectFolderExpanded(bucket.key)}
-              title={
-                bucket.folder
-                  ? text(`${bucket.name} · 우클릭으로 관리`, `${bucket.name} · right-click to manage`)
-                  : text("폴더에 속하지 않은 프로젝트", "Projects not assigned to a folder")
-              }
-            >
-              <span className="project-folder-icon" aria-hidden="true">
-                {expanded ? "▾" : "▸"}
-              </span>
-              <span className="project-folder-name">{bucket.name}</span>
-              <span className="project-folder-count">
-                {visibleProjects.length}
-              </span>
-            </button>
-          </div>
-          {expanded && (
-            <div className="project-folder-projects">
-              {visibleProjects.map((project) =>
-                renderProject(
-                  project,
-                  bucket.folder?.id ?? null,
-                  folderMatchesSearch
-                )
-              )}
-              {bucket.projects.length === 0 && (
-                <div className="empty-hint project-folder-empty-hint">
-                  {text("프로젝트를 여기로 끌어오세요", "Drag projects here")}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    });
-  };
-
-  const hasVisibleTreeEntries =
-    projects.some((project) => {
-      const folder = projectFolders.find((entry) => entry.id === project.projectFolderId);
-      const folderMatches = !!folder && searchTerm.length > 0 && folder.name.toLowerCase().includes(searchTerm);
-      return filterSections(project.id, project.name, folderMatches) !== null;
-    }) ||
-    (sessionFilter === "all" && searchTerm.length > 0 &&
-      projectFolders.some((folder) => folder.name.toLowerCase().includes(searchTerm)));
-
-  return (
-    <aside className="sidebar">
-      <div className="project-tree">
-        {!sessionPickerMode && onOpenBrowserHub && (
-          <div className="browser-hub-sidebar-slot">
-            <button
-              className={`browser-hub-sidebar-btn${browserHubActive ? " is-active" : ""}`}
-              onClick={onOpenBrowserHub}
-              aria-pressed={browserHubActive}
-              title={text("이 프로그램에서 열려 있는 모든 브라우저 보기", "View every browser open in this app")}
-            >
-              <span className="browser-hub-sidebar-icon" aria-hidden="true">WEB</span>
-              <span className="browser-hub-sidebar-label">{text("브라우저 모아보기", "Browser hub")}</span>
-              <span className="browser-hub-sidebar-count">{browserCount}</span>
-            </button>
-          </div>
-        )}
-        {!sessionPickerMode && onOpenOrganization && (
-          <div className="organization-sidebar-slot">
-            <button className={`browser-hub-sidebar-btn${organizationActive ? " is-active" : ""}`} onClick={onOpenOrganization} aria-pressed={organizationActive} title={text("부모·자식 세션과 설정 상속 보기", "View session hierarchy and inherited settings")}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="8" y="3" width="8" height="5" rx="1"/><rect x="2" y="16" width="7" height="5" rx="1"/><rect x="15" y="16" width="7" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/></svg>
-              <span className="browser-hub-sidebar-label">{text("조직도", "Organization")}</span>
-            </button>
-          </div>
-        )}
-        <div className="sidebar-section-heading">
-          <div className="sidebar-section-title">
-            {sessionPickerMode ? text("Projects · 세션 선택", "Projects · Select session") : "Projects"}
-          </div>
-          <button
-            className="section-action-btn project-folder-create-btn"
-            onClick={() => onNewProjectFolder("local")}
-            title={text("새 프로젝트 폴더", "New project folder")}
-            aria-label={text("새 프로젝트 폴더", "New project folder")}
-          >
-            ▣
+      <div className="sidebar-workspace-scroll"><section className="sidebar-section"><header className="sidebar-section-head"><button className="sidebar-section-toggle" aria-expanded={projectsOpen} onClick={() => setProjectsOpen(value => !value)}><SidebarIcon name="chevron" />{text("프로젝트", "Projects")}</button><span className="sidebar-section-count">{projects.length}</span><button className="sidebar-icon-button sidebar-add-folder" onClick={() => props.onNewProjectFolder("local")} title={text("새 프로젝트 폴더", "New project folder")} aria-label={text("새 프로젝트 폴더", "New project folder")}><SidebarIcon name="folder" /></button><button className="sidebar-icon-button" onClick={props.onNewProject} title={text("새 프로젝트", "New project")} aria-label={text("새 프로젝트", "New project")}><SidebarIcon name="plus" /></button></header>
+        {projectsOpen && <SidebarProjectTree {...props} agents={navigable} navigationOnly navigationSearch="" navigationFilter={filter} activeProjectId={scope} onSelectProject={id => { setScope(current => current === id ? null : id); props.onSelectProject(id); props.onShowSessions?.(); }} />}
+      </section>
+      {screens.length > 0 && <section className="sidebar-section screen-groups"><header className="sidebar-section-head"><button className="sidebar-section-toggle" aria-expanded={screensOpen} onClick={() => setScreensOpen(value => !value)}><SidebarIcon name="chevron" />{text("분할 화면", "Split views")}</button><span className="sidebar-section-count">{screens.length}</span></header>{screensOpen && <div className="sidebar-screen-list">{screens.map((screen, index) => <div className="sidebar-screen-item" key={screen.group.id}><button className={`screen-group-row${screen.group.id === activeGroupId ? " screen-group-row-active" : ""}`} title={screen.members.map(agent => `${projectById.get(agent.projectId)?.name} / ${agent.name}`).join("\n")} onClick={() => props.onSelectScreen(screen.group.id, screen.targetAgentId)} onContextMenu={event => { event.preventDefault(); props.onScreenContextMenu?.(screen.group.id, event.clientX, event.clientY); }}><SidebarIcon name="split" /><span className="screen-group-name">{screen.name}</span><span className="sidebar-section-count">{screen.members.length}</span><span className="sidebar-screen-number" aria-label={`Screen ${index + 1}`}>S{index + 1}</span></button><button className="sidebar-icon-button sidebar-row-menu" title={text("분할 화면 메뉴", "Split view menu")} aria-label={text(`${screen.name} 분할 화면 메뉴`, `${screen.name} split view menu`)} aria-haspopup="menu" onClick={event => props.onScreenContextMenu?.(screen.group.id, ...menuPosition(event))}>···</button></div>)}</div>}</section>}
+      <section className="sidebar-section sidebar-recents"><header className="sidebar-section-head"><span className="sidebar-recent-heading">{scope ? projectById.get(scope)?.name : text("최근 대화", "Recent conversations")}</span>{scope && <button className="sidebar-scope-reset" onClick={() => setScope(null)}>{text("전체로", "All")}</button>}<button className="sidebar-icon-button sidebar-sort" aria-label={sortByName ? text("정렬: 이름순", "Sort: name") : text("정렬: 최근 사용 순", "Sort: recently opened")} title={sortByName ? text("이름순 · 최근 사용 순으로 변경", "Name · switch to recently opened") : text("최근 사용 순 · 이름순으로 변경", "Recently opened · switch to name")} onClick={() => setSortByName(value => !value)}><SidebarIcon name="sort" /></button></header>
+        <div className="sidebar-session-filters" role="group" aria-label={text("대화 상태 필터", "Conversation status filter")}>{(["all", "active", "sleeping"] as const).map(value => <button key={value} className="sidebar-session-filter" data-session-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}><span className="sidebar-session-filter-label">{value === "all" ? text("전체", "All") : value === "active" ? text("활성", "Active") : text("휴면", "Sleeping")}</span><span className="sidebar-session-filter-count">{counts[value]}</span></button>)}</div>
+        {sortByName ? <><span className="sidebar-date-label">{text("이름순", "By name")}</span><ul className="sidebar-recent-list">{recent.map(renderAgent)}</ul></> : (["pinned", "today", "yesterday", "week", "older"] as const).map(bucket => { const members = recent.filter(agent => sidebarDateGroup(agent, today) === bucket); return members.length > 0 ? <Fragment key={bucket}><span className="sidebar-date-label">{bucket === "pinned" && <SidebarIcon name="pin" />}{labels[bucket]}</span><ul className="sidebar-recent-list">{members.map(renderAgent)}</ul></Fragment> : null; })}
+        {!recent.length && <div className="sidebar-empty"><p>{filter === "sleeping" ? text("휴면 대화가 없습니다.", "No sleeping conversations.") : filter === "active" ? text("활성 대화가 없습니다.", "No active conversations.") : text("대화를 시작해 보세요.", "Start a conversation.")}</p>{filter !== "all" || scope ? <button onClick={clearFilters}>{text("필터 초기화 · 전체 보기", "Clear filters · show all")}</button> : <button onClick={newSession}>{text("새 대화", "New conversation")}</button>}</div>}
+      </section></div>
+      {archived.length > 0 && (
+        <footer className="sidebar-workspace-footer">
+          <button className="sidebar-archive-link" onClick={() => setShowArchive(true)} title={text("보관한 대화", "Archived conversations")}>
+            <SidebarIcon name="archive" /><span>{text("보관한 대화", "Archived conversations")}</span><small>{archived.length}</small>
           </button>
-          <button
-            className="section-action-btn"
-            onClick={onNewProject}
-            title="New project"
-          >
-            +
-          </button>
-        </div>
-        <div className="sidebar-search">
-          <input
-            className="sidebar-search-input"
-            value={searchQuery}
-            placeholder={text("프로젝트 · 세션 · 경로 검색", "Search projects, sessions and paths")}
-            aria-label={text("프로젝트 · 세션 · 경로 검색", "Search projects, sessions and paths")}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              className="sidebar-search-clear"
-              onClick={() => setSearchQuery("")}
-              title="Clear"
-              aria-label={text("검색 지우기", "Clear search")}
-            >
-              ×
-            </button>
-          )}
-        </div>
-        <div className="sidebar-session-filters" role="group" aria-label={text("세션 상태 필터", "Session status filter")}>
-          {([
-            { value: "all", label: text("전체", "All"), title: text("전체 세션 보기", "Show all sessions") },
-            { value: "active", label: text("Active", "Active"), title: text("활성 세션만 보기", "Show active sessions only") },
-            { value: "sleeping", label: text("Sleeping", "Sleeping"), title: text("휴면 세션만 보기", "Show sleeping sessions only") },
-          ] as const).map(({ value, label, title }) => (
-            <button
-              key={value}
-              type="button"
-              className="sidebar-session-filter"
-              data-session-filter={value}
-              aria-pressed={sessionFilter === value}
-              title={title}
-              onClick={() => setSessionFilter(value)}
-            >
-              <span className="sidebar-session-filter-label">{label}</span>
-              <span className="sidebar-session-filter-count">{sessionFilterCounts[value]}</span>
-            </button>
-          ))}
-        </div>
-        {screens.length > 0 && (
-          <section className="screen-groups" aria-label="Split screens">
-            <div className="screen-groups-heading">
-              <span>SCREENS</span>
-              <span className="screen-groups-count">{screens.length}</span>
-            </div>
-            <div className="screen-groups-list">
-              {screens.map((screen) => (
-                <button
-                  key={screen.groupId}
-                  className={`screen-group-row ${
-                    screen.groupId === activeGroupId
-                      ? "screen-group-row-active"
-                      : ""
-                  }`}
-                  style={
-                    { "--screen-color": screen.color } as CSSProperties
-                  }
-                  onClick={() =>
-                    onSelectScreen(screen.groupId, screen.targetAgentId)
-                  }
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onScreenContextMenu?.(screen.groupId, event.clientX, event.clientY);
-                  }}
-                  title={screen.title}
-                >
-                  <span className="screen-group-rail" aria-hidden="true" />
-                  <span className="screen-group-name">
-                    Screen {screen.number}
-                  </span>
-                  <span className="screen-group-members">{screen.label}</span>
-                  <span
-                    className="screen-group-direction"
-                    title={
-                      screen.direction === "h" ? text("좌우 분할", "Horizontal split") : text("상하 분할", "Vertical split")
-                    }
-                    aria-label={
-                      screen.direction === "h" ? text("좌우 분할", "Horizontal split") : text("상하 분할", "Vertical split")
-                    }
-                  >
-                    {screen.direction === "h" ? "↔" : "↕"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-        {groupByMachine
-          ? machineGroups.map((group) => {
-              const machineFolders = projectFolders.filter(
-                (folder) => folder.machineKey === group.id
-              );
-              const folderById = new Map(
-                machineFolders.map((folder) => [folder.id, folder])
-              );
-              const visible = group.projects.filter(
-                (project) => {
-                  const folder = project.projectFolderId
-                    ? folderById.get(project.projectFolderId)
-                    : null;
-                  const folderMatches =
-                    searchTerm.length > 0 &&
-                    !!folder?.name.toLowerCase().includes(searchTerm);
-                  return (
-                    filterSections(
-                      project.id,
-                      project.name,
-                      folderMatches
-                    ) !== null
-                  );
-                }
-              );
-              const emptyFolderMatches = machineFolders.some(
-                (folder) =>
-                  sessionFilter === "all" &&
-                  searchTerm.length > 0 &&
-                  folder.name.toLowerCase().includes(searchTerm)
-              );
-              if (
-                visible.length === 0 &&
-                !emptyFolderMatches &&
-                (searchTerm.length > 0 || sessionFilter !== "all" || machineFolders.length === 0)
-              ) {
-                return null;
-              }
-              const mExpanded = machineExpanded(group.id);
-              return (
-                <div key={group.id} className="machine-node">
-                  <div className="machine-row">
-                    <button
-                      className="machine-caret-btn"
-                      onClick={() => toggleMachineExpanded(group.id)}
-                      title={mExpanded ? "Collapse" : "Expand"}
-                    >
-                      {mExpanded ? "v" : ">"}
-                    </button>
-                    <div
-                      className="machine-item"
-                      title={group.hostSummary ?? group.label}
-                    >
-                      <span className="machine-icon" aria-hidden="true">
-                        {group.kind === "local" ? "🖥️" : "☁️"}
-                      </span>
-                      <span className="machine-name">{group.label}</span>
-                      {group.kind === "ssh" && (
-                        <span className="project-ssh-badge">SSH</span>
-                      )}
-                    </div>
-                    {!sessionPickerMode && (
-                      <button
-                        className="machine-add-folder-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onNewProjectFolder(group.id);
-                        }}
-                        title={text(`${group.label}에 프로젝트 폴더 추가`, `Add a project folder to ${group.label}`)}
-                        aria-label={text(`${group.label}에 프로젝트 폴더 추가`, `Add a project folder to ${group.label}`)}
-                      >
-                        +
-                      </button>
-                    )}
-                  </div>
-                  {mExpanded && (
-                    <div className="machine-projects">
-                      {renderMachineProjects(group)}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          : renderMachineProjects({
-              id: "local",
-              kind: "local",
-              label: "This PC",
-              projects,
-            })}
-        {projects.length === 0 && (
-          <div className="empty-hint">Click + to add a project</div>
-        )}
-        {projects.length > 0 &&
-          !hasVisibleTreeEntries && (
-            <button
-              type="button"
-              className="empty-hint empty-hint-action"
-              onClick={() => { setSessionFilter("all"); setSearchQuery(""); }}
-              title={text("전체 세션 보기로 전환", "Switch to all sessions")}
-            >
-              {searchTerm
-                ? text("선택한 필터에서 검색 결과 없음", "No results match this search and filter")
-                : sessionFilter === "sleeping"
-                  ? text("Sleeping 세션 없음", "No sleeping sessions")
-                  : text("Active 세션 없음", "No active sessions")}
-              <span className="empty-hint-cta">{text("필터 초기화 · 전체 보기", "Clear filters · show all")}</span>
-            </button>
-          )}
-      </div>
+        </footer>
+      )}
+      {!collapsed && props.onWidthChange && <div className="sidebar-resize-handle" role="separator" aria-label={text("사이드바 너비", "Sidebar width")} aria-orientation="vertical" aria-valuemin={244} aria-valuemax={360} aria-valuenow={props.width || 286} tabIndex={0} onPointerDown={event => { event.preventDefault(); const handle = event.currentTarget; handle.setPointerCapture(event.pointerId); const left = sidebarRef.current?.getBoundingClientRect().left || 0; handle.onpointermove = move => { if (handle.hasPointerCapture(move.pointerId)) props.onWidthChange?.(sidebarWidth(move.clientX - left)); }; }} onPointerUp={event => { event.currentTarget.releasePointerCapture(event.pointerId); event.currentTarget.onpointermove = null; }} onPointerCancel={event => { event.currentTarget.onpointermove = null; }} onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); props.onWidthChange?.(sidebarWidth((props.width || 286) + (event.key === "ArrowLeft" ? -8 : 8))); } }} />}
     </aside>
-  );
+    {showArchive && <ArchiveSessionsDialog agents={archived} projects={projects} onRestore={props.onRestoreSession} onClose={closeArchive} />}
+  </>;
+}
+
+function readBoolean(key: string, fallback: boolean) {
+  try { const raw = localStorage.getItem(key); return raw === null ? fallback : raw !== "false"; } catch { return fallback; }
 }

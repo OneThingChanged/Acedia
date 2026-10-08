@@ -5,10 +5,14 @@ export function RenameSessionModal({
   currentName,
   onCancel,
   onRename,
+  title,
+  fieldLabel,
 }: {
   currentName: string;
   onCancel: () => void;
   onRename: (name: string) => void;
+  title?: string;
+  fieldLabel?: string;
 }) {
   useNativeViewOcclusion();
 
@@ -23,10 +27,10 @@ export function RenameSessionModal({
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2 className="modal-title">Rename Session</h2>
+        <h2 className="modal-title">{title || "Rename Session"}</h2>
 
         <label className="field">
-          <span className="field-label">Session alias</span>
+          <span className="field-label">{fieldLabel || "Session alias"}</span>
           <input
             autoFocus
             value={name}

@@ -217,6 +217,10 @@ export type Agent = {
   // Tab customization (right-click tab menu).
   pinned?: boolean;
   tabColor?: string;
+  // Sidebar organization does not pin tabs or change the session runtime.
+  sidebarPinned?: boolean;
+  sidebarArchived?: boolean;
+  lastOpenedAt?: number;
   status: AgentStatus;
   runtimeStatus?: AgentRuntimeStatus;
   // Runtime-only: show restored sessions without allocating a terminal/PTY.
@@ -254,6 +258,9 @@ export type StoredAgent = {
   workerSettings?: SessionWorkerSettings;
   pinned?: boolean;
   tabColor?: string;
+  sidebarPinned?: boolean;
+  sidebarArchived?: boolean;
+  lastOpenedAt?: number;
   createdAt: number;
   lastSessionId?: string;
   // Legacy fields kept for one-time migration on load.
@@ -378,6 +385,7 @@ export type Path = number[];
 
 export type Group = {
   id: string;
+  name?: string;
   projectId?: string;
   layout: LayoutNode;
   sessionPins?: Record<string, string>;
@@ -403,6 +411,8 @@ export type SessionContextAction =
   | "split-h"
   | "split-v"
   | "rename"
+  | "sidebar-pin"
+  | "sidebar-archive"
   | "pin-session"
   | "clear-session-pin"
   | "deactivate"

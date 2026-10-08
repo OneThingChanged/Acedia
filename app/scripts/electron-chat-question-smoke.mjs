@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RemoteDashboardService } from "../electron/services/web-services.mjs";
+import { startupTrust, startupHooks } from "./fixtures/codex-startup-screens.mjs";
 
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(import.meta.dirname, "..");
@@ -89,6 +90,37 @@ async function exerciseDesktop(win, directory) {
   assert(await win.webContents.executeJavaScript("window.questionFixture.writes.length") === authWrites, 'Opening auth terminal submitted input automatically');
   await patch({ state: { agentStatus: "running", question: null } });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
+  const startupWrites = await win.webContents.executeJavaScript("window.questionFixture.writes.length");
+  await patch({ chat: { sessionId: null, blocks: [], pendingQuestion: null }, terminalScreen: startupTrust, state: { provider: "codex", agentStatus: "starting", question: null } });
+  await waitFor(win, "document.querySelector('.chat-prompt-startup .chat-prompt-text')?.textContent.includes('K:\\\\AI\\\\Nogari')");
+  assert(await win.webContents.executeJavaScript("window.questionFixture.writes.length") === startupWrites, "Startup dialog approved itself");
+  assert(await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option').length===3 && document.querySelector('.chat-prompt-text').textContent.includes('run code automatically')"), "Folder trust options or warning missing during startup");
+  await fs.writeFile(path.resolve(appRoot, "../output/chat-startup-trust.png"), (await win.webContents.capturePage()).toPNG());
+  // Choose Quit, rather than trusting, and ensure one movement then confirmation.
+  await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option')[1].click();document.querySelectorAll('.chat-prompt-option')[1].click()");
+  await waitFor(win, "document.querySelector('.chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
+  const trustKeys = await win.webContents.executeJavaScript(`window.questionFixture.writes.slice(${startupWrites})`);
+  assert(JSON.stringify(trustKeys) === JSON.stringify(["\x1b[B", "\r"]), `Folder trust used the wrong choice or sent duplicate answers: ${JSON.stringify(trustKeys)}`);
+  await patch({ terminalScreen: startupHooks });
+  await waitFor(win, "document.querySelector('.chat-prompt-heading')?.textContent.includes('시작 훅') && !document.querySelector('.chat-prompt-option').disabled");
+  await fs.writeFile(path.resolve(appRoot, "../output/chat-startup-hooks.png"), (await win.webContents.capturePage()).toPNG());
+  const beforeHooks = await win.webContents.executeJavaScript("window.questionFixture.writes.length");
+  await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option')[2].click()");
+  await waitFor(win, "document.querySelector('.chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
+  const hookKeys = await win.webContents.executeJavaScript(`window.questionFixture.writes.slice(${beforeHooks})`);
+  assert(JSON.stringify(hookKeys) === JSON.stringify(["\x1b[B", "\r"]), `Hook skip did not move from default option 2 to option 3: ${JSON.stringify(hookKeys)}`);
+  await patch({ terminalScreen: "" });
+  await waitFor(win, "!document.querySelector('.chat-prompt')");
+  await patch({ terminalScreen: startupTrust, changeScreenOnWrite: startupHooks });
+  await waitFor(win, "document.querySelector('.chat-prompt-heading')?.textContent.includes('프로젝트 폴더')");
+  const beforeChanged = await win.webContents.executeJavaScript("window.questionFixture.writes.length");
+  await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option')[1].click()");
+  await waitFor(win, "window.questionFixture.writes.length>" + beforeChanged);
+  await new Promise(resolve => setTimeout(resolve, 250));
+  assert(await win.webContents.executeJavaScript(`window.questionFixture.writes.length===${beforeChanged + 1}`), "Changed startup screen received an unintended Enter");
+  await patch({ state: { agentStatus: "exited" } });
+  await waitFor(win, "!document.querySelector('.chat-prompt')");
+  await patch({ terminalScreen: "", state: { agentStatus: "running" } });
   console.log("Desktop chat questions passed");
 }
 
@@ -172,6 +204,129 @@ async function exerciseRemote(BrowserWindow, directory) {
   } finally { await web.stop(); }
 }
 
+async function exerciseChatUX(win, directory) {
+  const patch = payload => win.webContents.executeJavaScript(`window.questionFixture.patch(${JSON.stringify(payload)})`);
+  const input = value => win.webContents.executeJavaScript(`(() => { const el=document.querySelector('.chat-composer-input');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true})); })()`);
+  const code = 'const sidebar = "Acedia";\nconsole.log(sidebar);';
+  const narrative = '# 대화는 빠르게. 작업은 한눈에.\n\n본문에 집중하고, 필요한 작업만 펼쳐 볼 수 있도록 정리했습니다.\n\n1. **읽기 편한 대화** — 본문과 입력창의 폭을 맞추고 여백을 늘렸습니다.\n2. **필요한 순간에 작업 확인** — 명령과 파일 변경은 펼쳐서 확인합니다.\n\n```javascript\n' + code + '\n```';
+  const demo = { sessionId: 'fixture-session', tool: 'codex', lifecycle: 'idle', pendingQuestion: null, blocks: [
+    { sequence: 1, role: 'user', kind: 'text', text: '채팅도 초안처럼 정리해 보자.\n작업 내역과 복사는 계속 쉽게 찾고 싶어.' },
+    { sequence: 2, role: 'assistant', kind: 'text', text: '채팅 영역을 확인하고 있습니다.' },
+    { sequence: 3, role: 'assistant', kind: 'tool-call', name: 'read_file', summary: 'src/components/ChatView.tsx' },
+    { sequence: 4, role: 'tool', kind: 'tool-result', output: 'ChatView source inspected' },
+    { sequence: 5, role: 'assistant', kind: 'text', text: narrative },
+  ] };
+  await win.loadFile(path.join(directory, 'index.html'));
+  win.setContentSize(1280, 900);
+  await patch({ chat: demo, state: { agentStatus: 'running', provider: 'codex', question: null, projectName: 'Acedia', folder: 'G:/AI/Acedia/source', connectionLabel: '이 컴퓨터' } });
+  await waitFor(win, "document.querySelector('.chat-codeblock') && !document.querySelector('.chat-prompt')");
+  assert(await win.webContents.executeJavaScript("getComputedStyle(document.querySelector('.chat-turn.assistant')).borderTopWidth==='0px' && document.querySelector('.chat-composer-context').textContent.includes('Acedia')"), 'Conversation hierarchy or composer context missing');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-codeblock .chat-copy-button').click()");
+  await waitFor(win, "window.questionFixture.clipboard.length===1");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.clipboard[0]') === code, 'Code copy included markup, header, or controls');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-message-actions .chat-copy-button').click()");
+  await waitFor(win, "window.questionFixture.clipboard.length===2");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.clipboard[1]') === '채팅 영역을 확인하고 있습니다.\n\n' + narrative, 'Answer copy omitted narrative or included tool output');
+  await patch({ failClipboard: true });
+  await win.webContents.executeJavaScript("document.querySelector('.chat-user-actions .chat-copy-button').click()");
+  await waitFor(win, "document.querySelector('.chat-user-actions .chat-copy-button.error') && window.questionFixture.clipboard.length===2");
+  await patch({ failClipboard: false });
+  await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools').open && document.querySelector('.chat-tool pre').textContent.includes('source inspected')"), 'Collapsed tool details could not be opened');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-work-tools > summary').click()");
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  for (const [width, height, theme] of [[1280, 900, 'soft'], [1280, 900, 'light'], [800, 640, 'soft'], [420, 640, 'soft']]) {
+    win.setContentSize(width, height);
+    await win.webContents.executeJavaScript(`document.getElementById('root').className='app app-theme-${theme}'`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const layout = await win.webContents.executeJavaScript(`(() => {
+      const t=document.querySelector('.chat-thread').getBoundingClientRect(),c=document.querySelector('.chat-composer').getBoundingClientRect(),i=document.querySelector('.chat-composer-input');
+      const button=document.querySelector('.chat-composer-send').getBoundingClientRect();i.focus();
+      return {overflow:document.documentElement.scrollWidth>innerWidth,thread:t.width,aligned:Math.abs((t.left+t.right-c.left-c.right)/2)<2,visible:button.bottom<=innerHeight,outline:getComputedStyle(i).outlineStyle};
+    })()`);
+    assert(!layout.overflow && layout.thread <= 760 && layout.aligned && layout.visible && layout.outline === 'none', `Chat column/composer layout failed ${width} ${theme}: ${JSON.stringify(layout)}`);
+    await fs.writeFile(path.resolve(appRoot, `../output/chat-workspace-${theme}-${width}.png`), (await win.webContents.capturePage()).toPNG());
+  }
+  await input('줄바꿈 확인');
+  const newline = await win.webContents.executeJavaScript(`(() => {
+    const el=document.querySelector('.chat-composer-input'), e=new KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true});
+    el.dispatchEvent(e);return !e.defaultPrevented && window.questionFixture.writes.length===0;
+  })()`);
+  assert(newline, 'Shift+Enter sent the message instead of allowing a newline');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true,cancelable:true}))");
+  await waitFor(win, "document.querySelector('.chat-composer-input').value.includes('\\n') && window.questionFixture.writes.length===0");
+  await input('메시지 전송 확인');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').click()");
+  await waitFor(win, "window.questionFixture.writes.length===2");
+  const sent = await win.webContents.executeJavaScript('window.questionFixture.writes');
+  assert(JSON.stringify(sent) === JSON.stringify(['메시지 전송 확인', '\r']), 'Send button changed PTY delivery');
+  await patch({ state: { agentStatus: 'working' }, chat: { ...demo, lifecycle: 'working' } });
+  await waitFor(win, "!!document.querySelector('.chat-composer-stop')");
+  await input('예약 작업');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').click()");
+  await waitFor(win, "!!document.querySelector('.chat-queue')");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.writes.length===2'), 'Queued message sent during ongoing work');
+  await win.webContents.executeJavaScript("document.querySelector('.chat-queue-cancel').click();document.querySelector('.chat-composer-stop').click()");
+  await waitFor(win, "!document.querySelector('.chat-queue') && window.questionFixture.writes.length===3");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.writes[2]') === '\x1b', 'Stop action did not interrupt the PTY');
+  await patch({ filesToSelect: ['K:/Assets/My README.md', 'K:/Assets/reference.png'], state: { agentStatus: 'running' }, chat: demo });
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-attach').click()");
+  await waitFor(win, "document.querySelector('.chat-attachment img') && document.querySelector('.chat-composer-input').value.includes('My README.md')");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.writes.length===3'), 'Attaching a file sent input automatically');
+  await input('/mod');
+  await waitFor(win, "document.querySelector('.chat-ac')?.textContent.includes('/model')");
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-ac').getBoundingClientRect().bottom<=document.querySelector('.chat-composer').getBoundingClientRect().top && document.querySelector('.chat-ac').getBoundingClientRect().top>=0"), 'Autocomplete was hidden behind the new composer');
+  await input('로그인 뒤 요청');
+  await patch({ state: { provider: 'claude', agentStatus: 'waiting', question: 'Login expired · Please run /login' } });
+  await waitFor(win, "document.querySelector('.chat-composer-send').disabled && !!document.querySelector('.chat-prompt.authentication')");
+  await win.webContents.executeJavaScript("document.querySelector('.chat-composer-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}))");
+  assert(await win.webContents.executeJavaScript('window.questionFixture.writes.length===3'), 'Sign-in required composer still submitted a request');
+  console.log('Desktop chat UX passed (columns, themes, copy, files, newline, queue, stop, auth)');
+}
+
+async function exerciseStartupPane(BrowserWindow, directory) {
+  const win = new BrowserWindow({ width: 1024, height: 760, show: false, useContentSize: true, webPreferences: { offscreen: true, backgroundThrottling: false } });
+  const errors = [];
+  win.webContents.on("console-message", event => { if (event.level === "error") errors.push(event.message); });
+  try {
+    await win.loadFile(path.join(directory, "startup.html"));
+    await waitFor(win, "!!document.querySelector('.chat-prompt-startup')");
+    assert(await win.webContents.executeJavaScript(`(() => {
+      const host = document.querySelector('.pane-body');
+      const calls = window.startupFixture.calls;
+      return getComputedStyle(host).visibility === 'hidden' && host.clientWidth > 0 && host.clientHeight > 0
+        && calls.filter(c => c.command === 'spawn_pty').length === 1 && calls.filter(c => c.command === 'attach_terminal').length === 1
+        && !calls.some(c => c.command === 'write_pty') && !document.activeElement?.classList.contains('xterm-helper-textarea');
+    })()`), "First launch in chat did not fit and attach its hidden terminal, or sent input automatically");
+    await fs.writeFile(path.resolve(appRoot, "../output/chat-startup-pane.png"), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript(`window.startupFixture.patchScreen(${JSON.stringify(startupHooks)})`);
+    await waitFor(win, "document.querySelector('.chat-prompt-heading')?.textContent.includes('시작 훅')");
+    win.setContentSize(500, 600);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await win.webContents.executeJavaScript(`window.startupFixture.patchScreen(${JSON.stringify(startupHooks)})`);
+    await waitFor(win, "document.querySelector('.chat-prompt-text')?.textContent.includes('outside the sandbox')");
+    assert(await win.webContents.executeJavaScript(`(() => {
+      const options = document.querySelector('.chat-prompt-options').getBoundingClientRect();
+      return options.bottom <= innerHeight && options.top >= 0 && document.documentElement.scrollWidth === innerWidth;
+    })()`), "Wrapped startup prompt clipped its actions or overflowed");
+    await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option')[2].click()");
+    await waitFor(win, "document.querySelector('.chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
+    const keys = await win.webContents.executeJavaScript("window.startupFixture.calls.filter(c=>c.command==='write_pty').map(c=>c.args.data)");
+    assert(JSON.stringify(keys) === JSON.stringify(["\x1b[B", "\r"]), `Native startup choices used wrong keys: ${JSON.stringify(keys)}`);
+    await win.webContents.executeJavaScript("(() => { const el=document.querySelector('.chat-composer-input');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'입력 중인 초안');el.dispatchEvent(new Event('input',{bubbles:true})); })()");
+    await win.webContents.executeJavaScript("window.startupFixture.toggleChat()");
+    await waitFor(win, "!document.querySelector('.chat-view') && getComputedStyle(document.querySelector('.pane-body')).visibility==='visible'");
+    await win.webContents.executeJavaScript("window.startupFixture.toggleChat()");
+    await waitFor(win, "!!document.querySelector('.chat-prompt-startup')");
+    assert(await win.webContents.executeJavaScript("document.querySelector('.chat-composer-input').value==='입력 중인 초안'"), 'Chat draft lost when toggling the terminal');
+    assert(await win.webContents.executeJavaScript("window.startupFixture.calls.filter(c=>c.command==='spawn_pty').length===1 && !window.startupFixture.calls.some(c=>c.command==='kill_pty' || c.command==='detach_terminal')"), "Chat switching changed the PTY lifecycle");
+    await win.webContents.executeJavaScript("window.startupFixture.patchScreen('Codex is ready')");
+    await waitFor(win, "!document.querySelector('.chat-prompt')");
+    if (errors.length) throw Error(errors.join("\n"));
+    console.log("Native chat startup prompts passed (initial attach, wrapping, choices, lifecycle)");
+  } finally { win.destroy(); }
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require("electron");
   const directory = process.env.ACEDIA_QUESTION_SMOKE_DIR;
@@ -183,7 +338,9 @@ if (process.versions.electron) {
     try {
       await fs.mkdir(path.resolve(appRoot, "../output"), { recursive: true });
       await exerciseDesktop(desktop, directory);
+      await exerciseChatUX(desktop, directory);
       desktop.destroy();
+      await exerciseStartupPane(BrowserWindow, directory);
       await exerciseRemote(BrowserWindow, directory);
       app.exit(0);
     } catch (error) { console.error(error); app.exit(1); }
@@ -195,6 +352,9 @@ if (process.versions.electron) {
     await build({ entryPoints: [path.join(appRoot, "scripts/fixtures/chat-question-renderer.tsx")], bundle: true,
       define: { "import.meta.env": "{}" }, jsx: "automatic", outfile: path.join(directory, "renderer.js") });
     await fs.writeFile(path.join(directory, "index.html"), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><style>html,body,#root{margin:0;height:100%;width:100%}#root{display:flex;background:var(--app-bg);color:var(--app-text)}</style><div id="root" class="app app-theme-soft"></div><script src="renderer.js"></script>');
+    await build({ entryPoints: [path.join(appRoot, "scripts/fixtures/chat-startup-renderer.tsx")], bundle: true,
+      define: { "import.meta.env": "{}" }, jsx: "automatic", outfile: path.join(directory, "startup-renderer.js") });
+    await fs.writeFile(path.join(directory, "startup.html"), '<meta charset="utf-8"><link rel="stylesheet" href="startup-renderer.css"><style>html,body,#root{margin:0;height:100%;width:100%}#root{display:flex;background:var(--app-bg);color:var(--app-text);overflow:hidden}</style><div id="root" class="app app-theme-soft"></div><script src="startup-renderer.js"></script>');
     const env = { ...process.env, ACEDIA_QUESTION_SMOKE_DIR: directory };
     delete env.ELECTRON_RUN_AS_NODE;
     const child = spawn(require("electron"), [fileURLToPath(import.meta.url)], { env, stdio: "inherit", windowsHide: true });

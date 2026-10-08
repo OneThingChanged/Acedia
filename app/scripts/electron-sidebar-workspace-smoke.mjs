@@ -1,0 +1,129 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+const require = createRequire(import.meta.url);
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const directory = path.resolve(appRoot, "../output/sidebar-workspace-app");
+
+async function exercise() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 180));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const find = selector => { const element = document.querySelector(selector); check(element, "Missing " + selector); return element; };
+  const click = async selector => { find(selector).click(); await wait(); };
+  const menu = async label => { const button = [...document.querySelectorAll('.ctx-menu button')].find(element => element.textContent.trim() === label); check(button, "Missing menu " + label); button.click(); await wait(); };
+  const stored = id => JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(agent => agent.id === id);
+  for (let attempt = 0; attempt < 40 && !document.querySelector('.sidebar-workspace'); attempt++) await wait();
+  await wait();
+  const rows = () => document.querySelectorAll('[data-sidebar-agent-id]').length;
+  check(find('.sidebar-brand-icon').naturalWidth > 0, 'Acedia icon did not load');
+  check(!document.querySelector('.topbar-logo, .app-topbar [aria-label="Toggle left sidebar"]'), 'Duplicate titlebar branding or sidebar toggle');
+  check(rows() === 5 && !document.querySelector('[data-sidebar-agent-id="archived"]'), 'Archive projection');
+  const row = find('[data-sidebar-agent-id="ux"]');
+  check(getComputedStyle(row).flexDirection === 'row' && row.getBoundingClientRect().height < 65, 'Conversation row layout');
+  check(!document.querySelector('.sidebar-routing, .sidebar-account'), 'Removed account footer still visible');
+  const panes = [...document.querySelectorAll('.terminal-area [data-pane-leaf-id]')];
+  const beforeRuntime = window.layoutCalls.filter(call => ['spawn_pty', 'kill_pty'].includes(call.command)).length;
+  await click('[data-sidebar-agent-id="image"] .sidebar-row-menu'); await menu('대화 고정');
+  check(stored('image').sidebarPinned && !stored('image').pinned, 'Sidebar pin changed tab pin');
+  await click('[data-sidebar-agent-id="image"] .sidebar-row-menu'); await menu('대화 보관');
+  check(rows() === 4 && stored('image').sidebarArchived, 'Archive not saved');
+  await click('.sidebar-archive-link');
+  const restore = [...document.querySelectorAll('.sidebar-archive-list > div')].find(row => row.textContent.includes('리모트 이미지'));
+  check(restore, 'Archived conversation unavailable'); restore.querySelector('button').click(); await wait();
+  check(rows() === 5 && !stored('image').sidebarArchived, 'Restore not saved');
+  find('.sidebar-archive-dialog header button').click(); await wait();
+  const project = [...document.querySelectorAll('.sidebar-project-navigation .project-item')].find(element => element.textContent.includes('ToonShader'));
+  project.click(); await wait(); check(rows() === 1, 'Project scope');
+  await click('.sidebar-primary-nav > button'); check(rows() === 5, 'All conversations');
+  const setInput = (selector, value) => { const input = find(selector); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
+  await click('.sidebar-search-button'); check(document.querySelector('.quick-open'), 'Sidebar search did not open Quick Open');
+  setInput('.quick-open input', '이미지'); await wait(); check(find('.quick-open-results').textContent.includes('리모트 이미지'), 'Quick Open session search');
+  find('.quick-open input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait();
+  check(!document.querySelector('.quick-open') && rows() === 5, 'Quick Open changed sidebar scope');
+  await click('.sidebar-notifications'); check(document.querySelector('.attention-center'), 'Notifications not connected');
+  await click('.attention-header .app-icon-btn');
+  await click('[data-session-filter="sleeping"]'); check(rows() === 3, 'Sleeping filter');
+  await click('[data-session-filter="active"]'); check(rows() === 0, 'Cold sessions became active');
+  await click('[data-session-filter="all"]');
+  await click('.screen-groups .sidebar-section-toggle');
+  await click('.sidebar-screen-item .sidebar-row-menu'); await menu('분할 화면 이름 변경');
+  setInput('.modal input', 'UX 비교 작업'); await wait();
+  find('.modal .btn-primary').click(); await wait();
+  check(find('.screen-group-name').textContent === 'UX 비교 작업', 'Split rename');
+  check(JSON.parse(localStorage.getItem('multiagent.workspace.primary.groups.v1')).some(group => group.name === 'UX 비교 작업'), 'Split name not persisted');
+  await click('.sidebar-screen-item .sidebar-row-menu'); await menu('스크린 해제');
+  check(!document.querySelector('.screen-groups') && rows() === 5, 'Unsplit removed conversation');
+  check(window.layoutCalls.filter(call => ['spawn_pty', 'kill_pty'].includes(call.command)).length === beforeRuntime, 'Navigation changed PTY lifecycle');
+  check(panes.every(element => element.isConnected) || !document.querySelector('.screen-groups'), 'Pane replacement');
+  await click('.sidebar-collapse');
+  check(Math.round(find('.sidebar').getBoundingClientRect().width) === 66, 'Collapsed rail');
+  await click('.sidebar-search-button'); check(document.querySelector('.quick-open'), 'Collapsed rail search not connected');
+  find('.quick-open input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait();
+  await click('.sidebar-collapse');
+  const width = find('.sidebar').getBoundingClientRect().width;
+  const resize = find('.sidebar-resize-handle'); resize.focus(); resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await wait();
+  check(find('.sidebar').getBoundingClientRect().width === width + 8 && Number(localStorage.getItem('multiagent.sidebarWidth.v1')) === width + 8, 'Resize persistence');
+  await click('.sidebar-new-chat'); check(document.querySelector('.new-session-modal, .modal'), 'New conversation not connected');
+  const cancel = [...document.querySelectorAll('.modal button')].find(button => ['취소', 'Cancel'].includes(button.textContent.trim())); check(cancel, 'New conversation cancel'); cancel.click(); await wait();
+  await click('.app-topbar button[title="설정"]'); check(document.querySelector('.app-settings-screen'), 'Settings not connected');
+  const theme = [...document.querySelectorAll('.app-settings-screen .app-theme-option')].find(button => button.textContent.trim() === 'Light');
+  check(theme, 'Theme button'); theme.click(); await wait();
+  check(find('.app').classList.contains('app-theme-light'), 'Theme application');
+  find('.app-settings-back').click(); await wait();
+  check(window.layoutCalls.filter(call => ['spawn_pty', 'kill_pty'].includes(call.command)).length === beforeRuntime, 'Settings changed runtime');
+  return 'SIDEBAR_REAL_APP_INTERACTIONS_OK';
+}
+
+if (process.versions.electron) {
+  const { app, BrowserWindow } = require('electron');
+  app.disableHardwareAcceleration();
+  app.setPath('userData', process.env.ACEDIA_SIDEBAR_SMOKE_PROFILE);
+  app.whenReady().then(async () => { try {
+    const win = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true, webPreferences: { offscreen: true, backgroundThrottling: false } });
+    const errors = [];
+    win.webContents.on('console-message', details => { if (details.level === 'error') errors.push(details.message); });
+    await win.loadFile(path.join(directory, 'index.html'));
+    await new Promise(resolve => setTimeout(resolve, 900));
+    await fs.writeFile(path.join(directory, 'sidebar-app-1440.png'), (await win.webContents.capturePage()).toPNG());
+    console.log(await win.webContents.executeJavaScript(`(${exercise.toString()})()`));
+    await fs.writeFile(path.join(directory, 'sidebar-app-light-1440.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("localStorage.setItem('multiagent.appTheme.v1','soft')");
+    await win.loadFile(path.join(directory, 'index.html'));
+    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log(await win.webContents.executeJavaScript(`(() => {
+      const saved = JSON.parse(localStorage.getItem('multiagent.agents.v1'));
+      if (!saved.find(agent => agent.id === 'image').sidebarPinned || document.querySelectorAll('[data-sidebar-agent-id]').length !== 5) throw Error('Sidebar data lost on reload');
+      if (document.querySelector('.screen-groups')) throw Error('Unsplit lost on reload');
+      return 'SIDEBAR_RELOAD_OK';
+    })()`));
+    for (const [width, height] of [[1280, 820], [800, 640]]) {
+      win.setContentSize(width, height); await new Promise(resolve => setTimeout(resolve, 250));
+      console.log(await win.webContents.executeJavaScript(`(() => {
+        if (document.documentElement.scrollWidth !== innerWidth) throw Error('Horizontal overflow at '+innerWidth);
+        const footer = document.querySelector('.sidebar-workspace-footer').getBoundingClientRect();
+        if (footer.bottom > innerHeight) throw Error('Footer clipped');
+        if (document.querySelector('.terminal-area').getBoundingClientRect().width < 180) throw Error('Workspace too narrow');
+        return 'SIDEBAR_LAYOUT_OK '+innerWidth+'x'+innerHeight;
+      })()`));
+      await fs.writeFile(path.join(directory, `sidebar-app-${width}.png`), (await win.webContents.capturePage()).toPNG());
+    }
+    if (errors.length) throw Error(errors.join('\n'));
+    app.exit(0);
+  } catch (error) { console.error(error); app.exit(1); } });
+} else {
+  const { build } = await import('esbuild');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.copyFile(path.join(appRoot, 'public/app-icon.png'), path.join(directory, 'app-icon.png'));
+  const profile = await fs.mkdtemp(path.join(directory, 'profile-'));
+  await build({ entryPoints: [path.join(appRoot, 'scripts/fixtures/sidebar-workspace-renderer.tsx')], bundle: true, jsx: 'automatic', define: { 'import.meta.env': '{}', '__MULTIAGENT_APP_VERSION__': JSON.stringify('sidebar-smoke') }, outfile: path.join(directory, 'renderer.js') });
+  await fs.writeFile(path.join(directory, 'index.html'), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><div id="root"></div><script src="renderer.js"></script>');
+  const env = { ...process.env, ACEDIA_SIDEBAR_SMOKE_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  await new Promise((resolve, reject) => {
+    const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { cwd: appRoot, env, stdio: 'inherit', windowsHide: true });
+    const timer = setTimeout(() => { child.kill(); reject(Error('Sidebar smoke timed out')); }, 45000);
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error('Sidebar smoke failed: ' + code)); });
+  });
+}

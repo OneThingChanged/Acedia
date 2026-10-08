@@ -43,8 +43,8 @@ async function exercise() {
   await click('.app-settings-back');
   check(!document.querySelector('.app-settings-screen'), 'Settings did not close');
   geometry(false);
-  await click('[aria-label="Toggle left sidebar"]'); geometry(false);
-  await click('[aria-label="Toggle left sidebar"]'); geometry(false);
+  await click('.sidebar-collapse'); geometry(false);
+  await click('.sidebar-collapse'); geometry(false);
   await click('[aria-label="Toggle right file sidebar"]'); geometry(false);
   await click('[aria-label="Toggle right file sidebar"]'); geometry(false);
   await click('.app-topbar [title="Settings"]');
@@ -110,6 +110,6 @@ if (process.versions.electron) {
     });
   } finally {
     if(path.dirname(directory)!==path.resolve(os.tmpdir())||!path.basename(directory).startsWith('acedia-workspace-layout-')) throw Error('Unsafe temporary directory');
-    await fs.rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:150});
+    await fs.rm(directory,{recursive:true,maxRetries:5,retryDelay:150});
   }
 }

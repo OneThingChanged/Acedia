@@ -1,5 +1,6 @@
 import { canAutoFocusTerminal } from "../lib/workspaceFocus";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -13,6 +14,7 @@ import type {
   TerminalReplay,
 } from "../platform/ipcContract";
 import { toolForId, toolSupportsChat } from "../types";
+import { readTerminalScreen } from "../lib/terminalStartupPrompt";
 import { buildSpawnArgs } from "../lib/spawn";
 import { subscribeTerminalSettings } from "../lib/terminalSettings";
 import type {
@@ -184,6 +186,10 @@ export function PaneSlot({
   // toggle, tab context menu, and re-opening a session all stay in sync.
   const chatMode = activeAgentId ? ctx.chatModeAgents.has(activeAgentId) : false;
   const { termsRef, setAgentStatus, setAgentSessionId } = ctx;
+  const readChatTerminalScreen = useCallback(() => {
+    const entry = activeAgentId ? termsRef.current.get(activeAgentId) : null;
+    return entry?.opened ? readTerminalScreen(entry.term) : "";
+  }, [activeAgentId, termsRef]);
 
   // When the terminal becomes visible again (chat/doc → terminal), xterm's
   // viewport can end up at the top after the re-show/refit — snap it back to
@@ -634,14 +640,14 @@ export function PaneSlot({
   ]);
 
   useEffect(() => {
-    if (!active || !activeAgent) return;
+    if (!active || !activeAgent || chatMode) return;
     const entry = termsRef.current.get(activeAgent.id);
     if (!entry) return;
     const raf = requestAnimationFrame(() => {
       if (canAutoFocusTerminal()) entry.term.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [active, activeAgent?.id, termsRef]);
+  }, [active, activeAgent?.id, chatMode, termsRef]);
 
   // Right-click on the terminal → copy/paste menu. Text selection still uses
   // Shift+drag (xterm forces local selection while a mouse-tracking TUI like
@@ -1094,16 +1100,19 @@ export function PaneSlot({
       {activeAgentId && activeAgent?.aiToolId === 'codex' && isElectronRuntime() && <CapacityRetryNotice key={activeAgentId} agentId={activeAgentId} />}
       {activeAgentId && isElectronRuntime() && <SessionDeliveryNotice key={'delivery-' + activeAgentId} agentId={activeAgentId} />}
       <div className="pane-workspace-content"><div className="pane-workspace-main">
-      {/* Keep the xterm host mounted even while a doc tab or chat view is active
-          so the terminal attach/detach lifecycle and buffered DOM stay intact. */}
+      {/* Chat needs a fitted, attached xterm even on the first launch. Preserve
+          its geometry while hiding it so startup questions remain readable. */}
       <div
         ref={bodyRef}
         className="pane-body"
         style={
-          activeAgent?.deferredStart || activeDocId || activeGitHistoryId || activeBrowserTabId || (chatMode && activeAgentId)
+          activeAgent?.deferredStart || activeDocId || activeGitHistoryId || activeBrowserTabId
             ? { display: "none" }
-            : undefined
+            : chatMode && activeAgentId
+              ? { position: "absolute", inset: 0, visibility: "hidden", pointerEvents: "none" }
+              : undefined
         }
+        aria-hidden={chatMode && !!activeAgentId ? true : undefined}
         onContextMenu={onTerminalContextMenu}
       />
       {activeAgent?.deferredStart && (
@@ -1173,7 +1182,11 @@ export function PaneSlot({
           question={activeAgent?.activity?.interactiveQuestion ?? null}
           assistantMessage={activeAgent?.activity?.lastAssistantMessage ?? null}
           provider={activeAgent?.aiToolId}
+          folder={activeAgent?.sshHostId ? undefined : activeAgent?.folder}
+          projectName={ctx.projects.find(project => project.id === activeAgent?.projectId)?.name}
+          connectionLabel={activeAgent?.sshHostId ? text("원격 · SSH", "Remote · SSH") : text("이 컴퓨터", "This computer")}
           questionToken={activeAgent?.activity?.stateStartedAt}
+          readTerminalScreen={readChatTerminalScreen}
           onOpenTerminal={() => { ctx.setActivePath(path); ctx.onToggleChat(activeAgentId); }}
           onOpenPath={(filePath) => { void ctx.onOpenTerminalPath(activeAgentId, filePath); }}
         />
