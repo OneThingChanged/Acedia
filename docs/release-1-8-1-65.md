@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.65
 description: "프로젝트별 세션 접기·펼치기와 Remote/Dashboard ZIP 첨부 지원."
-status: draft
+status: stable
 last_updated: 2026-10-08
 ---
 
@@ -32,11 +32,22 @@ last_updated: 2026-10-08
 - 사이드바·탐색 집중 검사 **33건**과 TypeScript 검사를 통과했다.
 - 실제 Electron의 격리 프로필에서 프로젝트별 접기·펼치기, 메뉴·새 대화, 하위 세션의 클릭·키보드 선택, 보관 대화 제외, 재시작 상태 복원, 밝은 테마와 800–1440px 배치를 확인했다. IPC는 fixture로 검증하며 실제 사용자 세션을 조작하지 않는다.
 - Remote·Dashboard HTTP 집중 검사와 실제 1024/390px Electron 페이지에서 **9 MiB ZIP** 전송·원본 바이트 일치, 파일 선택·드롭, 이미지/ZIP 혼합·파일만 전송, 첨부 제거와 크기·형식·인증 거부를 확인했다. 실제 모델 응답과 Android 기기 동작은 별도 검증이다.
-- 고정 소스 EXE 빌드, packaged smoke/lifecycle 및 공개 업데이터 검증을 진행한다. 완료 결과와 공개 자산 해시는 배포 후 이 문서에 기록한다.
+- 고정 소스의 TypeScript·Vite 및 Standard EXE 빌드와 패키지 bridge·Dashboard·Git·종료·트레이·보안 검증을 통과했다. renderer·runtime 파일 **275개**가 빌드 원본과 일치하며 새 ZIP 첨부 모듈도 패키지에 포함된다.
+- 설치 파일의 FileVersion **1.8.1.65**, 크기·SHA-256과 `latest-exe.json` 일치를 확인했다. npm 호환 버전은 **1.8.1**이다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`이며, 서명 APK **1.8.1.39/code 21**의 인증서·패키지·아키텍처·해시를 검증해 재사용했다.
+- 공개 업데이터가 **1.8.1.63·1.8.1.64 → 1.8.1.65**를 감지한다. 공개 설치 파일을 실제로 내려받아 설치 파일 검증을 통과했고, 세 자산의 크기·SHA-256과 최신 안정 릴리스·소스 태그 일치를 확인했다.
 
-로컬 증빙: `output/full-suite-exe-1.8.1.65.json`, `output/mobile-tests-exe-1.8.1.65.log`, `output/sidebar-workspace-app/`, `output/remote-zip-{remote,dashboard}-{1024,390}.png`.
+실제 사용자 앱의 설치·재시작과 Android 기기 동작은 별도 검증이다.
 
-## 배포 상태
+## 공개 배포
 
-GitHub Standard EXE 배포 준비 중이다. 신규 APK 빌드와 Microsoft Store 제출은 이 배포에 포함되지 않는다.
-사용 중인 앱의 설치·재시작은 실행하지 않는다.
+- [GitHub 안정 릴리스 v1.8.1.65](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.65)를 2026-10-08 **13:32:03 KST**에 게시했다.
+- 소스·태그는 `cbc495a8a049ac681de6b4118c8c8f7279c7140b`이며 `origin/main` 푸시 후 빌드했다. Microsoft Store 제출과 신규 APK 빌드는 실행하지 않았다.
+- **13:32:47 KST**에 공개 다운로드·업데이트 검증을 완료했다. 사용 중인 앱과 세션을 재시작하거나 설치 프로그램을 실행하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.65-x64.exe` | 151307612 | `604cb160eb3d620ef0d35d4cb9086ddc95761dbe84b3aa30964ece82b7d1737b` |
+| `Acedia-Setup-1.8.1.65-x64.exe.blockmap` | 159471 | `3c2a74360e22a36e4738ae4a99d28f0023f19b106fad29ec15cfb7db95f75cb7` |
+| `latest-exe.json` | 256 | `1048a5d6c4678d0c078d97d28535ba7cc264f7c58a6d4b6f6c02c5ff8f6ab78c` |
+
+로컬 증빙: `output/full-suite-exe-1.8.1.65.json`, `output/mobile-tests-exe-1.8.1.65.log`, `output/build-exe-1.8.1.65.log`, `output/packaged-smoke-1.8.1.65.log`, `output/packaged-lifecycle-1.8.1.65.log`, `output/public-update-verification-1.8.1.65.log`, `output/exe-release-1.8.1.65/local-verification.json`, `output/exe-release-1.8.1.65/public-verification.json`, `output/sidebar-workspace-app/`, `output/remote-zip-{remote,dashboard}-{1024,390}.png`.
