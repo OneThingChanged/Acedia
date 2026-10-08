@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.63
 description: "사이드바·채팅 UX 개선, Quick Open·알림 통합과 Chat 모드 Codex 시작 질문 표시."
-status: candidate
+status: stable
 last_updated: 2026-10-08
 ---
 
@@ -36,6 +36,21 @@ last_updated: 2026-10-08
 - 사이드바의 실제 Electron 동작·저장·복원과 800/1280/1440px 및 다크·라이트 테마를 확인했다. 기존 워크스페이스 배치·세션 구성 검사도 통과했다.
 - 데스크톱 채팅 420/800/1280px에서 본문·입력창 정렬, 테마, 코드·답변 복사, 실패 안내, 파일·이미지 첨부, 줄바꿈, 전송·대기열·중지와 Claude 인증 전 전송 방지를 확인했다. 복사·파일 선택은 fixture로 검증했으며 OS 클립보드 붙여넣기는 별도다.
 - Chat에서 최초 터미널 실행·연결과 폴더 신뢰·Hooks 질문, 선택 변경, 중복 클릭, 질문 변경 시 전송 중단, 500px 줄바꿈, 모드 전환 시 PTY·입력 초안 유지를 확인했다. Remote 질문의 1024/390px 검사도 통과했다. 실제 사용자의 폴더·Hooks 신뢰 승인은 실행하지 않았다.
-- TypeScript·Vite 빌드는 채팅 UX 변경 후 통과했다. 고정 소스의 EXE 빌드·패키지 실행과 공개 업데이트 검증 결과는 완료 후 아래에 기록한다.
+- 고정 소스의 TypeScript·Vite 및 Standard EXE 빌드, 패키지 bridge·Dashboard·종료·트레이·보안 검증을 통과했다. 패키지의 renderer·runtime 파일 **272개**가 빌드 원본과 일치하며 실제 Acedia 아이콘도 포함된다.
+- 설치 파일의 FileVersion **1.8.1.63**, 크기·SHA-256과 `latest-exe.json` 일치를 확인했다. npm 호환 버전은 **1.8.1**이다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`이며, 서명 APK **1.8.1.39/code 21**의 인증서·패키지·아키텍처·해시를 검증해 재사용했다.
 
 실제 사용자 앱의 설치·재시작과 실제 Android 기기 동작은 별도 검증이다.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.63](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.63)를 2026-10-08 **09:37:26 KST**에 게시했다.
+- 소스·태그는 `14fcfb16aa721951ea52d2762361dd4af55227e9`이며 `origin/main` 푸시 후 빌드했다. Microsoft Store 제출과 신규 APK 빌드는 실행하지 않았다.
+- **09:38:06 KST**에 운영 EXE 업데이터가 **1.8.1.61·1.8.1.62 → 1.8.1.63**을 감지하는지 확인했다. 공개 설치 파일을 실제로 내려받아 업데이터의 설치 파일 검증을 통과했고, 세 자산의 크기·SHA-256과 최신 안정 릴리스·소스 태그 일치를 확인했다. 설치 프로그램은 실행하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.63-x64.exe` | 151298680 | `0088c55aa7e6df13f6930fad9508a08b7a1d59971c04cd9c4bf9c871bc482c26` |
+| `Acedia-Setup-1.8.1.63-x64.exe.blockmap` | 159063 | `1abc82b81a7ad304b4db4c39e2b94bbf616b2b229046a5af6a420f448314cd32` |
+| `latest-exe.json` | 256 | `e3a04b9fa814134cf61538e982117d1075a192c87a175ea4d5efb9de072f1d35` |
+
+로컬 증빙: `output/tests-exe-1.8.1.63.log`, `output/build-exe-1.8.1.63.log`, `output/packaged-smoke-1.8.1.63.log`, `output/packaged-lifecycle-1.8.1.63.log`, `output/public-update-verification-1.8.1.63.log`, `output/exe-release-1.8.1.63/local-verification.json`, `output/exe-release-1.8.1.63/public-verification.json`.
