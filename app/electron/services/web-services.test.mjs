@@ -739,7 +739,7 @@ describe("Electron dashboard server", () => {
     expect(previewImage.status).toBe(200);
     expect(previewRootCss.status).toBe(200);
     expect(await previewRootCss.text()).toContain("color: cyan");
-    expect(previewMarkdown.status).toBe(200);
+    expect(previewMarkdown.status, previewMarkdown.status === 200 ? undefined : previewMarkdownBody).toBe(200);
     expect(previewMarkdown.headers.get("content-type")).toContain("text/html");
     expect(previewMarkdown.headers.get("content-security-policy")).toContain("script-src 'none'");
     expect(previewMarkdown.headers.get("content-security-policy")).not.toContain("allow-scripts");

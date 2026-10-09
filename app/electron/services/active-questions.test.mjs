@@ -1,12 +1,44 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import { ActiveQuestions, AsyncQuestionNotifier, QUESTION_TAIL_BYTES } from './active-questions.mjs';
+import { hasQueuedCodexQuestion, codexQuestionFrame } from './question-responder.mjs';
 
 const line = payload => JSON.stringify({ type: 'response_item', payload }) + '\n';
 const call = { type: 'function_call', call_id: 'q1', name: 'functions.request_user_input', arguments: '{"questions":[{"id":"color","question":"Which?","options":[{"label":"Blue"}]}]}' };
 describe('active question tail monitor', () => {
+  it('keeps working async questions visible through the live host guard with either CLI shortcut', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-active-question-'));
+    const transcriptPath = path.join(root, 'session-one.jsonl');
+    try {
+      const asyncCall = { ...call, name: 'request_user_input_async', arguments: JSON.stringify({ questions: [
+        { title: 'Which body bones?', options: ['Existing bones', 'Custom bones'] },
+        { title: 'Which input meshes?', options: ['All meshes', 'Body only'] },
+      ] }) };
+      await fs.writeFile(transcriptPath, line(asyncCall) + line({ type: 'function_call_output', call_id: 'q1', output: '{"accepted":true}' }));
+      let screen = '';
+      const source = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
+      const currentQuestionSource = source.match(/async function currentQuestion\(id\) \{[\s\S]*?\r?\n\}/)?.[0];
+      expect(currentQuestionSource).toBeTruthy();
+      const currentQuestion = vm.runInNewContext(`(${currentQuestionSource})`, {
+        ptys: new Map([['a', { aiToolId: 'codex', startedAt: 0, filter: { viewportText: () => screen } }]]),
+        agentSessionIds: new Map([['a', 'session-one']]), accountBindings: new Map(),
+        accountTranscriptRoot: () => root, selectedAccountId: () => 'default',
+        agentTranscripts: new Map([['a', transcriptPath]]), activeQuestions: new ActiveQuestions(),
+        hasQueuedCodexQuestion, codexQuestionFrame,
+      });
+      for (const hint of ['shift+tab', 'shift+↑']) {
+        screen = `Working (2m 21s · esc to interrupt)\nQueued follow-up inputs\n  ? 2 questions\n    ${hint} to answer\n› Ask Codex to do anything`;
+        expect((await currentQuestion('a')).question).toMatchObject({ id: 'q1', async: true, question: asyncCall.arguments });
+      }
+      screen = 'Question 1/2 (2 unanswered)\nWhich body bones?\n› 1. Existing bones\nenter to submit all';
+      expect((await currentQuestion('a')).question?.id).toBe('q1');
+      screen = 'Working · Browsing\nQueued follow-up inputs\n› Continue';
+      expect((await currentQuestion('a')).question).toBeNull();
+    } finally { await fs.rm(root, { recursive: true }); }
+  });
   it('reads a bounded tail, retains unanswered calls across large output, and resolves only matching results', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-active-question-'));
     const file = path.join(root, 'session-one.jsonl');

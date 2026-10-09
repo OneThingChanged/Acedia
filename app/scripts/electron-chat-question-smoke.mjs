@@ -56,16 +56,36 @@ async function exerciseDesktop(win, directory) {
   assert(await win.webContents.executeJavaScript("window.questionFixture.answers[0].questionId==='native-1' && window.questionFixture.answers[0].answers[1].text==='직접 지정'"), 'Desktop structured answer or call identity lost');
   await patch({ chat: baseChat });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
-  const asyncQuestion = JSON.stringify({ questions: [{ title: '어느 폴더를 사용할까요?', options: ['현재 폴더', '다른 폴더'] }, { title: '추가 경로를 알려주세요' }] });
+  const asyncQuestion = JSON.stringify({ questions: [
+    { title: '어느 폴더를 사용할까요? 1차 테스트에 사용할 입력 데이터와 원본 자료를 비교할 수 있도록 현재 프로젝트 폴더를 사용할지, 별도의 테스트 폴더를 지정할지 선택해 주세요.', options: ['현재 폴더', '다른 폴더'] },
+    { title: '추가 경로를 알려주세요. 원본 데이터는 보존하고 테스트 결과를 별도로 확인할 수 있도록 원하는 출력 위치를 입력해 주세요.' },
+  ] });
   await patch({ chat: { ...baseChat, lifecycle: 'working', pendingQuestion: { id: 'async-live', toolName: 'request_user_input_async', question: asyncQuestion, async: true } }, state: { agentStatus: 'working' } });
   await waitFor(win, "document.querySelector('.question-form')?.textContent.includes('어느 폴더') && !!document.querySelector('.chat-work-status')");
   assert(await win.webContents.executeJavaScript("document.querySelectorAll('.chat-work-status').length===1 && !document.querySelector('.chat-thread .chat-thinking')"), 'Async question duplicated the ongoing work indicator');
   assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-heading').textContent.includes('작업 중 질문') && !document.querySelector('.question-form input').disabled"), 'Async question missing during ongoing work');
+  for (const width of [800, 420]) {
+    win.setSize(width, 850);
+    await new Promise(resolve => setTimeout(resolve, 180));
+    await win.webContents.executeJavaScript("document.querySelector('.chat-scroll').scrollTop=0");
+    assert(await win.webContents.executeJavaScript(`(() => {
+      const card=document.querySelector('.chat-prompt').getBoundingClientRect();
+      const submit=document.querySelector('.question-submit').getBoundingClientRect();
+      return card.top>=0 && card.bottom<=innerHeight && submit.top>=card.top && submit.bottom<=card.bottom
+        && document.querySelectorAll('.question-form fieldset').length===2
+        && document.querySelector('.chat-scroll').scrollTop===0;
+    })()`), `Long async questions or submit controls hidden at ${width}px`);
+    await fs.writeFile(path.resolve(appRoot, `../output/chat-async-question-${width}.png`), (await win.webContents.capturePage()).toPNG());
+  }
+  win.setSize(1024, 850);
   await win.webContents.executeJavaScript("(() => { document.querySelector('.question-form input[type=radio]').click();const input=document.querySelector('.question-text-input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'G:/reference');input.dispatchEvent(new Event('input',{bubbles:true})); })()");
   await waitFor(win, "!document.querySelector('.question-submit').disabled");
   await win.webContents.executeJavaScript("document.querySelector('.question-submit').click()");
   await waitFor(win, "window.questionFixture.answers.length===2");
   assert(await win.webContents.executeJavaScript("window.questionFixture.answers[1].questionId==='async-live' && window.questionFixture.answers[1].answers[1].text==='G:/reference'"), 'Async title/string options/free text answer lost');
+  await patch({ chat: { ...baseChat, pendingQuestion: { id: 'async-live', toolName: 'request_user_input_async', question: asyncQuestion, async: true, answeredIndices: [0] } } });
+  await waitFor(win, "document.querySelectorAll('.question-form fieldset').length===1 && document.querySelector('.question-form legend').textContent.includes('추가 경로')");
+  assert(await win.webContents.executeJavaScript("!!document.querySelector('.chat-work-status') && !document.querySelector('.question-form').textContent.includes('어느 폴더')"), 'Partial answer hid work or retained the answered question');
   await patch({ chat: baseChat });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   await patch({ chat: { ...baseChat, unsupported: true }, state: { agentStatus: "waiting", question: null, questionToken: 3 } });

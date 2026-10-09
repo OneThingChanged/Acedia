@@ -389,3 +389,38 @@ Desktop Chat은 본문 끝의 `Working…`과 입력창 위의 작업 상태 바
 - 검사 로그: `output/chat-working-single-question-smoke.log`,
   `output/chat-working-single-model-smoke.log`, `output/chat-working-single-build.log`.
   화면: `output/chat-media-work-soft-1280.png`, `chat-media-work-soft-420.png`.
+
+## 작업 중 Codex 질문 누락 수정 — 2026-10-09
+
+터미널의 `Queued follow-up inputs / ? 2 questions / shift+tab to answer`는
+작업을 멈추지 않는 비동기 질문이다. 보고된 세션을 읽기 전용으로 확인하여
+질문 두 개가 transcript에 미응답으로 남아 있음을 확인했다. 기존 호스트는
+`Shift+↑` 안내만 인식하여 이 질문을 오래된 기록으로 취급하고 Chat·Remote
+응답에서 숨겼으며, 답변 서비스도 이전 단축키만 전송했다.
+
+현재 터미널 안내의 `Shift+Tab`과 이전 `Shift+↑`·`Shift+Up`을 모두 인식한다.
+답변 서비스는 해당 안내의 단축키로 폼을 연 뒤 질문 내용과 선택 상태를
+검증한다. 작업 상태를 유지하며 기존 입력창 위 질문 폼에서 선택 또는 직접
+입력으로 답할 수 있다. 일부 답변 후에는 미응답 질문만 남는다. 질문 안내가
+사라졌거나 일반 예약 메시지만 있으면 답변 키를 보내지 않는다.
+
+- 질문 파싱·실제 `currentQuestion` 호스트 함수의 화면 판별·답변 전송 관련
+  **56개 검사** 통과. 두 질문에 대한 선택·직접 입력, 중복 제출과 변경된 폼
+  보호, 이전 단축키 호환을 확인했다.
+- 격리 Electron의 Desktop·Remote 질문 검사를 통과했다. 긴 한글 질문의
+  **800·420px** 레이아웃에서 이전 대화를 읽는 중에도 질문과 전송 버튼이
+  보이며 질문 목록 내부를 스크롤할 수 있다. 작업 표시는 하나를 유지하고,
+  일부 답변 후 완료된 질문을 제거하는 것도 확인했다.
+- 실제 격리 Codex CLI의 동기 질문에서 선택·직접 입력·두 질문·작업 재개
+  회귀 검사를 통과했다. 로컬 mock transport에서는 비동기 질문 도구가
+  노출되지 않아 실제 CLI의 비동기 입력은 이 실행으로 검증하지 못했다.
+  새 단축키의 비동기 경로는 실제 호스트 함수와 답변 서비스 검사로 검증했다.
+  사용자 세션의 질문에 대신 답하거나 세션을 재시작하지 않았다.
+- TypeScript·프로덕션 빌드 통과. 기존 큰 번들 경고는 남아 있다.
+- 증빙: `output/codex-async-question-tests.log`,
+  `output/codex-async-question-chat-smoke.log`,
+  `output/codex-question-cli-regression.log`, `output/codex-async-question-build.log`.
+  화면: `output/chat-async-question-800.png`, `output/chat-async-question-420.png`.
+
+소스 수정 및 검증 완료. EXE 배포 진행과 결과는
+[1.8.1.71 릴리스 기록](release-1-8-1-71.md)에서 확인한다.

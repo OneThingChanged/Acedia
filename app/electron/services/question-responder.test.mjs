@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuestionResponder, validateQuestionAnswers, codexQuestionFrame, hasQueuedCodexQuestion } from './question-responder.mjs';
+import { QuestionResponder, validateQuestionAnswers, codexQuestionFrame, hasQueuedCodexQuestion, queuedCodexQuestionKey } from './question-responder.mjs';
 
 const question = JSON.stringify({ questions: [ { id: 'color', question: 'Choose?', options: [{ label: 'Blue' }, { label: 'Green' }] } ] });
 const request = { sessionId: 's', questionId: 'q', answers: [{ id: 'color', optionIndex: 1 }] };
@@ -11,15 +11,57 @@ function fixture() {
   return { writes, service, stop: () => { active = false; }, fail: () => { fail = true; } };
 }
 describe('native question response coordination', () => {
-  it('opens a queued async question with Shift+Up before sending its answer', async () => {
+  it.each([
+    ['shift+↑', '\x1b[1;2A', 'Working · Running hooks\n? 1 question · 6s'],
+    ['shift+up', '\x1b[1;2A', 'Working · Running hooks\n? 1 question · 6s'],
+    ['shift+tab', '\x1b[Z', 'Working (2m 21s · esc to interrupt)\nQueued follow-up inputs\n  ? 2 questions'],
+  ])('opens a queued async question using its %s hint before answering', async (hint, key, status) => {
     const writes = []; let opened = false; let selected = 0;
     const question = JSON.stringify({ questions: [{ title: 'Which folder?', options: ['Current', 'Other'] }] });
-    const entry = { aiToolId: 'codex', process: { write: data => { writes.push(data); if (data === '\x1b[1;2A') opened = true; if (data === '\x1b[B') selected++; } } };
-    const snapshot = () => opened ? `Question 1/1 (1 unanswered)\nWhich folder?\n${selected === 0 ? '›' : ' '} 1. Current\n${selected === 1 ? '›' : ' '} 2. Other\nenter to submit all` : 'Working · Running hooks\n? 1 question · 6s\nshift+↑ to answer';
+    const entry = { aiToolId: 'codex', process: { write: data => { writes.push(data); if (data === key) opened = true; if (data === '\x1b[B') selected++; } } };
+    const snapshot = () => opened ? `Question 1/1 (1 unanswered)\nWhich folder?\n${selected === 0 ? '›' : ' '} 1. Current\n${selected === 1 ? '›' : ' '} 2. Other\nenter to submit all` : `${status}\n${hint} to answer`;
     expect(hasQueuedCodexQuestion(snapshot())).toBe(true);
     const service = new QuestionResponder({ entry: () => entry, current: async () => ({ sessionId: 's', question: { id: 'q', question, async: true } }), snapshot, wait: async () => {} });
     await service.answer('a', { sessionId: 's', questionId: 'q', answers: [{ id: 'async-0', optionIndex: 1 }] });
-    expect(writes).toEqual(['\x1b[1;2A', '\x1b[B', '\r']);
+    expect(writes).toEqual([key, '\x1b[B', '\r']);
+  });
+  it('ignores queued messages and missing or unrelated question shortcuts', () => {
+    for (const screen of ['Queued follow-up inputs\n› continue', '0 questions\nshift+tab to answer', '2 questions\nshift+tab to edit', '2 questions', 'shift+tab to answer']) {
+      expect(hasQueuedCodexQuestion(screen)).toBe(false);
+      expect(queuedCodexQuestionKey(screen)).toBeNull();
+    }
+    expect(queuedCodexQuestionKey('\x1b[33m? 2 questions\x1b[0m\r\n  shift + TAB\n to answer')).toBe('\x1b[Z');
+  });
+  it('answers both queued questions with a choice and free text without interrupting work', async () => {
+    const writes = []; let opened = false, index = 0, selected = 0;
+    const question = JSON.stringify({ questions: [
+      { title: 'Which body bones?', options: ['Existing bones', 'Custom bones'] },
+      { title: 'Which input meshes?', options: ['All meshes', 'Body only'] },
+    ] });
+    const entry = { aiToolId: 'codex', process: { write: data => {
+      writes.push(data);
+      if (data === '\x1b[Z') opened = true;
+      if (data === '\x1b[B') selected++;
+      if (data === '\r') { index++; selected = 0; }
+    } } };
+    const service = new QuestionResponder({ entry: () => entry,
+      current: async () => ({ sessionId: 's', question: index < 2 ? { id: 'q', question, async: true } : null }),
+      snapshot: () => !opened ? 'Working · Browsing\nQueued follow-up inputs\n? 2 questions\nshift+tab to answer'
+        : `Question ${index + 1}/2 (${2 - index} unanswered)\n${index === 0 ? 'Which body bones?' : 'Which input meshes?'}\n› ${selected + 1}. Choice\nenter to submit all`, wait: async () => {} });
+    const request = { sessionId: 's', questionId: 'q', answers: [
+      { id: 'async-0', optionIndex: 1 }, { id: 'async-1', optionIndex: null, text: '직접 지정한 메시' },
+    ] };
+    expect(await service.answer('a', request)).toEqual({ status: 'sent' });
+    expect(writes).toEqual(['\x1b[Z', '\x1b[B', '\r', '\x1b[B', '\x1b[B', '\t', '\x1b[200~직접 지정한 메시\x1b[201~', '\r']);
+    expect(await service.answer('a', request)).toEqual({ status: 'sent' });
+    expect(writes).toHaveLength(8);
+  });
+  it('does not send a shortcut or answer when the queued form has disappeared', async () => {
+    const writes = [];
+    const entry = { aiToolId: 'codex', process: { write: data => writes.push(data) } };
+    const service = new QuestionResponder({ entry: () => entry, current: async () => ({ sessionId: 's', question: { id: 'q', question, async: true } }), snapshot: () => 'Queued follow-up inputs\n› continue', wait: async () => {} });
+    await expect(service.answer('a', request)).rejects.toThrow('Queued question unavailable');
+    expect(writes).toEqual([]);
   });
   it('does not send an answer into a different queued question', async () => {
     const writes = [];let opened=false;

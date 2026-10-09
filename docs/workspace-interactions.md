@@ -580,7 +580,11 @@ work, while a later work hook or a new submission starts the indicator again.
 A markerless transcript tail remains inconclusive. Stop/Esc ends the local
 indicator; closing an image viewer with Esc leaves the agent running. Synchronous
 questions retain their answer controls, and asynchronous questions can coexist
-with ongoing work. A tool call's proposed diff alone does not mark it completed;
+with ongoing work. Codex's live queued-question hint accepts both `Shift+Tab`
+and older `Shift+Up` forms. The answer service reads that hint to open the
+native form with the corresponding shortcut before verifying its question and
+sending only the user's answers. Ordinary queued messages or a missing hint
+never receive answer keys. A tool call's proposed diff alone does not mark it completed;
 its result is required.[^chat-view][^chat-work-state][^chat-transcript]
 
 The rounded composer has session project/connection context, file attachment,

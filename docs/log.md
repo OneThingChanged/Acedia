@@ -2,6 +2,7 @@
 
 ## 2026-10-09
 
+* **1.8.1.71 EXE release in progress**: The live async-question guard and answer service recognized only `Shift+Up`, while the reported CLI displayed `Shift+Tab` under queued follow-up inputs. Support both current hints and use the advertised shortcut to open the native form. Preserve ongoing work, question/call identity, partial answers and stale-form protection. Related 56 tests, Desktop/Remote question smoke, 800/420px long-question layouts, real isolated synchronous Codex question regression and TypeScript/Vite build passed. See [release verification](release-1-8-1-71.md) and [Chat UX verification](chat-ux-review-2026-10-08.md#작업-중-codex-질문-누락-수정--2026-10-09).
 * **1.8.1.70 EXE release**: Browser research opens in the background even with legacy placement hints; only explicit display requests connect existing tabs. Preserve the user's Screen, pane, selected tab and input focus, retain browser window placement and usable hidden capture, and remove Chat's duplicate Working indicator. All 180 files/1,236 tests and 24 mobile checks, fixed-source EXE build, packaged bridge/Dashboard/lifecycle, 278-file source equality and installer manifest/hash/version checks passed. Published stable v1.8.1.70 at 13:46:17 KST from 3fa974b; production updater detection from 1.8.1.68/69, actual download and all three public asset hashes passed at 13:47:37 KST. Reuses signed APK 1.8.1.39/code 21; user installation remains separate. See [release scope and verification](release-1-8-1-70.md).
 
 ## 2026-10-07

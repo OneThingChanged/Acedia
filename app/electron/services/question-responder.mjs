@@ -1,8 +1,15 @@
 import { questionDetails } from '../shared/chat-prompt.mjs';
 import { stripVTControlCharacters } from 'node:util';
-export function hasQueuedCodexQuestion(raw) {
+export function queuedCodexQuestionKey(raw) {
   const screen = stripVTControlCharacters(String(raw || ''));
-  return /\b[1-9]\d*\s+questions?\b/i.test(screen) && /shift\s*\+\s*(?:↑|up)\s+to answer/i.test(screen);
+  if (!/\b[1-9]\d*\s+questions?\b/i.test(screen)) return null;
+  // The shortcut changed from Shift+Up to Shift+Tab. Read the live hint so
+  // both CLI versions work and unrelated follow-up messages stay untouched.
+  const hint = screen.match(/shift\s*\+\s*(tab|↑|up)\s+to answer/i);
+  return hint ? hint[1].toLowerCase() === 'tab' ? '\x1b[Z' : '\x1b[1;2A' : null;
+}
+export function hasQueuedCodexQuestion(raw) {
+  return queuedCodexQuestionKey(raw) !== null;
 }
 
 export function codexQuestionFrame(raw) {
@@ -80,8 +87,9 @@ export class QuestionResponder {
       };
       const write = async data => { await current(); wrote = true; entry.process.write(data); await this.wait(120); };
       if (initial.question.async && !codexQuestionFrame(this.snapshot(id))) {
-        if (!hasQueuedCodexQuestion(this.snapshot(id))) throw new Error('Queued question unavailable. Check the terminal.');
-        await write('\x1b[1;2A');
+        const key = queuedCodexQuestionKey(this.snapshot(id));
+        if (!key) throw new Error('Queued question unavailable. Check the terminal.');
+        await write(key);
       }
       for (let i = 0; i < answers.length; i++) {
         const { question, optionIndex, text } = answers[i];
