@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Agent } from "../types";
-import { isAgentRuntimeActive } from "../lib/agentActivity";
 import {
   loadAttentionItems,
   markAgentAttentionRead,
@@ -82,10 +81,9 @@ export function useAttentionState(agents: readonly Agent[]) {
   );
 
   const unreadCompletionAgentIds = useMemo(() => {
-    const runningAgentIds = new Set(
-      agents.filter(isAgentRuntimeActive).map((agent) => agent.id)
-    );
-    return unreadCompletedAgentIds(items, runningAgentIds);
+    // Process lifetime does not acknowledge a completed turn. Keep it visible
+    // after idle suspension or exit until the user reads it or starts new work.
+    return unreadCompletedAgentIds(items, new Set(agents.map(agent => agent.id)));
   }, [agents, items]);
 
   return {

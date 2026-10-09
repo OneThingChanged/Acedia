@@ -1738,8 +1738,10 @@ function App() {
       const config = loadNotificationSound();
       void playNotificationSound(config, `${projectName} ${agent.name} ${body}`);
       pushToast(agent.id, `${projectName} / ${agent.name}`, body);
-      if (config.osNotification !== false && !await getCurrentWindow().isFocused()) {
+      if (!await getCurrentWindow().isFocused()) {
         void getCurrentWindow().requestUserAttention(UserAttentionType.Critical).catch(() => {});
+      }
+      if (config.osNotification !== false) {
         await notifyDone({ agentId: agent.id, projectName, sessionName: agent.name, body,
           silent: shouldSilenceOsNotification(config), onActivate: () => { if (kind === "question") setChatModeAgents(previous => new Set(previous).add(agent.id)); selectAgentRef.current?.(agent.id); } });
       }
@@ -1891,6 +1893,9 @@ function App() {
         const nextAgent = currentAgent
           ? applyAgentHookEvent(currentAgent, payload)
           : null;
+        // Consecutive hooks can arrive before React commits. Record the new
+        // activity now so a duplicate done event cannot notify twice.
+        if (nextAgent) agentsRef.current = agentsRef.current.map(agent => agent.id === id ? nextAgent : agent);
         const nextWorkStatus = nextAgent?.activity?.workStatus;
         const isActiveWork =
           nextWorkStatus === "working" ||

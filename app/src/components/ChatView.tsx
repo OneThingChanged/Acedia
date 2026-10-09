@@ -33,15 +33,17 @@ import { QuestionForm } from './QuestionForm';
 import type { ChatAnswer } from '../../electron/shared/chat-prompt.mjs';
 import { questionDetails } from '../../electron/shared/chat-prompt.mjs';
 
-// While the agent is working, composer sends are queued and drained one at a
-// time once it's ready for input (with a short cooldown so a message doesn't
-// fire during the brief lag before "working" registers).
+// Follow-ups can steer the current turn or wait for completion. Queued sends
+// drain once ready, with a cooldown for the lag before "working" registers.
 const DEAD_STATUSES: AgentStatus[] = ["exited", "unreachable"];
 const QUEUE_COOLDOWN_MS = 1200;
 
 // Reserved (queued) messages, kept per session outside the component so they
 // survive the ChatView unmount/remount when toggling terminal ↔ chat.
-const queueStore = new Map<string, string[]>();
+type SendMode = "now" | "queue";
+type QueuedMessage = { text: string; mode: SendMode };
+const queueStore = new Map<string, QueuedMessage[]>();
+const sendModeStore = new Map<string, SendMode>();
 // The in-progress composer draft + image attachments, likewise kept per session
 // so switching to the terminal and back doesn't lose them.
 const draftStore = new Map<string, string>();
@@ -367,7 +369,7 @@ export function ChatView({
   // Reserved (queued) messages waiting to be sent while the agent is working.
   // Restored from the module store so switching to the terminal and back keeps
   // them; every mutation writes back through mutateQueue.
-  const [queue, setQueue] = useState<string[]>(() => queueStore.get(storeKey) ?? []);
+  const [queue, setQueue] = useState<QueuedMessage[]>(() => queueStore.get(storeKey) ?? []);
   const lastDispatchRef = useRef(0);
   // Messages just sent from the composer, echoed instantly so the chat updates
   // without waiting for the next poll; dropped once the transcript includes them.
@@ -793,9 +795,9 @@ export function ChatView({
   // as separate writes (80ms apart) so Codex/Claude don't treat "text\r" as a
   // multiline paste.
   const dispatch = useCallback(
-    (value: string) => {
+    (value: string, continuing = false) => {
       lastDispatchRef.current = Date.now();
-      setDispatchAt(lastDispatchRef.current);
+      if (!continuing) setDispatchAt(lastDispatchRef.current);
       setWorkClock(lastDispatchRef.current);
       setStoppedKey(null);
       if (value.trim() === "/clear") {
@@ -835,7 +837,7 @@ export function ChatView({
   // Mutate the queue and mirror it into the module store so it survives the
   // ChatView unmount/remount on a terminal ↔ chat switch.
   const mutateQueue = useCallback(
-    (fn: (q: string[]) => string[]) => {
+    (fn: (q: QueuedMessage[]) => QueuedMessage[]) => {
       setQueue((prev) => {
         const next = fn(prev);
         if (next.length) queueStore.set(storeKey, next);
@@ -846,30 +848,40 @@ export function ChatView({
     [storeKey]
   );
 
-  // Composer submit: send now if the agent is ready and nothing is queued;
-  // otherwise reserve it in the queue to be drained when the agent frees up.
-  const sendMessage = (raw: string) => {
+  // Explicit steering can bypass future reservations, but never a question,
+  // startup prompt, model change, dead session or unsettled preceding write.
+  const supportsSteering = (provider || tool) === "codex" || (provider || tool) === "claude";
+  const sendMessage = (raw: string, mode: SendMode) => {
     if (isChatSessionModelChanging(agentId)) return;
     const value = raw.trim();
     if (!value) return;
     const cooled = Date.now() - lastDispatchRef.current >= QUEUE_COOLDOWN_MS;
     const liveStartup = canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex");
-    if (alive && !busy && !prompt && !liveStartup && queue.length === 0 && cooled) dispatch(value);
-    else mutateQueue((q) => [...q, value]);
+    const ready = alive && !initializing && !prompt && !liveStartup;
+    const delivery: SendMode = ready && supportsSteering && mode === "now" ? "now" : "queue";
+    if (ready && cooled && ((delivery === "now" && !queue.some(item => item.mode === "now")) || (!busy && queue.length === 0))) dispatch(value, busy);
+    else mutateQueue(q => {
+      const item = { text: value, mode: delivery };
+      // A short input cooldown must not change a requested steer into a
+      // completion reservation. Pending steers precede future reservations.
+      const before = delivery === "now" ? q.findIndex(candidate => candidate.mode === "queue") : -1;
+      return before < 0 ? [...q, item] : [...q.slice(0, before), item, ...q.slice(before)];
+    });
   };
 
   // Drain the queue one message per cooldown while the agent is ready.
   useEffect(() => {
-    if (busy || prompt || modelChanging || !alive || queue.length === 0) return;
+    if (prompt || modelChanging || !alive || initializing || queue.length === 0) return;
+    if (busy && (queue[0].mode !== "now" || !supportsSteering)) return;
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
       if (isChatSessionModelChanging(agentId)) return;
       if (canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex")) return;
-      dispatch(queue[0]);
+      dispatch(queue[0].text, busy);
       mutateQueue((q) => q.slice(1));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [busy, promptSig, modelChanging, agentId, alive, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
+  }, [busy, promptSig, modelChanging, agentId, alive, initializing, supportsSteering, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
 
   const cancelQueued = (index: number) =>
     mutateQueue((q) => q.filter((_, i) => i !== index));
@@ -947,12 +959,13 @@ export function ChatView({
       {queue.length > 0 && (
         <div className="chat-queue">
           <div className="chat-queue-head">
-            {text(`예약 대기열 ${queue.length}`, `Queued ${queue.length}`)}
-            {busy && <span className="chat-queue-hint">{text("· 대기 상태가 되면 순서대로 전송", "· sent in order when ready")}</span>}
+            {queue.some(item => item.mode === "now") ? text(`전달 대기 ${queue.length}`, `Pending ${queue.length}`) : text(`예약 대기열 ${queue.length}`, `Queued ${queue.length}`)}
+            {busy && <span className="chat-queue-hint">{queue.some(item => item.mode === "now") ? text("· 중간 지시는 먼저 전달 · 예약은 완료 후 전송", "· steer first · reservations after completion") : text("· 대기 상태가 되면 순서대로 전송", "· sent in order when ready")}</span>}
           </div>
-          {queue.map((t, i) => (
+          {queue.map((item, i) => (
             <div key={`q${i}`} className="chat-queue-item">
-              <span className="chat-queue-text">{t}</span>
+              {item.mode === "now" && <span className="chat-queue-mode">{text("중간 지시", "Steer")}</span>}
+              <span className="chat-queue-text">{item.text}</span>
               <button
                 type="button"
                 className="chat-queue-cancel"
@@ -975,6 +988,7 @@ export function ChatView({
           <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
         </div>}
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
+          forceQueue={!alive || initializing || !!prompt}
           agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} modelSettingsKey={modelSettingsKey}
           modelBusy={busy || !!prompt || initializing || queue.length > 0}
           projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
@@ -1002,6 +1016,7 @@ function ChatComposer({
   busy,
   waitingForAnswer,
   authenticationRequired,
+  forceQueue,
   tool,
   folder,
   projectName,
@@ -1016,10 +1031,11 @@ function ChatComposer({
   modelSettingsKey?: string;
   modelBusy: boolean;
   storageKey: string;
-  onSend: (text: string) => void;
+  onSend: (text: string, mode: SendMode) => void;
   busy: boolean;
   waitingForAnswer: boolean;
   authenticationRequired: boolean;
+  forceQueue: boolean;
   tool?: string;
   folder?: string;
   projectName?: string;
@@ -1034,6 +1050,7 @@ function ChatComposer({
     () => attachStore.get(storageKey) ?? []
   );
   const [context, setContext] = useState<ComposerContext | null>(() => composerContextStore.get(storageKey) ?? null);
+  const [sendMode, setSendMode] = useState<SendMode>(() => sendModeStore.get(storageKey) ?? "queue");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
@@ -1108,6 +1125,7 @@ function ChatComposer({
     setText(draftStore.get(storageKey) ?? "");
     setAttachments(attachStore.get(storageKey) ?? []);
     setContext(composerContextStore.get(storageKey) ?? null);
+    setSendMode(sendModeStore.get(storageKey) ?? "queue");
   }, [storageKey]);
 
   useEffect(() => {
@@ -1149,7 +1167,7 @@ function ChatComposer({
     const request = [text.trim(), ...texts, ...paths].filter(Boolean).join("\n").trim();
     if (!request) return;
     const value = context?.mode === "quote" ? `${context.value.split(/\r?\n/).map(line => `> ${line}`).join("\n")}\n\n${request}` : request;
-    onSend(value);
+    onSend(value, effectiveSendMode);
     updateText("");
     updateAttachments(() => []);
     setContext(null); composerContextStore.delete(storageKey);
@@ -1240,7 +1258,7 @@ function ChatComposer({
         setAc({ ...ac, index: (ac.index - 1 + ac.items.length) % ac.items.length });
         return;
       }
-      if ((e.key === "Enter" && !e.ctrlKey && !e.metaKey) || e.key === "Tab") {
+      if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "Enter" || e.key === "Tab")) {
         e.preventDefault();
         acceptAutocomplete(ac.items[ac.index]);
         return;
@@ -1251,6 +1269,13 @@ function ChatComposer({
         setAc(null);
         return;
       }
+    }
+    // Tab changes follow-up delivery without submitting or moving the caret.
+    // Shift+Tab remains ordinary focus navigation; autocomplete has priority.
+    if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && canChooseSendMode && (text.trim() || attachments.length)) {
+      e.preventDefault();
+      toggleSendMode();
+      return;
     }
     // Esc-to-cancel is handled by a window listener in ChatView.
     if (e.key !== "Enter" || e.nativeEvent.isComposing || e.shiftKey) return;
@@ -1274,7 +1299,20 @@ function ChatComposer({
   };
 
   const canSend = !authenticationRequired && !modelChanging && Boolean(text.trim() || attachments.length);
-  const sendLabel = busy ? localize("대기열에 예약", "Queue message") : localize("메시지 전송", "Send message");
+  const supportsSteering = tool === "codex" || tool === "claude";
+  const canChooseSendMode = supportsSteering && !forceQueue && !modelChanging;
+  const effectiveSendMode = canChooseSendMode ? sendMode : "queue";
+  const modeLabel = effectiveSendMode === "now"
+    ? busy ? localize("중간 지시", "Steer current work") : localize("지금 전송", "Send now")
+    : busy ? localize("완료 후 예약", "After completion") : localize("순서대로 전송", "Send in order");
+  const sendLabel = effectiveSendMode === "now" && busy ? localize("진행 중인 작업에 지시 전달", "Send instructions to current work")
+    : busy ? localize("대기열에 예약", "Queue message") : localize("메시지 전송", "Send message");
+  const toggleSendMode = () => {
+    if (!canChooseSendMode) return;
+    const next = sendMode === "now" ? "queue" : "now";
+    sendModeStore.set(storageKey, next);
+    setSendMode(next);
+  };
   const contextName = projectName || folder?.split(/[\\/]/).filter(Boolean).pop();
 
   return (
@@ -1361,7 +1399,7 @@ function ChatComposer({
           onDrop={onDrop}
           placeholder={
             authenticationRequired ? localize('로그인 필요 · 터미널에서 /login을 실행하세요', 'Sign-in required · run /login in the terminal') : waitingForAnswer ? localize('답변 대기 중 · 새 메시지는 예약됩니다', 'Waiting for an answer · new messages will be queued') : busy
-              ? localize("작업 중입니다. 다음 메시지를 예약해 보세요", "Work is in progress. Queue your next message")
+              ? effectiveSendMode === "now" ? localize("진행 중인 작업에 추가 지시를 보내세요", "Add instructions to the current work") : localize("작업이 끝난 후 보낼 메시지를 작성하세요", "Write a message to send after completion")
               : localize("이어서 이야기해 보세요…", "Continue the conversation…")
           }
           rows={1}
@@ -1373,6 +1411,12 @@ function ChatComposer({
           ? <ChatModelPicker agentId={agentId} provider={tool} active={active} busy={modelBusy} sessionId={sessionId} settingsKey={modelSettingsKey} />
           : <span className="chat-composer-provider">{assistantLabel(tool)}</span>}
         <div className="chat-composer-controls">
+        {supportsSteering && <button type="button" className="chat-send-mode" data-send-mode={effectiveSendMode}
+          disabled={!canChooseSendMode} onClick={toggleSendMode}
+          title={canChooseSendMode ? localize("Tab 또는 클릭으로 전송 방식 변경", "Press Tab or click to change delivery") : localize("현재 상태에서는 메시지를 대기열에 예약합니다", "Messages will be queued in the current state")}
+          aria-label={localize(`전송 방식: ${modeLabel}`, `Delivery: ${modeLabel}`)}>
+          <ChatIcon name={effectiveSendMode === "queue" ? "queue" : "send"} /><span aria-live="polite">{modeLabel}</span><kbd>Tab</kbd>
+        </button>}
         {onInterrupt && <button type="button" className="chat-composer-stop" onClick={onInterrupt} title={localize("진행 중단 (Esc)", "Stop progress (Esc)")} aria-label={localize("진행 중단", "Stop progress")}><ChatIcon name="stop" /></button>}
         <button
           type="button"
@@ -1381,14 +1425,14 @@ function ChatComposer({
           disabled={!canSend}
           aria-label={sendLabel} title={sendLabel}
         >
-          <ChatIcon name={busy ? "queue" : "send"} />
+          <ChatIcon name={busy && effectiveSendMode === "queue" ? "queue" : "send"} />
         </button>
         </div>
       </div>
       {attachmentError && <div className="chat-composer-error" role="alert">{attachmentError}</div>}
       {modelChanging && <div className="chat-model-notice" role="status">{localize("모델을 적용하고 있습니다. 작성한 메시지는 유지됩니다.", "Applying model settings. Your draft is kept.")}</div>}
       </div>
-      <div className="chat-composer-hint">{busy ? localize("Enter 예약", "Enter to queue") : localize("Enter 전송", "Enter to send")}<span aria-hidden="true">·</span>{localize("Shift + Enter 줄바꿈", "Shift + Enter for a new line")}<span aria-hidden="true">·</span>{localize("/명령  @파일", "/commands  @files")}</div>
+      <div className="chat-composer-hint">{busy && effectiveSendMode === "queue" ? localize("Enter 예약", "Enter to queue") : localize("Enter 전송", "Enter to send")}<span aria-hidden="true">·</span>{localize("Shift + Enter 줄바꿈", "Shift + Enter for a new line")}{supportsSteering && <><span aria-hidden="true">·</span><span>{localize("Tab 방식 변경 · Shift+Tab 도구 이동", "Tab delivery · Shift+Tab focus")}</span></>}<span aria-hidden="true">·</span>{localize("/명령  @파일", "/commands  @files")}</div>
     </div>
   );
 }

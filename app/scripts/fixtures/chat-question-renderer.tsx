@@ -67,6 +67,7 @@ window.multiAgentElectron = {
 
 function Harness() {
   const [state, setState] = useState({ agentStatus: "waiting", provider: "codex", question: null, questionToken: 1, sessionId: "fixture-session" });
+  const [show, setShow] = useState(true);
   window.questionFixture = {
     writes,
     answers,
@@ -80,6 +81,7 @@ function Harness() {
     holdReads: () => { holdChatReads = true; },
     releaseReads: () => { holdChatReads = false; heldChatReads.splice(0).forEach(resolve => resolve(chat)); },
     patch: patch => {
+      if ("show" in patch) setShow(patch.show);
       if (patch.state) setState(current => ({ ...current, ...patch.state }));
       if ("failWrites" in patch) failWrites = patch.failWrites;
       if ("failClipboard" in patch) failClipboard = patch.failClipboard;
@@ -96,9 +98,9 @@ function Harness() {
       }
     },
   };
-  return <ChatView {...state} agentId="fixture" active theme="soft"
+  return show ? <ChatView {...state} agentId="fixture" active theme="soft"
     readTerminalScreen={readTerminalScreen}
     onOpenPath={path => openedPaths.push(path)}
-    onOpenTerminal={() => { window.questionTerminalOpened = true; }} />;
+    onOpenTerminal={() => { window.questionTerminalOpened = true; }} /> : null;
 }
 createRoot(document.getElementById("root")).render(<Harness />);

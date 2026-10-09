@@ -141,32 +141,35 @@ export async function notifyDone({
   body?: string;
   onActivate?: () => void;
 }) {
+  let removeClickListener: (() => void) | null = null;
+  let clickTimeout: number | undefined;
+  const clearClickListener = () => {
+    removeClickListener?.();
+    removeClickListener = null;
+    window.clearTimeout(clickTimeout);
+  };
   try {
-    const notificationKey = `multiagent:${projectName}:${sessionName}`;
+    const notificationKey = `multiagent:${agentId || `${projectName}:${sessionName}`}:${crypto.randomUUID()}`;
     if (isElectronRuntime()) {
-      let removeClickListener: (() => void) | null = null;
       if (onActivate) {
         removeClickListener = await listen<{ notificationKey?: string }>(
           "native-notification:clicked",
           (event) => {
             if (event.payload?.notificationKey !== notificationKey) return;
-            removeClickListener?.();
-            removeClickListener = null;
+            clearClickListener();
             onActivate();
           }
         );
-        window.setTimeout(() => {
-          removeClickListener?.();
-          removeClickListener = null;
-        }, 60 * 60 * 1000);
+        clickTimeout = window.setTimeout(clearClickListener, 60 * 60 * 1000);
       }
-      await invoke("show_native_notification", {
+      const shown = await invoke<boolean>("show_native_notification", {
         agentId,
         title: `${projectName} / ${sessionName}`,
         body,
         notificationKey,
         silent: silent ?? false,
       });
+      if (!shown) throw new Error("Native notification was not delivered.");
       return;
     }
     let granted = await isPermissionGranted();
@@ -187,7 +190,10 @@ export async function notifyDone({
       invoke("show_main_window", { agentId: agentId ?? null }).catch(() => {});
       onActivate?.();
     };
-  } catch {}
+  } catch (error) {
+    clearClickListener();
+    throw error;
+  }
 }
 
 function cleanMarkdownPathCandidate(candidate: string) {

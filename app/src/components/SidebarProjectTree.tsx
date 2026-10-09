@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { ProviderLogo } from "./ProviderLogo";
+import { CompletionBadge } from "./CompletionBadge";
 import type {
   Agent,
   DragState,
@@ -750,13 +751,7 @@ export function SidebarProjectTree({
           >
             {a.name}
           </span>
-          {hasUnreadCompletion && (
-            <span
-              className="agent-completion-dot"
-              title={text("작업 완료 · 클릭해서 확인", "Work completed · click to review")}
-              aria-label={text("읽지 않은 작업 완료", "Unread completion")}
-            />
-          )}
+          {hasUnreadCompletion && <CompletionBadge />}
           {screen && (
             <span
               className="agent-screen-badge"

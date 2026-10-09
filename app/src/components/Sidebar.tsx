@@ -8,6 +8,7 @@ import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
 import { SidebarIcon } from "./SidebarIcon";
 import { ProviderLogo } from "./ProviderLogo";
+import { CompletionBadge } from "./CompletionBadge";
 import "./Sidebar.css";
 
 type SidebarProps = SidebarProjectTreeProps & {
@@ -203,7 +204,7 @@ function WorkspaceSidebar(props: SidebarProps) {
       <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
       <ProviderLogo toolId={agent.aiToolId} />
       <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={project?.folder}>{fromSearch ? highlight(project?.name || text("미분류", "Uncategorized")) : project?.name || text("미분류", "Uncategorized")}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null}</span>}</div>
-      {unread && <span className="agent-completion-dot" title={text("작업 완료 · 클릭해서 확인", "Work completed · click to review")} aria-label={text("읽지 않은 작업 완료", "Unread completion")} />}
+      {unread && <CompletionBadge />}
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
       {agent.dangerous && <span className="agent-danger" title={text("권한 확인을 생략하는 세션", "Session skips permission prompts")}>!</span>}
       {detached ? <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span> : <button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${agent.name} 대화 메뉴`, `${agent.name} conversation menu`)} title={text("대화 메뉴", "Conversation menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, ...menuPosition(event)); }}>···</button>}

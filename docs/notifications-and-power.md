@@ -7,6 +7,12 @@ sources:
   - resource: ../app/src/components/NotificationPolicyPanel.tsx
   - resource: ../app/electron/services/notification-policy.mjs
   - resource: ../app/electron/services/notification-policy-smoke.mjs
+  - resource: ../app/electron/services/native-notifications.mjs
+  - resource: ../app/electron/services/native-notifications.test.mjs
+  - resource: ../app/scripts/electron-notifications-smoke.mjs
+  - resource: ../app/src/components/CompletionBadge.tsx
+  - resource: ../app/src/hooks/useAttentionState.ts
+  - resource: ../app/scripts/electron-sidebar-workspace-smoke.mjs
   - resource: ../app/electron/services/terminal-session-service.mjs
   - resource: ../app/electron/services/session-notifications.mjs
   - resource: ../app/electron/services/active-questions.mjs
@@ -23,11 +29,64 @@ sources:
 터미널 벨과 앱 집중 중 억제는 기본 끔이다. 소리와 Windows 알림의 종류는 기존 설정을
 사용한다. 조건은 앱 프로필에 저장하며 모든 작업창이 공유하고 오래된 창의 저장은 거부한다.
 
-집중 중 억제는 해당 세션을 소유한 작업창에 초점이 있을 때 소리·앱 팝업을 억제한다.
+집중 중 억제는 해당 세션을 소유한 작업창에 초점이 있을 때 소리·앱 팝업·Windows 알림을 억제한다.
 완료 상태와 사이드바의 미확인 표시는 유지한다. 세션 소유 창만 알림을 처리해 중복을 막는다.
-Windows 알림은 기존처럼 소유 창에 초점이 없을 때 표시한다. 모바일 질문·완료 푸시에도
+집중 중 억제를 끄면 초점 여부와 관계없이 저장된 Windows 알림 설정을 따른다. 모바일 질문·완료 푸시에도
 전역 질문·완료 설정과 세션별 음소거를 적용한다. 원격 접속 요청은 별도다.
-‘알림 테스트’는 조건을 우회해 선택한 소리·Windows 알림을 시험한다.
+‘알림 테스트’는 조건을 우회해 선택한 소리·Windows 알림을 시험한다. 실제 네이티브
+`show` 이벤트를 받은 후 전송 성공을 표시한다. `failed` 이벤트, 미지원, 5초 내 확인되지
+않은 전송은 오류를 표시하며 Windows 알림이 꺼진 경우 그 설정을 안내한다.
+
+## 완료 표시와 Windows 작업표시줄
+
+미확인 완료는 최근 대화·검색 결과·펼친 프로젝트·세션 선택 목록에서 **✓ 완료 / Done**
+배지로 표시한다. 최근 대화 행은 초록색 배경과 테두리를 사용하고 테두리만 3회 부드럽게
+깜박인 후 멈춘다. 동작 줄이기 설정에서는 깜박임을 생략한다. 스크린별 색상과 S 번호,
+작업 상태 점은 각각 유지하며 밝은 테마에서는 완료 표시의 초록색을 진하게 조정한다.
+
+완료 표시는 세션을 선택하거나 알림 센터에서 읽음 처리할 때, 또는 새 작업을 시작할 때
+해제한다. 휴면 전환·PTY 종료만으로 해제하지 않으며 저장된 미확인 기록은 앱 재실행에도
+유지한다. 세션 삭제 및 알림 기록의 기존 최대 100개 제한은 그대로 적용한다.
+
+알림 조건이 허용한 세션 소유 창에 초점이 없으면 Windows 작업표시줄에 `flashFrame`을
+요청한다. Windows 팝업을 끄더라도 작업표시줄 주의 표시는 작동하고, 앱에 초점이 돌아오면
+해제한다. 요청 중 초점이 바뀐 경우에도 활성 창을 새로 깜박이지 않는다. 창을 강제로
+활성화하지 않는다. 세션 음소거·전역 완료/질문 조건·소유 창 판정은 그대로 적용한다.
+
+Windows 알림 객체는 클릭 처리를 위해 최대 1시간 유지한다. 배너 표시 시간이 끝나도
+알림 센터 클릭을 받을 수 있게 유지하며 클릭·사용자 닫기·전송 실패 시 정리한다.
+알림별 고유 키를 사용하여 같은 이름의 세션이나 여러 완료 알림의 클릭이 충돌하지 않는다.
+
+### 2026-10-09 원인 분석과 소스 검증
+
+기존 사이드바 스타일이 완료 애니메이션을 끄고 점을 5px로 축소했다. 미확인 목록도
+실행 중인 세션으로 제한하여 휴면·종료하면 완료 표시가 사라졌다. Windows 알림은
+저장된 집중 억제 설정과 별개로 활성 창에서 항상 차단되었고, 작업표시줄 깜박임도
+Windows 팝업 설정에 묶여 있었다. 네이티브 전송은 `show()` 호출만으로 성공을 반환하고
+오류를 삼켰다. 연속 훅의 상태 반영 지연은 완료 알림 누락·중복도 유발할 수 있었다.
+
+개발 PC의 Standard AUMID `com.jintae.multiagent.electron`에 대한 Windows 알림 상태는
+읽기 전용 검사에서 `Enabled`였다. 당시 실행 중인 설치본은 1.8.1.70이다. 이번 수정은
+[1.8.1.73 EXE 배포](release-1-8-1-73.md)에 포함한다. 사용자의 설치·업데이트 여부는 별도다.
+
+격리 프로필의 실제 App 화면에서 연속 working/done/done 알림 1회, 휴면·종료 후 배지 유지,
+읽음·새 작업 해제, 집중 정책, Windows 팝업과 독립적인 작업표시줄 요청, 음소거·소유 창
+중복 방지, 알림 테스트 실패/성공 안내를 확인했다. 밝은/어두운 테마의 완료 화면과 기존
+사이드바 상호작용·1280/800px 레이아웃도 통과했다. 숨김 Electron은 실제 main 처리기와
+네이티브 flash API의 호출·초점 해제를 확인했고, 무음 테스트 알림의 Windows `show`
+이벤트를 수신했다. 숨김 창 테스트는 작업표시줄의 시각적 깜박임이나 사용자가 실제로
+배너를 봤는지까지 확인하는 검사는 아니다. TypeScript/Vite 빌드와 관련 24개 테스트가
+통과했다. 전체 검사 181개 파일/1,247개 중 1,246개가 첫 실행에서 통과했고, 이전 완료 점의
+CSS 클래스를 기대하던 UI 단언 1개는 새 배지의 표시·접근성 검증으로 갱신했다. 해당 파일과
+알림 상태 파일의 24개 테스트 재검사도 통과하여 전체 대상의 검증을 완료했다.
+이후 Chat 후속 전송 방식 수정까지 포함한 전체 재검사도 181개 파일/1,247개 모두 통과했다
+(`output/chat-delivery-full-tests.log`).
+검증 로그는 `output/sidebar-completion-notification-smoke.log`,
+`output/notification-native-smoke.log`, `output/completion-notification-tests.log`,
+`output/completion-notification-full-tests.log`, `output/completion-notification-sidebar-tests.log`에 있다.
+
+네이티브 동작의 기준은 [Electron Notification](https://www.electronjs.org/docs/latest/api/notification)과
+[Windows taskbar](https://www.electronjs.org/docs/latest/tutorial/windows-taskbar) 문서다.
 
 ## 세션 알림과 상단 도구
 

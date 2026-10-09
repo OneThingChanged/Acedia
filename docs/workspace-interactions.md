@@ -76,6 +76,12 @@ sources:
   - id: chat-model-smoke
     resource: ../app/scripts/electron-chat-model-smoke.mjs
     title: "Native Chat picker and full workspace model application"
+  - id: chat-delivery-smoke
+    resource: ../app/scripts/electron-chat-delivery-smoke.mjs
+    title: "Chat steering, completion reservations and keyboard delivery selection"
+  - id: codex-steering-cli-smoke
+    resource: ../app/scripts/codex-steering-cli-smoke.mjs
+    title: "Isolated installed Codex current-turn steering verification"
   - id: chat-markdown
     resource: ../app/src/components/ChatMarkdown.tsx
     title: "Chat file links and fenced code rendering"
@@ -606,6 +612,34 @@ provider label, queue/send and an interrupt button while work is active. The
 context labels describe the current session. Enter sends or queues; Shift+Enter
 and Ctrl/Cmd+Enter insert a newline. Text, image attachment and draft persistence
 keep the existing delivery flow; choosing files does not submit a message.
+For Codex/Claude, a delivery button selects **Steer current work / After
+completion** while busy and **Send now / Send in order** when ready. Plain Tab
+with a nonempty draft or attachment switches the selection without sending or
+moving input focus; Enter or the send button submits using that selection.
+The default retains completion reservations. When ready and the queue is empty,
+either selection starts the next request immediately. Shift+Tab navigates focus;
+autocomplete takes priority over Tab, and IME composition never changes delivery.
+
+Steering writes ordinary text plus Enter to the provider's existing terminal;
+it does not send Escape or restart the turn. Each CLI determines when it can
+consume the instruction. Completion reservations stay in Acedia until work and
+questions finish. A short input cooldown serializes rapid messages without
+changing steering into a completion reservation; pending steers are shown as
+such and precede future reservations. Steering preserves the current work timer.
+Selection, draft and queue remain isolated per session/conversation across
+Chat/terminal switches. Startup, question, dead-session and model-change guards
+retain their existing submission restrictions.
+
+`electron-chat-delivery-smoke.mjs` verifies these choices, cooldown priority,
+completion-only drain, cancellation, conversation/remount isolation, question
+protection, autocomplete/newline/IME/focus behavior, Codex/Claude routing and
+1024/420/320px dark/light layouts. `codex-steering-cli-smoke.mjs` uses the installed
+Codex 0.162.0 with an isolated profile and a loopback model fixture: text plus
+Enter reaches an ongoing native response in the same turn, while a follow-up
+after completion starts the next turn. Claude's terminal timing is based on its
+[interactive-mode documentation](https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works);
+the native-Claude flow was not exercised. Codex's distinction follows the
+[official follow-up behavior](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan).
 Slash/file autocomplete opens above the card. A required Claude sign-in disables
 composer submission and directs the user to the terminal. Startup questions,
 structured questions and reserved messages retain their own pinned controls
@@ -796,6 +830,15 @@ preservation, preference persistence across remounts, and switching back to Kore
 [^settings][^app-language]
 
 Completion attention is visual and can also drive desktop/Remote notifications.
+Unread completions show a checkmarked Done badge in sidebar conversation lists.
+Recent rows retain a green background and outline after three short pulses;
+reduced-motion preferences disable the pulses. Sleeping or exiting does not
+acknowledge completion. Selecting the conversation, reading its attention item,
+or starting new work clears the marker while screen colors remain independent.
+Windows alerts follow the saved focus policy and report native delivery errors.
+An unfocused owning window requests taskbar attention independently of the
+Windows popup toggle, and clears attention on focus. See
+[notification conditions and verification](notifications-and-power.md).
 Notification state must never be treated as authoritative work completion; hook
 state remains the source for activity.
 

@@ -8,11 +8,29 @@ type Policy = { revision: number; completion: boolean; question: boolean; bell: 
 export function NotificationPolicyPanel() {
   const { text } = useAppLanguage();
   const [value, setValue] = useState<Policy | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
+  const [testing, setTesting] = useState(false);
   const [power, setPower] = useState<{active: boolean; workingCount: number} | null>(null);
   const load = () => { void invoke<Policy>('notification_preferences_get').then(setValue).catch(() => setMessage(text('불러오지 못했습니다.', 'Could not load settings.'))); };
   useEffect(load, []);
   useEffect(() => { const poll = () => void invoke<{active: boolean; workingCount: number}>('power_policy_status').then(setPower).catch(() => {}); poll(); const timer = setInterval(poll, 3000); return () => clearInterval(timer); }, []);
   const save = async () => { if (!value) return; setBusy(true); try { setValue(await invoke<Policy>('notification_preferences_set', { patch: value, revision: value.revision })); setMessage(text('저장했습니다.', 'Saved.')); } catch { setMessage(text('저장하지 못했습니다. 다른 창의 변경을 다시 불러오세요.', 'Could not save. Reload changes from another window.')); } finally { setBusy(false); } };
+  const testNotification = async () => {
+    setTesting(true);
+    setMessage(text('알림을 확인하고 있습니다.', 'Checking notification delivery.'));
+    const sound = loadNotificationSound();
+    void playNotificationSound(sound);
+    try {
+      if (sound.osNotification === false) {
+        setMessage(text('소리 테스트를 실행했습니다. Windows 알림은 설정에서 꺼져 있습니다.', 'Sound test started. Windows notifications are disabled in settings.'));
+        return;
+      }
+      const shown = await invoke<boolean>('show_native_notification', {title:'Acedia',body:text('알림 테스트입니다.','Notification test.'),silent:shouldSilenceOsNotification(sound)});
+      if (!shown) throw new Error(text('Windows 알림을 표시하지 못했습니다.', 'Windows notification was not delivered.'));
+      setMessage(text('Windows 알림을 전송했습니다.', 'Windows notification sent.'));
+    } catch (error) {
+      setMessage(text('알림 테스트에 실패했습니다. ', 'Notification test failed. ') + (error instanceof Error ? error.message : String(error)));
+    } finally { setTesting(false); }
+  };
   return <section className="app-settings-section"><h4>{text('알림 조건과 절전', 'Notification conditions and sleep')}</h4>
     {value && <fieldset disabled={busy} style={{border: 0, padding: 0, margin: 0, minWidth: 0}}><div className="agent-settings-card">
       {(['completion','question','bell','suppressFocused'] as const).map(key => <label key={key} className="agent-settings-row" {...settingTarget('general.' + key)}><span className="agent-row-title"><SettingLabel id={'general.' + key}/><SettingScope id={'general.' + key}/></span><input type="checkbox" aria-label={key === 'completion' ? text('완료 알림', 'Completion alerts') : key === 'question' ? text('질문 알림', 'Question alerts') : key === 'bell' ? text('터미널 벨 알림', 'Terminal bell alerts') : text('앱 집중 중 알림 억제', 'Suppress alerts while focused')} checked={value[key]} onChange={e => setValue({...value, [key]: e.target.checked})}/></label>)}
@@ -21,7 +39,7 @@ export function NotificationPolicyPanel() {
     <p role="status">{power ? text(`절전 방지 ${power.active ? '동작 중' : '해제'} · 작업 ${power.workingCount}개`, `Sleep prevention ${power.active ? 'active' : 'inactive'} · ${power.workingCount} tasks`) : ''}</p>
     <button className="btn-primary" onClick={() => void save()}>{text('저장','Save')}</button></fieldset>}
     <div className="folder-row" style={{marginTop:12}}><button className="btn-secondary" onClick={load} disabled={busy}>{text('다시 불러오기','Reload settings')}</button>
-    <button className="btn-secondary" {...settingTarget('general.alertTest')} onClick={() => { const sound = loadNotificationSound(); void playNotificationSound(sound); if (sound.osNotification !== false) void invoke('show_native_notification', {title:'Acedia',body:text('알림 테스트입니다.','Notification test.'),silent:shouldSilenceOsNotification(sound)}).catch(() => setMessage(text('알림 테스트에 실패했습니다.','Notification test failed.'))); setMessage(text('조건과 관계없이 선택한 소리·Windows 알림을 테스트합니다.','Tests the selected sound and Windows notification regardless of conditions.')); }}>{text('알림 테스트','Test notification')}<SettingScope id="general.alertTest"/></button></div>
+    <button className="btn-secondary" {...settingTarget('general.alertTest')} onClick={() => void testNotification()} disabled={testing}>{testing ? text('알림 확인 중…', 'Checking notification…') : text('알림 테스트','Test notification')}<SettingScope id="general.alertTest"/></button></div>
     {message && <p role="status">{message}</p>}
   </section>;
 }

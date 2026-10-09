@@ -40,6 +40,67 @@ async function exerciseScreenIdentity() {
   return 'SIDEBAR_SCREEN_IDENTITY_OK S1='+colors[0]+' S2='+colors[1];
 }
 
+async function exerciseCompletionAttention() {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms ?? 180));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const calls = command => window.layoutCalls.filter(call => call.command === command).length;
+  const row = id => document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"]');
+  const badge = id => row(id)?.querySelector('.agent-completion-badge');
+  let time = Date.now();
+  const hook = (id, event) => window.sidebarFixtureEmit('agent:hook-event', { id, event, session_id: 'session-'+id, received_at: ++time });
+  window.sidebarFixtureOwned = ['ux', 'image', 'routing', 'files', 'shader'];
+  localStorage.setItem('multiagent.notificationSound.v1', JSON.stringify({ mode: 'off', osNotification: true }));
+  await wait(1250);
+  const nativeBefore = calls('show_native_notification'), attentionBefore = calls('fixture_taskbar_attention');
+  hook('image', 'working'); hook('image', 'done'); hook('image', 'done'); await wait();
+  check(calls('show_native_notification') === nativeBefore + 1 && calls('fixture_taskbar_attention') === attentionBefore + 1, 'Burst hooks missed or duplicated completion notification');
+  check(badge('image')?.textContent === '완료' && badge('image').getAttribute('aria-label') === '읽지 않은 작업 완료', 'Visible completion badge missing');
+  check(getComputedStyle(row('image'), '::after').borderTopWidth === '1px', 'Completion outline missing');
+  check(getComputedStyle(row('image'), '::after').animationIterationCount === '3', 'Completion animation must stop after three pulses');
+  check(getComputedStyle(row('image')).backgroundColor !== getComputedStyle(row('routing')).backgroundColor, 'Completed conversation has no background emphasis');
+  check(row('image').style.getPropertyValue('--screen-color') && row('image').querySelector('.agent-screen-badge'), 'Completion overwrote screen identity');
+  window.sidebarFixtureEmit('agent:idle-suspended', { id: 'image', sessionId: 'session-image' }); await wait();
+  check(badge('image'), 'Idle suspension erased unread completion');
+  check(document.querySelector('[data-sidebar-project-id="acedia"] [data-sidebar-agent-id="image"] .agent-completion-badge'), 'Nested project lost completion badge');
+  row('image').scrollIntoView({ block: 'center' });
+  // Leave this marker intact for dark/light screenshot capture by the host.
+  window.sidebarFixtureFocused = true;
+  const focusedNative = calls('show_native_notification'), focusedAttention = calls('fixture_taskbar_attention');
+  hook('routing', 'working'); hook('routing', 'done'); await wait();
+  check(calls('show_native_notification') === focusedNative + 1 && calls('fixture_taskbar_attention') === focusedAttention, 'Focused alerts ignored the saved policy or flashed the active window');
+  hook('routing', 'working'); await wait(); check(!badge('routing'), 'New work retained old completion badge');
+  window.sidebarFixtureFocused = false;
+  localStorage.setItem('multiagent.notificationSound.v1', JSON.stringify({ mode: 'off', osNotification: false }));
+  const offNative = calls('show_native_notification'), offAttention = calls('fixture_taskbar_attention');
+  hook('routing', 'done'); await wait();
+  check(calls('show_native_notification') === offNative && calls('fixture_taskbar_attention') === offAttention + 1, 'Disabling Windows toast also disabled taskbar attention');
+  window.sidebarFixturePolicyAllowed = false;
+  const mutedNative = calls('show_native_notification'), mutedAttention = calls('fixture_taskbar_attention');
+  hook('routing', 'working'); hook('routing', 'done'); await wait();
+  check(badge('routing') && calls('show_native_notification') === mutedNative && calls('fixture_taskbar_attention') === mutedAttention, 'Muted completion lost its marker or notified anyway');
+  window.sidebarFixtureOwned = []; await wait(1250);
+  window.sidebarFixturePolicyAllowed = true;
+  hook('routing', 'working'); hook('routing', 'done'); await wait();
+  check(calls('show_native_notification') === mutedNative && calls('fixture_taskbar_attention') === mutedAttention, 'Non-owning workspace delivered a duplicate notification');
+  window.sidebarFixtureEmit('pty:exit', { id: 'routing' }); await wait();
+  check(badge('routing'), 'PTY exit erased unread completion');
+  const completedRow = row('routing');
+  completedRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await wait();
+  check(!badge('routing') && badge('image'), 'Acknowledging one completion also cleared another');
+  localStorage.setItem('multiagent.notificationSound.v1', JSON.stringify({ mode: 'off', osNotification: true }));
+  window.sidebarFixtureNativeFailure = true;
+  document.querySelector('.app-topbar button[title="설정"]').click(); await wait();
+  const testButton = document.querySelector('button[data-setting-id="general.alertTest"]');
+  check(testButton, 'Notification test control missing');
+  testButton.click(); await wait();
+  check(document.querySelector('.app-settings-screen').textContent.includes('알림 테스트에 실패했습니다.') && document.querySelector('.app-settings-screen').textContent.includes('Fixture native delivery failed'), 'Native notification test swallowed the OS failure');
+  window.sidebarFixtureNativeFailure = false; testButton.click(); await wait();
+  check(document.querySelector('.app-settings-screen').textContent.includes('Windows 알림을 전송했습니다.'), 'Notification test did not confirm successful delivery');
+  document.querySelector('.app-settings-back').click(); await wait();
+  row('image').scrollIntoView({ block: 'center' });
+  return 'SIDEBAR_COMPLETION_ALERTS_OK persistent/read/new-work badges, burst dedupe, focused policy, independent taskbar, mute/ownership, native test failure';
+}
+
 async function exercise() {
   const wait = () => new Promise(resolve => setTimeout(resolve, 180));
   const check = (ok, message) => { if (!ok) throw Error(message); };
@@ -288,6 +349,23 @@ if (process.versions.electron) {
     await win.webContents.executeJavaScript("document.querySelector('.app').classList.add('app-theme-light')");
     console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-screen-identity-light.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("document.querySelector('.app').classList.remove('app-theme-light')");
+    console.log(await win.webContents.executeJavaScript(`(${exerciseCompletionAttention.toString()})()`));
+    await fs.writeFile(path.join(directory, 'sidebar-completion-dark.png'), (await win.webContents.capturePage()).toPNG());
+    console.log(await win.webContents.executeJavaScript(`(async () => {
+      const wait = () => new Promise(resolve => setTimeout(resolve, 220));
+      document.querySelector('.app-topbar button[title="설정"]').click(); await wait();
+      const theme = [...document.querySelectorAll('.app-settings-screen .app-theme-option')].find(button => button.textContent.trim() === 'Light');
+      if (!theme) throw Error('Light theme control missing');
+      theme.click(); await wait();
+      document.querySelector('.app-settings-back').click(); await wait();
+      if (!document.querySelector('.app').classList.contains('app-theme-light')) throw Error('Completion light theme not applied');
+      const row = document.querySelector('.sidebar-recents [data-sidebar-agent-id="image"]');
+      row.scrollIntoView({block:'center'}); await wait();
+      if (!row.querySelector('.agent-completion-badge') || getComputedStyle(row).getPropertyValue('--completion-color').trim() !== '#167a38') throw Error('Light completion marker missing');
+      return 'SIDEBAR_COMPLETION_LIGHT_OK actual settings theme, persistent badge';
+    })()`));
+    await fs.writeFile(path.join(directory, 'sidebar-completion-light.png'), (await win.webContents.capturePage()).toPNG());
     await win.webContents.executeJavaScript("localStorage.clear()");
     await win.loadFile(path.join(directory, 'index.html'));
     await new Promise(resolve => setTimeout(resolve, 900));
@@ -362,7 +440,7 @@ if (process.versions.electron) {
   const env = { ...process.env, ACEDIA_SIDEBAR_SMOKE_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
   await new Promise((resolve, reject) => {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { cwd: appRoot, env, stdio: 'inherit', windowsHide: true });
-    const timer = setTimeout(() => { child.kill(); reject(Error('Sidebar smoke timed out')); }, 45000);
+    const timer = setTimeout(() => { child.kill(); reject(Error('Sidebar smoke timed out')); }, 60000);
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error('Sidebar smoke failed: ' + code)); });
   });

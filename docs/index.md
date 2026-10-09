@@ -21,6 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; source verification and EXE publication record.
 * [Acedia 1.8.1.72 EXE release](release-1-8-1-72.md) - Color-coded split screens and matching session badges, dedicated Codex/Claude logos, and Codex questions during work; stable EXE published and public download verified.
 * [Acedia 1.8.1.71 local build](release-1-8-1-71.md) - Async-question fix verified and built locally, then included in 1.8.1.72 before publication.
 * [Acedia 1.8.1.70 EXE release](release-1-8-1-70.md) - Background browser creation by default, explicit display requests, preserved workspace/input focus and one Chat Working indicator; public EXE delivery verified.
@@ -97,7 +98,7 @@ configuration that supports it.
 * [개별 설정 검색과 적용 범위](settings-search.md) - Option-level search, navigation, highlighting and application timing.
 * [브라우저 설정과 프로필](browser-preferences.md) - Defaults, profile isolation, tab restoration and unpacked extension management.
 * [저장 명령과 프로젝트 시작 설정](saved-commands.md) - Scoped commands, execution targets and opt-in startup timing.
-* [알림 조건과 절전 방지](notifications-and-power.md) - Completion/bell conditions, focus suppression and shared sleep prevention.
+* [알림 조건과 절전 방지](notifications-and-power.md) - Persistent sidebar completion badges, Windows notification delivery and taskbar attention, completion/bell conditions, focus suppression and shared sleep prevention.
 * [상태 표시줄 구성](status-bar-settings.md) - Provider filters, used/remaining quota display and local monitors.
 * [유휴 세션 자동 중지와 복원](idle-sessions.md) - Guarded idle suspension and exact account/conversation recovery.
 

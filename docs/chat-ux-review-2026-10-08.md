@@ -439,3 +439,45 @@ Codex·Claude는 대화 제목 앞의 전용 SVG 로고로 구별하며 반복�
 24개 검사와 EXE packaged 검증도 통과했다. 1.8.1.72를 15:15:43 KST에
 게시하고 15:16:30 KST에 실제 공개 다운로드·해시 검증을 완료했다.
 [릴리스 검증 기록](release-1-8-1-72.md)에 고정 소스와 증빙을 남겼다.
+
+## Tab으로 후속 메시지 전달 방식 선택 — 2026-10-09
+
+Codex·Claude 채팅 입력창에 전송 방식 버튼을 추가했다. 작성한 내용이나 첨부가 있을 때
+Tab으로 **중간 지시 / 완료 후 예약**을 바꾸고 Enter 또는 전송 버튼으로 보낸다.
+버튼을 클릭해도 전환할 수 있다. 입력을 지우거나 Tab 자체로 메시지를 보내지 않는다.
+작업이 끝난 상태에서는 **지금 전송 / 순서대로 전송**으로 표시하며 대기열이 비어 있으면
+두 방식 모두 다음 요청을 바로 시작한다. 초기 선택은 기존 동작인 완료 후 예약이다.
+
+중간 지시는 현재 CLI에 텍스트와 Enter를 전달하며 Esc를 보내거나 세션을 다시 시작하지
+않는다. CLI가 처리할 수 있는 시점에 현재 작업에 반영한다. 완료 후 예약은 Acedia에
+보관했다가 작업·질문이 끝난 후 순서대로 보낸다. 빠른 연속 입력의 전달 간격 때문에
+중간 지시가 완료 후 예약으로 바뀌지 않으며, 전달 대기 중인 지시는 미래 예약보다 먼저
+처리한다. 현재 작업의 경과 시간도 유지한다.
+
+전송 방식·초안·대기열은 대화별로 격리하고 Chat/터미널 전환 시 유지한다. 시작·질문 대기는
+예약으로 제한하고 로그인·모델 변경 중에는 기존 전송 차단을 유지한다. 자동완성이 열려
+있으면 Tab으로 항목을 선택하며 Shift+Tab은 포커스 이동, Shift+Enter와 Ctrl/Cmd+Enter는
+줄바꿈으로 동작한다. IME 조합 중에는 방식이 바뀌지 않는다.
+
+검증 결과:
+
+- 실제 ChatView의 Codex/Claude 중간 전달·완료 예약, 연속 입력 우선순위, 완료 후 1회 전달,
+  취소·대화 격리·화면 재연결·질문 보호·자동완성·IME·키보드와 다크/라이트
+  1024/420/320px 배치 검사 통과.
+- 설치된 Codex CLI **0.162.0**의 격리 프로필과 loopback 모의 응답으로, 응답이 진행 중일 때
+  Enter 전달한 추가 지시가 같은 턴·transcript에 반영되고 완료 후 후속 메시지가 새 턴으로
+  시작하는 것을 확인했다. 실제 계정이나 외부 모델 API는 사용하지 않았다.
+- 기존 질문·이미지·인용·재사용·시작 확인·Desktop/Remote 검사와 940/390/300px 모델 선택·
+  전체 App 모델 보존 검사, 전체 **181개 파일 / 1,247개 테스트**, TypeScript/Vite 빌드 통과.
+- Claude의 실제 CLI 전송은 이번 검사에 포함하지 않았다. UI 전달 경로와
+  [공식 입력 처리 문서](https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works)를
+  확인했으며 실제 반영 시점은 Claude가 처리한다. Codex의 중간 지시·예약 구분은
+  [공식 안내](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan)도 참고했다.
+
+명령은 `app/`의 `npm run electron:chat-delivery-smoke`, 설치 실행 파일을
+`ACEDIA_CODEX_BINARY`로 지정한 `npm run codex:steering-smoke`다. 증빙은
+`output/chat-delivery-ui-smoke.log`, `output/chat-steering-native-smoke.log`,
+`output/chat-delivery-question-regression.log`, `output/chat-delivery-model-regression.log`,
+`output/chat-delivery-full-tests.log`, `output/chat-delivery-mode-build.log`와
+`output/chat-delivery-ui/delivery-*.png`다. 이 변경과 완료·Windows 알림 개선은
+[1.8.1.73 EXE 배포](release-1-8-1-73.md)에 포함한다. 사용자의 설치·업데이트 여부는 별도다.

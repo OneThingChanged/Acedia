@@ -5,6 +5,7 @@
 .sidebar-workspace {
   position: relative; width: var(--sidebar-width, 286px); min-width: 0; min-height: 0;
   --sidebar-selected: color-mix(in srgb, var(--app-accent) 14%, var(--app-panel));
+  --completion-color: #3fb950;
   background: color-mix(in srgb, var(--app-bg) 55%, var(--app-panel)); color: var(--app-text);
 }
 .app-desktop > .sidebar-workspace { width: 100%; }
@@ -127,7 +128,11 @@
 .sidebar-workspace .sidebar-recent-row.active { background: var(--sidebar-selected); }
 .sidebar-workspace .sidebar-recent-row[data-sidebar-screen-id] { --screen-ink: var(--screen-color); box-shadow: inset 2px 0 var(--screen-color); }
 .app-theme-light .sidebar-screen-item, .app-theme-light .sidebar-recent-row[data-sidebar-screen-id] { --screen-ink: color-mix(in srgb, var(--screen-color) 65%, #000); }
-.sidebar-workspace .sidebar-recent-row.agent-completion-unread { background-image: none; animation: none; }
+.app-theme-light .sidebar-workspace { --completion-color: #167a38; }
+.sidebar-workspace .sidebar-recent-row.agent-completion-unread { background: color-mix(in srgb, var(--completion-color) 11%, var(--app-panel)); background-image: none; animation: none; }
+.sidebar-workspace .sidebar-recent-row.agent-completion-unread::after { content: ""; position: absolute; inset: 0; pointer-events: none; border: 1px solid color-mix(in srgb, var(--completion-color) 55%, transparent); border-radius: inherit; animation: sidebar-completion-pulse 1.6s ease-in-out 3; }
+@keyframes sidebar-completion-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .sidebar-workspace .sidebar-recent-row.agent-completion-unread::after { animation: none; } }
 .sidebar-workspace .sidebar-recent-row .status { flex: 0 0 5px; width: 5px; height: 5px; margin: 0; }
 .sidebar-session-copy { min-width: 0; flex: 1; }
 .sidebar-workspace .sidebar-recent-row .agent-name { display: block; color: var(--app-heading); font-size: 12px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -137,7 +142,6 @@
 .sidebar-sleep-label { color: var(--app-accent); margin-left: auto; }
 .sidebar-ssh-label { font-size: 8px; opacity: .75; }
 .sidebar-workspace .agent-screen-badge { padding: 1px 4px; border-color: var(--screen-ink); background: color-mix(in srgb, var(--screen-color) 10%, transparent); color: var(--screen-ink); font-size: 9px; }
-.sidebar-workspace .agent-completion-dot { width: 5px; height: 5px; box-shadow: none; animation: none; }
 .sidebar-empty { padding: 18px 10px; font-size: 11px; text-align: center; color: var(--app-muted); }
 .sidebar-empty p { margin: 0; }
 .sidebar-empty button { border: 0; background: none; color: var(--app-accent); margin-top: 8px; font-size: 11px; }

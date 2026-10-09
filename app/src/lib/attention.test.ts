@@ -55,7 +55,7 @@ describe("attention items", () => {
     expect(markAgentCompletionRead(next, "missing")).toBe(next);
   });
 
-  it("limits sidebar completion markers to eligible running agents", () => {
+  it("limits sidebar completion markers to eligible agent IDs", () => {
     const active = {
       ...item("2", "completed"),
       agentId: "active-agent",

@@ -36,14 +36,29 @@ const listeners = new Map<string, Set<(payload: unknown) => void>>();
 declare global {
   interface Window {
     sidebarFixtureInUse: string[];
+    sidebarFixtureOwned: string[];
+    sidebarFixtureFocused: boolean;
+    sidebarFixturePolicyAllowed: boolean;
+    sidebarFixtureNativeFailure: boolean;
+    sidebarFixtureEmit: (name: string, payload: unknown) => void;
   }
 }
 window.sidebarFixtureInUse = [];
+window.sidebarFixtureOwned = [];
+window.sidebarFixtureFocused = false;
+window.sidebarFixturePolicyAllowed = true;
+window.sidebarFixtureNativeFailure = false;
+window.sidebarFixtureEmit = (name, payload) => listeners.get(name)?.forEach(callback => callback(payload));
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.layoutCalls.push({ command, args });
     if (command === "runtime_flags") return { build_variant: "standard", update_provider: "github", advanced_launch_options: true };
-    if (command === "get_agent_window_usage") return { in_use_agent_ids: window.sidebarFixtureInUse, owned_agent_ids: [] };
+    if (command === "get_agent_window_usage") return { in_use_agent_ids: window.sidebarFixtureInUse, owned_agent_ids: window.sidebarFixtureOwned };
+    if (command === "notification_policy_check") return window.sidebarFixturePolicyAllowed;
+    if (command === "show_native_notification") {
+      if (window.sidebarFixtureNativeFailure) throw new Error("Fixture native delivery failed");
+      return true;
+    }
     if (command === "get_detached_agents") return {};
     if (command === "claim_agent_for_window") return { claimed: true };
     if (command === "spawn_pty") return { reattached: true };
@@ -55,7 +70,7 @@ window.multiAgentElectron = {
     if (command === "usage_rate_limits_get") return { updatedAt: Date.now(), limits: [] };
     if (command === "idle_preferences_get") return { revision: 0, enabled: false, minutes: 30 };
     if (command === "browser_preferences_get") return { revision: 0, home: "", search: "google", zoom: 100, links: "external", profiles: [{ id: "multiagent-browser", label: "Default" }], defaultProfile: "multiagent-browser", restoreTabs: false };
-    if (command === "notification_preferences_get") return { revision: 0, completion: true, bell: false, suppressFocused: false, powerMode: "off" };
+    if (command === "notification_preferences_get") return { revision: 0, completion: true, question: true, bell: false, suppressFocused: false, powerMode: "off" };
     if (command === "saved_commands_get") return { revision: 0, commands: [], startups: {} };
     if (command === "check_tools") return {};
     if (command.endsWith("_accounts_list")) return [{ id: "default", label: "Existing login", state: "default" }];
@@ -73,6 +88,6 @@ window.multiAgentElectron = {
   },
   onEvent: (name, callback) => { const callbacks = listeners.get(name) || new Set(); callbacks.add(callback); listeners.set(name, callbacks); return () => callbacks.delete(callback); },
   emit: async () => {},
-  window: { setAlwaysOnTop: async () => {}, isFocused: async () => false, requestUserAttention: async () => {} },
+  window: { setAlwaysOnTop: async () => {}, isFocused: async () => window.sidebarFixtureFocused, requestUserAttention: async () => { window.layoutCalls.push({ command: "fixture_taskbar_attention" }); } },
 };
 createRoot(document.getElementById("root")!).render(<AppLanguageProvider><App /></AppLanguageProvider>);

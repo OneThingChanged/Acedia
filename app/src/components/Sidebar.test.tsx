@@ -316,7 +316,8 @@ describe("Sidebar", () => {
 
     expect(html).toContain("agent-completion-unread");
     expect(html).toContain("읽지 않은 작업 완료");
-    expect(html.match(/agent-completion-dot/g)).toHaveLength(1);
+    expect(html.match(/aria-label="읽지 않은 작업 완료"/g)).toHaveLength(1);
+    expect(html).toContain('<span>완료</span>');
   });
 
   it("uses the sidebar x action only to deactivate a session", () => {

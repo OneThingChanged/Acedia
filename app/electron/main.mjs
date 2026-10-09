@@ -5,6 +5,7 @@ import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
+import { NativeNotifications } from './services/native-notifications.mjs';
 import { SessionNotifications } from './services/session-notifications.mjs';
 import { ActiveQuestions, AsyncQuestionNotifier } from './services/active-questions.mjs';
 import { QuestionResponder, hasQueuedCodexQuestion, codexQuestionFrame } from './services/question-responder.mjs';
@@ -156,6 +157,9 @@ const singleInstanceSmoke =
   process.env.MULTIAGENT_ELECTRON_SINGLE_INSTANCE_SMOKE === "1" ||
   process.argv.includes("--multiagent-single-instance-smoke");
 const iconPath = path.join(appRoot, "assets", "icon.ico");
+const nativeNotifications = new NativeNotifications({ Notification,
+  icon: path.join(appRoot, app.isPackaged ? 'dist' : 'public', 'app-icon.png'),
+});
 const packagedRendererUrl = pathToFileURL(path.join(appRoot, "dist", "index.html")).href;
 const MAX_DOC_FILES = 500;
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
@@ -2831,6 +2835,7 @@ function createAppWindow({
     }
   });
   win.on("focus", () => {
+    win.flashFrame(false);
     rememberWorkspaceWindowId(workspaceWindowId);
   });
   win.on("close", () => {
@@ -5586,21 +5591,18 @@ async function invokeCommand(event, command, rawArgs) {
       return file;
     }
     case "show_native_notification": {
-      if (!Notification.isSupported()) return false;
-      const notification = new Notification({
+      return nativeNotifications.show({
         title: asString(args.title, runtimeVariant.displayName),
         body: asString(args.body),
         silent: Boolean(args.silent),
+        onClick: () => {
+          const agentId = asString(args.agentId) || null;
+          const target = showWorkspaceWindow(agentId);
+          sendEvent(target, "native-notification:clicked", {
+            notificationKey: asString(args.notificationKey),
+          });
+        },
       });
-      notification.on("click", () => {
-        const agentId = asString(args.agentId) || null;
-        const target = showWorkspaceWindow(agentId);
-        sendEvent(target, "native-notification:clicked", {
-          notificationKey: asString(args.notificationKey),
-        });
-      });
-      notification.show();
-      return true;
     }
     case "persist_storage_snapshot":
       return persistStorageSnapshot(args.snapshot);
@@ -5996,7 +5998,7 @@ ipcMain.handle("multiagent:window", (event, operation, value) => {
     case "isFocused":
       return win.isFocused();
     case "requestUserAttention":
-      win.flashFrame(true);
+      win.flashFrame(!win.isFocused());
       return null;
     default:
       throw new Error(`지원하지 않는 window operation: ${operation}`);
