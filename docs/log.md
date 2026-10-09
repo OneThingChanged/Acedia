@@ -2,7 +2,7 @@
 
 ## 2026-10-09
 
-* **1.8.1.70 EXE release in progress**: Browser research opens in the background even with legacy placement hints; only explicit display requests connect existing tabs. Preserve the user's Screen, pane, selected tab and input focus, retain browser window placement and usable hidden capture, and remove Chat's duplicate Working indicator. Reuse signed APK 1.8.1.39/code 21. See [release scope and verification](release-1-8-1-70.md).
+* **1.8.1.70 EXE release**: Browser research opens in the background even with legacy placement hints; only explicit display requests connect existing tabs. Preserve the user's Screen, pane, selected tab and input focus, retain browser window placement and usable hidden capture, and remove Chat's duplicate Working indicator. All 180 files/1,236 tests and 24 mobile checks, fixed-source EXE build, packaged bridge/Dashboard/lifecycle, 278-file source equality and installer manifest/hash/version checks passed. Published stable v1.8.1.70 at 13:46:17 KST from 3fa974b; production updater detection from 1.8.1.68/69, actual download and all three public asset hashes passed at 13:47:37 KST. Reuses signed APK 1.8.1.39/code 21; user installation remains separate. See [release scope and verification](release-1-8-1-70.md).
 
 ## 2026-10-07
 

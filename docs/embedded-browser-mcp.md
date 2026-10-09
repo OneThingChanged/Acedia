@@ -153,7 +153,9 @@ The fixed tools are:
 
 Arbitrary page JavaScript is intentionally not exposed as a tool.
 
-### Showing a browser beside chat (next EXE release)
+### Showing a browser beside chat
+
+Released in [Acedia 1.8.1.70](release-1-8-1-70.md).
 
 `browser_open` always creates a background tab on the hidden browser host. It
 does not add a visible pane or select a desktop tab, even if a legacy caller

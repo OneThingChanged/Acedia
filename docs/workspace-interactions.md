@@ -283,7 +283,7 @@ prepare the owning Screen's browser layout
 while preserving the user's current Screen, selected pane and tab. Repeated
 requests retain existing placement, including a browser moved to another Screen
 or workspace window. Browser Hub/tab clicks and explicit user opens still select
-the requested browser. See [embedded browser connections](embedded-browser-mcp.md#showing-a-browser-beside-chat-next-exe-release).
+the requested browser. See [embedded browser connections](embedded-browser-mcp.md#showing-a-browser-beside-chat).
 [^app-shell]
 
 The session menu's Deactivate action stops its live PTY. Permanent session
