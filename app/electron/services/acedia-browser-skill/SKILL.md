@@ -5,11 +5,18 @@ description: Show and connect Acedia's embedded browser beside the current conve
 
 # Acedia browser beside chat
 
-Show the page in the current session's workspace so the user can see it while conversing. Use the Acedia browser bridge, not an unrelated external browser.
+Research and browser automation run in background tabs. Show a page in the
+workspace only when the user explicitly asks to see it beside chat or in a tab.
+“Use the browser”, “research this” or “open this URL” alone does not request a
+visible pane. Use the Acedia browser bridge for the requested work.
 
 1. List `browser_tabs` using the Acedia MCP tools. Reuse a tab matching the requested URL or the tab explicitly identified by the user. When no URL was specified, prefer the current session's `activeTabId`; otherwise open the configured home page. Do not choose another session's tab merely because it exists in the catalog.
-2. For an existing tab, call `browser_show` with its `tabId` and `placement: "right"`. For a new page, call `browser_open` with `placement: "right"` and the requested HTTP(S) URL, omitting URL when the user just wants a browser. Keep the returned tab ID for subsequent actions. An already separated tab remains in its existing pane rather than creating repeated splits.
-3. Read `browser_snapshot` for that exact tab to confirm the page and connection. A successful show request means the app was asked to reveal the tab; do not claim visual layout verification based on a page snapshot alone. Report the page title and any load/sign-in error briefly.
+2. Reuse a matching tab, or call `browser_open` with the requested HTTP(S) URL to create a background tab; omit URL for the configured home page. Keep its tab ID and perform subsequent actions without showing it. Only after an explicit display request, call `browser_show` once with that tab ID and `placement: "right"` (or `"tab"` when requested). An already separated tab keeps its placement without creating repeated splits.
+3. Read `browser_snapshot` for that exact tab to confirm the page while continuing background work. If display was explicitly requested, a successful show response means the app accepted the placement request; do not claim visual layout verification based on a page snapshot alone. Report the page title and any load/sign-in error briefly.
+
+Keep the returned tab ID for the rest of the task. Do not repeat `browser_show`
+before snapshots, navigation, clicks or typing. Connection requests preserve the
+user's current session and pane selection; a browser in another Screen stays there.
 
 Use `placement: "tab"` only when the user asks for a tab in the conversation pane. Preserve the chosen browser profile; use IDs returned by `browser_tabs`, never invent them. Leave existing conversation tabs open.
 
@@ -19,7 +26,8 @@ Run the bundled helper with Python 3. Resolve the script relative to this SKILL.
 
 ```text
 python <skill-directory>/scripts/browser.py tabs
-python <skill-directory>/scripts/browser.py open --url https://example.com --placement right
+python <skill-directory>/scripts/browser.py open --url https://example.com
+# Only when the user explicitly asks to display the page:
 python <skill-directory>/scripts/browser.py show --tab-id <returned-id> --placement right
 python <skill-directory>/scripts/browser.py snapshot --tab-id <returned-id>
 ```

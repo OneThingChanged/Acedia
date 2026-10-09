@@ -11,12 +11,16 @@ if (!localStorage.getItem("layout-fixture-seeded")) {
   localStorage.setItem("multiagent.appLanguage.v1", "en");
   localStorage.setItem("multiagent.filesOpen.v1", "true");
   store("multiagent.projects.v1", [{ id: "project", name: "Layout verification", folder: "C:/fixture", createdAt: 1 }]);
-  store("multiagent.agents.v1", ["one", "two"].map(id => ({ id, projectId: "project", name: id, folder: "C:/fixture", aiToolId: "none", createdAt: 1, resumeEligible: false })));
+  store("multiagent.agents.v1", ["one", "two", "three"].map(id => ({ id, projectId: "project", name: id, folder: "C:/fixture", aiToolId: "none", createdAt: 1, resumeEligible: false })));
   store("multiagent.groups.v1", [{ id: "screen", projectId: "project", layout: { type: "split", direction: "h", sizes: [0.5, 0.5], children: [ { type: "leaf", id: "leaf-one", tabs: ["one"], activeIndex: 0 }, { type: "leaf", id: "leaf-two", tabs: ["two"], activeIndex: 0 } ] } }]);
   store("multiagent.view.v1", { activeProjectId: "project", activeGroupId: "screen", activePath: [0] });
+  const groups = JSON.parse(localStorage.getItem("multiagent.groups.v1")!);
+  groups.push({ id: "screen-other", projectId: "project", layout: { type: "leaf", id: "leaf-three", tabs: ["three"], activeIndex: 0 } });
+  store("multiagent.groups.v1", groups);
 }
 window.layoutCalls = [];
 const fixtureListeners = new Map<string, Set<(payload: unknown) => void>>();
+window.fixtureBrowserEvent = payload => { for (const callback of fixtureListeners.get("document-browser:show-tab") || []) callback(payload); };
 window.fixtureAccountEvent = payload => { for (const callback of fixtureListeners.get("accounts:changed") || []) callback(payload); };
 window.multiAgentElectron = {
   invoke: async (command, args) => {

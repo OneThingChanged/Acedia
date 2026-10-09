@@ -3351,18 +3351,18 @@ function App() {
   );
 
   const showBrowserTab = useCallback(
-    (browserId: string, ownerAgentId: string | null, preferredPath?: Path, placement?: "right" | "tab") => {
+    (browserId: string, ownerAgentId: string | null, preferredPath?: Path, placement?: "right" | "tab", activate = true) => {
       const tabId = makeBrowserTabId(browserId);
       if (ownerAgentId) {
         documentOwnerByTabRef.current.set(tabId, ownerAgentId);
       }
       applyGroupOp((state) => {
-        if (placement === "right" && ownerAgentId) return groupOps.showBrowserBeside(state, tabId, ownerAgentId);
-        // Preserve a browser tab that the user deliberately moved to another
-        // split; subsequent MCP actions should focus it, not move it back.
+        if (placement === "right" && ownerAgentId) return groupOps.showBrowserBeside(state, tabId, ownerAgentId, { activate });
+        // User opens can select an existing tab; agent requests preserve it.
         for (const group of state.groups) {
           const existingPath = findLeafPath(group.layout, tabId);
           if (!existingPath) continue;
+          if (!activate) return state;
           return {
             groups: updateGroup(
               state.groups,
@@ -3391,7 +3391,7 @@ function App() {
         const projectId = ownerAgentId
           ? agentsRef.current.find((agent) => agent.id === ownerAgentId)?.projectId
           : activeProjectIdRef.current ?? undefined;
-        return groupOps.openAsTab(
+        const next = groupOps.openAsTab(
           {
             ...state,
             activeGroupId: targetGroup.id,
@@ -3400,6 +3400,7 @@ function App() {
           tabId,
           projectId
         );
+        return activate ? next : groupOps.preserveActiveSelection(state, next);
       });
     },
     [applyGroupOp]
@@ -3498,12 +3499,14 @@ function App() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    listen<{ browserId: string; agentId?: string | null; placement?: "right" | "tab" }>(
+    listen<{ browserId: string; agentId?: string | null; placement?: "right" | "tab"; activate?: boolean }>(
       "document-browser:show-tab",
       (event) => {
         const browserId = event.payload?.browserId?.trim();
         if (!browserId) return;
-        showBrowserTab(browserId, event.payload.agentId?.trim() || null, undefined, event.payload.placement);
+        // Older bridge hosts already include placement; ordinary UI opens do not.
+        const activate = event.payload.activate ?? (event.payload.placement == null);
+        showBrowserTab(browserId, event.payload.agentId?.trim() || null, undefined, event.payload.placement, activate);
       }
     ).then((remove) => {
       if (disposed) remove();

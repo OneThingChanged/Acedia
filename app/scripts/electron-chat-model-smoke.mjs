@@ -65,7 +65,7 @@ async function exercise(win, width) {
   await waitFor(win, "document.activeElement===document.querySelector('.chat-model-trigger')");
   const count = await run("window.modelFixture.modelUpdates.length");
   await patch({ state: { agentStatus: "working" } });
-  await waitFor(win, "!!document.querySelector('.chat-thinking')");
+  await waitFor(win, "!!document.querySelector('.chat-work-status')");
   await open(".chat-model-trigger"); await click('[data-model="fixture-sol"]');
   check(await run("document.querySelector('.chat-model-apply').disabled && document.querySelector('.chat-model-notice').textContent.includes('작업')"), "An active turn could change model");
   check(await run(`window.modelFixture.modelUpdates.length===${count}`), "An active turn was restarted");

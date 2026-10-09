@@ -286,14 +286,31 @@ export function splitWith(
   };
 }
 
+// Restore the selected tab by identity: inserting a split can change its path.
+export function preserveActiveSelection(state: GroupState, next: GroupState): GroupState {
+  if (next === state) return state;
+  if (!state.activeGroupId) return { ...next, activeGroupId: null, activePath: null };
+  const previousGroup = state.groups.find(group => group.id === state.activeGroupId);
+  const previousLeaf = previousGroup && state.activePath ? getAt(previousGroup.layout, state.activePath) : null;
+  const activeTab = previousLeaf?.type === "leaf" ? previousLeaf.tabs[previousLeaf.activeIndex] : undefined;
+  const group = next.groups.find(candidate => candidate.id === state.activeGroupId);
+  if (!group) return next;
+  const path = (activeTab ? findLeafPath(group.layout, activeTab) : null)
+    ?? (previousLeaf?.type === "leaf" ? findLeafPathById(group.layout, previousLeaf.id) : null)
+    ?? firstLeafPath(group.layout);
+  const layout = activeTab && path ? setLeafActiveTab(group.layout, path, activeTab) : group.layout;
+  return { groups: updateGroup(next.groups, group.id, layout), activeGroupId: state.activeGroupId, activePath: path };
+}
+
 // Keep an already separated browser in its user-chosen pane. Move a browser
 // sharing the conversation's leaf into a new right-hand leaf exactly once.
-export function showBrowserBeside(state: GroupState, tabId: string, ownerId: string): GroupState {
+export function showBrowserBeside(state: GroupState, tabId: string, ownerId: string, { activate = true } = {}): GroupState {
   const owner = groupOf(state.groups, ownerId);
   if (!owner) return state;
   const ownerPath = findLeafPath(owner.layout, ownerId)!;
   const existing = groupOf(state.groups, tabId);
   const existingPath = existing ? findLeafPath(existing.layout, tabId) : null;
+  if (!activate && existing && existingPath && (existing.id !== owner.id || !pathEq(existingPath, ownerPath))) return state;
   if (existing && existingPath && existing.id === owner.id && !pathEq(existingPath, ownerPath)) {
     return selectAgent(state, tabId);
   }
@@ -301,7 +318,8 @@ export function showBrowserBeside(state: GroupState, tabId: string, ownerId: str
   let next = state;
   if (existing && existingPath) next = closeDocTab({ ...state, activeGroupId: existing.id, activePath: existingPath }, existingPath, tabId);
   next = selectAgent(next, ownerId);
-  return splitWith(next, tabId, "h", owner.projectId);
+  next = splitWith(next, tabId, "h", owner.projectId);
+  return activate ? next : preserveActiveSelection(state, next);
 }
 
 export function closeTab(

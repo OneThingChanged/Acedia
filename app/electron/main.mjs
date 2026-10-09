@@ -703,7 +703,7 @@ const hookService = new HookService({
   integrationProvider: () => miraControlSnapshot(),
   activateAgent: (agentId) => activateMiraControlAgent(agentId),
   writeAgentInput: (request) => writeMiraControlAgentInput(request),
-  browserProvider: (request) => handleBrowserIntegration({ ...request, reveal: false }),
+  browserProvider: (request) => handleBrowserIntegration(request),
   workspaceProvider: (request) => workspaceManagement.handle(request),
   mcpScriptPath: browserMcpScriptPath,
   sendEvent: publishAgentHookEvent,
@@ -2145,19 +2145,29 @@ function attachDocumentBrowserToWindow(record, targetWindow) {
 
 function showBrowserIntegrationTab(record, agentId, placement = "tab") {
   if (!record || record.view.webContents.isDestroyed()) return false;
-  const targetWindow = browserParentWindowForAgent(agentId);
-  if (!targetWindow || !attachDocumentBrowserToWindow(record, targetWindow)) return false;
+  // A repeated agent connection must not move a tab out of a user's window.
+  const attachedWindow = !record.background && !record.win.isDestroyed() &&
+    runtimeByWebContents.get(record.win.webContents.id)?.workspace_window ? record.win : null;
+  const targetWindow = attachedWindow || browserParentWindowForAgent(agentId);
+  const runtime = targetWindow && runtimeByWebContents.get(targetWindow.webContents.id);
+  const viewport = record.bounds || record.view.getBounds();
+  if (!runtime?.workspace_window || !attachDocumentBrowserToWindow(record, targetWindow)) return false;
+  // An inactive Screen has no mounted renderer to restore the 1px attachment
+  // bounds. Keep a usable hidden viewport for agent input and screenshots.
+  if (!record.bounds) {
+    record.bounds = { x: 0, y: 0, width: viewport.width > 1 ? viewport.width : 1280, height: viewport.height > 1 ? viewport.height : 800 };
+    record.view.setBounds(record.bounds);
+  }
   const normalizedAgentId = String(agentId || "").trim();
   if (normalizedAgentId) {
     record.agentId = normalizedAgentId;
     documentBrowserByAgent.set(normalizedAgentId, record.id);
   }
-  const runtime = runtimeByWebContents.get(targetWindow.webContents.id);
-  if (!runtime?.workspace_window) return false;
   sendEvent(targetWindow, "document-browser:show-tab", {
     browserId: record.id,
     agentId: String(agentId || "").trim() || null,
     placement,
+    activate: false,
     url: sanitizeBrowserUrl(record.view.webContents.getURL() || record.previewUrl),
   });
   publishDocumentBrowserCatalog();
@@ -2417,16 +2427,18 @@ async function browserIntegrationStatus(agentId) {
   };
 }
 
-async function handleBrowserIntegration({ agentId, action, body = {}, reveal = false }) {
+async function handleBrowserIntegration({ agentId, action, body = {} }) {
   const normalizedAgentId = String(agentId || "").trim();
   if (!normalizedAgentId) return { ok: false, httpStatus: 400, error: "agent id is required" };
   if (action === "status") return browserIntegrationStatus(normalizedAgentId);
-  if ((action === "open" || action === "show") && body.placement != null && !["right", "tab"].includes(body.placement)) return { ok: false, httpStatus: 400, error: "Invalid browser placement" };
+  if (action === "show" && body.placement != null && !["right", "tab"].includes(body.placement)) return { ok: false, httpStatus: 400, error: "Invalid browser placement" };
   if (action === "show" && (typeof body.tabId !== "string" || !body.tabId.trim())) return { ok: false, httpStatus: 400, error: "tabId is required" };
   if (action === "open") {
     const target = new URL(String(body.url || browserSettings.get().home).trim());
     if (!isHttpUrl(target.href)) return { ok: false, httpStatus: 400, error: "HTTP 또는 HTTPS 주소만 열 수 있습니다." };
-    const parentWindow = reveal ? browserParentWindowForAgent(normalizedAgentId) || ensureBrowserHostWindow() : ensureBrowserHostWindow();
+    // Opening an automation tab never changes the user's visible layout,
+    // including legacy callers that still supply placement/reveal hints.
+    const parentWindow = ensureBrowserHostWindow();
     if (!parentWindow) return { ok: false, httpStatus: 503, error: "브라우저를 연결할 작업창이 없습니다." };
     const created = await createDocumentBrowserWindow({
       parentWindow,
@@ -2436,15 +2448,11 @@ async function handleBrowserIntegration({ agentId, action, body = {}, reveal = f
       background: true,
     });
     const record = documentBrowserWindows.get(created.browserId);
-    if (reveal || body.placement) {
-      if (!showBrowserIntegrationTab(record, normalizedAgentId, body.placement || "tab")) return { ok: false, httpStatus: 409, error: "The session workspace is not available. Open the session in Acedia.", tab: browserIntegrationTabSnapshot(record) };
-    }
     return { ok: true, tab: browserIntegrationTabSnapshot(record) };
   }
 
   const record = await browserRecordForIntegration(normalizedAgentId, body);
   if (!record) return { ok: false, httpStatus: 404, error: "브라우저 탭을 찾을 수 없습니다." };
-  if (reveal) showBrowserIntegrationTab(record, normalizedAgentId);
   switch (action) {
     case "show": {
       const shown = showBrowserIntegrationTab(record, normalizedAgentId, body.placement || "right");
@@ -2648,7 +2656,7 @@ async function handleRemoteBrowser({ agentId, action, body = {} }) {
       return { ok: false, httpStatus: 400, error: error?.message || "invalid browser url" };
     }
     if (action === "navigate") {
-      return handleBrowserIntegration({ agentId: normalizedAgentId, action, body, reveal: false });
+      return handleBrowserIntegration({ agentId: normalizedAgentId, action, body });
     }
     const created = await createDocumentBrowserWindow({
       parentWindow: ensureBrowserHostWindow(),
@@ -2671,7 +2679,7 @@ async function handleRemoteBrowser({ agentId, action, body = {} }) {
     return { ok: true, tab: browserIntegrationTabSnapshot(record) };
   }
   if (["back", "forward", "reload"].includes(action)) {
-    return handleBrowserIntegration({ agentId: normalizedAgentId, action, body, reveal: false });
+    return handleBrowserIntegration({ agentId: normalizedAgentId, action, body });
   }
 
   const webContents = record.view.webContents;

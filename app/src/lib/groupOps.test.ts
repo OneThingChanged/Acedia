@@ -666,6 +666,7 @@ describe("doc tabs", () => {
     const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a');
     expect(findLeafPath(next.groups[0].layout, 'a')).toEqual([0]);
     expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
+    expect(next.activePath).toEqual([1]);
     const again = ops.showBrowserBeside(next, 'browser:fixture', 'a');
     expect(again.groups[0].layout).toEqual(next.groups[0].layout);
   });
@@ -675,5 +676,56 @@ describe("doc tabs", () => {
     expect(findLeafPath(next.groups[0].layout, 'a')).toEqual([0]);
     expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
     expect(ops.showBrowserBeside(next, 'browser:other', 'missing')).toBe(next);
+  });
+
+  it('connects in another Screen without selecting it on initial or repeated requests', () => {
+    const initial = ops.selectAgent(leafState(['a', 'b']), 'b');
+    const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a', { activate: false });
+    expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
+    expect(next.activeGroupId).toBe('g-b');
+    expect(next.activePath).toEqual([]);
+    expect(next.groups[1].layout).toBe(initial.groups[1].layout);
+    expect(ops.showBrowserBeside(next, 'browser:fixture', 'a', { activate: false })).toBe(next);
+  });
+
+  it('keeps the conversation selected when inserting a right-hand browser', () => {
+    const next = ops.showBrowserBeside(leafState(['a']), 'browser:fixture', 'a', { activate: false });
+    expect(next.activePath).toEqual([0]);
+    const selected = leafAt(next, 'g-a', next.activePath!);
+    expect(selected?.type === 'leaf' && selected.tabs[selected.activeIndex]).toBe('a');
+  });
+
+  it('preserves a different selected tab in the conversation leaf after a split', () => {
+    const initial = ops.openAsTab(leafState(['a']), 'peer');
+    const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a', { activate: false });
+    const selected = leafAt(next, 'g-a', next.activePath!);
+    expect(selected?.type === 'leaf' && selected.tabs[selected.activeIndex]).toBe('peer');
+  });
+
+  it('preserves a browser moved to another Screen', () => {
+    const initial = ops.openAsTab(ops.selectAgent(leafState(['a', 'b']), 'b'), 'browser:fixture');
+    expect(ops.showBrowserBeside(initial, 'browser:fixture', 'a', { activate: false })).toBe(initial);
+  });
+
+  it('does not select an existing browser over another tab in its split pane', () => {
+    const split = ops.showBrowserBeside(leafState(['a']), 'browser:fixture', 'a');
+    const initial = ops.openAsTab(split, 'browser:other');
+    expect(ops.showBrowserBeside(initial, 'browser:fixture', 'a', { activate: false })).toBe(initial);
+  });
+
+  it('preserves no selected Screen while preparing a browser in the background', () => {
+    const initial = { ...leafState(['a']), activeGroupId: null, activePath: null };
+    const next = ops.showBrowserBeside(initial, 'browser:fixture', 'a', { activate: false });
+    expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([1]);
+    expect(next.activeGroupId).toBeNull();
+    expect(next.activePath).toBeNull();
+  });
+
+  it('adds a background tab without replacing the selected conversation', () => {
+    const initial = leafState(['a']);
+    const next = ops.preserveActiveSelection(initial, ops.openAsTab(initial, 'browser:fixture'));
+    const selected = leafAt(next, 'g-a', next.activePath!);
+    expect(selected?.type === 'leaf' && selected.tabs[selected.activeIndex]).toBe('a');
+    expect(findLeafPath(next.groups[0].layout, 'browser:fixture')).toEqual([]);
   });
  });

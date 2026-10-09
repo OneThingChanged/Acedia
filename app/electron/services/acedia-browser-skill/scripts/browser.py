@@ -14,7 +14,8 @@ def main():
     parser.add_argument('--url')
     parser.add_argument('--tab-id')
     parser.add_argument('--profile-id')
-    parser.add_argument('--placement', choices=['right', 'tab'], default='right')
+    parser.add_argument('--placement', choices=['right', 'tab'],
+                        help='Display placement for show; open always runs in the background.')
     args = parser.parse_args()
     port, token, agent = (os.environ.get(key, '').strip() for key in
                           ['MULTIAGENT_PORT', 'MULTIAGENT_TOKEN', 'MULTIAGENT_AGENT_ID'])
@@ -23,8 +24,8 @@ def main():
     if args.action in ['show', 'snapshot'] and not args.tab_id:
         parser.error('--tab-id is required for show/snapshot')
     body = {}
-    if args.action in ['open', 'show']:
-        body['placement'] = args.placement
+    if args.action == 'show':
+        body['placement'] = args.placement or 'right'
     if args.action == 'open':
         if args.url:
             body['url'] = args.url

@@ -21,6 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.70 EXE release](release-1-8-1-70.md) - Background browser creation by default, explicit display requests, preserved workspace/input focus and one Chat Working indicator; EXE publication in progress.
 * [Acedia 1.8.1.69 EXE release](release-1-8-1-69.md) - Changed-file summaries and diffs, faster Chat, reliable current-model lookup and one model/effort button; public EXE delivery verified.
 * [Acedia 1.8.1.68 EXE release](release-1-8-1-68.md) - Chat model/effort controls, fitted image frames, response-specific files and searchable file dialogs; public EXE delivery verified.
 * [Acedia 1.8.1.67 EXE release](release-1-8-1-67.md) - Centered Quick Search and inline sidebar project/session search, with saved folds, draft/scroll preservation and IME support; public EXE delivery verified.

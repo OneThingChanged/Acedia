@@ -291,7 +291,10 @@ describe("browser MCP stdio bridge", () => {
         "browser_wait_for",
         "browser_upload_files",
       ]));
-      expect(response.result.tools.find(tool => tool.name === 'browser_open').inputSchema.properties.placement.enum).toContain('right');
+      const open = response.result.tools.find(tool => tool.name === 'browser_open');
+      expect(open.inputSchema.properties.placement).toBeUndefined();
+      expect(open.description).toContain('background');
+      expect(response.result.tools.find(tool => tool.name === 'browser_show').inputSchema.properties.placement.enum).toContain('right');
     } finally {
       child.stdin.end();
       child.kill();

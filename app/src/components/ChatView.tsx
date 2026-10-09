@@ -903,20 +903,6 @@ export function ChatView({
               <UserMessage text={t} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
             </div>
           ))}
-          {busy && !startupPrompt && status !== "unsupported" && status !== "loading" && (
-            <div className="chat-thinking" aria-live="polite">
-              <span className="chat-thinking-dots">
-                <i />
-                <i />
-                <i />
-              </span>
-              {agentStatus === "recovering"
-                ? text("복구 중…", "Recovering…")
-                : initializing
-                  ? text("시작 중…", "Starting…")
-                  : text("작업 중…", "Working…")}
-            </div>
-          )}
         </div>
       </div>
       {showJumpToLatest && (

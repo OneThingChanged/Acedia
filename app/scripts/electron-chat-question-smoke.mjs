@@ -58,7 +58,8 @@ async function exerciseDesktop(win, directory) {
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   const asyncQuestion = JSON.stringify({ questions: [{ title: '어느 폴더를 사용할까요?', options: ['현재 폴더', '다른 폴더'] }, { title: '추가 경로를 알려주세요' }] });
   await patch({ chat: { ...baseChat, lifecycle: 'working', pendingQuestion: { id: 'async-live', toolName: 'request_user_input_async', question: asyncQuestion, async: true } }, state: { agentStatus: 'working' } });
-  await waitFor(win, "document.querySelector('.question-form')?.textContent.includes('어느 폴더') && !!document.querySelector('.chat-thinking')");
+  await waitFor(win, "document.querySelector('.question-form')?.textContent.includes('어느 폴더') && !!document.querySelector('.chat-work-status')");
+  assert(await win.webContents.executeJavaScript("document.querySelectorAll('.chat-work-status').length===1 && !document.querySelector('.chat-thread .chat-thinking')"), 'Async question duplicated the ongoing work indicator');
   assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-heading').textContent.includes('작업 중 질문') && !document.querySelector('.question-form input').disabled"), 'Async question missing during ongoing work');
   await win.webContents.executeJavaScript("(() => { document.querySelector('.question-form input[type=radio]').click();const input=document.querySelector('.question-text-input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'G:/reference');input.dispatchEvent(new Event('input',{bubbles:true})); })()");
   await waitFor(win, "!document.querySelector('.question-submit').disabled");
@@ -343,9 +344,11 @@ async function exerciseChatMediaAndWork(win, directory) {
     const layout = await win.webContents.executeJavaScript(`(() => {
       const status=document.querySelector('.chat-work-status').getBoundingClientRect(),composer=document.querySelector('.chat-composer-area').getBoundingClientRect();
       return {overflow:document.documentElement.scrollWidth>innerWidth,visible:status.top>=0 && status.bottom<=composer.top && composer.bottom<=innerHeight,
+        singleWorkStatus:document.querySelectorAll('.chat-work-status').length===1 && !document.querySelector('.chat-thread .chat-thinking'),
         previews:[...document.querySelectorAll('.chat-image-preview img')].every(img=>img.getBoundingClientRect().width<=document.querySelector('.chat-thread').getBoundingClientRect().width)};
     })()`);
     assert(!layout.overflow && layout.visible && layout.previews, `Images or persistent work status overflowed ${width}px ${theme}: ${JSON.stringify(layout)}`);
+    assert(layout.singleWorkStatus, `Ongoing work displayed duplicate status indicators at ${width}px ${theme}`);
     await fs.writeFile(path.resolve(appRoot, `../output/chat-media-work-${theme}-${width}.png`), (await win.webContents.capturePage()).toPNG());
   }
   assert(await win.webContents.executeJavaScript('window.questionFixture.imageReads.filter(p=>p.sequence===31).length===1'), 'Clock updates or history polling reloaded native bitmap data');

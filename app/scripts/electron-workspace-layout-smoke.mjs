@@ -93,6 +93,29 @@ if (process.versions.electron) {
       if(window.layoutCalls.some(call=>call.command==='spawn_pty'))throw Error('Removed account restarted automatically');
       return 'ACCOUNT_REMOVAL_APP_EVENT_AND_STALE_WINDOW_OK';
     })()`));
+    console.log(await win.webContents.executeJavaScript(`(async () => {
+      const wait=()=>new Promise(resolve=>setTimeout(resolve,180));
+      const read=key=>JSON.parse(localStorage.getItem('multiagent.workspace.primary.'+key+'.v1'));
+      const before=read('view'), originalPane=document.querySelector('[data-pane-leaf-id="leaf-one"]');
+      const input=document.querySelector('.sidebar-workspace-search input'), draft='typing continuity';
+      if(!input)throw Error('Missing workspace input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,draft);input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();await wait();
+      const checkSelection=()=>{const now=read('view');if(now.activeGroupId!==before.activeGroupId||JSON.stringify(now.activePath)!==JSON.stringify(before.activePath))throw Error('Browser call selected another Screen or pane');if(document.activeElement!==input||input.value!==draft)throw Error('Browser call interrupted input focus or draft');};
+      const other={browserId:'background-browser',agentId:'three',placement:'right',activate:false};
+      window.fixtureBrowserEvent(other);await wait();checkSelection();
+      if(!JSON.stringify(read('groups')).includes('doc:__browser__:background-browser'))throw Error('Background browser was not connected');
+      const connected=JSON.stringify(read('groups'));
+      for(let i=0;i<3;i++){window.fixtureBrowserEvent({...other,activate:undefined});await wait();checkSelection();}
+      if(JSON.stringify(read('groups'))!==connected)throw Error('Repeated connection changed the browser layout');
+      const sibling={browserId:'sibling-browser',agentId:'two',placement:'right',activate:false};
+      window.fixtureBrowserEvent(sibling);await wait();checkSelection();
+      if(document.querySelector('[data-pane-leaf-id="leaf-one"]')!==originalPane)throw Error('Browser connection remounted the current session');
+      window.fixtureBrowserEvent(sibling);await wait();checkSelection();
+      window.fixtureBrowserEvent({browserId:'sibling-browser',agentId:'two'});await wait();
+      const selected=read('view');
+      if(JSON.stringify(selected.activePath)===JSON.stringify(before.activePath))throw Error('Explicit user open did not select the browser');
+      return 'BROWSER_AGENT_CONNECTION_PRESERVES_SCREEN_PANE_AND_USER_OPEN_OK';
+    })()`));
     app.exit(0);
   }catch(error){console.error(error);app.exit(1);}});
 } else {

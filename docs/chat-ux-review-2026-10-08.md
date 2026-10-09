@@ -374,3 +374,18 @@ Codex의 실제 빈 입력창도 준비 증거로 사용하고, 최근 입력 �
 UI 변경은 개발 서버에서 갱신된다. 개발 앱을 기존 대화를 보존하며 재시작했고
 새 Electron 호스트의 정상 실행을 확인했다. EXE 배포 결과는
 [1.8.1.69 릴리스 기록](release-1-8-1-69.md)에서 확인한다.
+
+## 작업 표시 중복 수정 — 2026-10-09
+
+Desktop Chat은 본문 끝의 `Working…`과 입력창 위의 작업 상태 바를 동시에
+표시하고 있었다. 본문 쪽 표시와 사용하지 않는 전용 스타일을 제거하여
+입력창 위에 하나만 표시한다. 현재 작업·경과 시간·작업 내역 버튼과 세션
+시작·복구 표시를 유지하며, 작업 중 비동기 질문이 떠도 중복되지 않는다.
+
+- 격리 Electron에서 작업 중 비동기 질문, 1280px·420px의 상태 바 중복 방지,
+  작업 완료 후 숨김과 새 요청의 경과 시간 초기화를 확인했다.
+- 기존 모델 선택·적용 검사와 TypeScript·프로덕션 빌드를 통과했다.
+  기존 큰 번들 경고는 남아 있다.
+- 검사 로그: `output/chat-working-single-question-smoke.log`,
+  `output/chat-working-single-model-smoke.log`, `output/chat-working-single-build.log`.
+  화면: `output/chat-media-work-soft-1280.png`, `chat-media-work-soft-420.png`.

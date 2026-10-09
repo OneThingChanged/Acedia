@@ -62,12 +62,12 @@ const tools = [
   },
   {
     name: "browser_open",
-    description: "Open a tab in the session's Acedia browser. Set placement to right to show it beside the conversation, or tab to show it in the conversation pane. Otherwise opens in the background. Uses the configured home page when URL is omitted.",
-    inputSchema: { type: "object", properties: { url: { type: "string" }, placement: { type: "string", enum: ["right", "tab"] }, profileId: { type: "string", description: "Profile ID from browser_tabs. Omit to use the default profile." } }, additionalProperties: false },
+    description: "Open an Acedia browser tab in the background for research or automation, without adding a visible tab or split pane. Reuse its tabId for subsequent actions. Uses the configured home page when URL is omitted. Only call browser_show afterward if the user explicitly asks to display the page beside chat or in a visible tab.",
+    inputSchema: { type: "object", properties: { url: { type: "string" }, profileId: { type: "string", description: "Profile ID from browser_tabs. Omit to use the default profile." } }, additionalProperties: false },
   },
   {
     name: "browser_show",
-    description: "Reveal and connect an existing Acedia browser tab beside the current conversation. Reuses the tab without navigating or creating a duplicate.",
+    description: "Display an existing Acedia browser tab only when the user explicitly asks to see the page beside chat or in a visible tab. Research and automation use background tabs without this tool. Preserves the user's current session and pane selection. Reuses the tab without navigating or creating a duplicate; call once for the requested display, then use tabId for subsequent actions.",
     inputSchema: { type: "object", properties: { tabId: { type: "string" }, placement: { type: "string", enum: ["right", "tab"], default: "right" } }, required: ["tabId"], additionalProperties: false },
   },
   {

@@ -155,18 +155,64 @@ Arbitrary page JavaScript is intentionally not exposed as a tool.
 
 ### Showing a browser beside chat (next EXE release)
 
-`browser_open` accepts `placement: "right"` to show a new page beside the owning
-conversation, or `"tab"` to show it in the conversation pane. Omitting placement
-keeps background automation unchanged. `browser_show` requires an existing `tabId`
-and defaults to `"right"`; it connects and reveals the same tab without navigation.
-A tab already separated into another pane in the same Screen keeps its placement.
-A tab sharing the conversation's leaf moves into a right-hand split once.
+`browser_open` always creates a background tab on the hidden browser host. It
+does not add a visible pane or select a desktop tab, even if a legacy caller
+still supplies placement/reveal hints. Research and automation keep using its
+`tabId` in the background. Only an explicit user request to see the page should
+call `browser_show`, with an existing `tabId` and `placement: "right"` (the default)
+or `"tab"` for a requested visible tab. It connects that same tab without
+navigation or creating another browser. Agent
+connection requests preserve the user's current Screen, selected pane and tab.
+A new browser can be prepared in the owner's inactive Screen without switching
+to it. A tab already separated into another pane, Screen or workspace window
+keeps its placement; repeated requests do not select it again. A tab sharing the
+conversation's leaf moves into a right-hand split once, preserving the selected
+conversation. Explicit user opens and Browser Hub/tab clicks still select tabs.
+Keep the connected `tabId` for subsequent navigation, snapshots and input rather
+than repeating `browser_show` before each action.
+
+Attaching to an inactive Screen keeps a usable hidden viewport until its pane
+mounts and supplies the actual bounds. Agent screenshots and input can continue
+without exposing a 1px attachment viewport or showing the workspace window.
 
 The bundled `acedia-browser` skill is installed in the selected Codex account's
 `skills/` directory before local launch. Requests such as “우측에 브라우저 띄워줘”
 use this workflow. Its Python helper supports the authenticated local bridge when
 the current CLI has not discovered the MCP tools. The updated app must be running;
 installing the skill alone does not add the new show action to an older EXE.
+
+#### Connection selection regression — 2026-10-09
+
+Repeated `show` requests previously selected the browser's Screen and pane,
+interrupting work in another session. Integration events now request placement
+with `activate: false`; the renderer preserves the selected tab by identity when
+inserting a split. Existing visible workspace ownership is retained by the host.
+Older bridge events with placement but no activation field also preserve selection.
+
+Validation passed: 75 focused layout/browser/MCP checks, the real App renderer's
+initial/repeated connection in another Screen and sibling pane, input focus/draft
+continuity, explicit user selection, and existing 800–1920px layout checks.
+Real Electron capture retained a hidden 1280×800 viewport after attachment and
+repeated connection, with no window show/focus events. TypeScript and production
+build passed with the existing large-bundle warning. Tests use isolated profiles
+and simulated CLI/IPC; installed-app typing continuity remains a rollout check.
+Logs: `output/browser-selection-tests.log`,
+`output/browser-selection-workspace-smoke.log`,
+`output/browser-selection-background-smoke.log`, `output/browser-selection-build.log`.
+
+#### Background creation by default — 2026-10-09
+
+The Python fallback helper previously added `placement: "right"` to every open
+request. Repeated research opens therefore created visible splits. The helper
+now sends placement only for `show`; opening always stays on the hidden host.
+The host also ignores legacy open placement/reveal hints. MCP `browser_open`
+no longer advertises placement, and both the tool descriptions and bundled
+skill reserve `browser_show` for an explicit user display request. New-page
+display is an open-then-show operation using the returned tab ID.
+
+The browser handler and MCP contract checks passed 24 tests, including legacy
+right/tab hints without workspace attachment and an explicit show request.
+Result: `output/browser-background-default-tests.log`.
 
 ## State-aware form automation
 
@@ -217,7 +263,8 @@ value, or returned in action results.
 Agent MCP actions run without selecting or revealing a desktop browser tab.
 New AI tabs belong to the hidden, non-focusable browser host; actions on existing
 tabs retain their placement. Users reveal tabs explicitly through the Browser Hub
-or pane tabs. `browser_open` still opens Google when its URL is omitted.
+or pane tabs; placement requests follow the connection behavior above.
+`browser_open` uses the configured home page when its URL is omitted.
 Screenshots use CDP viewport capture rather than making a hidden native view
 visible. The isolated `electron-browser-background-smoke.mjs` verifies hidden
 navigation, DOM input and non-empty capture with no window show/focus events.

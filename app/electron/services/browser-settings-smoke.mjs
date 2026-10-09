@@ -54,7 +54,7 @@ export async function verifyBrowserSettings(window, records, integration) {
     const shown = await integration({ agentId: 'browser-settings-fixture', action: 'show', body: { tabId: mcp.tab.tabId, placement: 'right' } });
     assert.equal(shown.ok, true);
     const events = await window.webContents.executeJavaScript('window.stopBrowserShowEvents(); window.browserShowEvents');
-    assert.ok(events.some(e => e.browserId === mcp.tab.tabId && e.placement === 'right' && e.agentId === 'browser-settings-fixture'));
+    assert.ok(events.some(e => e.browserId === mcp.tab.tabId && e.placement === 'right' && e.agentId === 'browser-settings-fixture' && e.activate === false));
     const invalid = await integration({ agentId: 'browser-settings-fixture', action: 'show', body: { placement: 'right' } });
     assert.equal(invalid.httpStatus, 400);
     console.log('BROWSER_SHOW_RIGHT_BRIDGE_OK');

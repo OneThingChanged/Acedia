@@ -5532,14 +5532,6 @@ body.files-resizing .files-resizer::after {
 .chat-diff-line.del { background: color-mix(in srgb, #f85149 16%, transparent); color: var(--app-text); }
 .chat-diff-line.meta { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 10%, transparent); }
 .chat-diff-line.context { color: var(--app-muted); }
-.chat-thinking {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 2px;
-  color: var(--app-muted);
-  font-size: 12.5px;
-}
 .chat-stop {
   margin-left: 6px;
   padding: 2px 9px;

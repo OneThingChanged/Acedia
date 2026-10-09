@@ -276,6 +276,16 @@ or Git history, returns the center surface to the preserved session layout.
 Browser creation and closure in the Hub update every workspace window through
 the main-process browser catalog.[^app-shell][^sidebar]
 
+Agent research and automation create background browser tabs on the hidden host;
+opening a page does not create a visible split. Only an explicit user display
+request connects the existing tab to the workspace. These connection requests
+prepare the owning Screen's browser layout
+while preserving the user's current Screen, selected pane and tab. Repeated
+requests retain existing placement, including a browser moved to another Screen
+or workspace window. Browser Hub/tab clicks and explicit user opens still select
+the requested browser. See [embedded browser connections](embedded-browser-mcp.md#showing-a-browser-beside-chat-next-exe-release).
+[^app-shell]
+
 The session menu's Deactivate action stops its live PTY. Permanent session
 deletion is a separate confirmed action from that menu. Project
 creation can create an initial session using the tool and dangerous-mode choice
@@ -425,6 +435,12 @@ until opened, keeping their transcript position and full details. Reply copy
 copies assistant narrative only; code-block copy preserves the plain source
 without its language label or controls. Copy success and failure are announced
 on the relevant button.[^chat-view][^chat-markdown][^chat-copy][^chat-styles]
+
+Desktop Chat shows one live work indicator above the composer, with the current
+tool, elapsed time and **Work details** action. The conversation does not repeat
+the indicator. This same status bar covers session startup and recovery, remains
+visible during an asynchronous question, and disappears when work completes.
+[^chat-view]
 
 Local Codex and Claude Chat composers show a single current-model button.
 It opens a compact picker above the input for both model and reasoning effort;
