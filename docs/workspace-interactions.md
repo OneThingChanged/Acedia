@@ -183,6 +183,20 @@ usage remains in the existing bottom status bar, with no sidebar account card or
 routing status. The sidebar header uses the application's Acedia icon and owns
 the collapse/expand button; the window titlebar omits duplicate brand/navigation
 controls.
+
+Each numbered split screen has a palette color. Its icon, S number and selected
+row use the same color as the left rail and S badge of its member conversations
+in recents, expanded projects and search results. Colors follow screen numbers
+and the six-color palette repeats after S6. Renaming a screen preserves its
+number/color; removing a screen can renumber the remaining screens. Status dots
+keep their work-state meaning, and S numbers remain visible independently of
+color. The light theme darkens the small colored labels for contrast.
+
+Codex and Claude conversations show their dedicated SVG logos before the title,
+including expanded projects, search results, archived conversations and the
+session picker. Provider names remain available through the logo tooltip and
+accessible name. Logos are bundled locally; other providers retain their existing
+symbols. See [1.8.1.72](release-1-8-1-72.md) for asset provenance and verification.
 The approved [interactive HTML draft](mockups/sidebar-workspace.html) remains
 available as a design reference.[^sidebar][^sidebar-project-tree]
 

@@ -106,13 +106,13 @@
 .sidebar-workspace .sidebar-recent-row:hover .sidebar-row-menu, .sidebar-workspace .sidebar-recent-row:focus-within .sidebar-row-menu,
 .sidebar-workspace .sidebar-recent-row.active .sidebar-row-menu { opacity: 1; }
 .sidebar-workspace .screen-groups { padding: 0; margin-top: 15px; border: 0; }
-.sidebar-screen-item { display: flex; align-items: center; border-radius: 7px; }
+.sidebar-screen-item { --screen-ink: var(--screen-color); display: flex; align-items: center; border-radius: 7px; box-shadow: inset 2px 0 var(--screen-color); }
 .sidebar-screen-item:hover { background: var(--app-panel-hover); }
-.sidebar-workspace .screen-group-row { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; padding: 6px 10px; margin: 0; border: 0; border-radius: 7px; background: transparent; height: 33px; font-size: 11px; }
-.sidebar-workspace .screen-group-row .sidebar-icon { width: 15px; height: 15px; color: var(--app-muted); }
+.sidebar-workspace .screen-group-row { --screen-color: inherit; display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; padding: 6px 10px; margin: 0; border: 0; border-radius: 7px; background: transparent; height: 33px; font-size: 11px; }
+.sidebar-workspace .screen-group-row .sidebar-icon { width: 15px; height: 15px; color: var(--screen-ink); }
 .sidebar-workspace .screen-group-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 11px; }
-.sidebar-workspace .screen-group-row-active { background: var(--sidebar-selected); }
-.sidebar-screen-number { color: var(--app-soft-text); font-size: 9px; }
+.sidebar-workspace .screen-group-row-active { background: color-mix(in srgb, var(--screen-color) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--screen-color) 45%, transparent); }
+.sidebar-screen-number { color: var(--screen-ink); font-size: 9px; font-weight: 600; }
 .sidebar-recent-heading { min-width: 0; flex: 1; font-size: 11px; color: var(--app-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-scope-reset { border: 0; background: transparent; color: var(--app-accent) !important; font-size: 10px; padding: 0 3px; }
 .sidebar-workspace .sidebar-session-filters { margin: 5px 2px 12px; padding: 3px; gap: 2px; border: 0; border-radius: 7px; background: var(--app-bg); }
@@ -125,16 +125,18 @@
 .sidebar-workspace .sidebar-recent-row { position: relative; display: flex; flex-direction: row; align-items: center; gap: 9px; margin: 2px 0; padding: 8px 8px 8px 10px; border: 0; border-radius: 7px; background: transparent; min-height: 45px; cursor: grab; }
 .sidebar-workspace .sidebar-recent-row:hover { background: var(--app-panel-hover); }
 .sidebar-workspace .sidebar-recent-row.active { background: var(--sidebar-selected); }
+.sidebar-workspace .sidebar-recent-row[data-sidebar-screen-id] { --screen-ink: var(--screen-color); box-shadow: inset 2px 0 var(--screen-color); }
+.app-theme-light .sidebar-screen-item, .app-theme-light .sidebar-recent-row[data-sidebar-screen-id] { --screen-ink: color-mix(in srgb, var(--screen-color) 65%, #000); }
 .sidebar-workspace .sidebar-recent-row.agent-completion-unread { background-image: none; animation: none; }
 .sidebar-workspace .sidebar-recent-row .status { flex: 0 0 5px; width: 5px; height: 5px; margin: 0; }
 .sidebar-session-copy { min-width: 0; flex: 1; }
 .sidebar-workspace .sidebar-recent-row .agent-name { display: block; color: var(--app-heading); font-size: 12px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-session-meta { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--app-soft-text); font-size: 9px; line-height: 1.5; white-space: nowrap; }
-.sidebar-session-meta > span:first-child { min-width: 0; max-width: 48%; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-session-meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-question-label { color: var(--app-warning); margin-left: auto; }
 .sidebar-sleep-label { color: var(--app-accent); margin-left: auto; }
 .sidebar-ssh-label { font-size: 8px; opacity: .75; }
-.sidebar-workspace .agent-screen-badge { padding: 0; background: none; color: var(--app-soft-text); font-size: 8px; }
+.sidebar-workspace .agent-screen-badge { padding: 1px 4px; border-color: var(--screen-ink); background: color-mix(in srgb, var(--screen-color) 10%, transparent); color: var(--screen-ink); font-size: 9px; }
 .sidebar-workspace .agent-completion-dot { width: 5px; height: 5px; box-shadow: none; animation: none; }
 .sidebar-empty { padding: 18px 10px; font-size: 11px; text-align: center; color: var(--app-muted); }
 .sidebar-empty p { margin: 0; }
@@ -165,6 +167,6 @@
 .sidebar-archive-dialog p { margin: 0; font-size: 12px; color: var(--app-muted); line-height: 1.8; }
 .sidebar-archive-list { max-height: min(55vh, 480px); overflow: auto; margin-top: 20px; }
 .sidebar-archive-list > div { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--app-border); }
-.sidebar-archive-list > div > span { flex: 1; min-width: 0; }
+.sidebar-archive-list > div > span:not(.provider-logo) { flex: 1; min-width: 0; }
 .sidebar-archive-list strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .sidebar-archive-list small { display: block; color: var(--app-muted); font-size: 10px; margin-top: 4px; }

@@ -21,7 +21,8 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.71 EXE release](release-1-8-1-71.md) - Show and answer Codex questions during work with both current Shift+Tab and older Shift+Up hints; EXE publication in progress.
+* [Acedia 1.8.1.72 EXE release](release-1-8-1-72.md) - Color-coded split screens and matching session badges, dedicated Codex/Claude logos, and Codex questions during work; EXE publication in progress.
+* [Acedia 1.8.1.71 local build](release-1-8-1-71.md) - Async-question fix verified and built locally, then included in 1.8.1.72 before publication.
 * [Acedia 1.8.1.70 EXE release](release-1-8-1-70.md) - Background browser creation by default, explicit display requests, preserved workspace/input focus and one Chat Working indicator; public EXE delivery verified.
 * [Acedia 1.8.1.69 EXE release](release-1-8-1-69.md) - Changed-file summaries and diffs, faster Chat, reliable current-model lookup and one model/effort button; public EXE delivery verified.
 * [Acedia 1.8.1.68 EXE release](release-1-8-1-68.md) - Chat model/effort controls, fitted image frames, response-specific files and searchable file dialogs; public EXE delivery verified.

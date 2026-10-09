@@ -23,6 +23,14 @@ if (!localStorage.getItem("sidebar-fixture-seeded")) {
   store("multiagent.groups.v1", [{ id: "screen", projectId: "acedia", layout: { type: "split", id: "split", direction: "h", sizes: [.5, .5], children: [{ type: "leaf", id: "leaf-ux", tabs: ["ux"], activeIndex: 0 }, { type: "leaf", id: "leaf-image", tabs: ["image"], activeIndex: 0 }] } }, ...["routing", "shader", "files", "archived"].map(id => ({ id: `group-${id}`, layout: { type: "leaf", id: `leaf-${id}`, tabs: [id], activeIndex: 0 } }))]);
   store("multiagent.view.v1", { activeProjectId: "acedia", activeGroupId: "screen", activePath: [0] });
 }
+if (new URLSearchParams(location.search).has("two-screens")) {
+  const groups = JSON.parse(localStorage.getItem("multiagent.groups.v1")!);
+  store("multiagent.groups.v1", [
+    ...groups.filter((group: { id: string }) => !["group-shader", "group-files", "screen-second"].includes(group.id)),
+    { id: "screen-second", layout: { type: "split", id: "split-second", direction: "h", sizes: [.5, .5], children: [{ type: "leaf", id: "leaf-shader", tabs: ["shader"], activeIndex: 0 }, { type: "leaf", id: "leaf-files", tabs: ["files"], activeIndex: 0 }] } },
+  ]);
+  localStorage.setItem("multiagent.sidebarScreensOpen.v1", "true");
+}
 window.layoutCalls = [];
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
 declare global {

@@ -9,7 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { toolForId } from "../types";
+import { ProviderLogo } from "./ProviderLogo";
 import type {
   Agent,
   DragState,
@@ -36,13 +36,13 @@ const LS_ACTIVE_ONLY = "multiagent.activeOnly.v1";
 const LS_SESSION_FILTER = "multiagent.sessionFilter.v1";
 type SessionFilter = "all" | "active" | "sleeping";
 
-const SCREEN_COLORS = [
+export const SCREEN_COLORS = [
   "#58a6ff",
   "#bc8cff",
   "#39c5cf",
   "#f0883e",
-  "#d2a8ff",
-  "#4f9cf9",
+  "#f778ba",
+  "#a3be4c",
 ];
 
 function loadSessionFilter(): SessionFilter {
@@ -735,13 +735,7 @@ export function SidebarProjectTree({
             role="img"
             aria-label={statusTitle}
           />
-          <span
-            className="agent-tool-icon"
-            style={{ color: toolForId(a.aiToolId).iconColor }}
-            title={a.aiLabel}
-          >
-            {toolForId(a.aiToolId).icon}
-          </span>
+          <ProviderLogo toolId={a.aiToolId} className="agent-tool-icon" />
           <span
             className="agent-name"
             title={

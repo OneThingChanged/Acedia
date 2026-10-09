@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.71
 description: "Codex 작업 중 질문의 Chat·Remote 누락 및 답변 단축키 호환 수정."
-status: draft
+status: internal
 last_updated: 2026-10-09
 ---
 
@@ -43,4 +43,5 @@ last_updated: 2026-10-09
 
 ## 배포 상태
 
-EXE 빌드·배포 진행 중. 기존 서명 APK를 재사용한다.
+고정 소스 `95e342e`의 EXE 로컬 빌드까지 완료했다. 공개 릴리스는 생성하지 않았다.
+사용자의 스크린 색상·제공자 로고 추가 요청을 반영하여 [1.8.1.72](release-1-8-1-72.md)로 통합 배포한다.

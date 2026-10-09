@@ -7,6 +7,39 @@ const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = path.resolve(appRoot, "../output/sidebar-workspace-app");
 
+async function exerciseScreenIdentity() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 180));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  for (let attempt = 0; attempt < 40 && !document.querySelector('.sidebar-workspace'); attempt++) await wait();
+  await wait();
+  const screens = [...document.querySelectorAll('.sidebar-screen-item')];
+  check(screens.length === 2, 'Two-screen identity fixture');
+  const colors = screens.map(screen => getComputedStyle(screen).getPropertyValue('--screen-color').trim());
+  check(new Set(colors).size === 2, 'Split screens share a color');
+  for (const [index, screen] of screens.entries()) {
+    const members = [...document.querySelectorAll('.sidebar-recents [data-sidebar-screen-id="'+screen.dataset.sidebarScreenId+'"]')];
+    check(members.length === 2, 'Split membership missing from recent conversations');
+    for (const row of members) {
+      check(getComputedStyle(row).getPropertyValue('--screen-color').trim() === colors[index], 'Conversation color does not match its screen');
+      check(row.querySelector('.agent-screen-badge')?.textContent === 'S'+(index+1), 'Conversation screen number mismatch');
+      check(getComputedStyle(row.querySelector('.agent-screen-badge')).color === getComputedStyle(screen.querySelector('.sidebar-screen-number')).color, 'Badge color does not match screen number');
+      check(getComputedStyle(row).boxShadow !== 'none', 'Conversation color rail missing');
+    }
+  }
+  for (const [id, provider] of [['ux', 'codex'], ['image', 'claude']]) {
+    const logo = document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"] .provider-logo');
+    check(logo?.dataset.provider === provider && logo.getAttribute('role') === 'img' && logo.getAttribute('aria-label') && logo.querySelector('path')?.getAttribute('d').length > 100, 'Provider logo missing or inaccessible');
+    check(!document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"] .sidebar-session-meta').textContent.includes(provider === 'codex' ? 'Codex' : 'Claude'), 'Provider text still fills conversation metadata');
+  }
+  const project = document.querySelector('[data-sidebar-project-id="acedia"] .project-item');
+  if (project.getAttribute('aria-expanded') !== 'true') { project.click(); await wait(); }
+  const nested = [...document.querySelectorAll('[data-sidebar-project-id="acedia"] .project-session-list [data-sidebar-agent-id]')];
+  check(nested.length === 3 && nested.every(row => row.querySelector('.provider-logo') && row.getBoundingClientRect().height <= 34), 'Folded project provider logos or compact rows');
+  check(nested.filter(row => row.dataset.sidebarScreenId).every(row => getComputedStyle(row).getPropertyValue('--screen-color').trim() === colors[0]), 'Project session color mismatch');
+  document.querySelector('.sidebar-primary-nav > button').click(); await wait();
+  return 'SIDEBAR_SCREEN_IDENTITY_OK S1='+colors[0]+' S2='+colors[1];
+}
+
 async function exercise() {
   const wait = () => new Promise(resolve => setTimeout(resolve, 180));
   const check = (ok, message) => { if (!ok) throw Error(message); };
@@ -249,6 +282,13 @@ if (process.versions.electron) {
     win = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true, titleBarStyle: 'hidden', titleBarOverlay: { color: '#151b22', symbolColor: '#96a0ad', height: 35 }, webPreferences: { offscreen: true, backgroundThrottling: false } });
     const errors = [];
     win.webContents.on('console-message', details => { if (details.level === 'error') { errors.push(details.message); console.error('RENDERER_ERROR', details.message); } });
+    await win.loadFile(path.join(directory, 'index.html'), { query: { 'two-screens': '1' } });
+    console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
+    await fs.writeFile(path.join(directory, 'sidebar-screen-identity-dark.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("document.querySelector('.app').classList.add('app-theme-light')");
+    console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
+    await fs.writeFile(path.join(directory, 'sidebar-screen-identity-light.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("localStorage.clear()");
     await win.loadFile(path.join(directory, 'index.html'));
     await new Promise(resolve => setTimeout(resolve, 900));
     await fs.writeFile(path.join(directory, 'sidebar-app-1440.png'), (await win.webContents.capturePage()).toPNG());
