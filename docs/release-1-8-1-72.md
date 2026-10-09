@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.72
 description: "스크린별 색상·Codex/Claude 로고와 작업 중 질문 표시 개선."
-status: draft
+status: stable
 last_updated: 2026-10-09
 ---
 
@@ -34,7 +34,10 @@ last_updated: 2026-10-09
 - 최종 1.8.1.72 소스의 전체 **180개 파일·1,242개 검사**, 모바일 **24개 검사**를 모두 통과했다. 최종 실행은 실패·건너뛴 검사가 없다.
 - 제품 버전·Android 소스 versionName은 **1.8.1.72**, npm은 **1.8.1**이다. 새 APK를 생성하지 않아 기존 서명 APK **1.8.1.39/code 21**을 재사용한다. 앞선 실행에서 패키지·아키텍처·서명 인증서·SHA-256을 검증했다.
 - TypeScript·Vite 프로덕션 빌드를 통과했다. 기존 큰 번들 경고는 유지된다.
-- 고정 소스 EXE 빌드·패키지 실행·공개 다운로드 검증은 배포 과정에서 기록한다.
+- 고정 소스 `43c857b91d405364000fb347e6ab915318d7a9d7`의 TypeScript·Vite·NSIS EXE 빌드, packaged Git query·bridge·문서 브라우저 재사용·Dashboard·종료/트레이/보안 lifecycle 검사를 통과했다. 격리 프로필을 사용했다.
+- 패키지의 런타임·렌더러 **279개 파일**이 빌드 원본과 일치한다. 제품 버전, manifest, 설치 파일·blockmap의 크기와 SHA-256, 포함된 APK를 확인했다. EXE Authenticode 상태는 기존 채널과 같은 `NotSigned`다.
+- packaged smoke에는 이전 배포와 같은 `AttachConsole failed` 진단 8개가 출력됐다. packaged Git·문서 브라우저·bridge·Dashboard 성공 marker와 프로세스 종료 코드 0을 확인했다.
+- 공개 업데이터가 **1.8.1.70·1.8.1.71 → 1.8.1.72**를 감지하고 설치 파일 전체를 다운로드한 뒤 무결성 검증을 완료했다. 공개된 세 자산의 크기·SHA-256·태그·고정 소스·latest 안정 릴리스가 모두 일치한다. 1.8.1.71은 호환 버전으로 검사했으며 공개 배포한 버전은 아니다.
 
 로컬 증빙: `output/sidebar-screen-provider-smoke-1.8.1.72.log`,
 `output/sidebar-workspace-app/sidebar-screen-identity-dark.png`,
@@ -42,10 +45,22 @@ last_updated: 2026-10-09
 `output/codex-async-question-tests.log`, `output/codex-async-question-chat-smoke.log`,
 `output/codex-question-cli-regression.log`, `output/full-suite-exe-1.8.1.71-rerun.json`,
 `output/full-suite-exe-1.8.1.72.json`, `output/full-suite-exe-1.8.1.72.log`,
-`output/mobile-tests-exe-1.8.1.72.log`.
+`output/mobile-tests-exe-1.8.1.72.log`, `output/build-frontend-1.8.1.72.log`,
+`output/build-exe-1.8.1.72-isolated.log`, `output/packaged-smoke-1.8.1.72.log`,
+`output/packaged-lifecycle-1.8.1.72.log`,
+`output/exe-release-1.8.1.72/local-verification.json`,
+`output/public-update-verification-1.8.1.72.log`, `.build-tools/public-verified-1.8.1.72.json`.
 
 로고 출처: Codex는 [LobeHub lobe-icons의 Codex SVG](https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/codex.svg) (MIT), Claude는 [공식 favicon SVG](https://claude.ai/favicon.svg)의 원본 경로를 사용한다. Codex SVG 배포처는 커뮤니티 아이콘 프로젝트다. 원본 MIT 고지는 `app/public/lobe-icons-LICENSE.txt`로 패키지에 포함한다.
 
-## 배포 상태
+## 공개 배포
 
-EXE 빌드·배포 진행 중. 기존 서명 APK를 재사용한다.
+- [GitHub 안정 릴리스 v1.8.1.72](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.72)를 2026-10-09 **15:15:43 KST**에 게시했다.
+- 소스·태그는 `43c857b91d405364000fb347e6ab915318d7a9d7`이다. 설치 파일은 origin/main에 푸시한 이 고정 소스에서 만들었다. 기존 서명 APK를 포함하는 EXE 배포이며 Microsoft Store 제출·새 APK 빌드는 실행하지 않았다.
+- **15:16:30 KST**에 공개 다운로드·업데이트 검증을 완료했다. 설치 파일을 실행하지 않았으며 사용자 PC의 설치·업데이트 여부는 별도다. 앱 설정의 Check → Update로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.72-x64.exe` | 151329332 | `51239647debe34b7ab74a43b95f0ba7ed5cddf15843240c5c6f3c43f1e88796b` |
+| `Acedia-Setup-1.8.1.72-x64.exe.blockmap` | 159606 | `c3469891c817eba7edaeaa65ed90f6b936178f61f62591aa576ff4757fbae429` |
+| `latest-exe.json` | 256 | `7c4d4a758b358ab6f330726e1d141634b53969e3ef453e393a97c2631ed1889d` |
