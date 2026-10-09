@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.73
 description: "완료 배지·Windows 알림 개선과 Tab으로 선택하는 채팅 후속 메시지 전송."
-status: candidate
+status: stable
 last_updated: 2026-10-09
 ---
 
@@ -33,6 +33,10 @@ last_updated: 2026-10-09
 - TypeScript·Vite 프로덕션 빌드를 통과했다. 기존 큰 번들 경고는 유지된다.
 - 제품 버전과 Android 소스 versionName은 **1.8.1.73**, npm은 **1.8.1**이다. 새 APK를 만들지 않아 기존 서명 APK **1.8.1.39/code 21**을 재사용한다.
 - 버전 갱신 후 배포 대상의 전체 **181개 파일·1,247개 검사**와 모바일 **24개 검사**를 모두 통과했다. 실패·건너뛴 검사는 없다.
+- origin/main에 푸시한 고정 소스 `bfc98fd0968dc2d64411dc3ce63586d5d42b2306`에서 TypeScript·Vite·NSIS EXE 빌드를 통과했다. 이전 빌드와 분리된 출력 폴더 및 격리 프로필로 packaged Git query·bridge·문서 브라우저 재사용·Dashboard·Windows 알림 정책·종료/트레이/보안 lifecycle 검사를 통과했다.
+- 패키지의 런타임·렌더러 **281개 파일**이 빌드 원본과 일치한다. 설치 파일의 FileVersion **1.8.1.73**, npm 호환 ProductVersion **1.8.1**, manifest·크기·SHA-256 및 포함된 APK의 패키지·아키텍처·서명 인증서·해시를 확인했다. EXE Authenticode는 기존 채널과 같은 `NotSigned`다.
+- packaged smoke에는 이전 릴리스와 같은 `AttachConsole failed` 진단 8개가 출력됐다. Git·문서 브라우저·bridge·Dashboard 성공 marker와 프로세스 종료 코드 0을 확인했다.
+- 공개 업데이터가 **1.8.1.70·1.8.1.71·1.8.1.72 → 1.8.1.73**을 감지한다. 실제 공개 설치 파일 전체 다운로드와 세 자산의 크기·SHA-256, 태그·고정 소스·latest 안정 릴리스 검증을 통과했다. 1.8.1.71은 공개되지 않은 호환 버전으로 검사했다.
 
 기능 증빙: `output/chat-delivery-full-tests.log`,
 `output/sidebar-completion-notification-smoke.log`, `output/notification-native-smoke.log`,
@@ -41,10 +45,21 @@ last_updated: 2026-10-09
 `output/chat-delivery-ui-smoke.log`, `output/chat-steering-native-smoke.log`,
 `output/chat-delivery-question-regression.log`, `output/chat-delivery-model-regression.log`,
 `output/chat-delivery-mode-build.log`, `output/full-suite-exe-1.8.1.73.log`,
-`output/mobile-tests-exe-1.8.1.73.log`.
+`output/mobile-tests-exe-1.8.1.73.log`, `output/build-frontend-1.8.1.73.log`,
+`output/build-exe-1.8.1.73-isolated.log`, `output/mobile-artifact-1.8.1.73.log`,
+`output/packaged-smoke-1.8.1.73.log`, `output/packaged-lifecycle-1.8.1.73.log`,
+`output/exe-release-1.8.1.73/local-verification.json`,
+`output/public-update-verification-1.8.1.73.log`,
+`output/public-update-installed-1.8.1.70-to-73.log`, `.build-tools/public-verified-1.8.1.73.json`.
 
 ## 공개 배포
 
-소스·문서 검증을 완료했다. 고정 소스의 EXE 빌드·packaged 실행/종료 검사와
-설치 파일 검증 후 GitHub 안정 릴리스에 게시하고 공개 다운로드 결과를 기록한다.
-사용자의 실행 중인 앱과 프로필은 배포 검증에 사용하지 않는다.
+- [GitHub 안정 릴리스 v1.8.1.73](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.73)을 2026-10-09 **23:32:27 KST**에 게시했다.
+- 소스·태그는 `bfc98fd0968dc2d64411dc3ce63586d5d42b2306`이다. 설치 파일은 origin/main에 푸시한 이 고정 소스에서 만들었다. 기존 서명 APK를 포함하는 EXE 배포이며 Microsoft Store 제출·새 APK 빌드는 실행하지 않았다.
+- **23:33:08 KST**에 공개 다운로드·업데이트 검증을 완료했다. 설치 파일을 실행하지 않았으며 사용자의 실행 중인 앱과 프로필은 검증에 사용하지 않았다. 사용자 PC의 설치·업데이트 여부는 별도다. 앱 설정의 Check → Update로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.73-x64.exe` | 151332226 | `0b2d0237ff35ff94dc390308577e17c03ef3306c0d92c4fc33f5abe7a2e01038` |
+| `Acedia-Setup-1.8.1.73-x64.exe.blockmap` | 159367 | `688f3eb765b396e9beb1ca22acdb0b53a62adb0820a1511701e1a745ceebc664` |
+| `latest-exe.json` | 256 | `99c6cce8ab9dc8d8bed537adee758bea2efcf928b49e64a7cb438f10e6302063` |

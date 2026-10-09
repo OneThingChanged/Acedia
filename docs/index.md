@@ -21,7 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; source verification and EXE publication record.
+* [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; stable EXE published and public download verified.
 * [Acedia 1.8.1.72 EXE release](release-1-8-1-72.md) - Color-coded split screens and matching session badges, dedicated Codex/Claude logos, and Codex questions during work; stable EXE published and public download verified.
 * [Acedia 1.8.1.71 local build](release-1-8-1-71.md) - Async-question fix verified and built locally, then included in 1.8.1.72 before publication.
 * [Acedia 1.8.1.70 EXE release](release-1-8-1-70.md) - Background browser creation by default, explicit display requests, preserved workspace/input focus and one Chat Working indicator; public EXE delivery verified.
