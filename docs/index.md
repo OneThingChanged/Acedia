@@ -21,6 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Chat submission and Codex transport refactor](refactor-chat-transport-2026-10-11.md) - Source 1.8.1.76 separates host submission coordination and bounded WebSocket transport after the 1.8.1.75 deployment; not published as an EXE.
 * [Acedia 1.8.1.75 EXE release](release-1-8-1-75.md) - Remember new-session agent and Dangerous mode, stabilize host PTY chat submission and preserve image-rich Codex history through bounded asynchronous HTTP decoding and fragmented WebSocket transport; stable EXE published and public download verified.
 * [Acedia 1.8.1.74 EXE release](release-1-8-1-74.md) - Remember per-session model, effort and Fast settings; sidebar close and path search, a fixed Chat queue, and automatic routed quota updates with five-minute fallback polling; stable EXE published and public download verified.
 * [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; stable EXE published and public download verified.

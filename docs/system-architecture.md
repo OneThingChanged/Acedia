@@ -16,6 +16,12 @@ sources:
   - id: terminal-launcher
     resource: ../app/electron/services/terminal-launcher.mjs
     title: "Terminal launch preparation and resource ownership"
+  - id: chat-submission
+    resource: ../app/electron/services/chat-message-submission.mjs
+    title: "Chat conversation and question ownership before PTY submission"
+  - id: codex-websocket
+    resource: ../app/electron/services/codex-websocket.mjs
+    title: "Bounded UTF-8 JSON WebSocket transport"
   - id: hook-service
     resource: ../app/electron/services/hook-service.mjs
     title: "Serialized agent configuration updates"
@@ -75,6 +81,23 @@ Only a missing file is treated as empty; read errors and invalid JSON stop the
 update without replacing the affected configuration. This is preflight
 validation, not a transaction across multiple filesystem writes.[^hook-service]
 
+## Chat submission and Codex transport boundaries
+
+`createChatMessageSubmitter` checks the active process, conversation and pending
+question before delegating paste timing and serialization to `submitPtyMessage`.
+It checks ownership again after asynchronous question lookup and before Enter.
+Conversation reset confirmation keeps the original process identity while
+allowing the conversation ID to change. The main process injects runtime
+services and owns transcript-cache invalidation and hook publication.
+IPC validation and workspace-window ownership remain in the main process.
+[^chat-submission]
+
+`sendCodexJson` owns JSON serialization, UTF-8 byte limits, socket-buffer limits
+and text-message fragmentation. `AccountPoolSession` owns native authentication,
+RPCs, account notifications and lifecycle. HTTP decoding and WebSocket transport
+share `codex-transport-limits.mjs`; tool-upload limits remain separately bounded.
+[^codex-websocket]
+
 ## Workspace domain model
 
 A project identifies a working folder and optional SSH target. An agent is a
@@ -124,6 +147,8 @@ Electron is the only desktop host and release target.
 
 [^electron-main]: Electron main process
 [^terminal-launcher]: Terminal launch preparation and resource ownership
+[^chat-submission]: Chat conversation and question ownership before PTY submission
+[^codex-websocket]: Bounded UTF-8 JSON WebSocket transport
 [^hook-service]: Serialized agent configuration updates
 [^preload]: Renderer preload bridge
 [^main-contract]: Main-process IPC validation

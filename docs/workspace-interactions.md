@@ -10,6 +10,9 @@ status: stable
 last_updated: 2026-10-11
 stale_after: 2026-11-30
 sources:
+  - id: chat-submission
+    resource: ../app/electron/services/chat-message-submission.mjs
+    title: "Host chat submission and conversation reset coordination"
   - id: session-workers
     resource: ../app/src/lib/sessionWorkers.ts
     title: "Worker models, reasoning effort and launch instructions"

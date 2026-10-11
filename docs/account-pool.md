@@ -8,6 +8,9 @@ sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
   - resource: ../app/electron/services/account-pool-session.mjs
+  - resource: ../app/electron/services/codex-websocket.mjs
+  - resource: ../app/electron/services/codex-transport-limits.mjs
+  - resource: ../app/electron/services/codex-request-body.mjs
   - resource: ../app/electron/services/account-pool-native.test.mjs
   - resource: ../app/electron/services/account-pool-session.test.mjs
   - resource: ../app/scripts/account-pool-tools-smoke.mjs

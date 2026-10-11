@@ -8,27 +8,12 @@ import WebSocket from 'ws';
 import { parse as parseToml } from 'smol-toml';
 import { terminateWindowsProcessTree } from './process-tree.mjs';
 import { CODEX_PAYLOAD_BYTES, CODEX_BUFFERED_BYTES } from './codex-transport-limits.mjs';
+import { sendCodexJson as send } from './codex-websocket.mjs';
 
 const failure = message => Object.assign(new Error(message), { status: 503 });
 const REFRESH = 'account/chatgptAuthTokens/refresh';
 const AUTH_MUTATIONS = new Set(['account/login/start', 'account/login/cancel', 'account/logout']);
 const THREAD_STARTS = new Set(['thread/start', 'thread/resume', 'thread/fork']);
-const send = (socket, message) => {
-  if (socket?.readyState !== WebSocket.OPEN) return;
-  const data = JSON.stringify(message);
-  const bytes = Buffer.byteLength(data);
-  if (bytes > CODEX_PAYLOAD_BYTES || socket.bufferedAmount + bytes > CODEX_BUFFERED_BYTES) { socket.close(1009); return; }
-  // Native WebSocket receivers also bound individual frames. Fragment large
-  // JSON messages while retaining one logical RPC and its exact UTF-8 bytes.
-  const frameBytes = 8 * 1024 * 1024;
-  if (bytes <= frameBytes) socket.send(data);
-  else {
-    const buffer = Buffer.from(data);
-    for (let offset = 0; offset < buffer.length; offset += frameBytes) {
-      socket.send(buffer.subarray(offset, offset + frameBytes), { binary: false, fin: offset + frameBytes >= buffer.length });
-    }
-  }
-};
 
 const permissionValues = new Map([['-s', 'sandbox'], ['--sandbox', 'sandbox'], ['-a', 'approvalPolicy'], ['--ask-for-approval', 'approvalPolicy']]);
 export function codexThreadOverrides(args = []) {
