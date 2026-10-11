@@ -3,11 +3,12 @@ import { accountLoginError, browserLoginUrl } from './account-login.mjs';
 import path from 'node:path';
 import http from 'node:http';
 import { randomUUID, randomBytes, createHmac, createHash, timingSafeEqual } from 'node:crypto';
-import { gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { StringDecoder } from 'node:string_decoder';
 import { AccountPoolRpc } from './account-pool-rpc.mjs';
 import { AccountPoolSession } from './account-pool-session.mjs';
+import { decodeCodexRequestBody } from './codex-request-body.mjs';
+import { CODEX_PAYLOAD_BYTES, CODEX_TOOL_UPLOAD_BYTES } from './codex-transport-limits.mjs';
 import { mergeCodexRateLimits } from './codex-usage.mjs';
 import { readCodexModels } from '../shared/session-model.mjs';
 
@@ -544,7 +545,7 @@ export class AccountPool {
     // selects the private runtime without putting session IDs in the URL.
     const lease = [...this.nativeSessions.values()].find(item => !item.runtime.closed && sameSecret(token, item.runtime.publicToken));
     if (!lease) return reject('401 Unauthorized');
-    this.webSockets ??= new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+    this.webSockets ??= new WebSocketServer({ noServer: true, maxPayload: CODEX_PAYLOAD_BYTES });
     this.webSockets.handleUpgrade(req, socket, head, client => { void lease.runtime.attach(client); });
   }
   async proxy(req, res) {
@@ -583,15 +584,11 @@ export class AccountPool {
           || !/^\/(?:[a-zA-Z0-9_-]+\/?)+$/.test(endpoint)))) throw fail('지원하지 않는 요청입니다.', 404);
       let body;
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        const maxBytes = nativeTool ? CODEX_TOOL_UPLOAD_BYTES : CODEX_PAYLOAD_BYTES;
         const chunks = []; let size = 0;
-        for await (const chunk of req) { size += chunk.length; if (size > 32 * 1024 * 1024) throw fail('요청 크기가 너무 큽니다.', 413); chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > maxBytes) throw fail(nativeTool ? '도구 업로드가 32 MiB 제한을 넘었습니다.' : '대화 요청이 128 MiB 제한을 넘었습니다. 첨부나 대화 맥락을 정리한 뒤 다시 시도하세요.', 413); chunks.push(chunk); }
         body = Buffer.concat(chunks);
-        const encoding = !nativeTool && req.headers['content-encoding'];
-        try {
-          if (encoding === 'zstd') body = zstdDecompressSync(body, { maxOutputLength: 32 * 1024 * 1024 });
-          else if (encoding === 'gzip') body = gunzipSync(body, { maxOutputLength: 32 * 1024 * 1024 });
-          else if (encoding && encoding !== 'identity') throw new Error();
-        } catch { throw fail('압축 요청을 처리할 수 없습니다.', 415); }
+        if (!nativeTool) body = await decodeCodexRequestBody(body, req.headers['content-encoding']);
         if (!nativeTool) try { const data = JSON.parse(body); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(); } catch { throw fail('JSON 요청이 필요합니다.'); }
       }
       a = this.choose(sessionId); this.active.set(a.id, (this.active.get(a.id) || 0) + 1);

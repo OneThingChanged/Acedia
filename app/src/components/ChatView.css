@@ -136,3 +136,6 @@
   .chat-view-modern .chat-send-mode kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .chat-view-modern .chat-thinking-dots i { animation: none; opacity: .6; } }
+.chat-submission-error { flex: 0 0 auto; padding: 12px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-text); font-size: 12px; }
+.chat-submission-error pre { max-height: 80px; overflow: auto; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
+.chat-submission-error button { margin: 4px 8px 0 0; padding: 5px 9px; color: inherit; background: var(--app-panel-soft); border: 1px solid var(--app-border); border-radius: 5px; cursor: pointer; }

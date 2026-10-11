@@ -163,9 +163,40 @@ SSH와 다른 AI 도구에는 적용하지 않는다. 로컬 CODEX_HOME, hooks, 
 실행 환경변수로 전달하고 원격 관리 웹에는 표시하지 않는다.
 
 현재 소스는 HTTP Responses 스트리밍, 모델 목록, compact와 Codex의 기본 도구
-요청을 전달한다. 요청 크기는 32 MiB, 전체 요청 제한 시간은 15분이다.
+요청을 전달한다. 대화·compact 요청과 app-server WebSocket 메시지 한도는 128 MiB이며,
+도구 바이너리 업로드 한도는 32 MiB다. 전체 요청 제한 시간은 15분이다.
 인증 거부 응답은 동일 계정의 인증을 갱신한 뒤 한 번 재시도한다. 이미 전송을
 시작한 응답, 일반 통신 오류와 한도 초과는 다른 계정으로 자동 재시도하지 않는다.
+
+### 이미지가 누적된 대화와 Codex 요약
+
+2026-10-11 ProjectWitch의 이전 대화에서 누적 이미지 18장, 약 43 MB의 활성 맥락을
+확인했다. 기존 압축 해제 출력 한도 32 MiB를 넘으면 `ERR_BUFFER_TOO_LARGE`가 발생했지만,
+이를 압축 손상과 함께 HTTP 415로 반환해 일반 응답과 native 원격 요약 모두 실패했다.
+이미지 수만으로 문제가 발생하는 것은 아니며, 텍스트 토큰 수와 전송 바이트 수는 서로 다르다.
+
+수정 소스는 대화 본문 수신·gzip/zstd 압축 해제·WebSocket 송수신에 같은 128 MiB 한도를
+적용한다. 압축 해제는 비동기로 수행하고, 큰 WebSocket 메시지는 8 MiB 프레임으로 나눠
+단일 RPC로 전달한다. 전송 대기 버퍼는 별도로 256 MiB로 제한한다. 실제 용량 초과는
+HTTP 413, 지원하지 않는 압축·손상된 압축은 HTTP 415로 구분한다.
+
+Codex는 토큰 임계값에서 자동 compaction을 실행하고 `/compact`로 직접 실행할 수도 있다.
+Acedia는 원본 이미지나 transcript를 수정하지 않고 이 기본 요약 요청과 결과를 전달한다.
+기존 맥락·텍스트·도구 호출·이미지와 반환된 compaction 상태를 임의로 삭제하거나 바꾸지 않는다.
+이 변경은 128 MiB를 넘는 기록을 자동 백업·제거하거나 강제로 세션을 재시작하는 기능을
+포함하지 않는다. 실행 중인 앱에는 소스 수정이 즉시 적용되지 않는다.
+
+검증:
+
+- 같은 43 MiB 이미지 본문을 identity/gzip/zstd로 일반 응답과 compact에 전달하고
+  압축 해제된 본문이 바이트 단위로 동일한지 검사한다.
+- 32 MiB를 넘는 WebSocket 재개 응답과 후속 요청, 압축 출력 한도 초과·손상 구분을 검사한다.
+- `ACEDIA_CODEX_BINARY`를 설치된 CLI 경로로 지정한 뒤 `npm run account-pool:image-context-smoke`를
+  실행한다. CLI 0.162.1에서 18장·43 MiB 입력, native 대화 조회·resume·compaction·후속 턴을
+  격리된 프로필과 로컬 모의 계정/서버로 검증했다. 실제 유료 모델이나 사용자 세션은 호출하지 않는다.
+
+공식 동작: [자동 요약 임계값](https://learn.chatgpt.com/docs/config-file/config-reference),
+[`/compact`](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
 
 ## 기본 도구와 분산 계정 (1.8.1.48)
 

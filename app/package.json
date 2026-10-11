@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.74",
+  "multiAgentReleaseVersion": "1.8.1.75",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "electron:account-pool-smoke": "node scripts/electron-account-pool-smoke.mjs",
     "account-pool:cli-smoke": "node scripts/account-pool-cli-smoke.mjs",
     "account-pool:tools-smoke": "node scripts/account-pool-tools-smoke.mjs",
+    "account-pool:image-context-smoke": "node scripts/account-pool-tools-smoke.mjs --image-context",
     "electron:workspace-mcp-smoke": "node scripts/electron-workspace-mcp-smoke.mjs",
     "electron:account-onboarding-smoke": "node scripts/electron-account-onboarding-smoke.mjs",
     "electron:browser-profiles-smoke": "node scripts/electron-browser-profiles-smoke.mjs",
@@ -153,9 +154,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.74-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.75-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.74",
+      "uninstallDisplayName": "Acedia 1.8.1.75",
       "include": "electron/installer.nsh"
     },
     "publish": [

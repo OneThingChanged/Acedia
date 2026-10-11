@@ -7,6 +7,7 @@ import os from 'node:os';
 import WebSocket from 'ws';
 import { parse as parseToml } from 'smol-toml';
 import { terminateWindowsProcessTree } from './process-tree.mjs';
+import { CODEX_PAYLOAD_BYTES, CODEX_BUFFERED_BYTES } from './codex-transport-limits.mjs';
 
 const failure = message => Object.assign(new Error(message), { status: 503 });
 const REFRESH = 'account/chatgptAuthTokens/refresh';
@@ -15,8 +16,18 @@ const THREAD_STARTS = new Set(['thread/start', 'thread/resume', 'thread/fork']);
 const send = (socket, message) => {
   if (socket?.readyState !== WebSocket.OPEN) return;
   const data = JSON.stringify(message);
-  if (socket.bufferedAmount + Buffer.byteLength(data) > 32 * 1024 * 1024) { socket.close(1009); return; }
-  socket.send(data);
+  const bytes = Buffer.byteLength(data);
+  if (bytes > CODEX_PAYLOAD_BYTES || socket.bufferedAmount + bytes > CODEX_BUFFERED_BYTES) { socket.close(1009); return; }
+  // Native WebSocket receivers also bound individual frames. Fragment large
+  // JSON messages while retaining one logical RPC and its exact UTF-8 bytes.
+  const frameBytes = 8 * 1024 * 1024;
+  if (bytes <= frameBytes) socket.send(data);
+  else {
+    const buffer = Buffer.from(data);
+    for (let offset = 0; offset < buffer.length; offset += frameBytes) {
+      socket.send(buffer.subarray(offset, offset + frameBytes), { binary: false, fin: offset + frameBytes >= buffer.length });
+    }
+  }
 };
 
 const permissionValues = new Map([['-s', 'sandbox'], ['--sandbox', 'sandbox'], ['-a', 'approvalPolicy'], ['--ask-for-approval', 'approvalPolicy']]);
@@ -163,7 +174,7 @@ export class AccountPoolSession extends EventEmitter {
   }
   async connect() {
     if (this.closed) throw failure('Codex 세션이 종료되었습니다.');
-    const socket = new WebSocket(this.address, { headers: { authorization: `Bearer ${this.privateToken}` }, maxPayload: 32 * 1024 * 1024, handshakeTimeout: this.startTimeout });
+    const socket = new WebSocket(this.address, { headers: { authorization: `Bearer ${this.privateToken}` }, maxPayload: CODEX_PAYLOAD_BYTES, handshakeTimeout: this.startTimeout });
     this.sockets.add(socket);
     socket.on('error', () => {});
     socket.on('close', () => this.sockets.delete(socket));
@@ -226,7 +237,7 @@ export class AccountPoolSession extends EventEmitter {
         if (upstream) send(upstream, message);
         else {
           queuedBytes += raw.length;
-          if (queuedBytes > 32 * 1024 * 1024) return client.close(1009);
+          if (queuedBytes > CODEX_BUFFERED_BYTES) return client.close(1009);
           queue.push(message);
         }
       } catch (error) {

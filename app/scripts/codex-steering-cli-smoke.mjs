@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {CodexScrollbackFilter} from '../electron/services/terminal-stream.mjs';
+import {submitPtyMessage} from '../electron/services/pty-submit.mjs';
 
 const require=createRequire(import.meta.url);
 const appRoot=fileURLToPath(new URL('../',import.meta.url));
@@ -56,14 +57,14 @@ async function exercise(root) {
       for(const file of files) for(const line of (await fs.readFile(path.join(sessions,file),'utf8')).split('\n')) {try{result.push(JSON.parse(line));}catch{}}
       return result;
     };
-    // Same separate text + Enter writes as the desktop composer.
-    const send=async text=>{child.write(text);await wait(80);child.write('\r');};
+    // Same host submission path as the desktop composer, against the real TUI.
+    const send=async (message, steering=false)=>{assert.equal(await submitPtyMessage({ptyProcess:child,message,waitForOutputQuiet:!steering}),true);};
     await wait(3500);
     await send('BEGIN_CURRENT_WORK. Reply to the fixture.');
     await until(()=>responseStarted,'ongoing native response');
     await until(()=>/esc to interrupt/i.test(filter.viewportText()),'ongoing tool work');
     assert.equal((await rows()).filter(row=>row.payload?.type==='task_complete').length,0,'Initial work already finished');
-    await send('STEER_CURRENT_WORK');
+    await send('STEER_CURRENT_WORK', true);
     await until(()=>calls.some(call=>JSON.stringify(call.input).includes('STEER_CURRENT_WORK')),'steer reached native response');
     await until(async()=> (await rows()).some(row=>row.payload?.type==='task_complete'),'current turn completed');
     const current=await rows();
@@ -75,7 +76,14 @@ async function exercise(root) {
     await until(()=>calls.some(call=>JSON.stringify(call.input).includes('QUEUE_AFTER_COMPLETION')),'follow-up after completion');
     await until(async()=> (await rows()).filter(row=>row.payload?.type==='task_complete').length===2,'follow-up completed');
     assert.equal((await rows()).filter(row=>row.payload?.type==='task_started').length,2);
-    console.log('CODEX_NATIVE_STEERING_OK text + Enter steer during an ongoing native response, same turn/transcript, completion follow-up starts a separate turn; loopback fixture only');
+    const longMessage = '다음 대화 전송 확인: ' + '스팀 호스트 테스트와 로비, 초대 코드 구현 계획을 확인해줘. '.repeat(24)
+      + '\n두 번째 문단도 같은 요청으로 전달해줘. DESKTOP_MULTILINE_COMPLETE';
+    await wait(1200); await send(longMessage);
+    await until(()=>calls.some(call=>JSON.stringify(call.input).includes('DESKTOP_MULTILINE_COMPLETE')),'long Korean multiline reached model');
+    await until(async()=> (await rows()).filter(row=>row.payload?.type==='task_complete').length===3,'long follow-up completed');
+    assert.ok((await rows()).some(row=>row.type==='response_item' && row.payload?.role==='user'
+      && row.payload.content?.some(content=>content.text===longMessage)),'Multiline was split, changed, or left in composer');
+    console.log('CODEX_NATIVE_STEERING_OK settled paste + Enter steer during ongoing work; completion follow-up and long Korean multiline start exactly one turn each; loopback fixture only');
   } finally {
     await fs.writeFile(path.join(root,'terminal-output.txt'),terminalOutput);
     if(child){child.write('\x03');await wait(200);try{child.kill();}catch{}}

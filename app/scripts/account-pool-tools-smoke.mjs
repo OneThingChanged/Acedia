@@ -4,6 +4,7 @@ import path from 'node:path';
 import https from 'node:https';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { crc32, deflateSync } from 'node:zlib';
 import WebSocket from 'ws';
 import * as pty from 'node-pty';
 import { AccountPool } from '../electron/services/account-pool.mjs';
@@ -12,6 +13,7 @@ import { codexRemoteTuiArgs } from '../electron/services/account-pool-session.mj
 // Installed CLI + local HTTPS fixtures only. No real account, model, image, or
 // connector request leaves the machine. The temporary CA is scoped to children.
 const binary = process.env.ACEDIA_CODEX_BINARY;
+const imageContextOnly = process.argv.includes('--image-context');
 assert.ok(binary && path.isAbsolute(binary) && fs.existsSync(binary), 'Set ACEDIA_CODEX_BINARY to Codex CLI 0.160.0 or newer.');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-native-tools-'));
 const certFile = path.join(root, 'cert.pem'), keyFile = path.join(root, 'key.pem');
@@ -37,7 +39,7 @@ function createCertificate() {
   }
 }
 createCertificate();
-const requests = [], responses = [], toolRequests = [], toolResults = [], sockets = [], pending = new Set();
+const requests = [], responses = [], toolRequests = [], toolResults = [], imageRequests = [], sockets = [], pending = new Set();
 const claims = label => ({ exp: Math.floor(Date.now() / 1000) + 3600, fixture: label, 'https://api.openai.com/auth': { chatgpt_account_id: label, chatgpt_plan_type: 'pro', chatgpt_user_id: label } });
 const token = (label, revision = 1) => 'x.' + Buffer.from(JSON.stringify({ ...claims(label), revision })).toString('base64url') + '.x';
 const accounts = ['fixture-A', 'fixture-B'];
@@ -107,6 +109,16 @@ pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
       return new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } });
     }
     const body = JSON.parse(options.body); const text = JSON.stringify(body);
+    if (text.includes('LARGE_IMAGE_CONTEXT_FIXTURE')) {
+      const images = body.input.flatMap(item => Array.isArray(item.content) ? item.content : []).filter(item => item.type === 'input_image');
+      imageRequests.push({ bytes: options.body.length, images: images.length, types: [...new Set(body.input.map(item => item.type))],
+        contentTypes: [...new Set(body.input.flatMap(item => Array.isArray(item.content) ? item.content.map(part => part.type) : []))],
+        imageErrors: body.input.filter(item => item.role === 'user').flatMap(item => item.content || []).filter(part => /unable|failed|invalid|image attachment/i.test(part.text || '')).map(part => part.text.slice(-400)) });
+      const compacting = body.input.some(item => item.type === 'compaction_trigger');
+      const item = compacting ? { type: 'compaction', id: 'fixture-compaction', encrypted_content: 'fixture-opaque-state' }
+        : { type: 'message', id: 'image_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'IMAGE_CONTEXT_OK', annotations: [] }] };
+      return stream(body, item, 63);
+    }
     assert.ok(text.includes('PROFILE_FIXTURE_MARKER'), 'The named profile must reach the native thread.');
     assert.equal(options.headers['session-id'], body.prompt_cache_key);
     assert.ok(options.headers['thread-id']); assert.equal(options.headers['x-client-request-id'], options.headers['thread-id']);
@@ -123,7 +135,7 @@ pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
 async function connect(launch) {
   const socket = new WebSocket(launch.args[1], { headers: { authorization: 'Bearer ' + launch.env.ACEDIA_CODEX_REMOTE_TOKEN } }); sockets.push(socket);
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
-  let id = 0; const callbacks = new Map(); let turnResult;
+  let id = 0; const callbacks = new Map(); let turnResult, compactions = 0;
   socket.on('message', raw => {
     const message = JSON.parse(raw);
     if (!message.method && callbacks.has(message.id)) {
@@ -131,7 +143,12 @@ async function connect(launch) {
       message.error ? job.reject(new Error(JSON.stringify(message.error))) : job.resolve(message.result);
     }
     if (message.method === 'turn/completed') turnResult?.(message.params.turn);
+    if (message.method === 'thread/compacted' || (message.method === 'item/completed' && message.params?.item?.type === 'contextCompaction')) compactions++;
     assert.notEqual(message.method, 'account/chatgptAuthTokens/refresh', 'The TUI must never compete with Acedia for auth refresh.');
+  });
+  socket.on('close', code => {
+    for (const job of callbacks.values()) { clearTimeout(job.timer); pending.delete(job.timer); job.reject(new Error('Fixture socket closed: ' + code)); }
+    callbacks.clear();
   });
   const call = (method, params = {}) => new Promise((resolve, reject) => {
     const next = ++id; const timer = setTimeout(() => reject(new Error('RPC timeout: ' + method)), 20000); pending.add(timer);
@@ -139,9 +156,9 @@ async function connect(launch) {
   });
   await call('initialize', { clientInfo: { name: 'acedia_fixture_tui', version: '1' }, capabilities: { experimentalApi: true } });
   socket.send(JSON.stringify({ method: 'initialized' }));
-  return { call, async turn(threadId, prompt) {
+  return { call, get compactions() { return compactions; }, async turn(threadId, prompt, extraInput = []) {
     const finished = new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Turn timeout')), 30000); pending.add(timer); turnResult = turn => { clearTimeout(timer); pending.delete(timer); resolve(turn); }; });
-    await call('turn/start', { threadId, input: [{ type: 'text', text: prompt }] });
+    await call('turn/start', { threadId, input: [{ type: 'text', text: prompt }, ...extraInput] });
     const result = await finished; assert.equal(result.status, 'completed', JSON.stringify(result.error));
   } };
 }
@@ -168,6 +185,31 @@ async function tui(launch, resumeId) {
     }
   }
 }
+async function exerciseImageHistory(client) {
+  const imageThread = await client.call('thread/start', { model: 'gpt-6-astra', cwd: root, approvalPolicy: 'never', sandbox: 'read-only' });
+  const chunk = (type, bytes) => {
+    const result = Buffer.alloc(bytes.length + 12); result.writeUInt32BE(bytes.length); result.write(type, 4); bytes.copy(result, 8);
+    result.writeUInt32BE(crc32(result.subarray(4, 8 + bytes.length)), 8 + bytes.length); return result;
+  };
+  const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 6;
+  const png = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.from([0,255,255,255,255]))), chunk('IEND', Buffer.alloc(0))]);
+  const image = 'data:image/png;base64,' + Buffer.concat([png, Buffer.alloc(Math.ceil(43 * 1024 * 1024 * 3 / 4 / 18))]).toString('base64');
+  await client.turn(imageThread.thread.id, 'LARGE_IMAGE_CONTEXT_FIXTURE: preserve all 18 fixture images.',
+    Array.from({ length: 18 }, () => ({ type: 'image', url: image })));
+  const nativeRead = await client.call('thread/read', { threadId: imageThread.thread.id, includeTurns: true });
+  assert.equal(nativeRead.thread.turns.flatMap(turn => turn.items).filter(item => item.type === 'userMessage').flatMap(item => item.content).filter(part => part.type === 'image').length, 18);
+  assert.equal(imageRequests[0].images, 18);
+  assert.ok(imageRequests[0].bytes > 43 * 1024 * 1024, 'The native CLI must send the complete image-rich request.');
+  const imageResume = await client.call('thread/resume', { threadId: imageThread.thread.id });
+  assert.equal(imageResume.thread.id, imageThread.thread.id);
+  const before = client.compactions;
+  await client.call('thread/compact/start', { threadId: imageThread.thread.id });
+  for (let attempt = 0; attempt < 300 && client.compactions === before; attempt++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.ok(client.compactions > before, 'The native compaction must complete through the relay.');
+  await client.turn(imageThread.thread.id, 'LARGE_IMAGE_CONTEXT_FIXTURE: continue after native compaction.');
+  console.log('ACCOUNT_POOL_NATIVE_43_MIB_IMAGE_HISTORY_RESUME_AND_COMPACTION_OK');
+}
 try {
   const ids = accounts.map(label => {
     const id = pool.create(label); const account = pool.account(id);
@@ -177,6 +219,11 @@ try {
     pool.update(id, true); return id;
   });
   await pool.setEnabled(true);
+  if (imageContextOnly) {
+    const launch = await pool.launchNative('image-context', ids[0], null, { cwd: root, env, configArgs });
+    await exerciseImageHistory(await connect(launch));
+    launch.release();
+  } else {
   const launches = [], threadIds = [];
   for (let index = 0; index < ids.length; index++) {
     const launch = await pool.launchNative('session-' + index, ids[index], null, { cwd: root, env, configArgs }); launches.push(launch);
@@ -231,6 +278,10 @@ try {
   for (const launch of launches) launch.release();
   assert.equal(pool.nativeSessions.size, 0);
   console.log('ACCOUNT_POOL_NATIVE_TOOLS_AND_ACCOUNT_ISOLATION_OK');
+  }
+} catch (error) {
+  if (imageContextOnly) console.warn('IMAGE_CONTEXT_FIXTURE_REQUESTS', JSON.stringify(imageRequests));
+  throw error;
 } finally {
   for (const timer of pending) clearTimeout(timer);
   for (const socket of sockets) socket.terminate();

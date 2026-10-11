@@ -421,7 +421,8 @@ async function exerciseConversationActions(win, directory) {
   await fs.writeFile(path.resolve(appRoot, '../output/chat-conversation-actions.png'), (await win.webContents.capturePage()).toPNG());
   await win.webContents.executeJavaScript("document.querySelector('.chat-composer-send').click()");
   await waitFor(win, "window.questionFixture.writes.length===2");
-  assert(JSON.stringify(await win.webContents.executeJavaScript('window.questionFixture.writes')) === JSON.stringify(['> 확인한 답변입니다.\n\n새로운 질문','\r']), 'Quoted request changed PTY delivery');
+  assert(JSON.stringify(await win.webContents.executeJavaScript('window.questionFixture.writes')) === JSON.stringify(['\x1b[200~> 확인한 답변입니다.\r\r새로운 질문\x1b[201~','\r']), 'Quoted request was split or lost its separate Enter');
+  assert(await win.webContents.executeJavaScript("window.questionFixture.submittedMessages[0].message==='> 확인한 답변입니다.\\n\\n새로운 질문'"), 'Quoted request text changed before submission');
   assert(await win.webContents.executeJavaScript("!document.querySelector('.chat-composer-reference') && document.querySelector('.chat-composer-input').value===''"), 'Sent quote stayed in the composer');
   console.log('Desktop conversation actions passed (role alignment, request reuse, quote, draft isolation, artifact preview)');
 }

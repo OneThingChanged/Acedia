@@ -44,6 +44,7 @@ type SendMode = "now" | "queue";
 type QueuedMessage = { text: string; mode: SendMode };
 const queueStore = new Map<string, QueuedMessage[]>();
 const sendModeStore = new Map<string, SendMode>();
+const failedSubmissionStore = new Map<string, string>();
 // The in-progress composer draft + image attachments, likewise kept per session
 // so switching to the terminal and back doesn't lose them.
 const draftStore = new Map<string, string>();
@@ -371,6 +372,9 @@ export function ChatView({
   // them; every mutation writes back through mutateQueue.
   const [queue, setQueue] = useState<QueuedMessage[]>(() => queueStore.get(storeKey) ?? []);
   const lastDispatchRef = useRef(0);
+  const submissionInFlight = useRef<string | null>(null);
+  const [submittingMessage, setSubmittingMessage] = useState(false);
+  const [failedSubmission, setFailedSubmission] = useState(() => failedSubmissionStore.get(storeKey) || "");
   // Messages just sent from the composer, echoed instantly so the chat updates
   // without waiting for the next poll; dropped once the transcript includes them.
   const [pending, setPending] = useState<string[]>([]);
@@ -403,6 +407,8 @@ export function ChatView({
     setVisible(CHAT_PAGE);
     setShowJumpToLatest(false);
     setPending([]);
+    setSubmittingMessage(false);
+    setFailedSubmission(failedSubmissionStore.get(storeKey) || "");
     setQueue(queueStore.get(storeKey) ?? []); // restore this exact conversation's reservations
     setAnsweredPromptSig("");
     setPendingQuestion(null);
@@ -791,47 +797,60 @@ export function ChatView({
     return () => window.removeEventListener("keydown", onKey);
   }, [active, busy, initializing, startupPrompt, interrupt]);
 
-  // Actually write a message to the PTY + echo it instantly. Text and Enter go
-  // as separate writes (80ms apart) so Codex/Claude don't treat "text\r" as a
-  // multiline paste.
+  // The host serializes paste + Enter after the TUI has settled. An optimistic
+  // echo is not a persisted user message until that submission succeeds.
   const dispatch = useCallback(
-    (value: string, continuing = false) => {
+    async (value: string, continuing = false) => {
+      if (submissionInFlight.current === storeKey) return;
+      submissionInFlight.current = storeKey;
+      setSubmittingMessage(true);
       lastDispatchRef.current = Date.now();
       if (!continuing) setDispatchAt(lastDispatchRef.current);
       setWorkClock(lastDispatchRef.current);
       setStoppedKey(null);
-      if (value.trim() === "/clear") {
-        // /clear resets the agent's conversation — mirror it in the view right
-        // away and suppress the pre-clear transcript until it changes on disk.
-        clearedSigRef.current = keyRef.current || "empty";
-        keyRef.current = "";
-        blocksRef.current = [];
-        setBlocks([]);
-        setPending([]);
-        setVisible(CHAT_PAGE);
-        setStatus("empty");
-        setStoppedKey(null);
-        firstLoadRef.current = true;
-      } else {
-        setPending((p) => [...p, value]);
-        void invoke("conversation_record_user_message", {
-          id: agentId,
-          sessionId,
-          text: value,
-        }).catch(() => {});
+      if (value.trim() !== "/clear") setPending((p) => [...p, value]);
+      try {
+        const sent = await invoke("submit_chat_message", { id: agentId, sessionId, message: value, steering: continuing });
+        if (!sent) throw new Error("The session did not accept this message.");
+        if (currentStoreKey.current !== storeKey) return;
+        if (value.trim() === "/clear") {
+          // Suppress pre-clear history only after the CLI accepts the reset.
+          clearedSigRef.current = keyRef.current || "empty";
+          keyRef.current = "";
+          blocksRef.current = [];
+          setBlocks([]);
+          setPending([]);
+          setVisible(CHAT_PAGE);
+          setStatus("empty");
+          setStoppedKey(null);
+          firstLoadRef.current = true;
+        } else {
+          void invoke("conversation_record_user_message", {
+            id: agentId,
+            sessionId,
+            text: value,
+          }).catch(() => {});
+        }
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        });
+        // Re-poll soon so the real transcript (and reply) lands promptly.
+        window.setTimeout(() => fetchRef.current(), 700);
+        window.setTimeout(() => fetchRef.current(), 1600);
+      } catch {
+        // Text may already be in the terminal. Preserve it for review, stop
+        // draining, and never replay an uncertain paste automatically.
+        failedSubmissionStore.set(storeKey, value);
+        if (currentStoreKey.current !== storeKey) return;
+        setFailedSubmission(value);
+        setPending(p => { const next = [...p]; const index = next.lastIndexOf(value); if (index >= 0) next.splice(index, 1); return next; });
+        if (!continuing) setDispatchAt(0);
+      } finally {
+        if (submissionInFlight.current === storeKey) submissionInFlight.current = null;
+        if (currentStoreKey.current === storeKey) setSubmittingMessage(false);
       }
-      void invoke("write_pty", { id: agentId, data: value }).catch(() => {});
-      window.setTimeout(() => {
-        void invoke("write_pty", { id: agentId, data: "\r" }).catch(() => {});
-      }, 80);
-      requestAnimationFrame(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      });
-      // Re-poll soon so the real transcript (and reply) lands fast, not on the 3s tick.
-      window.setTimeout(() => fetchRef.current(), 700);
-      window.setTimeout(() => fetchRef.current(), 1600);
     },
-    [agentId, sessionId]
+    [agentId, sessionId, storeKey]
   );
 
   // Mutate the queue and mirror it into the module store so it survives the
@@ -857,9 +876,9 @@ export function ChatView({
     if (!value) return;
     const cooled = Date.now() - lastDispatchRef.current >= QUEUE_COOLDOWN_MS;
     const liveStartup = canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex");
-    const ready = alive && !initializing && !prompt && !liveStartup;
+    const ready = alive && !initializing && !prompt && !liveStartup && !failedSubmission;
     const delivery: SendMode = ready && supportsSteering && mode === "now" ? "now" : "queue";
-    if (ready && cooled && ((delivery === "now" && !queue.some(item => item.mode === "now")) || (!busy && queue.length === 0))) dispatch(value, busy);
+    if (ready && cooled && submissionInFlight.current !== storeKey && ((delivery === "now" && !queue.some(item => item.mode === "now")) || (!busy && queue.length === 0))) void dispatch(value, busy);
     else mutateQueue(q => {
       const item = { text: value, mode: delivery };
       // A short input cooldown must not change a requested steer into a
@@ -871,17 +890,18 @@ export function ChatView({
 
   // Drain the queue one message per cooldown while the agent is ready.
   useEffect(() => {
-    if (prompt || modelChanging || !alive || initializing || queue.length === 0) return;
+    if (prompt || modelChanging || !alive || initializing || submittingMessage || failedSubmission || queue.length === 0) return;
     if (busy && (queue[0].mode !== "now" || !supportsSteering)) return;
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
       if (isChatSessionModelChanging(agentId)) return;
+      if (submissionInFlight.current === storeKey) return;
       if (canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex")) return;
       dispatch(queue[0].text, busy);
       mutateQueue((q) => q.slice(1));
     }, wait);
     return () => window.clearTimeout(timer);
-  }, [busy, promptSig, modelChanging, agentId, alive, initializing, supportsSteering, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
+  }, [busy, promptSig, modelChanging, agentId, alive, initializing, submittingMessage, failedSubmission, supportsSteering, storeKey, queue, dispatch, mutateQueue, canReadStartupPrompt, readTerminalScreen]);
 
   const cancelQueued = (index: number) =>
     mutateQueue((q) => q.filter((_, i) => i !== index));
@@ -964,6 +984,12 @@ export function ChatView({
         <span className="chat-work-elapsed" aria-hidden="true">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
         <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
       </div>}
+      {failedSubmission && <div className="chat-submission-error" role="alert">
+        <span>{text("전송 완료를 확인하지 못했습니다. 터미널 입력란을 확인해 주세요.", "Could not confirm submission. Check the terminal input before sending again.")}</span>
+        <pre>{failedSubmission}</pre>
+        <button type="button" onClick={onOpenTerminal}>{text("터미널 확인", "Check terminal")}</button>
+        <button type="button" onClick={() => { failedSubmissionStore.delete(storeKey); setFailedSubmission(""); }}>{text("확인했어요", "Reviewed")}</button>
+      </div>}
       {queue.length > 0 && (
         <div className="chat-queue" role="region" aria-label={text("메시지 대기열", "Message queue")}>
           <div className="chat-queue-head">
@@ -990,7 +1016,7 @@ export function ChatView({
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
           forceQueue={!alive || initializing || !!prompt}
           agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} modelSettingsKey={modelSettingsKey}
-          modelBusy={busy || !!prompt || initializing || queue.length > 0}
+          modelBusy={busy || !!prompt || initializing || submittingMessage || !!failedSubmission || queue.length > 0}
           projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
       )}
       </div>

@@ -24,7 +24,7 @@ export type RuntimeCommand =
   | "claude_accounts_cancel_login"
   | "runtime_flags" | "renderer_ready" | "spawn_pty"
   | "attach_terminal" | "detach_terminal" | "terminal_session_action"
-  | "write_pty" | "resize_pty" | "kill_pty" | "confirm_close"
+  | "write_pty" | "submit_chat_message" | "resize_pty" | "kill_pty" | "confirm_close"
   | "show_main_window" | "open_new_app_window" | "get_detached_agents"
   | "get_agent_window_usage" | "claim_agent_for_window" | "set_desktop_pet_enabled"
   | "update_desktop_pet" | "desktop_pet_snapshot" | "reset_desktop_pet_position"
@@ -510,6 +510,10 @@ export type RuntimeCommandContract = {
   conversation_record_user_message: {
     args: { id: string; sessionId?: string; text: string };
     result: { conversationId: string; sequence: number; block: ChatBlock } | null;
+  };
+  submit_chat_message: {
+    args: { id: string; sessionId?: string; message: string; steering?: boolean };
+    result: boolean;
   };
   conversation_storage_get: {
     args: Record<string, never>;

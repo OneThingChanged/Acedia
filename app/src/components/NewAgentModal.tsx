@@ -1,5 +1,5 @@
 import { useAppLanguage } from "../lib/appLanguage";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { AccountSelect } from "./ProviderAccounts";
 import { PoolAccountSelect } from "./PoolAccountSelect";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
@@ -7,8 +7,8 @@ import { useCreationDialog } from "../hooks/useCreationDialog";
 import { AI_TOOLS, toolForId } from "../types";
 import type { Agent, NewAgentPayload, Project } from "../types";
 import { folderTail } from "../lib/path";
-import { defaultAiToolId } from "../lib/projectCreation";
 import { loadAgentDefaults } from "../lib/agentDefaults";
+import { newSessionDangerous, newSessionToolId, rememberNewSession } from "../lib/newSessionPreferences";
 import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
 import { SessionWorkerDisclosure } from "./SessionWorkerDisclosure";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
@@ -26,7 +26,7 @@ export function NewAgentModal({
   project: Project | null;
   defaultName: string;
   onCancel: () => void;
-  onCreate: (payload: NewAgentPayload) => void;
+  onCreate: (payload: NewAgentPayload) => void | boolean | Promise<void | boolean>;
   disabledTools?: string[];
   parentAgent?: Agent;
 }) {
@@ -34,6 +34,7 @@ export function NewAgentModal({
   const { text } = useAppLanguage();
   const id = useId();
   const { dialogRef, nameRef } = useCreationDialog(onCancel);
+  const submitting = useRef(false);
 
   // Only tools enabled in Settings → Agents ("none" always available).
   const visibleTools = AI_TOOLS.filter(
@@ -41,7 +42,7 @@ export function NewAgentModal({
   );
   const [name, setName] = useState(defaultName);
   const [aiToolId, setAiToolId] = useState<string>(() =>
-    parentAgent && !disabledTools.includes(parentAgent.aiToolId) ? parentAgent.aiToolId : defaultAiToolId(disabledTools)
+    newSessionToolId(disabledTools, parentAgent?.aiToolId)
   );
   const [inheritFolder, setInheritFolder] = useState(true);
   const instructionSupported = aiToolId === "codex" || (aiToolId === "claude" && !project?.sshHostId);
@@ -51,7 +52,7 @@ export function NewAgentModal({
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
   const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
-  const [dangerous, setDangerous] = useState(() => loadAgentDefaults(aiToolId).dangerous);
+  const [dangerous, setDangerous] = useState(() => newSessionDangerous(aiToolId));
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [workerSettings, setWorkerSettings] = useState<
     SessionWorkerSettings | undefined
@@ -63,25 +64,32 @@ export function NewAgentModal({
 
   const canSubmit = !!project && name.trim().length > 0 && (!!project.sshHostId || !selectedTool.command || launchValid);
 
-  const submit = () => {
-    if (!canSubmit) return;
-    onCreate({
-      name: name.trim(),
-      sessionHierarchy: parentAgent ? {
-        parentId: parentAgent.id,
-        inheritFolder,
-        inheritInstructions: instructionSupported && inheritInstructions,
-        inheritModel: modelSupported && inheritModel,
-      } : undefined,
-      aiToolId,
-      launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
-      codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
-      codexPoolAccountId: !project?.sshHostId && aiToolId === "codex" ? codexPoolAccountId : undefined,
-      claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
-      dangerous: dangerous && supportsDangerous,
-      useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
-      workerSettings: aiToolId === "codex" ? workerSettings : undefined,
-    });
+  const submit = async () => {
+    if (!canSubmit || submitting.current) return;
+    submitting.current = true;
+    try {
+      const created = await onCreate({
+        name: name.trim(),
+        sessionHierarchy: parentAgent ? {
+          parentId: parentAgent.id,
+          inheritFolder,
+          inheritInstructions: instructionSupported && inheritInstructions,
+          inheritModel: modelSupported && inheritModel,
+        } : undefined,
+        aiToolId,
+        launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
+        codexAccountId: !project?.sshHostId && aiToolId === "codex" ? codexAccountId : undefined,
+        codexPoolAccountId: !project?.sshHostId && aiToolId === "codex" ? codexPoolAccountId : undefined,
+        claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
+        dangerous: dangerous && supportsDangerous,
+        useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
+        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
+      });
+      if (created !== false) {
+        try { rememberNewSession(aiToolId, dangerous && supportsDangerous); }
+        catch (error) { console.warn("Could not remember new-session preferences", error); }
+      }
+    } finally { submitting.current = false; }
   };
 
   return (
@@ -117,7 +125,7 @@ export function NewAgentModal({
                     const toolId = e.target.value;
                     const defaults = loadAgentDefaults(toolId);
                     setAiToolId(toolId);
-                    setDangerous(defaults.dangerous);
+                    setDangerous(newSessionDangerous(toolId));
                     setLaunchOptions(defaults.launchOptions);
                     setLaunchValid(true);
                     if (toolId === "codex") {

@@ -6,6 +6,14 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("validates whole Chat submissions before any paste or Enter can reach a terminal", () => {
+    const args = { id: "session", sessionId: "native-conversation", message: "첫 줄\n둘째 줄" };
+    expect(contract.assertInvokeRequest("submit_chat_message", args)).toEqual(args);
+    for (const invalid of [{ ...args, id: "" }, { ...args, message: " " }, { ...args, message: 123 },
+      { ...args, message: "x".repeat(1024 * 1024 + 1) }, { ...args, sessionId: 123 }, { ...args, steering: "yes" }]) {
+      expect(() => contract.assertInvokeRequest("submit_chat_message", invalid)).toThrow();
+    }
+  });
   it("requires a valid session and an immediate model change from Chat", () => {
     const args = { id: "session", settings: { model: "gpt-fixture", effort: "xhigh" }, restart: true };
     expect(contract.assertInvokeRequest("get_session_model", { id: "session" })).toEqual({ id: "session" });

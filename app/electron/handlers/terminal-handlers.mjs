@@ -2,6 +2,7 @@ export function createTerminalHandlers({
   terminalSessions,
   spawnPty,
   confirmClose,
+  submitChatMessage,
 }) {
   const handlers = new Map([
     ["spawn_pty", (event, args) => spawnPty(args, event)],
@@ -17,6 +18,7 @@ export function createTerminalHandlers({
       terminalSessions.write(args.id, args.data);
       return null;
     }],
+    ["submit_chat_message", (_event, args) => submitChatMessage(args)],
     ["resize_pty", (_event, args) => {
       terminalSessions.resize(args.id, args.cols, args.rows);
       return null;

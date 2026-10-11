@@ -9,6 +9,28 @@ import {
 } from "./pty-submit.mjs";
 
 describe("PTY message submission", () => {
+  it("submits steering once after the safe delay even when a working spinner keeps repainting", async () => {
+    let clock = 0, listener;
+    const writes = [];
+    await submitPtyMessage({
+      ptyProcess: { write: value => writes.push({ value, at: clock }), onData: fn => { listener = fn; return { dispose() {} }; } },
+      message: "중간 지시\n현재 작업 계속", waitForOutputQuiet: false,
+      now: () => clock, wait: async ms => { clock += ms; listener("working spinner"); },
+    });
+    expect(writes.map(value => value.at)).toEqual([0, PTY_SUBMIT_DELAY_MS]);
+    expect(writes[1].value).toBe("\r");
+  });
+  it("records activity through the host write callback while still locking the real PTY", async () => {
+    let clock = 0, release;
+    const ptyProcess = { write: vi.fn() };
+    const writeInput = vi.fn();
+    const first = submitPtyMessage({ ptyProcess, message: "두 줄\n지시", writeInput,
+      now: () => clock, wait: ms => new Promise(resolve => { release = () => { clock += ms; resolve(); }; }) });
+    expect(await submitPtyMessage({ ptyProcess, message: "겹친 요청" })).toBe(false);
+    release(); expect(await first).toBe(true);
+    expect(writeInput.mock.calls).toEqual([["\x1b[200~두 줄\r지시\x1b[201~"], ["\r"]]);
+    expect(ptyProcess.write).not.toHaveBeenCalled();
+  });
   it('keeps the submission locked until a new conversation is confirmed', async () => {
     let clock = 0, sessionId = 'before';
     const writes = [], ptyProcess = { write: value => writes.push(value) };

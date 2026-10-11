@@ -12,7 +12,8 @@ it("routes typed terminal lifecycle commands through the session service", async
   };
   const spawnPty = vi.fn(() => ({ reattached: false }));
   const confirmClose = vi.fn(() => true);
-  const handlers = createTerminalHandlers({ terminalSessions, spawnPty, confirmClose });
+  const submitChatMessage = vi.fn(async () => true);
+  const handlers = createTerminalHandlers({ terminalSessions, spawnPty, confirmClose, submitChatMessage });
   const event = { sender: { id: 42 } };
 
   expect(await handlers.invoke(event, "spawn_pty", { id: "a" })).toEqual({ reattached: false });
@@ -25,4 +26,7 @@ it("routes typed terminal lifecycle commands through the session service", async
   expect(terminalSessions.action).toHaveBeenCalledWith("a", "sleep");
   expect(handlers.invoke(event, "confirm_close", {})).toBe(true);
   expect(confirmClose).toHaveBeenCalledWith(42);
+  expect(await handlers.invoke(event, "submit_chat_message", { id: "a", sessionId: "conversation", message: "지시\n내용" })).toBe(true);
+  expect(submitChatMessage).toHaveBeenCalledWith({ id: "a", sessionId: "conversation", message: "지시\n내용" });
+  expect(terminalSessions.write).not.toHaveBeenCalled();
 });

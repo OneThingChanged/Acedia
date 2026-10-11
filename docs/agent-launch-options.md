@@ -10,6 +10,7 @@ sources:
   - resource: ../app/src/components/AgentsSettings.tsx
   - resource: ../app/src/components/SessionPropertiesModal.tsx
   - resource: ../app/src/lib/agentDefaults.ts
+  - resource: ../app/src/lib/newSessionPreferences.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/shared/launch-options.mjs
   - resource: ../app/electron/services/agent-launch.mjs
@@ -45,6 +46,11 @@ Alt-screen, 작업자 프리셋은 기존 실행 옵션에서 설정한다.
 
 * 도구별 기본값은 기존 로컬 저장소 키 `multiagent.agentDefaults.v1`에 저장한다.
   다른 창의 변경은 설정 화면에 동기화된다.
+* **새 세션**은 마지막으로 생성한 세션의 AI 도구와 도구별 Dangerous 모드 켜짐·꺼짐을
+  `multiagent.newSessionPreferences.v1`에 별도로 기억한다. 생성창을 다시 열거나 앱을
+  재시작해도 복원하며, 취소하거나 생성에 실패한 선택은 저장하지 않는다. 기억한 도구가
+  비활성화·제거되면 사용 가능한 도구를 선택한다. 자식 세션은 사용 가능한 부모 도구를
+  우선한다. 계정·Alt-screen·worker·고급 옵션은 계속 설정 화면의 기본값을 사용한다.
 * 새 로컬 프로젝트의 첫 세션과 새 세션은 생성 시 기본값을 복사한다. 생성 창에서
   고급 설정을 변경하거나 초기화하면 해당 세션에만 적용한다.
 * 기존 세션은 세션 속성 → 실행 옵션에서 직접 편집한다. **현재 기본값 불러오기**는

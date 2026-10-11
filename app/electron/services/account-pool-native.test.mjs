@@ -174,9 +174,26 @@ describe('routed native tool credentials', () => {
     const runtime = f.runtimes[0];
     expect((await request(runtime, { endpoint: '/images/%2e%2e%2foutside' })).status).toBe(404);
     expect((await request(runtime, { endpoint: '/images/generations', headers: { origin: 'https://unrelated.invalid' } })).status).toBe(403);
-    expect((await request(runtime, { body: gzipSync(Buffer.alloc(33 * 1024 * 1024, 32)), headers: { 'content-encoding': 'gzip' } })).status).toBe(415);
+    expect((await request(runtime, { body: gzipSync(Buffer.alloc(129 * 1024 * 1024, 32)), headers: { 'content-encoding': 'gzip' } })).status).toBe(413);
     expect(f.requests).toHaveLength(0);
   });
+  it.each(['identity', 'gzip', 'zstd'])('relays 43 MiB of image history and native compaction unchanged over %s', async encoding => {
+    const f = await fixture(); await f.pool.launchNative('image-history', null, null, f.context);
+    const image = 'data:image/png;base64,' + 'A'.repeat(Math.ceil(43 * 1024 * 1024 / 18));
+    const body = Buffer.from(JSON.stringify({ model: 'fixture', stream: true, input: [{ type: 'message', role: 'user', content: [
+      { type: 'input_text', text: 'Preserve the image context and working history.' },
+      ...Array.from({ length: 18 }, () => ({ type: 'input_image', image_url: image })),
+    ] }] }));
+    const wire = encoding === 'identity' ? body : (encoding === 'gzip' ? gzipSync : zstdCompressSync)(body);
+    for (const endpoint of ['/responses', '/responses/compact']) {
+      expect((await request(f.runtimes[0], { endpoint, body: wire, headers: { 'content-encoding': encoding } })).status).toBe(200);
+      const relayed = f.requests.at(-1);
+      expect(relayed.url.endsWith(endpoint)).toBe(true);
+      expect(Buffer.compare(relayed.body, body)).toBe(0);
+      expect(relayed.headers['content-encoding']).toBeUndefined();
+    }
+    expect(f.requests).toHaveLength(2);
+  }, 30000);
   it('keeps two sessions on separate accounts and never exposes real credentials in launch arguments or snapshots', async () => {
     const f = await fixture();
     const first = await f.pool.launchNative('one', f.accounts[0], null, f.context);

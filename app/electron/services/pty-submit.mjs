@@ -26,6 +26,8 @@ export async function submitPtyMessage({
   ptyProcess,
   message,
   encodeInput = value => value,
+  writeInput = value => ptyProcess.write(value),
+  waitForOutputQuiet = true,
   confirm = null,
   confirmTimeoutMs = 8000,
   isCurrent = () => true,
@@ -44,12 +46,15 @@ export async function submitPtyMessage({
     subscription = ptyProcess.onData?.(() => { lastOutput = now(); sawOutput = true; });
     // A terminal paste is one ordered input event. The explicit closing marker
     // lets Codex/Claude finish a multiline paste before the discrete Enter.
-    ptyProcess.write(encodeInput(preparePtySubmission(value)));
+    writeInput(encodeInput(preparePtySubmission(value)));
     const started = now();
     await wait(PTY_SUBMIT_DELAY_MS);
     // A single-line prompt can be held by the TUI without repainting until
     // Enter. Only bracketed multiline paste needs a visible settled render.
-    while ((bracketedPaste && observesOutput && !sawOutput) || now() - lastOutput < PTY_SUBMIT_QUIET_MS) {
+    // An ongoing turn repaints its spinner continuously; that output cannot
+    // establish paste quietness. Steering still waits through the paste-burst
+    // window and requires a visible multiline render, but ignores the spinner.
+    while ((bracketedPaste && observesOutput && !sawOutput) || (waitForOutputQuiet && now() - lastOutput < PTY_SUBMIT_QUIET_MS)) {
       if (!isCurrent() || now() - started >= PTY_SUBMIT_TIMEOUT_MS) {
         throw new Error("Terminal changed or paste did not settle; submission outcome unknown.");
       }
@@ -58,7 +63,7 @@ export async function submitPtyMessage({
       await wait(Math.min(quietRemaining, PTY_SUBMIT_TIMEOUT_MS - (now() - started)));
     }
     if (!isCurrent()) throw new Error("Terminal changed after paste; submission outcome unknown.");
-    ptyProcess.write("\r");
+    writeInput("\r");
     if (confirm) {
       const deadline = now() + confirmTimeoutMs;
       while (!(await confirm())) {

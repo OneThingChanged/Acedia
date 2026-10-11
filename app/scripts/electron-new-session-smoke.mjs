@@ -156,6 +156,30 @@ async function exerciseUI() {
   projectTool().focus();
   projectTool().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   await wait(); check(!dialog() && document.activeElement.id === "fixture-open", "Project Escape did not restore focus");
+
+  const dangerous = () => document.querySelector('.new-session-execution input[type="checkbox"]');
+  await showCodex();
+  if (dangerous().checked) { dangerous().click(); await wait(); }
+  button().click(); await wait();
+  window.fixtureShow(); await wait();
+  check(tool().value === "codex" && !dangerous().checked, "New Session lost provider or explicit Dangerous off");
+  await change(tool(), "claude"); dangerous().click(); await wait(); button().click(); await wait();
+  window.fixtureShow(); await wait();
+  check(tool().value === "claude" && dangerous().checked, "New Session lost Claude or Dangerous on");
+  await change(tool(), "codex");
+  check(!dangerous().checked, "Dangerous choice leaked between providers");
+  dangerous().click(); await wait();
+  document.querySelector('.new-session-footer .btn-secondary').click(); await wait();
+  window.fixtureShow(); await wait();
+  check(tool().value === "claude" && dangerous().checked, "Cancelled session replaced the remembered choice");
+  window.fixtureShow({ failCreate: true }); await wait();
+  await change(tool(), "codex"); dangerous().click(); await wait(); button().click(); await wait();
+  window.fixtureShow(); await wait();
+  check(tool().value === "claude" && dangerous().checked, "Failed creation replaced preferences");
+  window.fixtureShow({ disabledTools: ["claude"] }); await wait();
+  check(tool().value === "codex" && !dangerous().checked, "Disabled remembered provider was selected");
+  window.fixtureShow({ parentToolId: "codex" }); await wait();
+  check(tool().value === "codex" && !dangerous().checked, "Child lost its parent's provider or tool permission choice");
   return "CREATION_INTERACTION_OK session + project";
 }
 
@@ -171,6 +195,13 @@ function runElectronUI(temporary, artifacts) {
     win.webContents.on("console-message", event => { if (event.level === "error") errors.push(event.message); });
     await win.loadFile(path.join(temporary, "index.html"));
     console.log(await win.webContents.executeJavaScript(`(${exerciseUI.toString()})()`));
+    await win.webContents.reload();
+    await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
+    await win.webContents.executeJavaScript(`(async () => {
+      window.fixtureShow(); await new Promise(resolve => setTimeout(resolve,150));
+      if (document.querySelector('.new-session-identity select').value !== 'claude' || !document.querySelector('.new-session-execution input').checked) throw Error('Reload lost new-session preferences');
+    })()`);
+    console.log('NEW_SESSION_PREFERENCES_RELOAD_OK');
     for (const kind of ["project", "session"]) {
     for (const [width, height, theme, language, advanced, workers] of [
       [1366, 768, "soft", "ko", false], [1920, 1080, "soft", "ko", false],

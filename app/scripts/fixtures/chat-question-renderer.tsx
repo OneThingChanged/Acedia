@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ChatView } from "../../src/components/ChatView";
+import { submitPtyMessage } from "../../electron/services/pty-submit.mjs";
 import "../../src/App.css";
 
 let chat = null;
@@ -15,6 +16,8 @@ const openedPaths = [];
 const imageReads = [];
 const resolvedPaths = [];
 const chatReads = [];
+const submittedMessages = [];
+const recordedMessages = [];
 let holdChatReads = false;
 const heldChatReads = [];
 let imagesBySequence = {};
@@ -27,6 +30,12 @@ let changeScreenOnWrite = undefined;
 const readTerminalScreen = () => terminalScreen;
 window.multiAgentElectron = {
   invoke: async (command, args) => {
+    if (command === "submit_chat_message") {
+      submittedMessages.push(args);
+      if (failWrites) throw new Error("fixture message submission failure");
+      return submitPtyMessage({ ptyProcess: { write: value => writes.push(value) }, message: args.message, waitForOutputQuiet: !args.steering });
+    }
+    if (command === "conversation_record_user_message") { recordedMessages.push(args); return null; }
     if (command === "chat_blocks") {
       chatReads.push(args);
       if (holdChatReads) return new Promise(resolve => heldChatReads.push(resolve));
@@ -77,6 +86,8 @@ function Harness() {
     openedPaths,
     resolvedPaths,
     chatReads,
+    submittedMessages,
+    recordedMessages,
     emit: payload => listeners.forEach(listener => listener(payload)),
     holdReads: () => { holdChatReads = true; },
     releaseReads: () => { holdChatReads = false; heldChatReads.splice(0).forEach(resolve => resolve(chat)); },

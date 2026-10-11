@@ -31,6 +31,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "detach_terminal",
   "terminal_session_action",
   "write_pty",
+  "submit_chat_message",
   "resize_pty",
   "kill_pty",
   "confirm_close",
@@ -550,6 +551,16 @@ function assertInvokeRequest(command, rawArgs) {
       if (typeof args.data !== "string" || args.data.length > 1024 * 1024) {
         throw new TypeError("Electron terminal data must be a string up to 1 MiB");
       }
+      break;
+    case "submit_chat_message":
+      assertId(args);
+      if (typeof args.message !== "string" || !args.message.trim() || args.message.length > 1024 * 1024) {
+        throw new TypeError("Chat message must be a non-empty string up to 1 MiB");
+      }
+      if (args.sessionId !== undefined && (typeof args.sessionId !== "string" || !args.sessionId.trim() || args.sessionId.length > 256)) {
+        throw new TypeError("Chat conversation id is invalid");
+      }
+      if (args.steering !== undefined && typeof args.steering !== "boolean") throw new TypeError("Chat steering must be boolean");
       break;
     case "resize_pty":
       assertId(args);

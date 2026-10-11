@@ -4624,15 +4624,16 @@ function App() {
           onCreate={async (payload) => {
             setShowModal(false);
             const parent = newSessionParentId ? agentsRef.current.find((agent) => agent.id === newSessionParentId) : undefined;
-            if (newSessionParentId && !parent) { setNewSessionParentId(null); pushToast("", activeProject?.name || "", text("부모 세션이 삭제되어 자식을 만들 수 없습니다.", "The parent was deleted; the child could not be created.")); return; }
+            if (newSessionParentId && !parent) { setNewSessionParentId(null); pushToast("", activeProject?.name || "", text("부모 세션이 삭제되어 자식을 만들 수 없습니다.", "The parent was deleted; the child could not be created.")); return false; }
             setNewSessionParentId(null);
             const result = await createAgent(payload, parent ? { projectId: parent.projectId } : {});
-            if (!result.created || !result.id) { if (result.error) pushToast("", activeProject?.name || "", result.error); return; }
+            if (!result.created || !result.id) { if (result.error) pushToast("", activeProject?.name || "", result.error); return false; }
             if (parent) {
               setOrganizationSelectedId(result.id);
               const started = await spawnAgentInBackground(result.id);
               if (!started.ok) pushToast(result.id, payload.name, started.error || text("세션을 시작하지 못했습니다.", "Could not start the session."));
             }
+            return true;
           }}
         />
       )}

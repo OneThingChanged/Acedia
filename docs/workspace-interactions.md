@@ -640,7 +640,17 @@ The default retains completion reservations. When ready and the queue is empty,
 either selection starts the next request immediately. Shift+Tab navigates focus;
 autocomplete takes priority over Tab, and IME composition never changes delivery.
 
-Steering writes ordinary text plus Enter to the provider's existing terminal;
+Desktop Chat sends one `submit_chat_message` request to the host. The host
+serializes text and a discrete Enter, waits at least 500ms past the Windows
+paste-burst window, and wraps multiline input as a bracketed paste. A working
+spinner does not block steering while repainting. The active PTY, window owner
+and conversation must remain the intended target. User messages are persisted
+after the host submission succeeds. Failed or uncertain submissions retain the
+message in an alert with a terminal action and pause the remaining queue until
+reviewed; uncertain text is never retried automatically, including after a
+Chat/terminal switch.
+
+Steering sends text plus Enter to the provider's existing terminal;
 it does not send Escape or restart the turn. Each CLI determines when it can
 consume the instruction. Completion reservations stay in Acedia until work and
 questions finish. A short input cooldown serializes rapid messages without
@@ -656,7 +666,10 @@ protection, autocomplete/newline/IME/focus behavior, Codex/Claude routing and
 1024/420/320px dark/light layouts. `codex-steering-cli-smoke.mjs` uses the installed
 Codex 0.162.0 with an isolated profile and a loopback model fixture: text plus
 Enter reaches an ongoing native response in the same turn, while a follow-up
-after completion starts the next turn. Claude's terminal timing is based on its
+after completion starts the next turn. A long Korean multiline request reaches
+the native transcript intact and starts exactly one additional turn. The UI
+smoke also verifies settled multiline submission, no premature saved message,
+failure/remount recovery, and no automatic replay. Claude's terminal timing is based on its
 [interactive-mode documentation](https://code.claude.com/docs/en/interactive-mode#queue-messages-while-claude-works);
 the native-Claude flow was not exercised. Codex's distinction follows the
 [official follow-up behavior](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan).
@@ -829,6 +842,16 @@ load these defaults and allow overrides. Explicitly disabled workers remain off
 after reload. Existing sessions retain their own accounts and options. Local
 Codex and Claude accounts are not applied to SSH sessions. Failed preference writes are
 shown as errors rather than reported as saved.
+
+New Session remembers the tool used for the last successfully created session
+and each tool's last Dangerous mode choice in
+`multiagent.newSessionPreferences.v1`, including an explicit off choice. The next
+dialog reads these preferences after reopening or reloading the app. Tools
+without Dangerous mode always submit it as off; disabled/removed tools fall
+back to an enabled choice. Child-session creation prefers its enabled parent
+tool. Cancelled or failed creation does not replace the remembered choices.
+Accounts, workers, Alt-screen and advanced launch options still come from the
+per-tool Settings defaults; this preference does not modify those defaults.
 
 Settings govern available tools, hooks, shortcuts, Remote, SSH, appearance,
 session defaults, and the conversation-store directory. Moving that directory

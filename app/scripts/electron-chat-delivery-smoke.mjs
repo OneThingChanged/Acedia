@@ -114,6 +114,39 @@ async function exercise(win) {
     await fs.writeFile(path.join(output, `delivery-${theme}-${width}.png`), (await win.webContents.capturePage()).toPNG());
   }
   await check('window.questionFixture.writes.length===8', 'Queue layout interactions sent reserved messages');
+  await patch({state:{sessionId:'submission-check',provider:'codex',agentStatus:'running'},chat:{...chat,lifecycle:'idle',lifecycleAt:Date.now()}});
+  await wait(100);
+  const multiline = '스팀 호스트 테스트와 로비 기능을 확인해줘.\n초대 코드도 같은 요청에서 확인해줘.';
+  await input(multiline); await key('Enter');
+  await until('window.questionFixture.writes.length===9');
+  await check('window.questionFixture.recordedMessages.length===4', 'Recorded a user message before host submission');
+  await until('window.questionFixture.writes.length===10 && window.questionFixture.recordedMessages.length===5');
+  await check(`JSON.stringify(window.questionFixture.writes.slice(8))===JSON.stringify([${JSON.stringify('\x1b[200~'+multiline.replaceAll('\n','\r')+'\x1b[201~')},'\\r'])`, 'Multiline text or discrete Enter changed');
+  await check("window.questionFixture.submittedMessages.at(-1).sessionId==='submission-check'", 'Submission lost its conversation identity');
+  await patch({state:{sessionId:'failed-submission',agentStatus:'running'},failWrites:true,chat:{...chat,lifecycle:'idle',lifecycleAt:Date.now()}});
+  await wait(100); await input('전송 실패해도 보존할 메시지'); await key('Enter');
+  await until("document.querySelector('.chat-submission-error')?.textContent.includes('전송 실패해도 보존할 메시지')");
+  await check('window.questionFixture.writes.length===10 && window.questionFixture.recordedMessages.length===5', 'Failed transport was recorded as delivered');
+  await input('오류 확인 후 보낼 메시지'); await key('Enter');
+  await until("document.querySelector('.chat-queue')?.textContent.includes('오류 확인 후 보낼 메시지')");
+  await wait(1400);
+  await check('window.questionFixture.submittedMessages.length===6', 'Uncertain submission or following queue was replayed automatically');
+  await patch({show:false}); await until("!document.querySelector('.chat-view')");
+  await patch({show:true}); await until("!!document.querySelector('.chat-submission-error') && !!document.querySelector('.chat-queue')");
+  await run("document.querySelector('.chat-submission-error button').click()");
+  await check('window.questionTerminalOpened===true', 'Failed submission cannot open its terminal for review');
+  await patch({failWrites:false});
+  await run("document.querySelectorAll('.chat-submission-error button')[1].click()");
+  await until('window.questionFixture.writes.length===12 && window.questionFixture.recordedMessages.length===6');
+  await check("window.questionFixture.submittedMessages.at(-1).message==='오류 확인 후 보낼 메시지' && !document.querySelector('.chat-queue')", 'Reviewed failure retried the uncertain message or blocked the next queue');
+  await wait(1300);
+  await patch({state:{sessionId:'in-flight-old'},chat:{...chat,lifecycle:'idle',lifecycleAt:Date.now()}});
+  await wait(100); await input('이전 대화에서 전송 중'); await key('Enter');
+  await until('window.questionFixture.writes.length===13');
+  await patch({state:{sessionId:'in-flight-new'},chat:{...chat,lifecycle:'idle',lifecycleAt:Date.now()}});
+  await wait(100); await input('새 대화의 다음 메시지'); await key('Enter');
+  await until("window.questionFixture.recordedMessages.at(-1)?.text==='새 대화의 다음 메시지' && !document.querySelector('.chat-queue')");
+  await check("window.questionFixture.recordedMessages.at(-1).sessionId==='in-flight-new' && !window.questionFixture.recordedMessages.some(message=>message.text==='이전 대화에서 전송 중')", 'In-flight conversation switch blocked the queue or saved text under the wrong conversation');
   console.log('CHAT_DELIVERY_UI_OK Tab selection/IME/focus, Enter steering and completion queue, remount/conversation isolation, cancellation, question guard, autocomplete/newlines, Codex/Claude, fixed Working/queue/composer order, independent history/queue scroll, dark/light 1024/420/320px');
 }
 

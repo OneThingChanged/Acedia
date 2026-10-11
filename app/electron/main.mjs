@@ -4917,6 +4917,37 @@ async function readStorageSnapshot() {
 const terminalHandlers = createTerminalHandlers({
   terminalSessions,
   spawnPty,
+  submitChatMessage: async ({ id, sessionId, message, steering }) => {
+    const entry = ptys.get(id);
+    if (!entry?.process || forceClosing || questionResponder.isBusy(id)) return false;
+    const process = entry.process;
+    const conversationId = () => agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
+    const previousSessionId = conversationId();
+    const sameConversation = () => !sessionId || !conversationId() || conversationId() === sessionId;
+    const isCurrent = () => ptys.get(id) === entry && entry.process === process && sameConversation();
+    const pending = (await currentQuestion(id))?.question;
+    if (!isCurrent() || (pending && !pending.async) || questionResponder.isBusy(id)) return false;
+    const resetting = !entry.ssh && entry.aiToolId === 'codex' && /^\/(?:clear|new)(?:\s|$)/.test(message.trim());
+    if (resetting && !deliveryComposerReady(entry)) return false;
+    capacityRetry.cancel(id);
+    return submitPtyMessage({
+      ptyProcess: process, message, isCurrent,
+      waitForOutputQuiet: !steering,
+      writeInput: value => terminalSessions.write(id, value),
+      ...(resetting ? { confirm: async () => {
+        // A successful reset changes the expected conversation; its process
+        // still has to be the one that received this command.
+        const sameProcess = () => ptys.get(id) === entry && entry.process === process;
+        const nextId = await confirmCodexConversationReset({ entry, previousSessionId,
+          isCurrent: sameProcess, sessionId: () => agentSessionIds.get(id) });
+        if (!sameProcess()) throw new Error('Terminal changed; submission outcome unknown.');
+        agentTranscripts.delete(id); agentTranscriptTool.delete(id); transcriptMissUntil.delete(id);
+        publishAgentHookEvent('agent:hook-event', { id, event: 'session-start',
+          hook_event_name: 'ChatConversationReset', session_id: nextId, cwd: entry.cwd, received_at: Date.now() });
+        return true;
+      } } : {}),
+    });
+  },
   confirmClose: (webContentsId) =>
     closeCoordinator?.confirm(webContentsId) ?? false,
 });
@@ -4934,6 +4965,7 @@ async function invokeCommand(event, command, rawArgs) {
       "attach_terminal",
       "terminal_session_action",
       "write_pty",
+      "submit_chat_message",
       "resize_pty",
       "kill_pty",
     ]);

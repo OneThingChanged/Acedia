@@ -41,6 +41,10 @@ function Harness() {
     setFixture(current => ({ ...next, key: current.key + 1 }));
     setOpen(true);
   };
+  const parentAgent = fixture.parentToolId ? {
+    id: "fixture-parent", projectId: "fixture-project", name: "Parent", folder: "C:/fixture/web/webcanvas",
+    aiToolId: fixture.parentToolId, aiLabel: fixture.parentToolId, dangerous: false, status: "running", createdAt: 1,
+  } : undefined;
   const project = fixture.missing ? null : {
     id: "fixture-project", name: "Webcanvas", folder: "C:/fixture/web/webcanvas", createdAt: 1,
     sshHostId: fixture.ssh ? "fixture-ssh" : undefined,
@@ -56,7 +60,8 @@ function Harness() {
             ]}
             onCreate={payload => { window.fixtureCreated = payload; }} />
         : <NewAgentModal project={project} defaultName="Plugin" onCancel={() => setOpen(false)}
-            onCreate={payload => { window.fixtureCreated = payload; }} />)}
+            parentAgent={parentAgent} disabledTools={fixture.disabledTools || []}
+            onCreate={async payload => { window.fixtureCreated = payload; return !fixture.failCreate; }} />)}
     </AppLanguageProvider>
   </div>;
 }

@@ -25,7 +25,7 @@ function clientRpc(socket) {
   }) };
 }
 async function fixture(overrides = {}) {
-  const { threadStartResult, ...runtimeOverrides } = overrides;
+  const { threadStartResult, threadResumeResult, ...runtimeOverrides } = overrides;
   const seen = [], replies = [], authenticated = [];
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await new Promise(resolve => backend.once('listening', resolve));
@@ -40,7 +40,8 @@ async function fixture(overrides = {}) {
       if (message.method === 'account/login/start') auth = message.params;
       const result = message.method === 'account/read'
         ? { account: { type: 'chatgpt', planType: 'pro' }, requiresOpenaiAuth: true, workspaceRouting: { chatgptAccountId: auth.chatgptAccountId, backendOrigin: 'https://chatgpt.com' } }
-        : message.method === 'thread/start' && threadStartResult ? threadStartResult : { accepted: true };
+        : message.method === 'thread/start' && threadStartResult ? threadStartResult
+        : message.method === 'thread/resume' && threadResumeResult ? threadResumeResult : { accepted: true };
       packet(socket, { id: message.id, result });
     });
   });
@@ -74,6 +75,18 @@ async function fixture(overrides = {}) {
 }
 
 describe('native routed Codex sessions', () => {
+  it('resumes image-rich history larger than 32 MiB and keeps the next turn connected', async () => {
+    const image = 'data:image/png;base64,' + 'A'.repeat(34 * 1024 * 1024);
+    const f = await fixture({ threadResumeResult: { thread: { id: 'large-history', turns: [{ items: [
+      { type: 'userMessage', content: [{ type: 'image', url: image }] },
+    ] }] }, model: 'fixture', reasoningEffort: 'high' } });
+    const resumed = await Promise.race([f.rpc.call('thread/resume', { threadId: 'large-history' }),
+      new Promise((_, reject) => f.client.once('close', code => reject(new Error(`Resume disconnected: ${code}`)))),
+    ]);
+    expect(resumed.result.thread.turns[0].items[0].content[0].url.length).toBe(image.length);
+    expect(f.runtime.mainThreadId).toBe('large-history');
+    expect((await f.rpc.call('turn/start', { threadId: 'large-history', input: [{ type: 'text', text: 'Continue.' }] })).result.accepted).toBe(true);
+  }, 15000);
   it('observes quota changes on control and TUI sockets while forwarding the original notification', async () => {
     const onRateLimits = vi.fn();
     const f = await fixture({ onRateLimits }); await f.rpc.call('initialize');
