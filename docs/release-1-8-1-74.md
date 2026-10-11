@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.74
 description: "세션별 실행 설정 기억, 사이드바 종료·경로 검색, 고정 큐와 라우팅 사용량 자동 갱신."
-status: draft
+status: stable
 last_updated: 2026-10-11
 ---
 
@@ -39,12 +39,30 @@ last_updated: 2026-10-11
 - 제품 버전과 Android 소스 versionName은 **1.8.1.74**, npm은 **1.8.1**이다. 새 APK를 만들지 않아 기존 서명 APK **1.8.1.39/code 21**을 재사용한다.
 - 버전 갱신 후 배포 대상의 전체 **182개 파일·1,299개 검사**와 모바일 **24개 검사**를 통과했다. 첫 전체 실행에서 모의 Store의 WACK XML 검사가 기본 5초 제한에 걸렸다. 단독 재실행에서는 Git PATH 누락을 수정했고, 배포 지침의 `--maxWorkers=2 --testTimeout=60000` 환경으로 전체 검사를 다시 통과했다. Store의 실제 빌드·제출은 실행하지 않았다.
 - TypeScript·Vite 프로덕션 빌드를 통과했다. 기존 큰 번들 경고는 유지된다.
-- EXE 패키지와 공개 자산 검증 결과는 배포 완료 후 아래에 기록한다.
+- origin/main에 푸시한 고정 소스 `9ba073c59182586fd6c9df438622266af8819bc3`에서 EXE 패키지를 생성했다. 첫 NSIS 실행은 기존 CLI wrapper와 실행 인수의 `--publish never` 중복으로 게시 관리 단계가 실패했다. 완성된 앱 패키지를 재사용해 옵션을 한 번만 전달하는 native CLI로 설치 파일을 생성했고 종료 코드 0을 확인했다. 제품 소스·버전은 변경하지 않았다.
+- 격리 프로필의 packaged Git query·bridge·문서 브라우저 재사용·Dashboard 및 종료/트레이/보안 lifecycle 검사를 통과했다. 패키지의 런타임·렌더러 **283개 파일**이 빌드 원본과 일치한다.
+- 설치 파일의 FileVersion **1.8.1.74**, npm 호환 ProductVersion **1.8.1**, manifest·크기·SHA-256과 포함 APK의 패키지·아키텍처·릴리스 인증서·해시를 확인했다. EXE Authenticode는 기존 채널과 같은 `NotSigned`다.
+- packaged smoke에는 이전 릴리스와 같은 `AttachConsole failed` 진단 8개가 출력됐다. Git·문서 브라우저·bridge·Dashboard 성공 marker와 프로세스 종료 코드 0을 확인했다.
+- 공개 업데이터가 **1.8.1.72·1.8.1.73 → 1.8.1.74**를 감지한다. 공개 설치 파일 전체 다운로드와 세 자산의 크기·SHA-256, 태그·고정 소스·latest 안정 릴리스 검증을 통과했다.
 
 배포 전 검사 증빙: `output/full-suite-exe-1.8.1.74.log`,
 `output/exe-1.8.1.74-store-test-recheck.log`, `output/full-suite-exe-1.8.1.74-bounded.log`,
 `output/mobile-tests-exe-1.8.1.74.log`, `output/build-frontend-1.8.1.74.log`.
 
+패키지·공개 배포 증빙: `output/build-exe-1.8.1.74-isolated.log`,
+`output/build-exe-1.8.1.74-final.log`, `output/mobile-artifact-1.8.1.74.log`,
+`output/packaged-smoke-1.8.1.74.log`, `output/packaged-lifecycle-1.8.1.74.log`,
+`output/exe-release-1.8.1.74/local-verification.json`, `output/publish-exe-1.8.1.74.log`,
+`output/public-update-verification-1.8.1.74.log`, `.build-tools/public-verified-1.8.1.74.json`.
+
 ## 공개 배포
 
-배포 준비 중이다. GitHub 안정 릴리스 게시와 공개 업데이터 다운로드·해시 검증을 완료하면 고정 소스와 결과를 기록한다.
+- [GitHub 안정 릴리스 v1.8.1.74](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.74)를 2026-10-11 **12:49:53 KST**에 게시했다.
+- 소스·태그는 `9ba073c59182586fd6c9df438622266af8819bc3`이다. 기존 서명 APK를 포함하는 EXE 배포이며 Microsoft Store 제출·새 APK 빌드는 실행하지 않았다.
+- **12:50:28 KST**에 공개 다운로드·업데이트 검증을 완료했다. 설치 파일은 실행하지 않았으며 사용자의 실행 중인 앱과 프로필을 검증에 사용하지 않았다. 사용자 PC의 설치·업데이트 여부는 별도다. 앱 설정의 Check → Update로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.74-x64.exe` | 151342578 | `5f4fa69c1b4b8fb270618b9ead3b6408e10fd87ae59d427fd75b208159eb796d` |
+| `Acedia-Setup-1.8.1.74-x64.exe.blockmap` | 159195 | `1c3208c6e529acfffbc1c56731f2ad92f1cca0cae9b1116600978e728fb19023` |
+| `latest-exe.json` | 256 | `a9d01a2fb65d16b732108c50086155455fba6e08dc74e4dc226a362c0ad08700` |

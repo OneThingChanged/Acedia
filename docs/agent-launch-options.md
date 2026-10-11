@@ -130,7 +130,7 @@ Fast/Off 인수의 native config 해석을 확인한다. 실제 로그인 계정
 열었을 때 저장된 모델·effort와 원래 대화 ID를 유지했고, 실제 CLI 요청의 모델·effort도
 확인했다. 종료 후 검사용 CLI의 전역 기본값을 다른 모델·effort로 바꾸어도 세션의
 저장값으로 복원했다. 이 개발 앱 검사도 격리된 CLI 홈과 loopback 모델 응답을 사용한다.
-이 변경은 [EXE 1.8.1.74](release-1-8-1-74.md)의 배포 대상에 포함한다.
+이 변경은 [EXE 1.8.1.74](release-1-8-1-74.md)에 포함되어 공개 배포·다운로드 검증을 마쳤다.
 
 검증 명령은 `app/`에서 `npm run electron:session-model-smoke`다. 실제 Remote 화면의
 1024px·390px 메뉴, 모델별 effort 변경, 우클릭 대상, 작업 중 저장과 재시작 제한을 확인한다.
