@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.77
 description: "설정 가능한 기본 모델, 사이드바 호버 동작, 닫힌 콘솔의 EPIPE 오류 방지와 채팅·Codex 통신 리팩토링."
-status: review
+status: stable
 last_updated: 2026-10-12
 ---
 
@@ -30,13 +30,33 @@ last_updated: 2026-10-12
 
 ## 검증
 
-- 전체 **188개 파일·1,357개 검사**, TypeScript·Vite 빌드를 통과했다. 버전 갱신 후 렌더러와 EXE를 다시 빌드한다.
+- 전체 **188개 파일·1,357개 검사**, TypeScript·Vite 빌드를 통과했다. 버전 갱신 후 버전·APK 계약 **7개 검사**와 렌더러 빌드를 다시 통과했다. 기존 큰 번들 경고는 유지된다.
 - 실제 Electron 설정창에서 **123개 검색 항목**, 800/1202/1920px 배치와 기본 모델 저장·복원·effort 호환성·도구별 분리·실패 안내·늦은 응답 무시를 확인했다.
 - 실제 main IPC와 격리된 bridge 검사, Remote 모델 선택창의 1024/390px 배치, 사이드바 호버·포커스·위치 유지를 확인했다.
 - 실제 Electron의 stdout/stderr 연결을 모두 끊어 `EPIPE` 발생 후에도 오류 창 없이 계속 실행되는 것을 확인했다.
 - 제품과 Android 소스 버전은 **1.8.1.77**, npm 호환 버전은 **1.8.1**이다. 포함하는 기존 APK는 **1.8.1.39/code 21**이다.
-- 빌드·패키지 및 공개 다운로드 검증 결과는 완료 후 이 문서에 기록한다.
+- 고정 소스 `1a44024a4428c0621b7665e58c3578bc8850c235`를 푸시하고 별도 출력 폴더에서 EXE를 빌드했다. 포함한 기존 APK의 인증서·패키지·아키텍처·SHA-256을 다시 확인했다.
+- 실제 packaged Git query·기본 모델 IPC·bridge·문서 브라우저 재사용·Dashboard 검사와 종료·트레이·보안 lifecycle 검사를 통과했다. 패키지의 런타임·렌더러 **294개 파일**이 빌드 원본과 일치한다.
+- 설치 파일 FileVersion **1.8.1.77**, npm 호환 ProductVersion **1.8.1**, 설치 파일과 manifest의 크기·SHA-256을 확인했다. Authenticode는 기존 EXE 채널과 같은 `NotSigned`다. packaged 검사에서 기존 `AttachConsole failed` 진단이 출력됐으나 필수 성공 marker와 종료 코드 0을 확인했다.
 
 기능 검증 증빙: `output/model-defaults-epipe-full-tests.log`, `output/model-defaults-build.log`,
 `output/model-defaults-settings-full.log`, `output/model-defaults-bridge.log`,
 `output/stdio-epipe-smoke.log`, `output/sidebar-hover-check.mjs`.
+
+배포 검증 증빙: `output/version-checks-1.8.1.77.log`, `output/build-frontend-1.8.1.77.log`,
+`output/build-exe-1.8.1.77-isolated.log`, `output/packaged-smoke-1.8.1.77.log`,
+`output/packaged-lifecycle-1.8.1.77.log`, `output/exe-release-1.8.1.77/local-verification.json`,
+`output/publish-exe-1.8.1.77.log`, `output/public-update-verification-1.8.1.77.log`,
+`.build-tools/public-verified-1.8.1.77.json`.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.77](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.77)를 2026-10-12 **03:01:45 KST**에 게시했다. 태그와 빌드 소스는 `1a44024a4428c0621b7665e58c3578bc8850c235`이다.
+- **03:02:26 KST**에 **1.8.1.75·1.8.1.76 → 1.8.1.77** 업데이트 감지, 공개 설치 파일 전체 다운로드와 세 자산의 크기·SHA-256 검증을 통과했다. 1.8.1.76은 별도 공개 설치 파일이 없는 소스 버전이며 업데이터의 현재 버전 입력으로도 확인했다.
+- 기존 APK를 포함한 Standard EXE 배포다. 사용자 앱·프로필을 변경하거나 설치 파일을 실행하지 않았다. 앱 설정의 **Check → Update**로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.77-x64.exe` | 151352844 | `e4335f324abbf4122c036a043d553ab897455f613881cd236b4bb6857fd34b6f` |
+| `Acedia-Setup-1.8.1.77-x64.exe.blockmap` | 159282 | `47bdebb5e8ea632000374b1c6b81a5f389e12d73cf7ee60542bc822441d1240d` |
+| `latest-exe.json` | 256 | `1811185111acfdf4b6714b30877aafa2e0512e196193bd738abf5fd918c9d7af` |
