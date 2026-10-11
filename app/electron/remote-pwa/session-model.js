@@ -8,7 +8,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, st
   const headerButton = $("sessionModelButton");
   let menuId = null, targetId = null, trigger = null, catalog = null, busy = false, sequence = 0;
   const supported = agent => ["codex", "claude"].includes(agent?.aiToolId) && !agent.sshHostId;
-  const label = (settings, current = false) => settings ? `${settings.model}${settings.effort ? ` · ${settings.effort}` : ` · ${t(current ? "effort 확인되지 않음" : "모델 기본값")}`}` : t("CLI 기본값");
+  const label = (settings, current = false) => settings ? `${settings.model}${settings.effort ? ` · ${settings.effort}` : ` · ${t(current ? "effort 확인되지 않음" : "모델 기본값")}`}` : t(current ? "확인되지 않음" : "Acedia 기본값");
 
   function closeMenu(restore = false) {
     menu.hidden = true; menuId = null;
@@ -63,7 +63,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, st
       $("sessionModelCatalogNote").hidden = result.capabilitiesSource !== "cli-help";
       $("sessionModelCurrent").textContent = `${t(result.currentSource === "last-turn" ? "최근 대화 설정" : "시작 시 설정")}: ${result.current ? label(result.current, true) : t("확인되지 않음")}`;
       $("sessionModelSaved").textContent = `${t("저장된 설정")}: ${label(result.saved)} · ${result.accountLabel || "Codex"}`;
-      const defaultOption = document.createElement("option"); defaultOption.value = ""; defaultOption.textContent = t("CLI 기본값");
+      const defaultOption = document.createElement("option"); defaultOption.value = ""; defaultOption.textContent = t("Acedia 기본값");
       model.replaceChildren(defaultOption);
       for (const item of result.models) {
         const node = document.createElement("option"); node.value = item.model;

@@ -1,4 +1,6 @@
 export type SessionModel = { model: string; effort?: string; serviceTier?: string | null };
+export type SessionModelDefaultsSnapshot = { settings: SessionModel; revision: number };
+export type ProviderModelCatalog = { models: SessionModelOption[]; accountLabel: string; capabilitiesSource: "account" | "cli-help" };
 export type SessionModelOption = ReturnType<typeof normalizeModelCatalog>[number];
 export type SessionModelCatalog = {
   models: SessionModelOption[];

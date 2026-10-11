@@ -76,6 +76,8 @@ import { RemoteSessionActivationBroker } from "./services/remote-session-activat
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
 import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
 import { SessionModelMemory, nativeCodexModel } from "./services/session-model-memory.mjs";
+import { SessionModelDefaults } from "./services/session-model-defaults.mjs";
+import { guardConsoleOutput } from "./services/stdio-logging.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
 import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
 import { projectSessionRuntime } from "./shared/session-state.mjs";
@@ -125,6 +127,7 @@ import {
   claimWindowSession,
 } from "./services/window-session-ownership.mjs";
 
+guardConsoleOutput();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
 const preloadPath = path.join(__dirname, "preload.cjs");
@@ -456,7 +459,10 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
-sessionModelMemory = new SessionModelMemory(path.join(app.getPath("userData"), "session-model-memory.json"));
+const sessionModelDefaults = new SessionModelDefaults(path.join(app.getPath("userData"), "session-model-defaults.json"));
+sessionModelMemory = new SessionModelMemory(path.join(app.getPath("userData"), "session-model-memory.json"), {
+  defaultSettings: args => sessionModelDefaults.get(args.aiToolId).settings,
+});
 const idleSettings = idlePreferences(app.getPath('userData'));
 const idleViews = new Map();
 const idlePolicy = new IdleSessionPolicy({
@@ -1032,13 +1038,9 @@ function sessionModelAgent(id) {
   const agent = monitorService?.state?.agents?.find(item => item.id === id);
   return agent ? liveOutputForAgents([agent], 0)[0] : null;
 }
-async function sessionModelCatalog(agent) {
-  const live = ptys.get(agent.id);
-  const provider = agent.aiToolId;
-  const accountId = (provider === "claude" ? live?.claudeAccountId : live?.codexAccountId) || selectedAccountId(agent);
-  const routed = provider === "codex" && (live ? live.poolRouted : accountPool.state.enabled);
-  const owner = accountPool.state.sessions[agent.id]?.accountId || agent.codexPoolAccountId || "auto";
-  const key = routed ? `pool:${agent.id}:${owner}` : `${provider}:${accountId}`;
+async function providerModelCatalog({ provider, accountId = "default", routed = false, id = "", codexPoolAccountId }) {
+  const owner = accountPool.state.sessions[id]?.accountId || codexPoolAccountId || "auto";
+  const key = routed ? `pool:${id}:${owner}` : `${provider}:${accountId}`;
   let cached = sessionModelCatalogCache.get(key);
   if (!cached || cached.until < Date.now()) {
     const promise = (async () => {
@@ -1052,7 +1054,7 @@ async function sessionModelCatalog(agent) {
           (error, stdout) => error ? reject(new Error("Claude CLI 옵션을 확인하지 못했습니다. CLI 설치를 확인하세요.")) : resolve(stdout)));
         return { models: claudeModelCatalog(help), accountLabel: claudeAccounts.list().find(a => a.id === accountId)?.label || "Claude", capabilitiesSource: "cli-help" };
       }
-      if (routed) return accountPool.sessionModels(agent.id, agent.codexPoolAccountId);
+      if (routed) return accountPool.sessionModels(id, codexPoolAccountId);
       const args = ["app-server", ...(accountId === "default" ? [] : ["-c", "cli_auth_credentials_store=file"])];
       const native = process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex";
       const command = native ? { file: native, args } : {
@@ -1070,6 +1072,18 @@ async function sessionModelCatalog(agent) {
     if (sessionModelCatalogCache.size > 100) sessionModelCatalogCache.delete(sessionModelCatalogCache.keys().next().value);
   }
   const result = await cached.promise;
+  return { ...result, capabilitiesSource: result.capabilitiesSource || "account" };
+}
+function defaultModelCatalog(args) {
+  return providerModelCatalog({ provider: args.provider, accountId: args.accountId, codexPoolAccountId: args.codexPoolAccountId,
+    routed: args.provider === "codex" && accountPool.state.enabled });
+}
+async function sessionModelCatalog(agent) {
+  const live = ptys.get(agent.id);
+  const provider = agent.aiToolId;
+  const accountId = (provider === "claude" ? live?.claudeAccountId : live?.codexAccountId) || selectedAccountId(agent);
+  const routed = provider === "codex" && (live ? live.poolRouted : accountPool.state.enabled);
+  const result = await providerModelCatalog({ provider, accountId, routed, id: agent.id, codexPoolAccountId: agent.codexPoolAccountId });
   const currentAgent = sessionModelAgent(agent.id);
   if (ptys.get(agent.id) !== live || currentAgent?.aiToolId !== provider || selectedAccountId(currentAgent) !== selectedAccountId(agent)) {
     throw new Error("세션 또는 계정이 바뀌었습니다. 모델 목록을 다시 확인하세요.");
@@ -1117,6 +1131,7 @@ async function rememberSessionModel(id) {
 }
 const sessionModels = new SessionModelService({
   agentFor: sessionModelAgent, active: id => ptys.has(id), catalog: sessionModelCatalog,
+  defaultSettings: agent => sessionModelDefaults.get(agent.aiToolId).settings,
   inputReady: id => modelInputReady(ptys.get(id)),
   update: async payload => {
     if ([...remoteSessionModelBroker.pending.values()].some(item => item.id === payload.id)) return remoteSessionModelBroker.update(payload);
@@ -5843,6 +5858,16 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return remoteSessionActivationBroker.complete(args);
     }
+    case "get_model_defaults":
+    case "get_default_model_catalog":
+    case "set_model_defaults": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (!runtime?.workspace_window) throw new Error("작업창의 설정에서 기본 모델을 변경하세요.");
+      if (command === "get_model_defaults") return sessionModelDefaults.get(args.provider);
+      const catalog = await defaultModelCatalog(args);
+      if (command === "get_default_model_catalog") return catalog;
+      return sessionModelDefaults.save(args.provider, args.settings, args.revision, catalog.models);
+    }
     case "get_session_model": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (!runtime?.workspace_window) throw new Error("작업창에서 모델 설정을 확인하세요.");
@@ -6292,6 +6317,20 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
         await verifyBrowserSettings(initialWindow, documentBrowserWindows, handleBrowserIntegration);
         const { verifySavedCommands } = await import("./services/saved-commands-smoke.mjs");
         await verifySavedCommands(initialWindow);
+        const defaultsBridgeOk = await initialWindow.webContents.executeJavaScript(`
+          (async () => {
+            const codex = await window.multiAgentElectron.invoke("get_model_defaults", { provider: "codex" });
+            const claude = await window.multiAgentElectron.invoke("get_model_defaults", { provider: "claude" });
+            let rejected = false;
+            try { await window.multiAgentElectron.invoke("get_model_defaults", { provider: "shell" }); }
+            catch { rejected = true; }
+            return rejected && codex?.settings?.model === "gpt-6.1-sol" && codex.settings.effort === "xhigh"
+              && codex.settings.serviceTier === "default" && claude?.settings?.model === "sonnet"
+              && claude.settings.effort === "medium" && !Object.hasOwn(claude.settings, "serviceTier");
+          })()
+        `);
+        if (!defaultsBridgeOk) throw new Error("Model defaults IPC validation failed");
+        console.log("[electron-smoke] ACEDIA_MODEL_DEFAULTS_BRIDGE_OK");
         const { verifyNotificationPolicy } = await import("./services/notification-policy-smoke.mjs");
         await verifyNotificationPolicy(initialWindow, powerPolicy);
         const { verifyIdleSessions } = await import("./services/idle-session-smoke.mjs");

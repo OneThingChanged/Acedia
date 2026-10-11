@@ -122,9 +122,9 @@ export async function lastTurnModel(file, provider = "codex", since) {
 }
 
 export class SessionModelService {
-  constructor({ agentFor, active, catalog, update, inputReady = () => false }) {
+  constructor({ agentFor, active, catalog, update, inputReady = () => false, defaultSettings = () => null }) {
     this.agentFor = agentFor; this.active = active; this.catalog = catalog; this.update = update;
-    this.inputReady = inputReady;
+    this.inputReady = inputReady; this.defaultSettings = defaultSettings;
   }
   agent(id) {
     if (typeof id !== "string" || !id || id.length > 200) throw fail("세션을 찾을 수 없습니다.", 404);
@@ -147,7 +147,9 @@ export class SessionModelService {
     const id = body?.id, agent = this.agent(id);
     const identity = modelSessionIdentity(agent);
     if (body.restart != null && typeof body.restart !== "boolean") throw fail("Invalid restart option.");
-    const settings = body.settings == null ? null : normalizeSessionModel(body.settings);
+    // Freeze the app fallback for a reset before restarting so launch
+    // verification checks the same concrete choice, even if defaults change.
+    const settings = normalizeSessionModel(body.settings == null ? this.defaultSettings(agent) : body.settings) ?? null;
     if (body.settings != null && !settings) throw fail("Invalid model/effort settings.");
     if (agent.aiToolId !== "codex" && settings && Object.hasOwn(settings, "serviceTier")) throw fail("Fast 설정은 Codex 세션에서만 지원합니다.");
     if (settings) {

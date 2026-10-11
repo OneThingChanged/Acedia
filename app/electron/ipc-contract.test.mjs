@@ -6,6 +6,15 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it("bounds app model defaults to supported providers, account identities and valid settings", () => {
+    const args = { provider: "codex", accountId: "default", settings: { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "fast" }, revision: 0 };
+    expect(contract.assertInvokeRequest("set_model_defaults", args)).toEqual(args);
+    expect(contract.assertInvokeRequest("get_model_defaults", { provider: "claude" })).toEqual({ provider: "claude" });
+    for (const patch of [{ provider: "shell" }, { accountId: "../profile" }, { revision: -1 }, { codexPoolAccountId: "../pool" },
+      { provider: "claude" }, { settings: { ...args.settings, effort: "invalid" } }, { settings: { ...args.settings, serviceTier: "unknown" } }]) {
+      expect(() => contract.assertInvokeRequest("set_model_defaults", { ...args, ...patch })).toThrow();
+    }
+  });
   it("validates whole Chat submissions before any paste or Enter can reach a terminal", () => {
     const args = { id: "session", sessionId: "native-conversation", message: "첫 줄\n둘째 줄" };
     expect(contract.assertInvokeRequest("submit_chat_message", args)).toEqual(args);

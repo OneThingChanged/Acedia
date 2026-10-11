@@ -3,7 +3,7 @@ type: Guide
 title: 데스크톱 새 세션 만들기
 description: 짧은 기본 설정 창에서 프로젝트·세션을 만들고 문서·HTML 작업자와 고급 실행 설정은 필요할 때 펼친다.
 status: stable
-last_updated: 2026-10-02
+last_updated: 2026-10-11
 sources:
   - resource: ../app/src/components/NewAgentModal.tsx
   - resource: ../app/src/components/NewProjectModal.tsx
@@ -19,6 +19,7 @@ sources:
 
 1. 사이드바에서 프로젝트를 선택하고 **새 세션**을 연다.
 2. 별칭과 AI 도구를 고른다. 실행 옵션의 초기값은 설정에 저장된 도구별 기본값을 따른다.
+   로컬 Codex·Claude 세션에 저장되거나 상속된 모델 설정이 없으면 **설정 → 에이전트 → 도구 → 기본 모델**에서 지정한 모델·effort를 사용한다. Codex는 Fast 기본값도 적용한다. [적용 순서와 초기값](agent-launch-options.md#acedia-기본-모델)을 참고한다.
 3. 로컬 Codex·Claude 세션이면 로그인 계정을 선택한다. Codex 계정 분산이 등록되어 있으면 **분산 계정**도 표시한다. **자동 배정**은 세션 시작 시 계정을 배정하며, 특정 계정은 다음 시작부터 고정한다. 고정한 계정을 사용할 수 없으면 시작하지 않는다. 분산이 꺼진 경우에는 안내가 표시된다.
 4. 필요한 경우 Dangerous 모드와 Codex의 Alt-screen 모드를 바꾼다.
 5. Codex 세션의 **문서·HTML 병렬 작업자**는 처음에 접혀 있으며 현재 모델·추론 강도나 **사용 안 함** 상태를 요약한다. 필요할 때 펼쳐 문서와 HTML의 도구·모델·추론 강도를 각각 선택한다. **사용 안 함**으로 개별 작업자를 끌 수 있고, **직접 입력…**으로 CLI가 지원하는 모델 ID를 지정할 수 있다. 접고 펼치는 동작은 작업자 설정을 바꾸지 않는다.

@@ -9,6 +9,7 @@ import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
 import { SessionWorkerFields } from "./SessionWorkerFields";
 import { PoolAccountSelect } from "./PoolAccountSelect";
+import { DefaultSessionModelSettings } from "./DefaultSessionModelSettings";
 
 type QwenRegionInfo = {
   available: boolean;
@@ -140,6 +141,9 @@ export function AgentsSettings({
           </div>
         </div>
       </>}
+      {(tab === "codex" || tab === "claude") && <DefaultSessionModelSettings provider={tab}
+        accountId={(tab === "codex" ? defaults.codexAccountId : defaults.claudeAccountId) || "default"}
+        codexPoolAccountId={tab === "codex" ? defaults.codexPoolAccountId : undefined} />}
       {tab === "agy" && <div className="agent-settings-card"><div className="agent-settings-row"><div>
         <div className="agent-row-title">{text("Google 로그인", "Google sign-in")}</div>
         <div className="agent-row-sub">{text("Antigravity CLI를 설치한 뒤 새 세션에서 선택하세요. agy를 실행하면 기존 로그인을 사용하거나 브라우저 로그인으로 안내합니다.", "Install Antigravity CLI and select it in a new session. Running agy uses an existing login or opens browser sign-in.")}</div>

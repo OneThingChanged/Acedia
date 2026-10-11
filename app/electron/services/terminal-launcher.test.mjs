@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTerminalLauncher, referenceFolderArgs } from "./terminal-launcher.mjs";
 import { TerminalSessionService } from "./terminal-session-service.mjs";
 import { SessionModelMemory } from "./session-model-memory.mjs";
+import { SessionModelDefaults } from "./session-model-defaults.mjs";
 
 const fixtures = [];
 function deferred() {
@@ -64,6 +65,28 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it.each(["codex", "claude"])("passes Acedia defaults through the unconfigured %s launch and remembers a later terminal change", async aiToolId => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-default-launch-"));
+    const defaults = new SessionModelDefaults(path.join(root, "defaults.json"));
+    const memory = new SessionModelMemory(path.join(root, "memory.json"), { defaultSettings: args => defaults.get(args.aiToolId).settings });
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch: () => null,
+      resolveModelSettings: args => memory.resolve(args), onRegistered: entry => memory.started(entry) });
+    try {
+      const args = { ...f.args, aiToolId, claudeAccountId: "account-a", initCommand: aiToolId === "codex" ? "codex resume saved-id" : "claude --resume saved-id" };
+      await launch(args); await vi.advanceTimersByTimeAsync(600);
+      const entry = f.sessions.get(args.id);
+      const expected = defaults.get(aiToolId).settings;
+      expect(entry.modelSettings).toEqual(expected);
+      expect(f.processes[0].write.mock.calls[0][0]).toContain(`'--model' '${expected.model}'`);
+      expect(f.providers[aiToolId].environment).toHaveBeenCalledWith("account-a");
+      entry.runtimeModelSettings = { model: "terminal-choice", effort: "high" }; memory.remember(entry);
+      f.sessions.close(args.id);
+      await launch(args); await vi.advanceTimersByTimeAsync(600);
+      expect(f.processes[1].write.mock.calls[0][0]).toContain("'--model' 'terminal-choice'");
+    } finally { fs.rmSync(root, { recursive: true }); }
+  });
   it("restores the last native session settings and applies a staged model without losing Fast", async () => {
     vi.useFakeTimers(); const f = fixture();
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-launch-memory-"));

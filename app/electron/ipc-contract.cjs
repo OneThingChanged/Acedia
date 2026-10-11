@@ -129,6 +129,9 @@ const INVOKE_COMMANDS = Object.freeze([
   "complete_remote_session_model",
   "restart_session_model",
   "get_session_model",
+  "get_model_defaults",
+  "get_default_model_catalog",
+  "set_model_defaults",
   "set_session_model",
   "repair_active_hooks",
   "export_diagnostics",
@@ -268,6 +271,21 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "get_model_defaults":
+    case "get_default_model_catalog":
+    case "set_model_defaults":
+      if (!["codex", "claude"].includes(args.provider)) throw new TypeError("Invalid model defaults provider");
+      if (command !== "get_model_defaults") {
+        if (typeof args.accountId !== "string" || !/^(?:default|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(args.accountId)) throw new TypeError("Invalid model catalog account");
+        if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(args.codexPoolAccountId))) throw new TypeError("Invalid pool catalog account");
+      }
+      if (command !== "set_model_defaults") break;
+      if (!Number.isSafeInteger(args.revision) || args.revision < 0 || !args.settings
+        || (args.provider === "claude" && Object.hasOwn(args.settings, "serviceTier"))
+        || (args.provider === "codex" && !["default", "fast"].includes(args.settings.serviceTier))) throw new TypeError("Invalid model defaults");
+      if (typeof args.settings.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(args.settings.model)
+        || (args.settings.effort != null && (typeof args.settings.effort !== "string" || !/^(none|minimal|low|medium|high|xhigh|max|ultra)$/.test(args.settings.effort)))) throw new TypeError("Invalid model defaults");
+      break;
     case "get_session_model":
       assertId(args);
       break;

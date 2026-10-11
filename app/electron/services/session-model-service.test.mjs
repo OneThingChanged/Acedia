@@ -14,6 +14,20 @@ const resources = [];
 afterEach(async () => { vi.useRealTimers(); for (const close of resources.splice(0)) await close(); });
 
 describe("session model controls", () => {
+  it("resolves an app-default reset to a validated concrete model before restart verification", async () => {
+    const { service, agent, update } = fixture();
+    agent.status = "done"; agent.hook = { event: "done" };
+    const settings = { model: "account-only", effort: "high", serviceTier: "default" };
+    service.defaultSettings = () => settings;
+    await expect(service.save({ id: "session", settings: null, restart: true })).resolves.toMatchObject({ restarted: true });
+    expect(update).toHaveBeenCalledWith({ id: "session", settings, restart: true });
+  });
+  it("rejects a reset when the app default is unavailable for this session's account", async () => {
+    const { service, update } = fixture();
+    service.defaultSettings = () => ({ model: "unavailable", effort: "high", serviceTier: "default" });
+    await expect(service.save({ id: "session", settings: null, restart: false })).rejects.toThrow("지원하지 않는 모델");
+    expect(update).not.toHaveBeenCalled();
+  });
   it.each([{ aiToolId: "claude" }, { codexAccountId: "another" }, { folder: "new-project" }, { modelSettings: { model: "newer-choice" } }])("rejects a changed session after catalog discovery (%j)", async change => {
     const { service, agent, update } = fixture();
     service.catalog = async () => { Object.assign(agent, change); return { models: [{ model: "account-only", efforts: [{ effort: "high" }] }] }; };

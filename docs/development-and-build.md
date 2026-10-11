@@ -16,6 +16,8 @@ sources:
   - id: dev-runner
     resource: ../app/scripts/electron-dev.mjs
     title: "Electron development runner"
+  - resource: ../app/electron/services/stdio-logging.mjs
+  - resource: ../app/scripts/electron-stdio-smoke.mjs
   - id: standard-builder
     resource: ../app/scripts/build-electron-standard.mjs
     title: "Standard desktop build"
@@ -97,6 +99,25 @@ alongside preferences, resizing, clipboard behavior and cross-window persistence
 Renderer-only preview is available with `npm run dev`, but it cannot validate
 PTY, preload, native browser, tray, updater, or packaged-resource behavior.
 
+### Closed console output
+
+Included in [Acedia 1.8.1.77](release-1-8-1-77.md).
+
+The Electron host can outlive the console that launched it. If that console
+closes its stdout/stderr pipes, logging previously raised `EPIPE: broken pipe,
+write` and displayed a JavaScript main-process error dialog. The host now guards
+those two logging streams: closed-pipe errors disable subsequent console writes
+to the affected stream; unrelated exceptions remain visible. This does not change
+PTY input/output or provider connections.
+
+`npm run electron:stdio-smoke` starts an isolated Electron process, deliberately
+disconnects both output pipes, and verifies actual `EPIPE` events and successful
+continued execution without an uncaught error. On Windows, launch a background
+Electron check through a supervising Node runner or `Start-Process -WindowStyle
+Hidden -Wait` with output redirected to files. Keep the supervisor and temporary
+profile alive until Electron exits; a direct GUI executable invocation from a
+short-lived PowerShell tool call may return before the app finishes.
+
 ## Verification
 
 Run checks in proportion to the change:
@@ -118,6 +139,11 @@ and standby resume; `electron:browser-profiles-smoke` verifies cookies and tabs
 across two Electron processes. Native saved-command, power and idle-session
 checks run inside `electron:bridge-smoke`. The [combined settings review](settings-review-1-8-0-15.md)
 records the complete command list, results for 1.8.0.15 and manual follow-up.
+
+App model defaults are covered by `electron:settings-search-smoke` (use
+`--model-defaults-only` for its focused editor path), the native bridge check,
+and model defaults/memory/launcher tests. See [model defaults](agent-launch-options.md#acedia-기본-모델)
+for priority and scope.
 
 `electron:new-session-smoke` verifies the [desktop session creation dialog](session-creation.md):
 account/worker/launch payloads, keyboard focus and cancellation, fixed header/footer,

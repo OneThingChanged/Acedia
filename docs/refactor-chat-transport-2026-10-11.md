@@ -3,7 +3,7 @@ type: Engineering Review
 title: Chat submission and Codex transport refactor
 description: "1.8.1.75 배포 후 채팅 전송 검사와 Codex WebSocket 전송을 독립 모듈로 분리한 소스 변경."
 status: stable
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 sources:
   - resource: ../app/electron/services/chat-message-submission.mjs
   - resource: ../app/electron/services/chat-message-submission.test.mjs
@@ -15,8 +15,9 @@ sources:
 # 채팅 전송·Codex 통신 리팩토링
 
 [1.8.1.75 EXE 배포](release-1-8-1-75.md)와 공개 다운로드 검증을 완료한 뒤 진행한
-**1.8.1.76 소스 변경**이다. 공개 배포 버전은 1.8.1.75이며 이 리팩토링의 새 설치 파일은
-게시하지 않았다. 제품과 모바일 소스의 네 번째 자리만 올리고 npm 버전은 1.8.1로 유지한다.
+**1.8.1.76 소스 변경**이다. 1.8.1.76은 별도 EXE로 게시하지 않았으며,
+[1.8.1.77 배포](release-1-8-1-77.md)에 포함한다. 제품과 모바일 소스의 네 번째 자리만
+올리고 npm 버전은 1.8.1로 유지한다.
 
 ## 변경 내용
 

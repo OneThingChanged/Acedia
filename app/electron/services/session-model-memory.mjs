@@ -48,8 +48,8 @@ function rememberedModel(entry, previous, observed) {
 // Main owns this small metadata file. No transcript bodies or credentials are
 // saved, and window/coordinator lifetime cannot discard the last launch state.
 export class SessionModelMemory {
-  constructor(file, { onError = error => console.warn("[electron] session model memory", error.message) } = {}) {
-    this.file = file; this.onError = onError; this.records = new Map();
+  constructor(file, { onError = error => console.warn("[electron] session model memory", error.message), defaultSettings = () => undefined } = {}) {
+    this.file = file; this.onError = onError; this.defaultSettings = defaultSettings; this.records = new Map();
     try {
       if (fs.statSync(file).size > 2 * 1024 * 1024) throw new Error("Session model memory is too large.");
       const data = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -109,6 +109,9 @@ export class SessionModelMemory {
     const overridesTier = extra.some((arg, index) => /^(?:-c|--config=)?(?:service_tier|features\.fast_mode)\s*=/.test(arg)
       || arg === "--disable=fast_mode"
       || (arg === "--disable" && extra[index + 1] === "fast_mode"));
+    // Resolve app defaults only after the session's own remembered/next choice.
+    // SSH hosts and explicit advanced model arguments keep their configuration.
+    if (!settings && supported(args) && !overridesModel) settings = normalizeSessionModel(this.defaultSettings(args));
     if (!requested && overridesModel) settings = undefined;
     else if (settings && !Object.hasOwn(requested || {}, "serviceTier") && overridesTier) {
       const { serviceTier: _tier, ...withoutTier } = settings; settings = withoutTier;

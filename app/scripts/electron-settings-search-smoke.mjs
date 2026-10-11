@@ -46,7 +46,7 @@ async function exercise() {
     await open(item.id);
   }
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
-  const allowed = new Set(["idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
+  const allowed = new Set(["get_model_defaults", "get_default_model_catalog", "idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
     "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status", "account_pool_choices", "browser_extensions_list", "collector_status", "collector_sources"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
@@ -97,6 +97,62 @@ async function exercise() {
   document.querySelector(".app-topbar button").click(); await wait();
   await query("환경변수");
   return "SETTINGS_SEARCH_UI_OK " + catalog.length + " targets";
+}
+
+async function exerciseModelDefaults() {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms || 80));
+  const check = (value, message) => { if (!value) throw Error(message); };
+  const until = async (predicate, label = 'state transition') => { for (let i = 0; i < 80; i++) { if (predicate()) return; await wait(); } throw Error("Model defaults UI timed out: " + label + ' ' + document.querySelector('.app-settings-body')?.textContent.slice(-800)); };
+  const open = async provider => {
+    await until(() => document.querySelector('.app-settings-search input'));
+    const input = document.querySelector('.app-settings-search input');
+    input.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '기본 모델 ' + provider);
+    input.dispatchEvent(new Event('input', { bubbles: true })); await wait();
+    await until(() => document.querySelector('[data-setting-result="agents.' + provider + '.defaultModel"]'), provider + ' search result');
+    document.querySelector('[data-setting-result="agents.' + provider + '.defaultModel"]').click(); await wait();
+    await until(() => document.querySelector('[aria-label="기본 모델"]') && !document.querySelector('[aria-label="기본 모델"]').disabled, provider + ' editable defaults');
+  };
+  const select = async (label, value) => {
+    const element = document.querySelector('[aria-label="' + label + '"]');
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(element, value);
+    element.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+  };
+  const save = () => [...document.querySelectorAll('button')].find(button => button.textContent === '기본 모델 저장');
+  const initialCalls = window.fixtureCalls.length;
+  await open('codex');
+  check(document.querySelector('[aria-label="기본 모델"]').value === 'gpt-6.1-sol' && document.querySelector('[aria-label="기본 effort"]').value === 'xhigh', 'Initial Codex defaults missing');
+  check(!document.querySelector('[aria-label="기본 Fast 모드"]').checked && save().disabled, 'Initial speed/save state incorrect');
+  await select('기본 모델', 'fixture-small');
+  check(document.querySelector('[aria-label="기본 effort"]').value === 'medium', 'Unsupported old effort retained after changing model');
+  document.querySelector('[aria-label="기본 Fast 모드"]').click(); await wait();
+  check(window.fixtureModelDefaults.codex.revision === 0, 'Draft auto-saved');
+  save().click(); await until(() => window.fixtureModelDefaults.codex.revision === 1); await wait();
+  check(JSON.stringify(window.fixtureModelDefaults.codex.settings) === JSON.stringify({model:'fixture-small',effort:'medium',serviceTier:'fast'}), 'Codex save payload incorrect');
+  await select('기본 effort', ''); save().click(); await until(() => window.fixtureModelDefaults.codex.revision === 2); await wait();
+  check(!Object.hasOwn(window.fixtureModelDefaults.codex.settings, 'effort'), 'Model-default effort not saved');
+  window.fixtureModelSaveError = true;
+  document.querySelector('[aria-label="기본 Fast 모드"]').click(); await wait(); save().click();
+  await until(() => document.querySelector('[role="alert"]')?.textContent.includes('Fixture save rejected'));
+  check(window.fixtureModelDefaults.codex.settings.serviceTier === 'fast' && !document.querySelector('[aria-label="기본 Fast 모드"]').checked, 'Rejected save changed preferences or discarded draft');
+  window.fixtureModelSaveError = false;
+  await open('claude');
+  check(!document.querySelector('[aria-label="기본 Fast 모드"]'), 'Claude exposes Codex speed');
+  await select('기본 모델', 'opus'); save().click(); await until(() => window.fixtureModelDefaults.claude.revision === 1); await wait();
+  check(window.fixtureModelDefaults.claude.settings.effort === 'low' && window.fixtureModelDefaults.codex.settings.serviceTier === 'fast', 'Provider defaults not isolated');
+  await open('codex');
+  check(document.querySelector('[aria-label="기본 모델"]').value === 'fixture-small' && document.querySelector('[aria-label="기본 effort"]').value === '' && document.querySelector('[aria-label="기본 Fast 모드"]').checked, 'Saved defaults did not restore');
+  window.fixtureModelCatalogError = true;
+  [...document.querySelectorAll('button')].find(button => button.textContent === '다시 불러오기').click();
+  await until(() => document.querySelector('[role="alert"]')?.textContent.includes('Fixture catalog unavailable'));
+  check(save().disabled && document.querySelector('[aria-label="기본 모델"]').value === 'fixture-small', 'Catalog failure lost saved settings or enabled save');
+  window.fixtureModelCatalogError = false; window.fixtureModelCatalogDelay = true;
+  [...document.querySelectorAll('button')].find(button => button.textContent === '다시 불러오기').click(); await wait();
+  await open('claude'); await wait(550);
+  check(document.querySelector('[aria-label="기본 모델"]').value === 'opus' && !document.querySelector('[aria-label="기본 Fast 모드"]'), 'Late Codex response replaced Claude settings');
+  window.fixtureModelCatalogDelay = false;
+  check(window.fixtureCalls.slice(initialCalls).every(call => !['spawn_pty','set_session_model','restart_session_model'].includes(call.command)), 'Editing defaults mutated a running session');
+  return 'MODEL_DEFAULTS_UI_OK save, restore, effort compatibility, provider isolation, errors and stale responses';
 }
 
 async function exerciseSavedCommands() {
@@ -234,6 +290,11 @@ if (process.versions.electron) {
   app.whenReady().then(async () => { try {
     const win = new BrowserWindow({ show: false, width: 800, height: 640, webPreferences: { offscreen: true, backgroundThrottling: false } });
     await win.loadFile(path.join(directory, "index.html"));
+    if (process.argv.includes('--model-defaults-only')) {
+      console.log(await win.webContents.executeJavaScript("(" + exerciseModelDefaults.toString() + ")()"));
+      if (process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT) await fs.writeFile(process.env.ACEDIA_SETTINGS_TARGET_SCREENSHOT, (await win.webContents.capturePage()).toPNG());
+      app.exit(0); return;
+    }
     if (process.argv.includes('--account-launch-only')) {
       console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
       for (const [width, height] of [[800, 640], [1202, 801]]) {
@@ -261,6 +322,7 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript("(" + exercisePolicies.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseTunnelConfiguration.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exerciseModelDefaults.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
     const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});
     await peer.loadFile(path.join(directory,"index.html"));
@@ -286,6 +348,6 @@ if (process.versions.electron) {
     if (code !== 0) throw new Error("Settings search smoke failed: " + code);
   } finally {
     if (path.dirname(directory) !== path.resolve(os.tmpdir()) || !path.basename(directory).startsWith("acedia-settings-search-")) throw new Error("Unexpected cleanup path");
-    await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await fs.rm(directory, { recursive: true, maxRetries: 5, retryDelay: 200 });
   }
 }

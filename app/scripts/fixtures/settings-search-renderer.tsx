@@ -13,10 +13,28 @@ window.fixtureRemoteConfig = { client_id: "private-fixture", owner: "", client_s
 window.fixtureIdleConfig = {revision:0,enabled:false,minutes:30};
 window.fixtureNotificationConfig = {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
 window.fixtureCommandConfig = { revision: 0, commands: [], startups: {} };
+window.fixtureModelDefaults = {
+  codex: { settings: { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "default" }, revision: 0 },
+  claude: { settings: { model: "sonnet", effort: "medium" }, revision: 0 },
+};
 if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("multiagent.appLanguage.v1", "ko");
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
+    if (command === "get_model_defaults") return structuredClone(window.fixtureModelDefaults[args.provider]);
+    if (command === "get_default_model_catalog") {
+      if (window.fixtureModelCatalogDelay && args.provider === "codex") await new Promise(resolve => setTimeout(resolve, 400));
+      if (window.fixtureModelCatalogError) throw new Error("Fixture catalog unavailable");
+      const option = (model, efforts, defaultEffort) => ({ model, label: model, efforts: efforts.map(effort => ({ effort, description: "" })), defaultEffort, isDefault: false });
+      return { accountLabel: "Fixture " + args.provider, capabilitiesSource: args.provider === "claude" ? "cli-help" : "account",
+        models: args.provider === "codex" ? [option("gpt-6.1-sol", ["low", "high", "xhigh"], "low"), option("fixture-small", ["medium"], "medium")]
+          : [option("sonnet", ["medium", "high"], "medium"), option("opus", ["low", "high"], "low")] };
+    }
+    if (command === "set_model_defaults") {
+      if (window.fixtureModelSaveError) throw new Error("Fixture save rejected");
+      window.fixtureModelDefaults[args.provider] = { settings: structuredClone(args.settings), revision: args.revision + 1 };
+      return structuredClone(window.fixtureModelDefaults[args.provider]);
+    }
     if (command === "usage_rate_limits_get") return {updatedAt:Date.now(),limits:['codex:fixture','claude'].map(limitId => ({limitId,limitName:limitId.startsWith('codex')?'Codex fixture':'Claude',primary:{usedPercent:90,windowMinutes:300,resetsAt:null},secondary:null,credits:{},updatedAt:Date.now()}))};
     if (command === "idle_preferences_get") return structuredClone(window.fixtureIdleConfig);
     if (command === "idle_preferences_set") { window.fixtureIdleConfig={...args.patch,revision:args.revision+1};return structuredClone(window.fixtureIdleConfig); }

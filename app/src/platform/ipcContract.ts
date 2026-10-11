@@ -61,6 +61,7 @@ export type RuntimeCommand =
   | "sync_remote_view" | "sync_usage_catalog" | "sync_monitor_state"
   | "complete_remote_session_create" | "complete_remote_session_activation"
   | "complete_remote_session_model" | "restart_session_model" | "get_session_model" | "set_session_model"
+  | "get_model_defaults" | "get_default_model_catalog" | "set_model_defaults"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
   | "usage_profile_visibility_set"
@@ -422,6 +423,18 @@ export type RuntimeCommandContract = {
   get_session_model: {
     args: { id: string };
     result: import("../../electron/shared/session-model.mjs").SessionModelCatalog;
+  };
+  get_model_defaults: {
+    args: { provider: "codex" | "claude" };
+    result: import("../../electron/shared/session-model.mjs").SessionModelDefaultsSnapshot;
+  };
+  get_default_model_catalog: {
+    args: { provider: "codex" | "claude"; accountId: string; codexPoolAccountId?: string | null };
+    result: import("../../electron/shared/session-model.mjs").ProviderModelCatalog;
+  };
+  set_model_defaults: {
+    args: { provider: "codex" | "claude"; accountId: string; codexPoolAccountId?: string | null; settings: import("../../electron/shared/session-model.mjs").SessionModel; revision: number };
+    result: import("../../electron/shared/session-model.mjs").SessionModelDefaultsSnapshot;
   };
   set_session_model: {
     args: { id: string; settings: import("../../electron/shared/session-model.mjs").SessionModel; restart: true };

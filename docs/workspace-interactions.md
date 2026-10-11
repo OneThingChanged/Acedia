@@ -261,7 +261,12 @@ restore it. Pin/archive flags and visit times survive reopening and synchronize
 through the shared session catalog.[^sidebar][^sidebar-navigation][^app-shell]
 
 Active sessions also have an **×** button in recent conversations, expanded
-projects and search results. It immediately deactivates that session and removes
+projects and search results. Session screen badges, Dangerous mode markers and
+the menu/stop controls appear on row hover or keyboard focus; selecting a row
+does not keep those controls visible after the mouse leaves. Their space is
+reserved to keep text and row geometry stable. Touch devices retain visible
+controls. Completion badges and the colored screen rail stay visible.
+The **×** button immediately deactivates that session and removes
 its open pane while retaining the conversation in the catalog; other sessions
 keep running. Sleeping or stopped sessions and sessions owned by another window
 do not show the button. Double-clicking a session no longer opens rename; use
@@ -493,6 +498,13 @@ Codex options come from that session's logged-in or routed account. Claude
 options come from installed CLI help, with availability checked by Claude at
 launch. Unsupported providers and SSH retain their provider label.
 [^chat-model-picker][^chat-model-smoke]
+
+Unconfigured local sessions use the host's Acedia defaults, edited at
+**Settings → Agents → Codex / Claude → Default model**. Model and effort are
+configurable for both; Codex also has a default Fast toggle. Explicit session
+choices and remembered terminal changes take priority. Saving a default takes
+effect at a future unconfigured launch and preserves existing session choices.
+See [Acedia model defaults](agent-launch-options.md#acedia-기본-모델).
 
 Apply is available after work and questions finish, with no queued message
 waiting to send. The existing model service saves a session override, stops

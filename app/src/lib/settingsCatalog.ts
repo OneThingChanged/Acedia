@@ -24,6 +24,7 @@ export const SETTING_SCOPES = {
   newSession: { label: ["새 세션 기본값", "New-session default"], detail: ["세션을 만들 때 처음 선택되는 값입니다. 기존 세션의 실행 옵션은 바뀌지 않습니다.", "Initially selected when creating a session. Existing session launch options are unchanged."] },
   profiles: { label: ["로컬 · 계정별", "Local · per account"], detail: ["로그인한 계정을 로컬 세션에서 선택합니다. 기존 세션의 계정은 자동 변경하지 않습니다.", "Choose a signed-in account for local sessions. Existing sessions keep their account."] },
   nextLaunch: { label: ["다음 CLI 실행", "Next CLI launch"], detail: ["저장된 CLI 설정을 다음 로컬 실행부터 사용합니다. 실행 중인 프로세스는 다시 열어야 반영됩니다.", "Saved CLI settings apply to the next local launch. Reopen active processes to apply them."] },
+  modelFallback: { label: ["저장 후 · 설정 없는 세션", "Save · unconfigured sessions"], detail: ["저장 버튼으로 적용합니다. 모델 설정이 없는 로컬 세션의 다음 실행에 사용하며, 세션에 저장된 선택은 우선합니다.", "Applies after Save on the next launch of local sessions without model settings. Saved session selections take priority."] },
   saved: { label: ["저장 버튼으로 적용", "Apply with Save"], detail: ["이 화면에서 저장해야 반영됩니다. 검색·이동만으로 저장하지 않습니다.", "Changes apply after saving in this panel. Search and navigation do not save changes."] },
   nextService: { label: ["저장 후 · 서버 시작", "Save · next server start"], detail: ["저장한 포트를 다음 서버 시작부터 사용합니다. 실행 중인 서버를 자동 재시작하지 않습니다.", "The saved port is used the next time the server starts, without automatically restarting it."] },
   nextApp: { label: ["저장 후 · 앱 시작", "Save · next app start"], detail: ["저장한 자동 시작 설정은 다음 앱 실행부터 적용합니다.", "The saved autostart setting applies the next time the app starts."] },
@@ -95,6 +96,9 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
       ...(["codex", "claude"].includes(tool) ? [
         entry("agents." + tool + ".accounts", "agents", "로그인 계정", "Login accounts", "profiles", "계정 추가 등록 로그인 이름 이메일 login account profile email", extra),
         entry("agents." + tool + ".defaultAccount", "agents", "기본 계정", "Default account", "newLocal", "account login 로그인", extra),
+        entry("agents." + tool + ".defaultModel", "agents", "기본 모델", "Default model", "modelFallback", "Acedia default model 모델 선택", extra),
+        entry("agents." + tool + ".defaultEffort", "agents", "기본 effort", "Default effort", "modelFallback", "reasoning effort 추론 기본", extra),
+        ...(tool === "codex" ? [entry("agents.codex.defaultFast", "agents", "기본 Fast 모드", "Default Fast mode", "modelFallback", "service tier fast 속도 기본", extra)] : []),
       ] : []),
     ];
   }),

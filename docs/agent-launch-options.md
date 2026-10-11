@@ -1,10 +1,10 @@
 ---
 type: Feature
 title: 에이전트 고급 실행 설정
-description: 로컬 세션의 CLI 실행 파일, 추가 인수, 환경변수와 기본값 적용 범위.
+description: 로컬 세션의 기본 모델·effort·Fast와 CLI 실행 파일, 추가 인수, 환경변수의 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -19,6 +19,8 @@ sources:
   - resource: ../app/src/lib/chatSessionModel.ts
   - resource: ../app/electron/services/session-model-service.mjs
   - resource: ../app/electron/services/session-model-memory.mjs
+  - resource: ../app/electron/services/session-model-defaults.mjs
+  - resource: ../app/src/components/DefaultSessionModelSettings.tsx
   - resource: ../app/scripts/codex-session-settings-smoke.mjs
   - resource: ../app/scripts/electron-chat-model-smoke.mjs
 ---
@@ -99,6 +101,39 @@ Codex는 해당 세션의 실제 로그인 또는 분산 계정에서 `model/lis
 고급 실행의 `--model`·`--effort` 또는 Codex `model`·`model_reasoning_effort` 설정과 충돌하면
 적용하지 않고 해당 옵션을 제거하도록 안내한다.
 
+### Acedia 기본 모델
+
+1.8.1.77에서 **설정 → 에이전트 → Codex / Claude → 기본 모델**을
+추가했다. 모델·effort를 선택하고 **기본 모델 저장**을 누른다. Codex는 Fast의 기본
+켜짐·꺼짐도 지정할 수 있다. 기본 모델 목록은 선택한 기본 계정 또는 분산 계정에서
+조회하며, Claude 목록은 설치된 CLI의 옵션을 사용한다.
+
+| 도구 | 초기 모델 | 초기 effort | 초기 Fast |
+|---|---|---|---|
+| Codex | `gpt-6.1-sol` | `xhigh` | 꺼짐 (`default`) |
+| Claude | `sonnet` | `medium` | 제공하지 않음 |
+
+세션에 명시적으로 지정하거나 마지막으로 기억한 모델이 우선한다. 모델 설정이 없는
+로컬 세션의 실행에만 Acedia 기본값을 적용한다. 기본값으로 한 번 시작한 세션도 이후
+확인한 모델·effort·Fast를 세션별로 기억하므로 전역 기본값을 바꿔도 해당 선택은 유지된다.
+effort의 **모델 기본값**은 그 모델의 CLI 기본 effort를 사용한다. 모델 설정이 존재하지만
+effort를 생략한 세션에 전역 effort를 덧붙이지 않는다. SSH와 다른 CLI 도구는 제외한다.
+호스트가 적용하므로 Remote에서 시작하는 로컬 세션에도 같은 규칙을 사용한다.
+고급 실행에서 모델·effort 또는 서비스 티어를 직접 지정하면 기존 충돌 처리 규칙을 유지한다.
+
+앱 프로필의 `session-model-defaults.json`에 저장하며 CLI 설정 파일은 변경하지 않는다.
+계정에서 제공하지 않는 모델·effort, 다른 창의 저장 이후 오래된 값은 저장을 거절한다.
+목록 조회나 파일 저장 실패를 화면에 표시하고 입력값을 보존한다. 모델 목록만 조회해서
+기본값을 자동 변경하거나 실행 중인 세션을 재시작하지 않는다. 실제 계정의 접근 권한과
+Claude 모델별 effort 지원은 CLI가 실행 시 확인한다.
+
+검증: 최종 전체 188개 파일·1,357개 검사, TypeScript/Vite 빌드, Electron 설정창의 저장·복원,
+모델별 effort 전환·Codex/Claude 분리·저장/조회 실패·늦은 조회 응답 무시를 통과했다.
+설정 검색 123개 항목과 800/1202/1920px 배치도 확인했다. 검증은 격리된 프로필과
+fixture 계정을 사용하며 실제 로그인 계정에 모델 요청을 보내지 않는다. 실제 앱의 기본
+설정 IPC와 Remote의 1024/390px 모델 선택창도 확인했다. 출력 연결 종료에 대한
+[Electron EPIPE 검증](development-and-build.md#closed-console-output)도 통과했다.
+
 ### 세션별 마지막 실행 설정
 
 2026-10-10 소스 변경부터 로컬 세션의 마지막 모델·effort와 확인된 Codex Fast
@@ -116,7 +151,8 @@ Fast 표시가 없거나 대화 기록에 서비스 티어가 없으면 Off로 �
 확인값을 유지한다. Claude Fast는 이 구현 범위에 포함하지 않는다.
 
 새로 선택한 모델·effort는 이전 프로세스의 종료 기록보다 우선한다. 작업 중 **저장
-(다음 시작)**한 설정과 명시적인 CLI 기본값 초기화도 보존하며, 같은 세션 ID와 계정의
+(다음 시작)**한 설정과 명시적인 모델 초기화도 보존하며, 초기화한 세션은 Acedia 기본
+모델을 사용한다. 같은 세션 ID와 계정의
 명시적 선택은 휴면 자식 세션의 폴더 상속에도 적용한다. 다른 계정에는 적용하지 않는다.
 채팅에서 모델·effort만 바꿀 때 확인된 Fast 값을 유지하고 선택창에 함께 표시한다.
 선택창을 열어 둔 사이 CLI에서 Fast를 바꿔도 최신 확인값을 사용한다. 목록 조회 중

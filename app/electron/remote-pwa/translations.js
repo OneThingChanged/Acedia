@@ -135,6 +135,7 @@ export const messages = [
   ["모델 / effort", "Model / effort"],
   ["모델 / effort 변경", "Change model / effort"],
   ["모델", "Model"], ["모델 기본값", "Model default"], ["CLI 기본값", "CLI defaults"],
+  ["Acedia 기본값", "Acedia defaults"],
   ["모델 기본 effort", "Default model effort"],
   ["최근 대화 설정", "Last turn settings"], ["시작 시 설정", "Launch settings"],
   ["확인되지 않음", "Unknown"], ["저장된 설정", "Saved settings"],
