@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { StringDecoder } from 'node:string_decoder';
 import { AccountPoolRpc } from './account-pool-rpc.mjs';
 import { AccountPoolSession } from './account-pool-session.mjs';
+import { mergeCodexRateLimits } from './codex-usage.mjs';
 import { readCodexModels } from '../shared/session-model.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -26,6 +27,7 @@ const upgradeStats = previous => {
 const atomic = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file + '.tmp', JSON.stringify(value), { mode: 0o600 }); fs.renameSync(file + '.tmp', file); };
 const validId = value => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
 const DEFAULT_UPSTREAM = 'https://chatgpt.com/backend-api/codex';
+const ACTIVE_QUOTA_INTERVAL_MS = 5 * 60_000;
 const digest = value => createHash('sha256').update(value).digest();
 const sameSecret = (a, b) => timingSafeEqual(digest(a), digest(b));
 const backendOrigin = raw => {
@@ -35,12 +37,14 @@ const backendOrigin = raw => {
 
 export class AccountPool {
   constructor(root, { safeStorage, command, nativeCommand, rpcFactory, sessionFactory = options => new AccountPoolSession(options), fetchImpl = fetch, port = 3020,
-    upstream = DEFAULT_UPSTREAM, now = Date.now, transcriptUsageForPeriods = null } = {}) {
+    upstream = DEFAULT_UPSTREAM, now = Date.now, transcriptUsageForPeriods = null, onRateLimitsChanged = () => {} } = {}) {
     this.root = root; this.file = path.join(root, 'pool.json'); this.safeStorage = safeStorage;
     this.command = command; this.rpcFactory = rpcFactory || ((env, home) => new AccountPoolRpc(command(), env, home));
     this.nativeCommand = nativeCommand; this.sessionFactory = sessionFactory; this.nativeSessions = new Map();
     this.fetch = fetchImpl; this.port = port; this.upstream = upstream; this.now = now;
     this.transcriptUsageForPeriods = transcriptUsageForPeriods;
+    this.onRateLimitsChanged = onRateLimitsChanged;
+    this.quotaAttempts = new Map(); this.quotaTimer = null; this.activeQuotaRefresh = null;
     this.state = { enabled: false, accounts: [], sessions: {}, recent: [] }; this.jobs = new Map(); this.locks = new Map(); this.active = new Map();
     this.server = null; this.starting = null; this.closed = false; this.controllers = new Set();
     this.rpcs = new Map(); this.refreshStopped = false; this.quotaRefresh = null; this.refreshing = null;
@@ -262,7 +266,10 @@ export class AccountPool {
       try {
         try { this.identity(a, await rpc.call('account/read', { refreshToken: force || expires <= this.now() + 120000 })); }
         catch (error) { a.status = 'login_required'; throw error; }
-        if (limits) { a.limits = await rpc.call('account/rateLimits/read'); a.limitsAt = this.now(); }
+        if (limits) {
+          const previous = a.limits, next = await rpc.call('account/rateLimits/read');
+          if (a.limits === previous) { a.limits = next; a.limitsAt = this.now(); }
+        }
       } finally { rpc.close(); this.capture(a); this.persist(); }
       return JSON.parse(this.unseal(a.auth)).tokens;
     });
@@ -338,6 +345,50 @@ export class AccountPool {
         job.running = false; job.finishedAt = this.now(); this.refreshing = null;
       });
     return job;
+  }
+  nativeQuotaAccount(lease) {
+    if (this.refreshStopped || this.nativeSessions.get(lease.id) !== lease || lease.runtime.closed
+      || this.state.sessions[lease.sessionId]?.accountId !== lease.accountId) return null;
+    const account = this.state.accounts.find(a => a.id === lease.accountId);
+    return account?.auth && account.status === 'ready' && !this.jobs.has(account.id) ? account : null;
+  }
+  updateNativeRateLimits(lease, value) {
+    const account = this.nativeQuotaAccount(lease);
+    if (!account) return;
+    const limits = mergeCodexRateLimits(account.limits, value);
+    if (!limits) return;
+    // Control and TUI sockets can receive the same broadcast. Keep one write.
+    if (this.now() - (account.limitsAt || 0) < 1000 && JSON.stringify(limits) === JSON.stringify(account.limits)) return;
+    account.limits = limits; account.limitsAt = this.now(); this.persist();
+    try { this.onRateLimitsChanged(); } catch { /* display refresh must not interrupt a model turn */ }
+  }
+  refreshActiveQuotas() {
+    if (this.activeQuotaRefresh) return this.activeQuotaRefresh;
+    if (this.refreshStopped || !this.state.enabled || this.quotaRefresh?.running) return Promise.resolve();
+    const accounts = new Map();
+    for (const lease of this.nativeSessions.values()) {
+      const account = lease.ready && this.nativeQuotaAccount(lease);
+      if (!account || typeof lease.runtime.readRateLimits !== 'function' || this.locks.has(account.id)) continue;
+      if (this.now() - Math.max(account.limitsAt || 0, this.quotaAttempts.get(account.id) || 0) < ACTIVE_QUOTA_INTERVAL_MS) continue;
+      accounts.set(account.id, lease);
+    }
+    const leases = [...accounts.values()]; let cursor = 0;
+    const worker = async () => {
+      while (cursor < leases.length && !this.refreshStopped) {
+        const lease = leases[cursor++], account = this.nativeQuotaAccount(lease);
+        if (!account || this.locks.has(account.id)) continue;
+        this.quotaAttempts.set(account.id, this.now());
+        const previous = account.limits;
+        try {
+          const limits = await lease.runtime.readRateLimits();
+          // A rolling notification or manual refresh may have arrived meanwhile.
+          if (account.limits === previous) this.updateNativeRateLimits(lease, limits);
+        } catch { /* preserve last values and retry on the next bounded poll */ }
+      }
+    };
+    this.activeQuotaRefresh = Promise.all(Array.from({ length: Math.min(2, leases.length) }, worker))
+      .finally(() => { this.activeQuotaRefresh = null; });
+    return this.activeQuotaRefresh;
   }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
@@ -456,17 +507,28 @@ export class AccountPool {
       return { accessToken: tokens.access_token, chatgptAccountId: tokens.account_id, chatgptPlanType: this.account(accountId).plan || null };
     };
     const runtime = this.sessionFactory({ env: context.env, cwd: context.cwd, configArgs: context.configArgs,
+      onThreadSettings: context.onThreadSettings,
+      onRateLimits: value => this.updateNativeRateLimits(lease, value),
       providerUrl: `http://127.0.0.1:${this.server.address().port}/native-provider/${leaseId}`,
       command: (args, env) => this.nativeCommand ? this.nativeCommand(args, env, context) : (() => {
         const command = this.command(); return { file: command.file, args: [...command.args, ...args] };
       })(), getAuth, ensureAvailable });
     lease.runtime = runtime; lease.getAuth = getAuth;
     this.nativeSessions.set(leaseId, lease);
-    runtime.once('closed', () => { this.nativeSessions.delete(leaseId); lease.tokenHashes = []; });
+    runtime.once('closed', () => {
+      this.nativeSessions.delete(leaseId); lease.tokenHashes = [];
+      if (!this.nativeSessions.size) { clearInterval(this.quotaTimer); this.quotaTimer = null; }
+    });
     try {
       await runtime.start(); ensureAvailable();
       const origin = backendOrigin(runtime.workspaceOrigin);
       if (origin) this.account(accountId).backendOrigin = origin;
+      lease.ready = true;
+      if (!this.quotaTimer) {
+        this.quotaTimer = setInterval(() => void this.refreshActiveQuotas(), ACTIVE_QUOTA_INTERVAL_MS);
+        this.quotaTimer.unref?.();
+      }
+      void this.refreshActiveQuotas();
       return { native: true, env: { ACEDIA_CODEX_REMOTE_TOKEN: runtime.publicToken },
         args: ['--remote', `ws://127.0.0.1:${this.server.address().port}`,
           '--remote-auth-token-env', 'ACEDIA_CODEX_REMOTE_TOKEN'], release: () => runtime.close() };
@@ -572,7 +634,10 @@ export class AccountPool {
       }
       const contentType = upstream.headers.get('content-type') || 'application/json';
       const responseHeaders = { 'content-type': contentType, 'cache-control': 'no-store', 'x-accel-buffering': 'no' };
-      for (const key of ['x-codex-turn-state', 'x-request-id', 'retry-after']) if (upstream.headers.get(key)) responseHeaders[key] = upstream.headers.get(key);
+      // Native Codex derives rolling quota notifications from these headers.
+      for (const [key, value] of upstream.headers) {
+        if (key.startsWith('x-codex-') || ['x-request-id', 'retry-after'].includes(key)) responseHeaders[key] = value;
+      }
       res.writeHead(upstream.status, responseHeaders);
       let streaming = contentType.toLowerCase().includes('text/event-stream');
       let formatKnown = streaming || !modelRequest || endpoint !== '/responses';
@@ -709,6 +774,7 @@ export class AccountPool {
   }
   close() {
     this.refreshStopped = true;
+    clearInterval(this.quotaTimer); this.quotaTimer = null;
     for (const lease of this.nativeSessions.values()) lease.runtime.close();
     this.webSockets?.close();
     for (const job of this.jobs.values()) void job.finish(false);

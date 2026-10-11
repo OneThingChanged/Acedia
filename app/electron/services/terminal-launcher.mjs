@@ -48,11 +48,15 @@ export function createTerminalLauncher({
   sshPasswords,
   browserMcpScriptPath,
   spawnProcess,
+  resolveModelSettings = args => ({ settings: normalizeSessionModel(args.modelSettings), requested: normalizeSessionModel(args.modelSettings) }),
+  onModelSettings = () => {},
+  onRegistered = () => {},
   baseEnv = process.env,
   platform = process.platform,
   resolveSshExecutable = () => findWindowsExecutable(platform === "win32" ? "ssh.exe" : "ssh"),
 }) {
   async function prepareLaunch(args, id, aiToolId) {
+    let nativeModel;
     const ssh = args.ssh ? asObject(args.ssh) : null;
     if (ssh && args.launchOptions) throw new Error("Advanced launch settings are available for local sessions only.");
     let executable;
@@ -125,6 +129,15 @@ export function createTerminalLauncher({
             MULTIAGENT_TOKEN: hookService.token || "", MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath },
           cwd, cliExecutable: launchOptions?.executable,
           configArgs: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs, ...referenceArgs],
+          onThreadSettings: value => {
+            nativeModel = normalizeSessionModel({ model: value.settings?.model, effort: value.settings?.effort,
+              ...(Object.hasOwn(value.settings || {}, "serviceTier") ? { serviceTier: value.settings.serviceTier } : {}) });
+            const entry = terminalSessions.get(id);
+            if (entry?.modelMemoryLaunchId === args.modelMemoryLaunchId && nativeModel) {
+              entry.runtimeModelSettings = nativeModel;
+              onModelSettings(entry);
+            }
+          },
         }) : null;
       if (poolLaunch) {
         poolRelease = poolLaunch.release ?? null;
@@ -149,6 +162,7 @@ export function createTerminalLauncher({
       return {
         ssh, executable, shellArgs, reversePort, cwd, accountId,
         ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted: Boolean(poolLaunch), release,
+        nativeModel: () => nativeModel,
       };
     } catch (error) {
       release();
@@ -164,6 +178,8 @@ export function createTerminalLauncher({
     const spawnGeneration = terminalSessions.beginSpawn(id);
 
     const aiToolId = asString(args.aiToolId).trim();
+    const remembered = resolveModelSettings(args);
+    args = { ...args, modelSettings: remembered.settings, modelMemoryLaunchId: randomUUID() };
     if (HOOK_TOOLS.has(aiToolId)) {
       // A CLI reads MCP configuration only during its own startup. Do not spawn
       // it until the hidden browser profile and authenticated loopback broker
@@ -177,7 +193,7 @@ export function createTerminalLauncher({
     if (cancelled()) return { reattached: false, cancelled: true };
     const {
       ssh, executable, shellArgs, reversePort, cwd, accountId,
-      ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted, release,
+      ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted, release, nativeModel,
     } = await prepareLaunch(args, id, aiToolId);
     if (cancelled()) {
       release();
@@ -221,6 +237,11 @@ export function createTerminalLauncher({
       claudeAccountId: !ssh && aiToolId === "claude" ? accountId : null,
       poolRouted,
       modelSettings: normalizeSessionModel(args.modelSettings),
+      configuredModelSettings: remembered.requested,
+      modelMemoryToken: remembered.token,
+      modelMemoryLaunchId: args.modelMemoryLaunchId,
+      runtimeModelSettings: nativeModel(),
+      resumeContext: args.resumeContext,
       initTimer: null,
       aiToolId,
       cwd,
@@ -251,6 +272,8 @@ export function createTerminalLauncher({
     if (!terminalSessions.register(entry, spawnGeneration)) {
       return { reattached: false, cancelled: true };
     }
+    try { onRegistered(entry); }
+    catch (error) { terminalSessions.close(id, "launch-failed"); throw error; }
 
     if (launchCommand) {
       entry.initTimer = setTimeout(() => {

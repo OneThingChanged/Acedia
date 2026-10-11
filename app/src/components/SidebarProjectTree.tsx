@@ -154,7 +154,6 @@ export function SidebarProjectTree({
   onSelect,
   onSelectScreen,
   onScreenContextMenu,
-  onRenameSession,
   onContextMenu,
   onNewProject,
   onNewProjectFolder,
@@ -714,14 +713,6 @@ export function SidebarProjectTree({
           if (isDetached) return;
           startSessionPointer(a.id, e);
         }}
-        onDoubleClick={(e) => {
-          if (isDetached || sessionPickerMode) return;
-          if ((e.target as HTMLElement).closest("button")) return;
-          pendingSessionClickRef.current = null;
-          e.preventDefault();
-          e.stopPropagation();
-          onRenameSession(a.id);
-        }}
         onContextMenu={(e) => {
           if (isDetached || sessionPickerMode) return;
           pendingSessionClickRef.current = null;
@@ -745,8 +736,8 @@ export function SidebarProjectTree({
                     a.lastSessionId
                       ? `session ${a.lastSessionId.slice(0, 8)}`
                       : "new session"
-                  } - ${text("더블클릭으로 별명 변경", "double-click to rename")}`
-                : `${a.name} - ${text("더블클릭으로 별명 변경", "double-click to rename")}`
+                  }`
+                : a.name
             }
           >
             {a.name}

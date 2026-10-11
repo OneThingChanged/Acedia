@@ -1,8 +1,11 @@
 import fs from "node:fs/promises";
-import { normalizeSessionModel } from "../shared/session-model.mjs";
+import { normalizeSessionModel, sameSessionModel } from "../shared/session-model.mjs";
 import { deliveryComposerReady } from "./session-delivery.mjs";
+import { selectedAccountId } from "./provider-accounts.mjs";
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
+const modelSessionIdentity = agent => JSON.stringify([agent.aiToolId, selectedAccountId(agent), agent.codexPoolAccountId || null,
+  agent.folder || null, normalizeSessionModel(agent.modelSettings) || null]);
 
 // Hook delivery can be absent when a Codex session is resumed. Only an empty
 // native composer is positive fallback evidence; a transcript from an older
@@ -24,7 +27,10 @@ export function modelRestartAllowed(agent, active, inputReady = false) {
 export async function verifyModelSessionStart({ id, settings, entryFor, hookFor, inputReady = () => false, timeoutMs = 25000, now = Date.now }) {
   const expected = normalizeSessionModel(settings) ?? null;
   const entry = entryFor(id);
-  if (!entry || JSON.stringify(normalizeSessionModel(entry.modelSettings) ?? null) !== JSON.stringify(expected)) {
+  const launched = normalizeSessionModel(entry?.modelSettings);
+  const comparable = launched && expected && !Object.hasOwn(expected, "serviceTier")
+    ? { model: launched.model, ...(launched.effort ? { effort: launched.effort } : {}) } : launched;
+  if (!entry || !sameSessionModel(comparable, expected)) {
     throw fail("새 CLI의 모델 설정을 확인하지 못했습니다. 설정은 저장되었습니다.", 409);
   }
   const deadline = now() + timeoutMs;
@@ -41,6 +47,16 @@ export async function verifyModelSessionStart({ id, settings, entryFor, hookFor,
 const modelReads = new Map();
 const MODEL_CHUNK = 256 * 1024;
 const MAX_MODEL_LINE = 1024 * 1024;
+
+function modelRecord(row, provider) {
+  const payload = row.payload;
+  const value = provider === "claude" && row.type === "assistant"
+    ? { model: row.message?.model, effort: row.effort ?? row.message?.effort }
+    : row.type === "turn_context" ? { model: payload?.model ?? payload?.collaboration_mode?.settings?.model,
+      effort: payload?.effort ?? payload?.reasoning_effort ?? payload?.collaboration_mode?.settings?.reasoning_effort,
+      ...(Object.hasOwn(payload || {}, "service_tier") ? { serviceTier: payload.service_tier } : {}) } : null;
+  return normalizeSessionModel(value);
+}
 
 async function readModelRecord(file, provider, previous, since) {
   const handle = await fs.open(file, "r");
@@ -64,10 +80,7 @@ async function readModelRecord(file, provider, previous, since) {
         if ((provider === "codex" ? /"type"\s*:\s*"turn_context"/ : /"type"\s*:\s*"assistant"/).test(line)) {
           try {
             const row = JSON.parse(line);
-            const value = provider === "claude" && row.type === "assistant"
-              ? { model: row.message?.model, effort: row.effort ?? row.message?.effort }
-              : row.type === "turn_context" ? { model: row.payload?.model, effort: row.payload?.effort ?? row.payload?.reasoning_effort } : null;
-            const model = normalizeSessionModel(value);
+            const model = modelRecord(row, provider);
             if (model && (since == null || Date.parse(row.timestamp) >= since)) { found = { model, timestamp: Date.parse(row.timestamp) }; break; }
           } catch { /* A concurrently written final record may be incomplete. */ }
         }
@@ -82,9 +95,7 @@ async function readModelRecord(file, provider, previous, since) {
     if (!found && floor === 0 && !oversized && carry.length) {
       try {
         const row = JSON.parse(carry.toString("utf8"));
-        const value = provider === "claude" && row.type === "assistant" ? { model: row.message?.model, effort: row.effort ?? row.message?.effort }
-          : row.type === "turn_context" ? { model: row.payload?.model, effort: row.payload?.effort ?? row.payload?.reasoning_effort } : null;
-        const model = normalizeSessionModel(value);
+        const model = modelRecord(row, provider);
         if (model && (since == null || Date.parse(row.timestamp) >= since)) found = { model, timestamp: Date.parse(row.timestamp) };
       } catch { /* Not a model record. */ }
     }
@@ -134,9 +145,11 @@ export class SessionModelService {
   async save(body) {
     if (!body || !Object.hasOwn(body, "settings")) throw fail("Model settings are required.");
     const id = body?.id, agent = this.agent(id);
+    const identity = modelSessionIdentity(agent);
     if (body.restart != null && typeof body.restart !== "boolean") throw fail("Invalid restart option.");
     const settings = body.settings == null ? null : normalizeSessionModel(body.settings);
     if (body.settings != null && !settings) throw fail("Invalid model/effort settings.");
+    if (agent.aiToolId !== "codex" && settings && Object.hasOwn(settings, "serviceTier")) throw fail("Fast 설정은 Codex 세션에서만 지원합니다.");
     if (settings) {
       const { models } = await this.catalog(agent);
       const selected = models.find(model => model.model === settings.model);
@@ -144,6 +157,7 @@ export class SessionModelService {
         throw fail("선택한 계정에서 지원하지 않는 모델 또는 effort입니다. 목록을 새로 확인하세요.");
       }
     }
+    if (modelSessionIdentity(this.agent(id)) !== identity) throw fail("세션의 도구·계정 또는 설정이 바뀌었습니다. 모델 목록을 다시 확인하세요.", 409);
     if (body.restart && !this.canRestart(id)) throw fail("작업이 끝난 뒤 재시작하세요. 다음 시작에 적용할 설정은 저장할 수 있습니다.", 409);
     return this.update({ id, settings, restart: body.restart === true });
   }

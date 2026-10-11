@@ -73,13 +73,18 @@ const configArgs = Object.entries({ model: 'gpt-6-astra', chatgpt_base_url: base
   'features.daemon_auto_start': false, 'analytics.enabled': false,
 }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`]);
 configArgs.push('--profile', 'fixture');
-function stream(body, item) {
+function stream(body, item, usedPercent) {
   const response = { id: 'resp_fixture', object: 'response', created_at: Math.floor(Date.now()/1000), status: 'completed', model: body.model, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15, input_tokens_details: { cached_tokens: 4 } } };
   const events = [{ type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
     { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress' } },
     { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
   return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''),
-    { headers: { 'content-type': 'application/json', 'x-codex-turn-state': 'fixture-turn-state' } });
+    { headers: { 'content-type': 'application/json', 'x-codex-turn-state': 'fixture-turn-state',
+      'x-codex-primary-used-percent': String(usedPercent), 'x-codex-primary-window-minutes': '300',
+      'x-codex-primary-reset-at': String(Math.floor(Date.now() / 1000) + 3600),
+      'x-codex-secondary-used-percent': '17', 'x-codex-secondary-window-minutes': '10080',
+      'x-codex-secondary-reset-at': String(Math.floor(Date.now() / 1000) + 7200),
+    } });
 }
 pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
   command: () => ({ file: binary, args: ['app-server'] }),
@@ -112,7 +117,7 @@ pool = new AccountPool(path.join(root, 'pool'), { safeStorage, port: 0,
     if (output) toolResults.push({ account, output: JSON.stringify(output) });
     const item = output ? { type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'NATIVE_TOOLS_OK', annotations: [] }] }
       : { type: 'custom_tool_call', id: 'call_fixture', call_id: 'fixture-exec', name: 'exec', input: 'text(ALL_TOOLS.filter(t => /image|web|search|account_fixture|codex_apps/.test(t.name)).map(t => t.name)); text(await tools.mcp__account_fixture__echo({})); try { const r = await tools.image_gen__imagegen({prompt:"Isolated local fixture"}); text({imageResult: typeof r}); } catch (e) { text("LOCAL_IMAGE_FIXTURE_ERROR " + String(e)); } try { text(await tools.web__run({search_query:[{q:"isolated local fixture"}],response_length:"short"})); } catch (e) { text("LOCAL_WEB_FIXTURE_ERROR " + String(e)); }' };
-    return stream(body, item);
+    return stream(body, item, account === accounts[0] ? 42 : 63);
   },
 });
 async function connect(launch) {
@@ -167,7 +172,9 @@ try {
   const ids = accounts.map(label => {
     const id = pool.create(label); const account = pool.account(id);
     account.auth = pool.seal(JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: token(label), id_token: token(label), refresh_token: 'fixture-refresh', account_id: label } }));
-    account.backendOrigin = base; account.status = 'ready'; pool.update(id, true); return id;
+    account.backendOrigin = base; account.status = 'ready';
+    account.limits = { rateLimits: { planType: 'pro', primary: { usedPercent: 1 } } }; account.limitsAt = Date.now();
+    pool.update(id, true); return id;
   });
   await pool.setEnabled(true);
   const launches = [], threadIds = [];
@@ -178,6 +185,10 @@ try {
     const thread = await client.call('thread/start', { model: 'gpt-6-astra', cwd: root, approvalPolicy: 'never', sandbox: 'danger-full-access' });
     threadIds.push(thread.thread.id);
     await client.turn(thread.thread.id, 'Call the local image, web and MCP fixture tools. All endpoints point to localhost.');
+    assert.equal(pool.account(ids[index]).limits.rateLimits.primary.usedPercent, index === 0 ? 42 : 63,
+      'Native response quota must update the bound pool account without a manual refresh.');
+    assert.equal(pool.account(ids[index]).limits.rateLimits.secondary.usedPercent, 17);
+    assert.equal(pool.account(ids[index]).limits.rateLimits.planType, 'pro');
     assert.equal(fs.existsSync(path.join(home, 'auth.json')), false);
   }
   assert.ok(responses.length >= 4);
@@ -215,6 +226,7 @@ try {
   assert.equal(generations.length, responses.length);
   assert.ok(generations.every(record => record.status === 'completed' && record.completionObserved && record.usageReported && record.cachedTokens === 4));
   console.log('ACCOUNT_POOL_NATIVE_CACHE_IDENTITY_AND_STREAM_USAGE_OK');
+  console.log('ACCOUNT_POOL_NATIVE_ROLLING_QUOTA_UPDATES_OK');
   console.log('ACCOUNT_POOL_NATIVE_TUI_EXCLUSION_AND_RESUME_OK');
   for (const launch of launches) launch.release();
   assert.equal(pool.nativeSessions.size, 0);

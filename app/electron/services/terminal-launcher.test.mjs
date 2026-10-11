@@ -1,8 +1,10 @@
 import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTerminalLauncher, referenceFolderArgs } from "./terminal-launcher.mjs";
 import { TerminalSessionService } from "./terminal-session-service.mjs";
+import { SessionModelMemory } from "./session-model-memory.mjs";
 
 const fixtures = [];
 function deferred() {
@@ -62,6 +64,41 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it("restores the last native session settings and applies a staged model without losing Fast", async () => {
+    vi.useFakeTimers(); const f = fixture();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-launch-memory-"));
+    const memory = new SessionModelMemory(path.join(root, "session-model-memory.json"));
+    f.sessions.onBeforeClose = entry => memory.remember(entry);
+    const callbacks = [];
+    const launch = createTerminalLauncher({ ...f.dependencies,
+      resolveModelSettings: args => memory.resolve(args), onRegistered: entry => memory.started(entry),
+      onModelSettings: entry => memory.remember(entry),
+      accountPoolLaunch: async (_id, _fixed, _resume, context) => {
+        callbacks.push(context.onThreadSettings);
+        context.onThreadSettings({ settings: { model: "gpt-6-astra", effort: "max", serviceTier: "fast" } });
+        return { env: { ACEDIA_CODEX_REMOTE_TOKEN: "fixture" }, args: ["--remote", "ws://127.0.0.1:12345"] };
+      },
+    });
+    const original = { model: "gpt-6-sol", effort: "low" };
+    try {
+      await launch({ ...f.args, modelSettings: original, initCommand: "codex resume saved-id" });
+      expect(memory.record(f.args).settings).toEqual({ model: "gpt-6-astra", effort: "max", serviceTier: "fast" });
+      f.sessions.action(f.args.id, "sleep");
+      const reopened = new SessionModelMemory(memory.file);
+      expect(reopened.resolve({ ...f.args, modelSettings: original }).settings).toEqual(memory.record(f.args).settings);
+      memory.stage(f.args, { model: "gpt-6-luna", effort: "medium" });
+      await launch({ ...f.args, modelSettings: original, initCommand: "codex resume saved-id" });
+      const nextEntry = f.sessions.get(f.args.id);
+      expect(nextEntry.modelSettings).toEqual({ model: "gpt-6-luna", effort: "medium", serviceTier: "fast" });
+      await vi.advanceTimersByTimeAsync(600);
+      const command = f.processes[1].write.mock.calls[0][0];
+      expect(command).toContain("saved-id"); expect(command).toContain('service_tier="fast"');
+      expect(command).toContain('model_reasoning_effort="medium"');
+      expect(command).toContain("gpt-6-luna");
+      callbacks[0]({ settings: { model: "stale", effort: "low", serviceTier: null } });
+      expect(nextEntry.runtimeModelSettings.model).toBe("gpt-6-astra");
+    } finally { f.sessions.closeAll(); fs.rmSync(root, { recursive: true }); }
+  });
   it('grants additional CLI folders only for explicit write references', async () => {
     expect(referenceFolderArgs([{ path: os.tmpdir(), access: 'read' }], 'codex')).toEqual([]);
     expect(referenceFolderArgs([{ path: os.tmpdir(), access: 'write' }], 'codex')).toEqual(['--add-dir', path.resolve(os.tmpdir())]);

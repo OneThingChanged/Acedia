@@ -106,6 +106,9 @@
 .sidebar-workspace .sidebar-screen-item:hover .sidebar-row-menu, .sidebar-workspace .sidebar-screen-item:focus-within .sidebar-row-menu,
 .sidebar-workspace .sidebar-recent-row:hover .sidebar-row-menu, .sidebar-workspace .sidebar-recent-row:focus-within .sidebar-row-menu,
 .sidebar-workspace .sidebar-recent-row.active .sidebar-row-menu { opacity: 1; }
+.sidebar-session-actions { display: flex; align-items: center; flex-shrink: 0; }
+.sidebar-workspace .sidebar-session-actions > button { width: 24px; height: 26px; margin-right: 0; }
+.sidebar-session-close .sidebar-icon { width: 14px; height: 14px; }
 .sidebar-workspace .screen-groups { padding: 0; margin-top: 15px; border: 0; }
 .sidebar-screen-item { --screen-ink: var(--screen-color); display: flex; align-items: center; border-radius: 7px; box-shadow: inset 2px 0 var(--screen-color); }
 .sidebar-screen-item:hover { background: var(--app-panel-hover); }

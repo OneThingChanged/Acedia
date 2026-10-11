@@ -74,6 +74,7 @@ import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
 import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
+import { SessionModelMemory, nativeCodexModel } from "./services/session-model-memory.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
 import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
 import { projectSessionRuntime } from "./shared/session-state.mjs";
@@ -262,8 +263,10 @@ const runtimeByWebContents = new Map();
 const detachedAgents = new Map();
 /** @type {Map<string, {id: string, name: string, process: import('node-pty').IPty, initTimer: NodeJS.Timeout | null, aiToolId: string, cwd: string | null, ssh: unknown, filter: import("./services/terminal-stream.mjs").CodexScrollbackFilter | import("./services/terminal-stream.mjs").PassThroughTerminalFilter, buffer: import('./services/terminal-stream.mjs').SequencedTerminalBuffer, subscribers: Set<number>}>} */
 const ptys = new Map();
+let sessionModelMemory;
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
+  onBeforeClose: entry => sessionModelMemory.remember(entry),
   onInput: id => capacityRetry.cancel(id),
   onBell(id) {
     const now = Date.now();
@@ -452,6 +455,7 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+sessionModelMemory = new SessionModelMemory(path.join(app.getPath("userData"), "session-model-memory.json"));
 const idleSettings = idlePreferences(app.getPath('userData'));
 const idleViews = new Map();
 const idlePolicy = new IdleSessionPolicy({
@@ -637,6 +641,7 @@ function publishAgentHookEvent(eventName, payload) {
     const transcriptPath = normalizeTranscriptPath(payload.transcript_path);
     if (transcriptPath) agentTranscripts.set(payload.id, transcriptPath);
     if (payload.session_id) agentSessionIds.set(payload.id, payload.session_id);
+    if (["session-start", "done", "cancelled"].includes(payload.event)) void rememberSessionModel(payload.id);
     if (transcriptPath && payload.session_id) {
       const catalogAgent = usageIndex?.catalog?.agents?.find(
         (agent) => agent.id === payload.id
@@ -1064,13 +1069,23 @@ async function sessionModelCatalog(agent) {
     if (sessionModelCatalogCache.size > 100) sessionModelCatalogCache.delete(sessionModelCatalogCache.keys().next().value);
   }
   const result = await cached.promise;
+  const currentAgent = sessionModelAgent(agent.id);
+  if (ptys.get(agent.id) !== live || currentAgent?.aiToolId !== provider || selectedAccountId(currentAgent) !== selectedAccountId(agent)) {
+    throw new Error("세션 또는 계정이 바뀌었습니다. 모델 목록을 다시 확인하세요.");
+  }
   const sessionId = agentSessionIds.get(agent.id) || agent.lastSessionId;
-  const transcript = agentTranscripts.get(agent.id) || resolveChatTranscriptBySession(provider, sessionId,
+  const candidate = agentTranscripts.get(agent.id) || resolveChatTranscriptBySession(provider, sessionId,
     { toolId: provider, accountId })?.path;
+  const root = accountTranscriptRoot(provider, accountId);
+  const transcript = candidate && root && isTranscriptInsideRoot(root, candidate)
+    && (!sessionId || candidate.toLowerCase().includes(sessionId.toLowerCase())) ? candidate : null;
   // A resumed transcript can still end with the old model. Explicit settings
   // on the replacement CLI take precedence until it emits a new turn context.
-  const current = await lastTurnModel(transcript, provider,
+  const turnModel = await lastTurnModel(transcript, provider,
     normalizeSessionModel(live?.modelSettings) ? live.startedAt : undefined);
+  if (ptys.get(agent.id) !== live) throw new Error("세션 상태가 바뀌었습니다. 모델 목록을 다시 확인하세요.");
+  const current = live ? sessionModelMemory.remember(live, turnModel)
+    : sessionModelMemory.lastSettings(agent) || turnModel;
   // Include a model actually used by this Claude session (full IDs, 3P models)
   // in addition to the installed CLI's documented aliases.
   const models = provider === "claude" ? [...result.models] : result.models;
@@ -1080,12 +1095,38 @@ async function sessionModelCatalog(agent) {
   }
   return { models, accountLabel: result.accountLabel, capabilitiesSource: result.capabilitiesSource || "account",
     current: current || normalizeSessionModel(live?.modelSettings) || null,
-    currentSource: current ? "last-turn" : live?.modelSettings ? "launch" : "unknown" };
+    currentSource: live?.runtimeModelSettings || nativeCodexModel(live) ? "native" : turnModel ? "last-turn"
+      : live?.modelSettings ? "launch" : current ? "remembered" : "unknown" };
+}
+async function rememberSessionModel(id) {
+  const entry = ptys.get(id);
+  if (!entry || entry.ssh || !["codex", "claude"].includes(entry.aiToolId)) return;
+  try {
+    if (entry.runtimeModelSettings || nativeCodexModel(entry)) { sessionModelMemory.remember(entry); return; }
+    const accountId = selectedAccountId(entry);
+    const sessionId = agentSessionIds.get(id) || entry.resumeContext?.sessionId;
+    const candidate = agentTranscripts.get(id) || resolveChatTranscriptBySession(entry.aiToolId, sessionId,
+      { toolId: entry.aiToolId, accountId })?.path;
+    const root = accountTranscriptRoot(entry.aiToolId, accountId);
+    const transcript = candidate && root && isTranscriptInsideRoot(root, candidate)
+      && (!sessionId || candidate.toLowerCase().includes(sessionId.toLowerCase())) ? candidate : null;
+    const observed = await lastTurnModel(transcript, entry.aiToolId, entry.modelSettings ? entry.startedAt : undefined);
+    if (ptys.get(id) === entry) sessionModelMemory.remember(entry, observed);
+  } catch (error) { console.warn("[electron] session model capture failed", error.message); }
 }
 const sessionModels = new SessionModelService({
   agentFor: sessionModelAgent, active: id => ptys.has(id), catalog: sessionModelCatalog,
   inputReady: id => modelInputReady(ptys.get(id)),
-  update: payload => remoteSessionModelBroker.update(payload),
+  update: async payload => {
+    if ([...remoteSessionModelBroker.pending.values()].some(item => item.id === payload.id)) return remoteSessionModelBroker.update(payload);
+    const agent = sessionModelAgent(payload.id);
+    const ticket = sessionModelMemory.stage({ ...agent, cwd: ptys.get(payload.id)?.cwd || agent.folder }, payload.settings);
+    try { return await remoteSessionModelBroker.update(payload); }
+    catch (error) {
+      if (error.statusCode !== 504 && !/설정은 저장/.test(error.message)) sessionModelMemory.rollback(ticket);
+      throw error;
+    }
+  },
 });
 function modelInputReady(entry) {
   return codexModelInputReady(entry, { blocked: forceClosing || questionResponder.isBusy(entry?.id) || capacityRetry.isActive(entry?.id) });
@@ -3287,6 +3328,7 @@ async function testPasswordSshConnection(ssh, password) {
 
 const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-pool"), {
   safeStorage,
+  onRateLimitsChanged: () => sendEventToAll("usage:changed", {}),
   nativeCommand: (args, env, context) => {
     const file = context.cliExecutable || (process.platform === "win32" ? findExecutableOnPath("codex.exe") : "codex");
     if (file && (process.platform !== "win32" || /\.(?:exe|com)$/i.test(file))) return { file, args: ["app-server", ...args] };
@@ -3305,6 +3347,9 @@ const accountPool = new AccountPool(path.join(app.getPath("userData"), "account-
 usageIndex.codexUsageAccounts = new CodexUsageAccounts(codexAccounts, accountPool);
 const spawnPty = createTerminalLauncher({
   terminalSessions,
+  resolveModelSettings: args => sessionModelMemory.resolve(args),
+  onModelSettings: entry => sessionModelMemory.remember(entry),
+  onRegistered: entry => sessionModelMemory.started(entry),
   hookService,
   ensureBrowserIntegrationReady,
   waitForHooks: () => hookReady?.catch(() => {}),
@@ -4899,6 +4944,11 @@ async function invokeCommand(event, command, rawArgs) {
     ) {
       throw new Error("이 세션은 다른 작업창에서 사용 중입니다.");
     }
+    if (command === "kill_pty" || (command === "terminal_session_action" && ["sleep", "close", "restart", "quit"].includes(args.action))) {
+      const stoppingEntry = ptys.get(args.id);
+      await rememberSessionModel(args.id);
+      if (ptys.has(args.id) && ptys.get(args.id) !== stoppingEntry) throw new Error("세션 프로세스가 바뀌었습니다. 다시 확인하세요.");
+    }
     const result = await terminalHandlers.invoke(event, command, args);
     if (command === 'attach_terminal' && monitorHooks.get(args.id)?.question_id) sendEventToWebContentsId(event.sender.id, 'agent:hook-event', { ...monitorHooks.get(args.id), question_notification: false });
     if (
@@ -5825,11 +5875,19 @@ async function invokeCommand(event, command, rawArgs) {
       }
       const current = sessionModels.agent(id);
       if (ptys.get(id) !== live || !sessionModels.canRestart(id)) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
+      if (current.aiToolId !== agent.aiToolId) throw new Error("세션의 도구가 바뀌었습니다. 다시 확인하세요.");
       if ((agentSessionIds.get(id) || current.lastSessionId || null) !== sessionId) throw new Error("현재 대화가 바뀌었습니다. 다시 확인하세요.");
       if (selectedAccountId(current) !== selectedAccountId(agent)
         || (live && selectedAccountId(live) !== selectedAccountId(current))) throw new Error("세션 계정이 바뀌었습니다. 다시 확인하세요.");
       const poolResumeOwnerId = agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
       if (poolResumeOwnerId && !accountPool.eligible(accountPool.account(poolResumeOwnerId))) throw new Error("현재 분산 계정을 사용할 수 없습니다. 설정을 저장하고 계정 상태를 확인하세요.");
+      await rememberSessionModel(id);
+      if (ptys.get(id) !== live || !sessionModels.canRestart(id)) throw new Error("세션 상태가 바뀌었습니다. 작업이 끝난 뒤 다시 시도하세요.");
+      const latest = sessionModels.agent(id);
+      if ((agentSessionIds.get(id) || latest.lastSessionId || null) !== sessionId
+        || latest.aiToolId !== current.aiToolId || selectedAccountId(latest) !== selectedAccountId(current)) throw new Error("현재 대화 또는 계정이 바뀌었습니다. 다시 확인하세요.");
+      if (poolResumeOwnerId && (!accountPool.eligible(accountPool.account(poolResumeOwnerId))
+        || accountPool.state.sessions[id]?.accountId !== poolResumeOwnerId)) throw new Error("분산 계정 상태가 바뀌었습니다. 다시 확인하세요.");
       terminalSessions.action(id, "restart");
       return { sessionId, poolResumeOwnerId };
     }

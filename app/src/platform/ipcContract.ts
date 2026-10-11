@@ -82,6 +82,7 @@ export type RuntimeCommand =
 
 export type RuntimeEventName =
   | "accounts:changed"
+  | "usage:changed"
   | "pty:data" | "agent:idle-suspended" | "agent:capacity-retry" | "agent:session-delivery" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
   | "desktop-pet:position-reset" | "desktop-pet:activate"
   | "desktop-pet:close-requested" | "remote:access-request"

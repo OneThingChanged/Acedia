@@ -3,6 +3,7 @@ type: Feature
 title: 유휴 세션 자동 중지와 복원
 description: 완료된 로컬 세션의 안전한 유휴 중지와 원래 계정·대화 복원.
 status: stable
+last_updated: 2026-10-10
 sources:
   - resource: ../app/electron/services/idle-session-policy.mjs
   - resource: ../app/electron/services/idle-session-smoke.mjs
@@ -10,6 +11,7 @@ sources:
   - resource: ../app/src/components/IdleSessionsPanel.tsx
   - resource: ../app/src/lib/idleSessions.ts
   - resource: ../app/src/lib/spawn.ts
+  - resource: ../app/electron/services/session-model-memory.mjs
   - resource: ../app/scripts/electron-terminal-settings-smoke.mjs
 ---
 
@@ -43,6 +45,9 @@ SSH, 일반 Shell, 시작 중인 세션, 훅이 없거나 복원이 불확실한
 계정, 대화 ID, CLI 경로,
 인수·환경변수, 권한·작업자 설정을 보존하며 렌더러의 화면 이력도 저장한다.
 세션을 클릭하면 기존 실행 경로에서 같은 대화를 다시 확인한 후 재개한다.
+종료 직전 확인한 모델·effort와 Codex Fast 상태도 [세션별 실행 설정](agent-launch-options.md#세션별-마지막-실행-설정)
+에 따라 복원한다. CLI의 전역 기본값보다 해당 세션의 마지막 확인값을 사용하며,
+사용자가 새로 선택해 저장한 설정이 있으면 그 선택을 우선한다.
 파일 삭제·계정 불일치·복원 실패 시 다른 대화를 대신 실행하지 않고 오류를 표시한다.
 실행 설정에서 사용자가 명시적으로 계정을 변경하면 새 계정의 대화 선택 규칙을 따른다.
 

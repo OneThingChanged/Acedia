@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-09
+last_updated: 2026-10-11
 stale_after: 2026-11-30
 sources:
   - id: session-workers
@@ -215,6 +215,14 @@ sessions owned by another window remain visible but unavailable. Matching names
 are highlighted. Empty projects are searchable and retain their New conversation
 action when opened.[^sidebar][^sidebar-navigation]
 
+Both the sidebar and Quick Search accept pasted project or session working
+paths, including `G:\AI\01_GameDev\Unreal\PureProject\NiagaraLab`. Matching
+ignores case, treats `\` and `/` as equivalent separators, and removes surrounding
+quotes and trailing separators. A project path also finds its sessions even
+when their working folders differ. Quick Search includes local and remote paths
+for both kinds of result; pasted paths use contiguous matching rather than fuzzy
+character matching. `/ build` remains the document-search shortcut.[^sidebar-navigation][^quick-search]
+
 Selecting a project clears the query, selects All, opens the project section,
 unfolds its machine/folder/project and focuses that project row. Other projects
 retain their fold state; later catalog updates do not reopen the revealed
@@ -249,6 +257,13 @@ its history, layout and runtime; the footer's Archived conversations dialog can
 restore it. Pin/archive flags and visit times survive reopening and synchronize
 through the shared session catalog.[^sidebar][^sidebar-navigation][^app-shell]
 
+Active sessions also have an **×** button in recent conversations, expanded
+projects and search results. It immediately deactivates that session and removes
+its open pane while retaining the conversation in the catalog; other sessions
+keep running. Sleeping or stopped sessions and sessions owned by another window
+do not show the button. Double-clicking a session no longer opens rename; use
+**Rename** in the right-click or item menu.[^sidebar][^sidebar-project-tree]
+
 The recent-list filters offer **All / Active / Sleeping**, with counts for the
 selected project scope, excluding archived entries.
 Active includes running,
@@ -273,7 +288,9 @@ available in the titlebar and by shortcut. The
 header actions also remain available in the collapsed rail. The sidebar follows
 the current application theme. The Electron sidebar smoke uses a separate
 profile and checks pin/archive/restore, scopes, independent project folds,
-project menus/new conversations, nested pointer/keyboard selection, Quick Search,
+project menus/new conversations, nested pointer/keyboard selection, direct session
+stop from project/recent/search rows without deleting history or selecting a
+background session, context-menu-only rename, Quick Search,
 notifications, split rename/ungroup, collapse/resize, settings, reload and
 800–1440px layouts. IPC is simulated: no real terminal processes or user
 accounts are used. Source validation for project folding passed 33 focused
@@ -460,6 +477,9 @@ Desktop Chat shows one live work indicator above the composer, with the current
 tool, elapsed time and **Work details** action. The conversation does not repeat
 the indicator. This same status bar covers session startup and recovery, remains
 visible during an asynchronous question, and disappears when work completes.
+The fixed footer orders **Working → message queue → composer** separately from
+the conversation scroll area. Scrolling history leaves the queue in place;
+long queues scroll within their own bounded area without moving the transcript.
 [^chat-view]
 
 Local Codex and Claude Chat composers show a single current-model button.

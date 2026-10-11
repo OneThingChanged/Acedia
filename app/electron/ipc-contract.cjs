@@ -177,6 +177,7 @@ const INVOKE_COMMANDS = Object.freeze([
 
 const DELIVERED_EVENTS = Object.freeze([
   "accounts:changed",
+  "usage:changed",
   "pty:data",
   "agent:idle-suspended", "agent:capacity-retry", "agent:session-delivery", "terminal:bell", "pty:exit",
   "desktop-pet:update",

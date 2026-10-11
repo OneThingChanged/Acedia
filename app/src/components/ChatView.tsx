@@ -956,8 +956,16 @@ export function ChatView({
           </div>
         </div>
       )}
+      <div className="chat-footer">
+      {status !== "unsupported" && busy && !startupPrompt && <div className="chat-work-status" role="status">
+        <span className="chat-thinking-dots" aria-hidden="true"><i /><i /><i /></span>
+        <strong>{agentStatus === "recovering" ? text("복구 중", "Recovering") : initializing ? text("세션 시작 중", "Starting session") : text("작업 중", "Working")}</strong>
+        {runningTool && <span className="chat-work-current" title={runningTool}>{workLabel(runningTool, text)}</span>}
+        <span className="chat-work-elapsed" aria-hidden="true">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+        <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
+      </div>}
       {queue.length > 0 && (
-        <div className="chat-queue">
+        <div className="chat-queue" role="region" aria-label={text("메시지 대기열", "Message queue")}>
           <div className="chat-queue-head">
             {queue.some(item => item.mode === "now") ? text(`전달 대기 ${queue.length}`, `Pending ${queue.length}`) : text(`예약 대기열 ${queue.length}`, `Queued ${queue.length}`)}
             {busy && <span className="chat-queue-hint">{queue.some(item => item.mode === "now") ? text("· 중간 지시는 먼저 전달 · 예약은 완료 후 전송", "· steer first · reservations after completion") : text("· 대기 상태가 되면 순서대로 전송", "· sent in order when ready")}</span>}
@@ -979,21 +987,13 @@ export function ChatView({
         </div>
       )}
       {status !== "unsupported" && (
-        <>
-        {busy && !startupPrompt && <div className="chat-work-status" role="status">
-          <span className="chat-thinking-dots" aria-hidden="true"><i /><i /><i /></span>
-          <strong>{agentStatus === "recovering" ? text("복구 중", "Recovering") : initializing ? text("세션 시작 중", "Starting session") : text("작업 중", "Working")}</strong>
-          {runningTool && <span className="chat-work-current" title={runningTool}>{workLabel(runningTool, text)}</span>}
-          <span className="chat-work-elapsed" aria-hidden="true">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
-          <button type="button" className="chat-work-details" onClick={() => { const details = scrollRef.current?.querySelectorAll<HTMLDetailsElement>(".chat-work-tools"); const latest = details?.[details.length - 1]; if (latest) { latest.open = true; latest.scrollIntoView({ block: "center", behavior: "smooth" }); } else jumpToLatest(); }}>{text("작업 내역", "Work details")}</button>
-        </div>}
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
           forceQueue={!alive || initializing || !!prompt}
           agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} modelSettingsKey={modelSettingsKey}
           modelBusy={busy || !!prompt || initializing || queue.length > 0}
           projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
-        </>
       )}
+      </div>
     </div>
   );
 }

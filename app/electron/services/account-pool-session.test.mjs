@@ -25,6 +25,7 @@ function clientRpc(socket) {
   }) };
 }
 async function fixture(overrides = {}) {
+  const { threadStartResult, ...runtimeOverrides } = overrides;
   const seen = [], replies = [], authenticated = [];
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await new Promise(resolve => backend.once('listening', resolve));
@@ -39,7 +40,7 @@ async function fixture(overrides = {}) {
       if (message.method === 'account/login/start') auth = message.params;
       const result = message.method === 'account/read'
         ? { account: { type: 'chatgpt', planType: 'pro' }, requiresOpenaiAuth: true, workspaceRouting: { chatgptAccountId: auth.chatgptAccountId, backendOrigin: 'https://chatgpt.com' } }
-        : { accepted: true };
+        : message.method === 'thread/start' && threadStartResult ? threadStartResult : { accepted: true };
       packet(socket, { id: message.id, result });
     });
   });
@@ -54,7 +55,7 @@ async function fixture(overrides = {}) {
       child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), exitCode: 0 });
       queueMicrotask(() => child.stderr.write(`codex app-server\n  listening on: ${address}\n`));
       return child;
-    }, ...overrides,
+    }, ...runtimeOverrides,
   });
   const gateway = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await new Promise(resolve => gateway.once('listening', resolve));
@@ -73,6 +74,38 @@ async function fixture(overrides = {}) {
 }
 
 describe('native routed Codex sessions', () => {
+  it('observes quota changes on control and TUI sockets while forwarding the original notification', async () => {
+    const onRateLimits = vi.fn();
+    const f = await fixture({ onRateLimits }); await f.rpc.call('initialize');
+    const notification = { method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 31 } } } };
+    for (const socket of f.backend.clients) packet(socket, notification);
+    await vi.waitFor(() => expect(onRateLimits).toHaveBeenCalledTimes(2));
+    expect(onRateLimits).toHaveBeenCalledWith(notification.params);
+    expect(f.rpc.notifications).toContainEqual(notification);
+    await f.runtime.readRateLimits();
+    expect(f.seen.at(-1)).toMatchObject({ method: 'account/rateLimits/read', params: { excludeResetCreditDetails: true } });
+    expect(f.seen.some(message => message.method === 'turn/start')).toBe(false);
+    f.runtime.close();
+    f.runtime.receive(JSON.stringify(notification));
+    expect(onRateLimits).toHaveBeenCalledTimes(2);
+  });
+  it('observes the primary native model, effort and Fast changes before the next turn and excludes workers', async () => {
+    const onThreadSettings = vi.fn();
+    const f = await fixture({ onThreadSettings, threadStartResult: {
+      thread: { id: 'primary' }, model: 'gpt-6-sol', reasoningEffort: 'high', serviceTier: null,
+    } });
+    await f.rpc.call('thread/start', {});
+    expect(onThreadSettings).toHaveBeenCalledWith({ threadId: 'primary', settings: { model: 'gpt-6-sol', effort: 'high', serviceTier: null } });
+    for (const socket of f.backend.clients) packet(socket, { method: 'thread/settings/updated', params: {
+      threadId: 'worker', settings: { model: 'gpt-6-luna', effort: 'low', serviceTier: null },
+    } });
+    const changed = { threadId: 'primary', settings: { model: 'gpt-6-astra', effort: 'max', serviceTier: 'fast' } };
+    for (const socket of f.backend.clients) packet(socket, { method: 'thread/settings/updated', params: changed });
+    await vi.waitFor(() => expect(onThreadSettings).toHaveBeenCalledTimes(2));
+    expect(onThreadSettings).toHaveBeenLastCalledWith(changed);
+    expect(f.seen.some(message => message.method === 'turn/start')).toBe(false);
+    expect(JSON.stringify(onThreadSettings.mock.calls)).not.toContain('private-a');
+  });
   it('uses one externally owned account in memory while retaining home, hooks and native configuration', async () => {
     const f = await fixture();
     expect(f.runtime.workspaceOrigin).toBe('https://chatgpt.com');

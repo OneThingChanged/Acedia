@@ -101,9 +101,10 @@ export async function codexProfileConfig(args, env) {
  */
 export class AccountPoolSession extends EventEmitter {
   constructor({ command, env, cwd, configArgs = [], providerUrl, getAuth, ensureAvailable,
+    onThreadSettings = () => {}, onRateLimits = () => {},
     spawnProcess = spawn, startTimeout = 20000, requestTimeout = 20000 }) {
     super();
-    Object.assign(this, { command, env, cwd, configArgs, providerUrl, getAuth, ensureAvailable, spawnProcess, startTimeout, requestTimeout });
+    Object.assign(this, { command, env, cwd, configArgs, providerUrl, getAuth, ensureAvailable, onThreadSettings, onRateLimits, spawnProcess, startTimeout, requestTimeout });
     this.publicToken = randomBytes(32).toString('base64url');
     this.privateToken = randomBytes(32).toString('base64url');
     this.pending = new Map(); this.sequence = 0; this.sockets = new Set(); this.closed = false;
@@ -179,7 +180,12 @@ export class AccountPoolSession extends EventEmitter {
       else pending.resolve(message.result);
     } else if (message.method === REFRESH && message.id != null) {
       void this.refresh(message);
+    } else if (message.method === 'account/rateLimits/updated') {
+      this.#rateLimits(message.params);
     }
+  }
+  readRateLimits() {
+    return this.call('account/rateLimits/read', { excludeResetCreditDetails: true });
   }
   async refresh(message) {
     try {
@@ -203,6 +209,7 @@ export class AccountPoolSession extends EventEmitter {
     this.sockets.add(client); client.on('error', () => {});
     let upstream;
     const queue = []; let queuedBytes = 0;
+    const threadRequests = new Map();
     const relay = raw => {
       let message;
       try {
@@ -210,6 +217,10 @@ export class AccountPoolSession extends EventEmitter {
         if (AUTH_MUTATIONS.has(message.method)) throw failure('이 세션의 계정은 Acedia 계정 관리에서 변경하세요.');
         if (THREAD_STARTS.has(message.method) || message.method === 'turn/start' || message.method === 'turn/steer') this.ensureAvailable();
         if (THREAD_STARTS.has(message.method)) {
+          if (message.id != null) {
+            threadRequests.set(message.id, true);
+            if (threadRequests.size > 64) threadRequests.delete(threadRequests.keys().next().value);
+          }
           message.params = { ...message.params, ...this.threadOverrides, modelProvider: 'openai', config: { ...this.profileConfig, ...message.params?.config, ...this.config } };
         }
         if (upstream) send(upstream, message);
@@ -234,10 +245,27 @@ export class AccountPoolSession extends EventEmitter {
         // Codex broadcasts this server request. Let only the host answer it;
         // the stock TUI cannot refresh externally owned ChatGPT credentials.
         if (message.method === REFRESH) return;
+        if (threadRequests.delete(message.id) && message.result?.thread?.id) {
+          this.mainThreadId = message.result.thread.id;
+          this.#settings({ threadId: this.mainThreadId, settings: { model: message.result.model,
+            effort: message.result.reasoningEffort, ...(Object.hasOwn(message.result, "serviceTier") ? { serviceTier: message.result.serviceTier } : {}) } });
+        }
+        if (message.method === "thread/settings/updated") this.#settings(message.params);
+        if (message.method === 'account/rateLimits/updated') this.#rateLimits(message.params);
         send(client, message);
       });
       for (const message of queue) send(upstream, message);
     } catch { client.close(1011); }
+  }
+  #settings(value) {
+    if (this.closed || !this.mainThreadId || value?.threadId !== this.mainThreadId || typeof value.settings?.model !== "string") return;
+    try { this.onThreadSettings(value); }
+    catch (error) { console.warn("[account-pool] session settings could not be remembered", error.message); }
+  }
+  #rateLimits(value) {
+    if (this.closed) return;
+    try { this.onRateLimits(value); }
+    catch { console.warn('[account-pool] session usage could not be updated'); }
   }
   close() {
     if (this.closed) return;

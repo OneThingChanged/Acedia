@@ -21,6 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.74 EXE release](release-1-8-1-74.md) - Remember per-session model, effort and Fast settings; sidebar close and path search, a fixed Chat queue, and automatic routed quota updates with five-minute fallback polling.
 * [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; stable EXE published and public download verified.
 * [Acedia 1.8.1.72 EXE release](release-1-8-1-72.md) - Color-coded split screens and matching session badges, dedicated Codex/Claude logos, and Codex questions during work; stable EXE published and public download verified.
 * [Acedia 1.8.1.71 local build](release-1-8-1-71.md) - Async-question fix verified and built locally, then included in 1.8.1.72 before publication.
@@ -110,7 +111,7 @@ configuration that supports it.
 * [Antigravity CLI terminal sessions](gemini-cli.md) - Installation, account quotas, personal-account migration and integration boundaries.
 
 * [계정 등록 흐름](account-registration.md) - Account creation, login results, default selection, renaming and removal recovery.
-* [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI path, arguments and environment, creation defaults, and safe per-session model/effort editing from desktop Chat and Remote.
+* [에이전트 고급 실행 설정](agent-launch-options.md) - Local CLI launch options, safe model/effort editing, and the last session model/effort/known Fast state preserved across sleep and restart.
 * [Codex account profiles](codex-accounts.md) - Independent local logins, account-scoped recovery, fresh-conversation work handoff and quotas.
 * [Claude account profiles](claude-accounts.md) - Separate local accounts, scoped recovery, fresh-conversation work handoff and usage windows.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.

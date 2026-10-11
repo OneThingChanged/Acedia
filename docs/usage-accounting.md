@@ -7,6 +7,7 @@ tags:
   - tokens
   - sqlite
 status: stable
+last_updated: 2026-10-11
 stale_after: 2026-10-31
 sources:
   - id: usage-service
@@ -143,12 +144,24 @@ match unless a canonical preference already exists. Excluding an account from ro
 not hide its quota. The usage dialog links to the existing account-management
 page. See [account usage unification](account-pool.md).
 
-Pool quotas come from the pool's encrypted credential workflow and shared
-background refresh job. The adapter never copies credentials or changes session
+Pool quotas come from the pool's encrypted credential workflow, shared background
+refresh job and the bound native session's `account/rateLimits/updated` notifications.
+The adapter never copies credentials or changes session
 owners, and never attributes an old default transcript quota to a pool account.
 Account registration appears before a quota exists. Account removal retains the
 last snapshot as an unregistered profile. Non-owner Remote viewers cannot see or
 change pool profile visibility through the usage API.
+
+Native routing preserves the provider's `x-codex-*` response headers so the CLI can
+emit rolling quota updates. Sparse updates preserve unavailable windows, plan and
+credit metadata; model-specific buckets do not replace the account-wide quota.
+The host publishes `usage:changed`, and the footer debounces a cached read without
+waiting for task completion or a manual Refresh. Pending display updates wait for
+an ongoing explicit refresh or visibility save. As a fallback, stale active accounts
+are queried through their existing native connections once every five minutes, with one
+request per account and at most two concurrent reads. Failed reads preserve the
+previous values and timestamp; replaced sessions and reads superseded by a newer
+update cannot overwrite them. Polling stops when the last native session closes.
 
 Explicit refresh queries every registered Codex account through the CLI app-server's
 `account/rateLimits/read` RPC using that account's isolated login environment. No

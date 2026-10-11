@@ -18,4 +18,28 @@ describe("quick open ranking", () => {
     expect(rankQuickOpenItems(items, "> 설정").map((item) => item.id)).toEqual(["c"]);
     expect(rankQuickOpenItems(items, "/ build").map((item) => item.id)).toEqual(["d"]);
   });
+
+  it("finds projects and sessions with pasted Windows paths without fuzzy path matches", () => {
+    const folder = "G:/AI/01_GameDev/Unreal/PureProject/NiagaraLab";
+    const windows = folder.split("/").join("\\");
+    const paths: QuickOpenItem[] = [
+      { id: "project", kind: "project", title: "FX Lab", subtitle: folder, searchText: "project" },
+      { id: "session", kind: "session", title: "Fire effect", subtitle: "FX Lab · Codex", searchText: folder + "/Effects" },
+      { id: "unrelated", kind: "project", title: "Backup", subtitle: folder.replace("/AI/", "/AI/Archive/"), searchText: "" },
+    ];
+    for (const query of [folder, windows, ` "${windows.toLowerCase()}\\" `]) {
+      expect(rankQuickOpenItems(paths, query).map(item => item.id)).toEqual(["project", "session"]);
+    }
+    expect(rankQuickOpenItems(paths, "@ " + windows).map(item => item.id)).toEqual(["session"]);
+  });
+
+  it("keeps remote and UNC paths separate from the document shortcut", () => {
+    for (const folder of ["/work/remote", "//server/share/project"]) {
+      const paths: QuickOpenItem[] = [
+        { id: "project", kind: "project", title: "Project", subtitle: folder, searchText: "" },
+        { id: "session", kind: "session", title: "Session", subtitle: "Project", searchText: folder },
+      ];
+      expect(rankQuickOpenItems(paths, folder).map(item => item.id)).toEqual(["project", "session"]);
+    }
+  });
 });

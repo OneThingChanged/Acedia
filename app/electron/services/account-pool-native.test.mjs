@@ -15,7 +15,7 @@ afterEach(() => { for (const { pool, root } of fixtures.splice(0)) {
   if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-native-pool-')) throw new Error('Unexpected fixture path');
   fs.rmSync(root, { recursive: true });
 } });
-async function fixture() {
+async function fixture(overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-native-pool-'));
   const runtimes = [], requests = [];
   const pool = new AccountPool(root, { safeStorage: storage, port: 0, sessionFactory: options => {
@@ -27,7 +27,7 @@ async function fixture() {
   }, fetchImpl: async (url, options) => {
     requests.push({ url, ...options });
     return new Response('data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":12,"output_tokens":3}}}\n\n', { headers: { 'content-type': 'text/event-stream' } });
-  } });
+  }, ...overrides });
   const accounts = ['A', 'B'].map(label => {
     const id = pool.create(label), account = pool.account(id);
     const token = 'x.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, fixture: label })).toString('base64url') + '.x';
@@ -49,6 +49,108 @@ const deniedSocket = (url, options) => new Promise(resolve => {
 });
 
 describe('routed native tool credentials', () => {
+  it('updates only the bound account, deduplicates broadcasts and rejects notifications from replaced sessions', async () => {
+    const changed = vi.fn();
+    const f = await fixture({ onRateLimitsChanged: changed });
+    await f.pool.launchNative('one', f.accounts[0], null, f.context);
+    await f.pool.launchNative('two', f.accounts[1], null, f.context);
+    const first = f.runtimes[0], second = f.runtimes[1];
+    const quota = { rateLimits: { primary: { usedPercent: 37, windowDurationMins: 300 }, secondary: { usedPercent: 12 } } };
+    first.onRateLimits(quota); first.onRateLimits(quota);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(37);
+    expect(f.pool.account(f.accounts[1]).limits).toBeUndefined();
+    second.onRateLimits({ rateLimits: { primary: { usedPercent: 8 } } });
+    expect(f.pool.account(f.accounts[1]).limits.rateLimits.primary.usedPercent).toBe(8);
+    first.onRateLimits({ rateLimits: { limitId: 'model-only', primary: { usedPercent: 99 } } });
+    expect(changed).toHaveBeenCalledTimes(2);
+    await f.pool.launchNative('one', f.accounts[0], null, f.context);
+    first.onRateLimits({ rateLimits: { primary: { usedPercent: 98 } } });
+    expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(37);
+    f.runtimes[2].onRateLimits({ rateLimits: { primary: { usedPercent: 38 } } });
+    expect(JSON.parse(fs.readFileSync(f.pool.file, 'utf8')).accounts[0].limits.rateLimits)
+      .toMatchObject({ primary: { usedPercent: 38, windowDurationMins: 300 }, secondary: { usedPercent: 12 } });
+    expect(changed).toHaveBeenCalledTimes(3);
+    f.pool.close(); expect(f.pool.quotaTimer).toBeNull();
+    f.runtimes[2].onRateLimits(quota); expect(changed).toHaveBeenCalledTimes(3);
+  });
+  it('polls one native connection per stale account, bounds retries and preserves newer updates during a read', async () => {
+    let now = Date.now();
+    const f = await fixture({ now: () => now });
+    await f.pool.launchNative('one', f.accounts[0], null, f.context);
+    await f.pool.launchNative('two', f.accounts[0], null, f.context);
+    await f.pool.activeQuotaRefresh;
+    const quota = usedPercent => ({ rateLimits: { primary: { usedPercent } } });
+    const first = f.runtimes[0], second = f.runtimes[1];
+    let complete;
+    first.readRateLimits = vi.fn(async () => quota(10));
+    second.readRateLimits = vi.fn(() => new Promise(resolve => { complete = resolve; }));
+    const pending = f.pool.refreshActiveQuotas();
+    expect(f.pool.refreshActiveQuotas()).toBe(pending);
+    expect(first.readRateLimits).not.toHaveBeenCalled(); expect(second.readRateLimits).toHaveBeenCalledTimes(1);
+    second.onRateLimits(quota(40)); complete(quota(20)); await pending;
+    expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(40);
+    await f.pool.refreshActiveQuotas(); expect(second.readRateLimits).toHaveBeenCalledTimes(1);
+    now += 5 * 60_000; second.readRateLimits.mockRejectedValueOnce(new Error('temporary failure'));
+    await f.pool.refreshActiveQuotas(); await f.pool.refreshActiveQuotas();
+    expect(second.readRateLimits).toHaveBeenCalledTimes(2);
+    expect(f.pool.account(f.accounts[0]).limitsAt).toBe(now - 5 * 60_000);
+    now += 5 * 60_000; second.readRateLimits.mockResolvedValueOnce(quota(44));
+    await f.pool.refreshActiveQuotas();
+    expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(44);
+    expect(f.pool.account(f.accounts[0]).limitsAt).toBe(now);
+    first.close(); second.close(); expect(f.pool.quotaTimer).toBeNull();
+  });
+  it('passes native quota response headers alongside turn state without forwarding cookies or credentials', async () => {
+    const f = await fixture(); await f.pool.launchNative('one', null, null, f.context);
+    f.pool.fetch = vi.fn(async () => new Response('{}', { headers: {
+      'x-codex-primary-used-percent': '42', 'x-codex-secondary-used-percent': '15', 'x-codex-turn-state': 'fixture-state',
+      'set-cookie': 'private-cookie', authorization: 'private-token',
+    } }));
+    const runtime = f.runtimes[0];
+    const response = await fetch(runtime.providerUrl + '/responses', { method: 'POST', body: '{}', headers: {
+      authorization: 'Bearer ' + runtime.auth.accessToken, 'chatgpt-account-id': runtime.auth.chatgptAccountId,
+    } });
+    await response.text();
+    expect(response.headers.get('x-codex-primary-used-percent')).toBe('42');
+    expect(response.headers.get('x-codex-secondary-used-percent')).toBe('15');
+    expect(response.headers.get('x-codex-turn-state')).toBe('fixture-state');
+    expect(response.headers.get('set-cookie')).toBeNull(); expect(response.headers.get('authorization')).toBeNull();
+  });
+  it('automatically polls stale usage every five minutes and stops when the last native session closes', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      let now = Date.now();
+      const f = await fixture({ now: () => now });
+      const launch = await f.pool.launchNative('one', null, null, f.context);
+      await f.pool.activeQuotaRefresh;
+      const runtime = f.runtimes[0];
+      runtime.readRateLimits = vi.fn(async () => ({ rateLimits: { primary: { usedPercent: 23 } } }));
+      now += 60_000; await vi.advanceTimersByTimeAsync(60_000);
+      expect(runtime.readRateLimits).not.toHaveBeenCalled();
+      now += 4 * 60_000; await vi.advanceTimersByTimeAsync(4 * 60_000); await f.pool.activeQuotaRefresh;
+      expect(runtime.readRateLimits).toHaveBeenCalledTimes(1);
+      expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(23);
+      launch.release(); expect(f.pool.quotaTimer).toBeNull();
+      now += 5 * 60_000; await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(runtime.readRateLimits).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it('keeps a rolling quota received during an older manual account refresh', async () => {
+    let complete;
+    const f = await fixture({ rpcFactory: () => ({ initialize: async () => {}, close() {}, call: vi.fn(async method => {
+      if (method === 'account/read') return { account: { type: 'chatgpt', planType: 'plus' } };
+      return new Promise(resolve => { complete = resolve; });
+    }) }) });
+    await f.pool.launchNative('one', null, null, f.context);
+    const runtime = f.runtimes[0];
+    runtime.onRateLimits({ rateLimits: { primary: { usedPercent: 20 } } });
+    const refresh = f.pool.credentials(f.accounts[0], false, true);
+    await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+    runtime.onRateLimits({ rateLimits: { primary: { usedPercent: 49 } } });
+    complete({ rateLimits: { primary: { usedPercent: 22 } } }); await refresh;
+    expect(f.pool.account(f.accounts[0]).limits.rateLimits.primary.usedPercent).toBe(49);
+  });
   it('relays native search, image editing and future tool routes without changing binary payloads or counting them as model tokens', async () => {
     const f = await fixture(); await f.pool.launchNative('one', null, null, f.context);
     f.pool.fetch = vi.fn(async () => new Response('{"data":[],"usage":{"input_tokens":500,"output_tokens":20}}'));

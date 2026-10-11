@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 계정 분산
 description: 기존 Dashboard에서 전용 계정을 등록하고 로컬 Codex 세션을 계정별로 배분하는 자체 기능.
 status: stable
-last_updated: 2026-10-07
+last_updated: 2026-10-11
 sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
@@ -71,9 +71,22 @@ Dashboard와 Remote의 **계정 관리·분산** 상단에 현재 상태를 크�
 조회 시각을 유지한다. 원격의 일반 승인 사용자는 분산 계정 정보·표시 설정을 변경하거나
 볼 수 없으며, 소유자에게만 통합된 분산 계정 한도를 표시한다.
 
+Native 라우팅 세션의 `account/rateLimits/updated`는 해당 세션에 배정된 계정의
+한도에 반영하고 하단 상태바에도 자동으로 전달한다. 응답의 `x-codex-*` 헤더를
+보존해 CLI가 사용량 변경을 알릴 수 있게 한다. 부분 알림에서 빠진 주간 한도·플랜·
+크레딧은 유지하며, 모델 전용 한도로 계정 전체 한도를 덮어쓰지 않는다.
+알림이 없으면 실행 중인 native 연결을 사용해 계정당 5분 간격으로 한도를 조회한다.
+같은 계정의 여러 세션은 한 번만 조회하며 동시 조회는 최대 2개다. 이전 세션의 알림과
+최신 변경보다 늦게 도착한 조회 응답은 무시한다. 마지막 세션이 닫히면 주기 조회도 끝난다.
+전체 계정의 수동 Refresh는 기존처럼 휴면·분산 제외 계정까지 조회한다.
+
 검증: `codex-usage-accounts.test.mjs`, `statusBarSettings.test.ts`,
 `electron-unified-usage-smoke.mjs`에서 계정 일치/불일치, 선택 유지, 이름 변경,
 제외 상태, 중복 갱신, 권한과 Desktop/Dashboard/모바일 Remote 화면을 확인한다.
+자동 갱신은 `account-pool-native.test.mjs`, `account-pool-session.test.mjs`,
+`codex-usage.test.mjs`와 Electron 통합 화면 검사로 확인한다. 설치된 CLI와 로컬 모의
+응답을 사용하는 `account-pool-tools-smoke.mjs`는 응답 헤더 → native 알림 → 계정 한도
+반영을 검증한다. 실제 유료 계정의 사용량 증가를 발생시키는 검사는 아니다.
 
 ## 등록과 사용
 

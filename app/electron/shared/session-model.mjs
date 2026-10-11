@@ -1,10 +1,27 @@
 const MODEL = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
 const EFFORT = /^(none|minimal|low|medium|high|xhigh|max|ultra)$/;
+const TIER = /^[a-z][a-z0-9_-]{0,31}$/;
 
 export function normalizeSessionModel(value) {
   if (!value || typeof value !== "object" || typeof value.model !== "string" || !MODEL.test(value.model)) return undefined;
   if (value.effort != null && (typeof value.effort !== "string" || !EFFORT.test(value.effort))) return undefined;
-  return { model: value.model, ...(value.effort ? { effort: value.effort } : {}) };
+  if (value.serviceTier != null && (typeof value.serviceTier !== "string" || !TIER.test(value.serviceTier))) return undefined;
+  return { model: value.model, ...(value.effort ? { effort: value.effort } : {}),
+    ...(Object.hasOwn(value, "serviceTier") && value.serviceTier !== undefined ? { serviceTier: value.serviceTier } : {}) };
+}
+
+export function sameSessionModel(a, b) {
+  return JSON.stringify(normalizeSessionModel(a) ?? null) === JSON.stringify(normalizeSessionModel(b) ?? null);
+}
+
+export function mergeSessionModel(observed, previous) {
+  const current = normalizeSessionModel(observed), known = normalizeSessionModel(previous);
+  if (!current) return known;
+  // Missing transcript fields are unknown, including when Claude resolves a
+  // model alias to a full ID. Native default-effort snapshots are handled by
+  // session memory, and explicit next selections never use this merge.
+  return normalizeSessionModel({ ...known, ...current,
+    ...(!Object.hasOwn(current, "serviceTier") && known && Object.hasOwn(known, "serviceTier") ? { serviceTier: known.serviceTier } : {}) });
 }
 
 export function sessionModelArgs(value, launchOptions, provider = "codex") {
@@ -16,11 +33,16 @@ export function sessionModelArgs(value, launchOptions, provider = "codex") {
     || /^-m[^-]/.test(arg) || /^-c(?:model|model_reasoning_effort)\s*=/.test(arg)
     || /^(?:model|model_reasoning_effort)\s*=/.test(arg)
     || /^--config=(?:model|model_reasoning_effort)\s*=/.test(arg)
-    || (/^(?:-c|--config)$/.test(arg) && /^(?:model|model_reasoning_effort)\s*=/.test(args[index + 1] || "")))) {
-    throw new Error("고급 실행의 model/effort 옵션을 제거한 뒤 세션 모델 설정을 사용하세요. Remove model/effort overrides from advanced launch settings.");
+    || (/^(?:-c|--config)$/.test(arg) && /^(?:model|model_reasoning_effort)\s*=/.test(args[index + 1] || ""))
+    || (Object.hasOwn(settings, "serviceTier") && (/^(?:-c|--config=)?(?:service_tier|features\.fast_mode)\s*=/.test(arg)
+      || (arg === "--disable" && args[index + 1] === "fast_mode") || arg === "--disable=fast_mode")))) {
+    throw new Error("고급 실행의 model/effort/Fast 옵션을 제거한 뒤 세션 모델 설정을 사용하세요. Remove model/effort/Fast overrides from advanced launch settings.");
   }
+  if (provider !== "codex" && Object.hasOwn(settings, "serviceTier")) throw new Error("Service tier settings require Codex.");
   return ["--model", settings.model, ...(settings.effort ? provider === "claude"
-    ? ["--effort", settings.effort] : ["-c", `model_reasoning_effort=${JSON.stringify(settings.effort)}`] : [])];
+    ? ["--effort", settings.effort] : ["-c", `model_reasoning_effort=${JSON.stringify(settings.effort)}`] : []),
+    ...(Object.hasOwn(settings, "serviceTier") ? ["-c", `service_tier=${JSON.stringify(settings.serviceTier || "default")}`,
+      "-c", "features.fast_mode=true"] : [])];
 }
 
 // Claude exposes documented aliases and effort values in installed CLI help,

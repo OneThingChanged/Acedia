@@ -1,10 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyChatSessionModel, isChatSessionModelChanging, settingsForChatModel } from "./chatSessionModel";
+import { applyChatSessionModel, isChatSessionModelChanging, settingsForChatModel, settingsForChatEffort } from "./chatSessionModel";
 import { invoke } from "../platform/runtime";
 
 vi.mock("../platform/runtime", () => ({ invoke: vi.fn() }));
 
 describe("chat session model application", () => {
+  it("does not overwrite a newer native speed value with read-only dialog metadata", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ id: "latest-speed", restarted: true });
+    await applyChatSessionModel("latest-speed", { model: "new", effort: "high", serviceTier: "fast" });
+    expect(invoke).toHaveBeenLastCalledWith("set_session_model", { id: "latest-speed", settings: { model: "new", effort: "high" }, restart: true });
+  });
+  it("preserves the session's known speed across model and effort selections", () => {
+    const model = { model: "new", label: "New", efforts: [{ effort: "high", description: "" }], defaultEffort: "high", isDefault: false };
+    const changed = settingsForChatModel(model, { model: "old", effort: "max", serviceTier: "fast" });
+    expect(changed).toEqual({ model: "new", effort: "high", serviceTier: "fast" });
+    expect(settingsForChatEffort(changed, "low")).toEqual({ model: "new", effort: "low", serviceTier: "fast" });
+    expect(settingsForChatEffort(changed)).toEqual({ model: "new", serviceTier: "fast" });
+    expect(settingsForChatModel(model, { model: "old", serviceTier: null })).toEqual({ model: "new", effort: "high", serviceTier: null });
+  });
   it("keeps supported effort and falls back to the new model's default", () => {
     const model = { model: "other", label: "Other", efforts: [{ effort: "low", description: "" }, { effort: "high", description: "" }], defaultEffort: "low", isDefault: false };
     expect(settingsForChatModel(model, { model: "old", effort: "high" })).toEqual({ model: "other", effort: "high" });

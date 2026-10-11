@@ -82,14 +82,39 @@ async function exercise(win) {
   await input('예약보다 먼저 전달할 중간 지시'); await key('Tab'); await wait(40); await key('Enter');
   await until('window.questionFixture.writes.length===8');
   await check("JSON.stringify(window.questionFixture.writes.slice(6))===JSON.stringify(['예약보다 먼저 전달할 중간 지시','\\r']) && document.querySelector('.chat-queue')?.textContent.includes('Claude 완료 후 예약') && !document.querySelector('.chat-queue-mode')", 'Input cooldown changed steering into completion reservation or lost future queue');
+  for (let index = 0; index < 6; index++) {
+    await input(`레이아웃 확인 예약 ${index + 1}`);
+    if (index === 0) { await key('Tab'); await wait(40); }
+    await key('Enter');
+  }
+  await until("document.querySelectorAll('.chat-queue-item').length===7");
+  await patch({chat:{...chat,tool:'claude',blocks:Array.from({length:24},(_,index)=>({role:index%2?'assistant':'user',kind:'text',text:`대화 기록 ${index + 1}\n\n스크롤해도 Working, 대기열, 입력창은 하단에 유지됩니다.`}))}});
+  await until("document.querySelector('.chat-scroll').scrollHeight > document.querySelector('.chat-scroll').clientHeight + 300");
   await input('작성 중인 초안');
   for (const [width,theme] of [[1024,'soft'],[420,'light'],[320,'soft']]) {
     win.setContentSize(width,800);
     await run(`document.querySelector('#root').className='app app-theme-${theme}'`); await wait(220);
     await check(`(() => { const toolbar=document.querySelector('.chat-composer-toolbar'), card=document.querySelector('.chat-composer').getBoundingClientRect();return toolbar.scrollWidth<=toolbar.clientWidth && [...toolbar.querySelectorAll('button')].every(b=>{const r=b.getBoundingClientRect();return r.left>=card.left && r.right<=card.right && r.bottom<=card.bottom;}) && document.documentElement.scrollWidth===innerWidth;})()`, 'Delivery controls overflow at '+width);
+    await check(`(async () => {
+      const pause=()=>new Promise(resolve=>setTimeout(resolve,80));
+      const scroll=document.querySelector('.chat-scroll'), footer=document.querySelector('.chat-footer'), queue=document.querySelector('.chat-queue');
+      const work=document.querySelector('.chat-work-status'), composer=document.querySelector('.chat-composer-area');
+      if (scroll.contains(queue) || !footer.contains(queue) || !footer.contains(work) || !footer.contains(composer)) return false;
+      const position=queue.getBoundingClientRect();
+      if (work.getBoundingClientRect().bottom>position.top || position.bottom>composer.getBoundingClientRect().top || composer.getBoundingClientRect().bottom>innerHeight) return false;
+      if (queue.scrollHeight<=queue.clientHeight || queue.clientHeight>140) return false;
+      scroll.scrollTop=0; await pause();
+      if (Math.abs(queue.getBoundingClientRect().top-position.top)>1) return false;
+      scroll.scrollTop=scroll.scrollHeight; await pause();
+      if (Math.abs(queue.getBoundingClientRect().top-position.top)>1 || scroll.scrollTop===0) return false;
+      const transcriptTop=scroll.scrollTop;
+      queue.scrollTop=queue.scrollHeight; await pause();
+      return queue.scrollTop>0 && scroll.scrollTop===transcriptTop && getComputedStyle(queue).overscrollBehaviorY==='contain';
+    })()`, 'Queue must stay below Working and scroll independently at '+width);
     await fs.writeFile(path.join(output, `delivery-${theme}-${width}.png`), (await win.webContents.capturePage()).toPNG());
   }
-  console.log('CHAT_DELIVERY_UI_OK Tab selection/IME/focus, Enter steering and completion queue, remount/conversation isolation, cancellation, question guard, autocomplete/newlines, Codex/Claude, dark/light 1024/420/320px');
+  await check('window.questionFixture.writes.length===8', 'Queue layout interactions sent reserved messages');
+  console.log('CHAT_DELIVERY_UI_OK Tab selection/IME/focus, Enter steering and completion queue, remount/conversation isolation, cancellation, question guard, autocomplete/newlines, Codex/Claude, fixed Working/queue/composer order, independent history/queue scroll, dark/light 1024/420/320px');
 }
 
 if (process.versions.electron) {

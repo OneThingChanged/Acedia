@@ -4101,24 +4101,27 @@ function App() {
   }, [executeCommand]);
 
   const quickOpenItems = useMemo<QuickOpenItem[]>(() => {
-    const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+    const projectById = new Map(projects.map((project) => [project.id, project]));
     const projectItems: QuickOpenItem[] = projects.map((project) => ({
       id: `project:${project.id}`,
       kind: "project",
       title: project.name,
-      subtitle: project.folder,
-      searchText: `${project.folder} project`,
+      subtitle: project.remoteFolder || project.folder,
+      searchText: [project.folder, project.remoteFolder, "project"].filter(Boolean).join(" "),
       projectId: project.id,
     }));
-    const sessionItems: QuickOpenItem[] = agents.map((agent) => ({
-      id: `session:${agent.id}`,
-      kind: "session",
-      title: agent.name,
-      subtitle: `${projectNames.get(agent.projectId) || "Unknown project"} · ${agent.aiLabel} · ${agent.status}`,
-      searchText: `${agent.folder} ${agent.aiToolId} ${agent.lastSessionId || ""}`,
-      projectId: agent.projectId,
-      agentId: agent.id,
-    }));
+    const sessionItems: QuickOpenItem[] = agents.map((agent) => {
+      const project = projectById.get(agent.projectId);
+      return {
+        id: `session:${agent.id}`,
+        kind: "session",
+        title: agent.name,
+        subtitle: `${project?.name || "Unknown project"} · ${agent.aiLabel} · ${agent.status}`,
+        searchText: [agent.folder, agent.remoteFolder, project?.folder, project?.remoteFolder, agent.aiToolId, agent.lastSessionId].filter(Boolean).join(" "),
+        projectId: agent.projectId,
+        agentId: agent.id,
+      };
+    });
     const screenItems: QuickOpenItem[] = groups.flatMap((group, index) => {
       const memberIds = [...collectAgentIds(group.layout)].filter(
         (id) => !isDocTabId(id) && !isGitHistoryTabId(id)

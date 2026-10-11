@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import type { SessionModel, SessionModelCatalog } from "../../electron/shared/session-model.mjs";
 import { useAppLanguage } from "../lib/appLanguage";
-import { applyChatSessionModel, settingsForChatModel, useChatSessionModelChanging } from "../lib/chatSessionModel";
+import { applyChatSessionModel, settingsForChatModel, settingsForChatEffort, useChatSessionModelChanging } from "../lib/chatSessionModel";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { invoke } from "../platform/runtime";
 import { ChatIcon } from "./ChatIcon";
@@ -191,7 +191,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
         <button type="button" className="chat-copy-button" aria-label={text("닫기", "Close")} disabled={applying} onClick={close}><ChatIcon name="close" /></button></header>
       <div className="chat-model-body">
         <div className="chat-model-account">{provider === "claude" ? "Claude" : "Codex"}{catalog?.accountLabel ? ` · ${catalog.accountLabel}` : ""}</div>
-        {current && <div className="chat-model-current">{text("현재 모델", "Current model")}: <strong>{modelLabel}</strong>{current.effort ? ` · ${current.effort}` : ""}</div>}
+        {current && <div className="chat-model-current">{text("현재 모델", "Current model")}: <strong>{modelLabel}</strong>{current.effort ? ` · ${current.effort}` : ""}{current.serviceTier !== undefined ? ` · ${current.serviceTier === "fast" ? "Fast" : !current.serviceTier || current.serviceTier === "default" ? "Standard" : current.serviceTier}` : ""}</div>}
         {loading && <div className="chat-model-notice" role="status">{text("모델 목록을 확인하는 중…", "Checking available models…")}</div>}
         {catalog && <>
           <div className="chat-model-options" role="radiogroup" aria-label={text("모델", "Model")}>
@@ -202,10 +202,10 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
           {selected && <fieldset className="chat-effort-field"><legend>{text("추론 강도", "Reasoning effort")}</legend>
             <div className="chat-effort-options" role="radiogroup" aria-label={text("추론 강도 선택", "Choose reasoning effort")}>
               {!selected.defaultEffort && <button type="button" role="radio" aria-checked={!draft?.effort} disabled={applying || loading}
-                onClick={() => { edited.current = true; setDraft({ model: selected.model }); }}>{text("기본값", "Default")}</button>}
+                onClick={() => { edited.current = true; setDraft(value => settingsForChatEffort(value || { model: selected.model })); }}>{text("기본값", "Default")}</button>}
               {selected.efforts.map(item => <button type="button" role="radio" key={item.effort} data-effort={item.effort}
                 aria-checked={draft?.effort === item.effort} title={item.description} disabled={applying || loading}
-                onClick={() => { edited.current = true; setDraft({ model: selected.model, effort: item.effort }); }}>{item.effort}</button>)}
+                onClick={() => { edited.current = true; setDraft(value => settingsForChatEffort(value || { model: selected.model }, item.effort)); }}>{item.effort}</button>)}
             </div>
             {selected.defaultEffort && <small>{text("모델 기본값", "Model default")}: {selected.defaultEffort}</small>}
           </fieldset>}

@@ -14,6 +14,42 @@ const resources = [];
 afterEach(async () => { vi.useRealTimers(); for (const close of resources.splice(0)) await close(); });
 
 describe("session model controls", () => {
+  it.each([{ aiToolId: "claude" }, { codexAccountId: "another" }, { folder: "new-project" }, { modelSettings: { model: "newer-choice" } }])("rejects a changed session after catalog discovery (%j)", async change => {
+    const { service, agent, update } = fixture();
+    service.catalog = async () => { Object.assign(agent, change); return { models: [{ model: "account-only", efforts: [{ effort: "high" }] }] }; };
+    await expect(service.save({ id: "session", settings: { model: "account-only", effort: "high" }, restart: false }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("rejects a Codex-only speed setting on Claude before saving or restarting", async () => {
+    const { service, agent, update } = fixture(); agent.aiToolId = "claude";
+    await expect(service.save({ id: "session", settings: { model: "account-only", effort: "high", serviceTier: "fast" }, restart: true }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    expect(update).not.toHaveBeenCalled();
+  });
+  it("encodes Fast and explicit standard speed and rejects competing native options", () => {
+    const settings = { model: "account-only", effort: "high", serviceTier: "fast" };
+    expect(sessionModelArgs(settings)).toEqual(["--model", "account-only", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "-c", "features.fast_mode=true"]);
+    expect(sessionModelArgs({ ...settings, serviceTier: null })).toContain('service_tier="default"');
+    for (const args of [["-c", 'service_tier="default"'], ["--config=service_tier=\"fast\""], ["-cfeatures.fast_mode=false"], ["--disable", "fast_mode"]]) {
+      expect(() => sessionModelArgs(settings, { args })).toThrow("Fast");
+    }
+    expect(() => sessionModelArgs(settings, undefined, "claude")).toThrow("Codex");
+  });
+  it("reads nested native model/effort and preserves explicit tier data", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-model-nested-"));
+    resources.push(() => fs.rm(root, { recursive: true })); const file = path.join(root, "turn.jsonl");
+    await fs.writeFile(file, JSON.stringify({ type: "turn_context", payload: {
+      collaboration_mode: { settings: { model: "gpt-6-astra", reasoning_effort: "max" } }, service_tier: "fast",
+    } }) + '\n');
+    expect(await lastTurnModel(file)).toEqual({ model: "gpt-6-astra", effort: "max", serviceTier: "fast" });
+  });
+  it("verifies an inherited speed but rejects a mismatch when speed was explicitly requested", async () => {
+    const entry = { startedAt: 10, modelSettings: { model: "safe", effort: "high", serviceTier: "fast" } };
+    const probe = { id: "s", entryFor: () => entry, hookFor: () => ({ lastTs: 11, event: "session-start" }) };
+    await expect(verifyModelSessionStart({ ...probe, settings: { model: "safe", effort: "high" } })).resolves.toBeUndefined();
+    await expect(verifyModelSessionStart({ ...probe, settings: { model: "safe", effort: "high", serviceTier: null } })).rejects.toThrow("설정");
+  });
   it("uses the installed Claude aliases and effort levels without treating them as account entitlements", () => {
     const help = "  --model <model> Model for this session. An alias (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g. 'claude-fable-5').\n  --effort <level> Effort for this session\n    (low, medium, high, xhigh, max)\n  --help display help";
     const models = claudeModelCatalog(help);

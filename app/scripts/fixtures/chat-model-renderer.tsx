@@ -9,7 +9,7 @@ const model = (id, label, efforts, defaultEffort = efforts[0]) => ({ model: id, 
 const catalogs = {
   codex: { models: [model("fixture-sol", "GPT-6 Sol", ["low", "medium", "high", "xhigh"], "high"),
     model("fixture-astra", "GPT-6 Astra", ["medium", "high", "xhigh", "ultra"], "medium"), model("fixture-lite", "GPT Lite", ["low", "medium"], "medium")],
-    accountLabel: "분산 계정 A", capabilitiesSource: "account", current: { model: "fixture-sol", effort: "xhigh" }, saved: null, currentSource: "last-turn", canRestart: true, canEdit: true },
+    accountLabel: "분산 계정 A", capabilitiesSource: "account", current: { model: "fixture-sol", effort: "xhigh", serviceTier: "fast" }, saved: null, currentSource: "native", canRestart: true, canEdit: true },
   claude: { models: [model("sonnet", "Sonnet", ["low", "medium", "high"], null), model("opus", "Opus", ["low", "medium", "high", "max"], null)],
     accountLabel: "Claude 개인 계정", capabilitiesSource: "cli-help", current: { model: "sonnet", effort: "medium" }, saved: null, currentSource: "last-turn", canRestart: true, canEdit: true },
 };
@@ -24,7 +24,8 @@ const transcript = {
 };
 function completeModel(args) {
   const catalog = catalogs[state.provider];
-  catalog.current = args.settings; catalog.saved = args.settings; catalog.currentSource = "launch";
+  catalog.current = { ...args.settings, ...(catalog.current.serviceTier !== undefined ? { serviceTier: catalog.current.serviceTier } : {}) };
+  catalog.saved = args.settings; catalog.currentSource = "launch";
   return { id: args.id, restarted: true };
 }
 window.multiAgentElectron = {

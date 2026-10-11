@@ -56,6 +56,42 @@ it("buffers hidden output and replays it only to an attached view", () => {
   }]);
 });
 
+it.each(["sleep", "close", "restart"])("captures settings before disposing or killing a %s session", action => {
+  const events = [];
+  const service = new TerminalSessionService({ onBeforeClose: (entry, reason) => {
+    expect(service.get(entry.id)).toBe(entry); events.push(reason);
+  } });
+  const pty = register(service, "session");
+  service.get("session").filter.dispose = () => events.push("disposed");
+  pty.kill.mockImplementation(() => events.push("killed"));
+  service.action("session", action);
+  expect(events).toEqual([action, "disposed", "killed"]);
+  pty.emitExit(); expect(events).toHaveLength(3);
+});
+
+it("captures a native quit before writing and captures a natural exit before releasing its viewport", () => {
+  const captured = [];
+  const service = new TerminalSessionService({ onBeforeClose: (_entry, reason) => captured.push(reason) });
+  const pty = register(service, "session");
+  pty.write.mockImplementation(() => expect(captured).toEqual(["quit"]));
+  service.action("session", "quit");
+  pty.emitExit(); expect(captured).toEqual(["quit", "natural"]);
+});
+
+it("captures every session during app quit and still tears down when persistence fails", () => {
+  const reasons = [];
+  const service = new TerminalSessionService({ onBeforeClose: (entry, reason) => {
+    reasons.push([entry.id, reason]); if (entry.id === "first") throw new Error("fixture failure");
+  } });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const first = register(service, "first"), second = register(service, "second");
+    service.closeAll();
+    expect(reasons).toEqual([["first", "app-quit"], ["second", "app-quit"]]);
+    expect(first.kill).toHaveBeenCalledOnce(); expect(second.kill).toHaveBeenCalledOnce();
+  } finally { warn.mockRestore(); }
+});
+
 it('reports manual input and quit before writing so an automatic retry can be cancelled', () => {
   const inputs = [], service = new TerminalSessionService({ onInput: id => inputs.push(id) });
   const process = register(service, 'agent-1');

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { ProviderAccounts } from '../electron/services/provider-accounts.mjs';
@@ -20,7 +21,7 @@ if (process.versions.electron) {
   app.setPath('userData', path.join(directory, 'profile'));
   app.disableHardwareAcceleration(); app.on('window-all-closed', () => {});
   const windows = [], services = [], errors = [];
-  let pool, usage, openedUrl;
+  let pool, usage, openedUrl, routedRuntime, nextRefreshGate, liveRefreshes = 0, passiveReads = 0;
   const until = async (win, expression) => {
     for (let n = 0; n < 100; n++) {
       if (await win.webContents.executeJavaScript(expression)) return;
@@ -44,7 +45,15 @@ if (process.versions.electron) {
     try {
       const local = new ProviderAccounts(directory, 'codex', { baseEnv: { CODEX_HOME: path.join(directory, 'default') } });
       const quota = percent => ({ rateLimits: { planType: 'plus', primary: { usedPercent: percent, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } });
-      pool = new AccountPool(path.join(directory, 'pool'), { safeStorage, rpcFactory: (_env, home) => ({
+      pool = new AccountPool(path.join(directory, 'pool'), { safeStorage, port: 0,
+        onRateLimitsChanged: () => { for (const win of windows) if (!win.isDestroyed()) win.webContents.send('multiagent:event', 'usage:changed', {}); },
+        sessionFactory: options => {
+          const runtime = Object.assign(new EventEmitter(), options, { publicToken: 'fixture-native-session', closed: false,
+            async start() { await options.getAuth(false); return this; },
+            close() { if (this.closed) return; this.closed = true; this.emit('closed'); },
+          });
+          routedRuntime = runtime; return runtime;
+        }, rpcFactory: (_env, home) => ({
         initialize: async () => {}, close: () => {}, call: async method => {
           if (method === 'account/read') return { account: { type: 'chatgpt', planType: 'plus' } };
           check(method === 'account/rateLimits/read', 'Unexpected fixture RPC');
@@ -57,7 +66,7 @@ if (process.versions.electron) {
         const tokens = { account_id: label, refresh_token: 'fixture-only',
           access_token: `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.x`,
           id_token: `x.${Buffer.from(JSON.stringify({ sub: 'user' })).toString('base64url')}.x` };
-        Object.assign(account, { auth: pool.seal(JSON.stringify({ tokens })), identity: `${label}:user`, status: 'ready', enabled: label === 'Work', limits: quota(percent), limitsAt: Date.now() });
+        Object.assign(account, { auth: pool.seal(JSON.stringify({ tokens })), identity: `${label}:user`, status: 'ready', enabled: label === 'Work', limits: quota(percent), limitsAt: Date.now(), backendOrigin: 'https://chatgpt.com' });
         if (label === 'Personal') { await fs.mkdir(local.home()); await fs.writeFile(path.join(local.home(), 'auth.json'), JSON.stringify({ tokens })); }
       }
       pool.persist();
@@ -73,9 +82,16 @@ if (process.versions.electron) {
       const { url } = await dashboard.start();
       dashboard.sync({ language: 'ko', agents: [], view: { language: 'ko', agents: [] } });
       remote.syncView({ language: 'ko', agents: [] }); await remote.start();
-      ipcMain.handle('multiagent:invoke', (_event, command, rawArgs) => {
+      ipcMain.handle('multiagent:invoke', async (_event, command, rawArgs) => {
         const args = contract.assertInvokeRequest(command, rawArgs);
-        if (command === 'usage_rate_limits_get') return usage.getRateLimits(args.refresh);
+        if (command === 'usage_rate_limits_get') {
+          if (args.refresh) liveRefreshes++; else passiveReads++;
+          const gate = args.refresh ? nextRefreshGate : null;
+          if (args.refresh) nextRefreshGate = null;
+          const summary = await usage.getRateLimits(args.refresh);
+          if (gate) await gate;
+          return summary;
+        }
         if (command === 'usage_profile_visibility_set') return usage.setProfileVisibility(args.profileKey, args.hidden);
         if (command === 'start_monitor_server') return dashboard.start();
         if (command === 'open_external_url') { openedUrl = args.url; return; }
@@ -90,6 +106,22 @@ if (process.versions.electron) {
       check(await desktop.webContents.executeJavaScript("document.querySelectorAll('.usage-account-routing[data-routing=excluded]').length === 1 && !document.querySelector('.properties-dialog')?.textContent.includes('Default')"), 'Excluded account missing or duplicate Default');
       await desktop.webContents.executeJavaScript(`document.querySelector('input[value="codex:${work.id}"]').click()`);
       await until(desktop, "document.querySelectorAll('.usage-status-provider').length === 2");
+      await pool.setEnabled(true);
+      await pool.launchNative('working-session', work.id, null, { cwd: directory, env: {}, configArgs: [] });
+      const refreshCount = liveRefreshes, readCount = passiveReads;
+      for (let index = 0; index < 20; index++) routedRuntime.onRateLimits(quota(47));
+      await until(desktop, `document.querySelector('[data-profile-key="codex:${work.id}"]')?.textContent.includes('47%')`);
+      check(await desktop.webContents.executeJavaScript(`document.querySelector('[data-profile-key="codex:${personal.id}"]')?.textContent.includes('1%')`), 'Another account quota changed');
+      check(liveRefreshes === refreshCount && passiveReads <= readCount + 2, 'Native update launched excessive or full refreshes');
+      let releaseRefresh;
+      nextRefreshGate = new Promise(resolve => { releaseRefresh = resolve; });
+      await desktop.webContents.executeJavaScript("document.querySelector('.usage-status-refresh').click()");
+      await until(desktop, "document.querySelector('.usage-status-refresh').disabled");
+      await pool.refreshing;
+      routedRuntime.onRateLimits(quota(56));
+      await new Promise(resolve => setTimeout(resolve, 500));
+      releaseRefresh();
+      await until(desktop, `document.querySelector('[data-profile-key="codex:${work.id}"]')?.textContent.includes('56%') && !document.querySelector('.usage-status-refresh').disabled`);
       await desktop.webContents.executeJavaScript("document.querySelector('.usage-manage-accounts').click()");
       for (let n = 0; n < 30 && !openedUrl; n++) await new Promise(resolve => setTimeout(resolve, 80));
       check(openedUrl === `${url}/?usage=1&accounts=1`, 'Management button opened a different account surface');
@@ -114,6 +146,8 @@ if (process.versions.electron) {
       }
       check(errors.length === 0, `Renderer errors: ${errors.join('; ')}`);
       console.log('UNIFIED_USAGE_DESKTOP_DASHBOARD_REMOTE_SELECTION_RENAME_AND_MANAGEMENT_OK');
+      console.log('UNIFIED_USAGE_ROUTED_QUOTA_AUTO_UPDATE_WITHOUT_REFRESH_OR_FOCUS_OK');
+      console.log('UNIFIED_USAGE_ROLLING_UPDATE_DURING_MANUAL_REFRESH_OK');
     } catch (error) { console.error(error); exitCode = 1; }
     finally {
       for (const win of windows) if (!win.isDestroyed()) win.destroy();

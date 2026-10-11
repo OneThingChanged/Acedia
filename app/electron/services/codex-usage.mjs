@@ -67,6 +67,34 @@ export function fetchCodexUsage({ command, env, timeoutMs = 15_000, start = spaw
   });
 }
 
+// Native notifications are sparse: an unavailable window/plan/credits value
+// must not erase the last complete account snapshot. Model-specific buckets
+// cannot replace the account-wide Codex quota.
+export function mergeCodexRateLimits(previous, update) {
+  const bucket = update?.rateLimitsByLimitId?.codex ?? update?.rateLimits;
+  if (!bucket || (bucket.limitId && bucket.limitId !== "codex")) return null;
+  const old = previous?.rateLimitsByLimitId?.codex ?? previous?.rateLimits;
+  const merged = old && (!old.limitId || old.limitId === "codex") ? { ...old } : {};
+  let useful = false;
+  for (const key of ["primary", "secondary"]) {
+    const value = bucket[key];
+    if (!Number.isFinite(value?.usedPercent) || value.usedPercent < 0) continue;
+    merged[key] = { ...merged[key], usedPercent: value.usedPercent };
+    for (const field of ["windowDurationMins", "resetsAt"]) {
+      if (Number.isFinite(value[field])) merged[key][field] = value[field];
+    }
+    useful = true;
+  }
+  if (typeof bucket.credits?.hasCredits === "boolean" && typeof bucket.credits.unlimited === "boolean") {
+    merged.credits = { ...merged.credits, hasCredits: bucket.credits.hasCredits, unlimited: bucket.credits.unlimited };
+    if (bucket.credits.balance != null) merged.credits.balance = String(bucket.credits.balance);
+    useful = true;
+  }
+  if (!useful) return null;
+  for (const key of ["limitId", "limitName", "planType"]) if (typeof bucket[key] === "string") merged[key] = bucket[key];
+  return { ...previous, rateLimits: merged, rateLimitsByLimitId: { ...previous?.rateLimitsByLimitId, codex: merged } };
+}
+
 export function codexUsageSnapshot(result, account, updatedAt = Math.floor(Date.now() / 1000)) {
   const bucket = result?.rateLimitsByLimitId?.codex ?? result?.rateLimits;
   if (!bucket || (bucket.limitId && bucket.limitId !== "codex")) return null;

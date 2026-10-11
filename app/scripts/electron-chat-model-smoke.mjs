@@ -56,6 +56,7 @@ async function exercise(win, width) {
   await waitFor(win, "document.querySelector('.chat-model-trigger')?.textContent.includes('GPT-6 Astra') && !document.querySelector('.chat-composer-send').disabled");
   const update = await run("window.modelFixture.modelUpdates.at(-1)");
   check(update.id === "codex-chat" && update.restart && update.settings.model === "fixture-astra" && update.settings.effort === "ultra", "Wrong Codex model/effort/session payload");
+  check(!Object.hasOwn(update.settings, "serviceTier"), "A model/effort-only selection must preserve the latest native speed in main, not send a stale dialog value");
   await open(".chat-model-trigger");
   check(await run("document.querySelector('[data-effort=ultra]').getAttribute('aria-checked')==='true'"), "Applied effort was not selected");
   await click('[data-model="fixture-lite"]');

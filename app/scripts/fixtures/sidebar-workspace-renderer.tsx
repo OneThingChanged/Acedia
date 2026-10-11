@@ -16,7 +16,7 @@ if (!localStorage.getItem("sidebar-fixture-seeded")) {
     { id: "ux", name: "사이드바 UX 개선", projectId: "acedia", folder: "C:/fixture/acedia", aiToolId: "codex", resumeEligible: true, sidebarPinned: true, lastOpenedAt: now, createdAt: now },
     { id: "image", name: "리모트 이미지 뷰어 확대", projectId: "acedia", folder: "C:/fixture/acedia", aiToolId: "claude", resumeEligible: true, createdAt: now - 1000 },
     { id: "routing", name: "분산 요청 상태 표시", projectId: "acedia", folder: "C:/fixture/acedia", aiToolId: "codex", resumeEligible: false, createdAt: now - 2000 },
-    { id: "shader", name: "셰이더 파이프라인 점검", projectId: "toon", folder: "C:/fixture/toon", aiToolId: "claude", resumeEligible: true, createdAt: now - 3000 },
+    { id: "shader", name: "셰이더 파이프라인 점검", projectId: "toon", folder: "C:/fixture/shader-session", sessionHierarchy: { inheritFolder: false, folderOverride: "C:/fixture/shader-session" }, aiToolId: "claude", resumeEligible: true, createdAt: now - 3000 },
     { id: "files", name: "에셋 경로와 파일 열기", projectId: "assets", folder: "C:/fixture/assets", aiToolId: "codex", resumeEligible: false, createdAt: now - 86400000 },
     { id: "archived", name: "이전 작업 기록", projectId: "acedia", folder: "C:/fixture/acedia", aiToolId: "codex", sidebarArchived: true, createdAt: now - 172800000 },
   ]);

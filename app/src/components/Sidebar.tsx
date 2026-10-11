@@ -3,6 +3,7 @@ import type { Agent } from "../types";
 import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { isStandbySession } from "../lib/sessionStandby";
+import { isAgentRuntimeActive } from "../lib/agentActivity";
 import { LS_SIDEBAR_FILTER, loadSidebarFilter, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth, type SidebarDateGroup } from "../lib/sidebarNavigation";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
@@ -199,7 +200,6 @@ function WorkspaceSidebar(props: SidebarProps) {
       title={`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${agent.remoteFolder || project.remoteFolder}` : agent.folder}\n${statusTitle}`}
       onPointerDown={event => startPointer(agent, event, fromSearch)}
       onKeyDown={event => { if (event.target !== event.currentTarget || detached || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAgent(agent.id, fromSearch); } }}
-      onDoubleClick={event => { if (!detached && !(event.target as HTMLElement).closest("button")) { pointerCleanupRef.current?.(); props.onRenameSession(agent.id); } }}
       onContextMenu={event => { if (detached) return; event.preventDefault(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, event.clientX, event.clientY); }}>
       <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
       <ProviderLogo toolId={agent.aiToolId} />
@@ -207,7 +207,10 @@ function WorkspaceSidebar(props: SidebarProps) {
       {unread && <CompletionBadge />}
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
       {agent.dangerous && <span className="agent-danger" title={text("권한 확인을 생략하는 세션", "Session skips permission prompts")}>!</span>}
-      {detached ? <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span> : <button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${agent.name} 대화 메뉴`, `${agent.name} conversation menu`)} title={text("대화 메뉴", "Conversation menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, ...menuPosition(event)); }}>···</button>}
+      {detached ? <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span> : <div className="sidebar-session-actions">
+        <button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${agent.name} 대화 메뉴`, `${agent.name} conversation menu`)} title={text("대화 메뉴", "Conversation menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, ...menuPosition(event)); }}>···</button>
+        {isAgentRuntimeActive(agent) && <button className="sidebar-icon-button sidebar-session-close" aria-label={text(`${agent.name} 세션 끄기`, `Stop ${agent.name} session`)} title={text("세션 끄기 (대화 기록 유지)", "Stop session (keep conversation history)")} onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onDeactivate(agent.id); }}><SidebarIcon name="close" /></button>}
+      </div>}
     </li>;
   };
 

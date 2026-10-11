@@ -254,22 +254,27 @@ export function UsageStatusBar({
     return () => { window.clearTimeout(timer); window.removeEventListener("multiagent:accounts-changed", refresh); window.removeEventListener("focus", refresh); };
   }, [load]);
 
-  // Refresh the moment a turn completes instead of waiting up to a full poll
-  // interval. On a "done" hook the main process has already re-ingested that
-  // agent's transcript (Codex rate limits) and kicked off the Claude OAuth
-  // refresh before dispatching the event, so re-reading the DB (load(false))
-  // surfaces the new numbers immediately. Debounced so a burst settles once.
+  // Native routed quotas can change mid-turn. Read their updated snapshot
+  // without launching a full account refresh for every provider notification.
+  // Completion hooks also schedule a read while transcript/OAuth ingestion runs.
   useEffect(() => {
     let cancelled = false;
     let unlisten = () => {};
     let timer: number | undefined;
-    void listen<{ event?: string }>("agent:hook-event", (e) => {
-      if (e.payload?.event !== "done") return;
+    const refresh = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void load(false), 400);
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
+      timer = window.setTimeout(() => {
+        if (visibilitySaving.current || liveRefreshPending.current) { refresh(); return; }
+        void load(false);
+      }, 400);
+    };
+    void Promise.all([
+      listen<{ event?: string }>("agent:hook-event", (e) => { if (e.payload?.event === "done") refresh(); }),
+      listen("usage:changed", refresh),
+    ]).then((listeners) => {
+      const stop = () => listeners.forEach(fn => fn());
+      if (cancelled) stop();
+      else unlisten = stop;
     });
     return () => {
       cancelled = true;

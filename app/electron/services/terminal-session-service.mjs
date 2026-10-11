@@ -15,6 +15,7 @@ export class TerminalSessionService {
     sendDataToView,
     broadcastExit,
     onSessionsChanged = () => {},
+    onBeforeClose = () => {},
     sessions,
   } = {}) {
     this.onBell = onBell;
@@ -24,6 +25,7 @@ export class TerminalSessionService {
     this.sendDataToView = sendDataToView ?? (() => {});
     this.broadcastExit = broadcastExit ?? (() => {});
     this.onSessionsChanged = onSessionsChanged;
+    this.onBeforeClose = onBeforeClose;
   }
 
   beginSpawn(id) {
@@ -81,6 +83,7 @@ export class TerminalSessionService {
     entry.process.onExit(({ exitCode }) => {
       if (this.sessions.get(id) !== entry) return;
       this.#publish(entry, entry.filter.finish());
+      this.#remember(entry, "natural");
       this.sessions.delete(id);
       this.#notifySessionsChanged("natural");
       for (const listener of entry.dataListeners) {
@@ -150,6 +153,7 @@ export class TerminalSessionService {
     if (action === "quit") {
       const entry = this.sessions.get(id);
       if (!entry) return false;
+      this.#remember(entry, "quit");
       this.write(id, entry.quitCommand ?? "/quit\r");
       return true;
     }
@@ -163,6 +167,7 @@ export class TerminalSessionService {
     this.generations.set(id, (this.generations.get(id) ?? 0) + 1);
     const entry = this.sessions.get(id);
     if (!entry) return false;
+    this.#remember(entry, reason);
     this.sessions.delete(id);
     this.#notifySessionsChanged(reason);
     entry.closeReason = reason;
@@ -218,5 +223,10 @@ export class TerminalSessionService {
     } catch {
       // Recovery journaling must never break terminal lifecycle operations.
     }
+  }
+
+  #remember(entry, reason) {
+    try { this.onBeforeClose(entry, reason); }
+    catch (error) { console.warn("[electron] session settings could not be saved before close", error.message); }
   }
 }

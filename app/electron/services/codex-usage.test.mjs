@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { codexUsageSnapshot, fetchCodexUsage } from "./codex-usage.mjs";
+import { codexUsageSnapshot, fetchCodexUsage, mergeCodexRateLimits } from "./codex-usage.mjs";
 
 const quota = { limitId: "codex", planType: "pro", primary: { usedPercent: 0, windowDurationMins: 300, resetsAt: 1900000000 }, secondary: { usedPercent: 42, windowDurationMins: 10080, resetsAt: 1900000500 }, credits: { hasCredits: false, unlimited: false, balance: "0" } };
 function server(respond) {
@@ -26,6 +26,22 @@ const reply = request => request.id === 1 ? { id: 1, result: {} }
   : request.id === 3 ? { id: 3, result: { rateLimits: quota } } : null;
 
 describe("Codex account quota RPC", () => {
+  it("merges sparse native updates without losing the weekly window, plan, credits or other buckets", () => {
+    const previous = { rateLimitsByLimitId: { codex: quota, model: { primary: { usedPercent: 90 } } } };
+    const next = mergeCodexRateLimits(previous, { rateLimits: {
+      primary: { usedPercent: 7, windowDurationMins: null, resetsAt: null }, secondary: null, planType: null, credits: null,
+    } });
+    expect(next.rateLimits).toEqual({ ...quota, primary: { ...quota.primary, usedPercent: 7 } });
+    expect(next.rateLimitsByLimitId.codex).toEqual(next.rateLimits);
+    expect(next.rateLimitsByLimitId.model).toEqual(previous.rateLimitsByLimitId.model);
+    expect(previous.rateLimitsByLimitId.codex.primary.usedPercent).toBe(0);
+    expect(mergeCodexRateLimits(next, { rateLimits: { primary: { usedPercent: 0, resetsAt: 1900020000 } } }).rateLimits.primary)
+      .toEqual({ ...quota.primary, resetsAt: 1900020000 });
+    for (const rateLimits of [{ limitId: "codex_model", primary: { usedPercent: 99 } }, { primary: { usedPercent: "99" } },
+      { primary: { usedPercent: -1 } }, { primary: { usedPercent: NaN } }, { planType: "plus" }, {}]) {
+      expect(mergeCodexRateLimits(next, { rateLimits })).toBeNull();
+    }
+  });
   it("reads only the supplied account via a completed handshake, without starting a model turn", async () => {
     const fixture = server(reply);
     expect(await fixture.run()).toEqual({ status: "success", data: { rateLimits: quota } });

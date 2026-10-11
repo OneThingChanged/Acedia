@@ -4,7 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 CLI 실행 파일, 추가 인수, 환경변수와 기본값 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-09
+last_updated: 2026-10-11
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -17,6 +17,8 @@ sources:
   - resource: ../app/src/components/ChatModelPicker.tsx
   - resource: ../app/src/lib/chatSessionModel.ts
   - resource: ../app/electron/services/session-model-service.mjs
+  - resource: ../app/electron/services/session-model-memory.mjs
+  - resource: ../app/scripts/codex-session-settings-smoke.mjs
   - resource: ../app/scripts/electron-chat-model-smoke.mjs
 ---
 
@@ -90,6 +92,45 @@ Codex는 해당 세션의 실제 로그인 또는 분산 계정에서 `model/lis
 실행 시 검증한다. 기존 Claude 대화에서 사용한 전체 모델 ID도 선택할 수 있다.
 고급 실행의 `--model`·`--effort` 또는 Codex `model`·`model_reasoning_effort` 설정과 충돌하면
 적용하지 않고 해당 옵션을 제거하도록 안내한다.
+
+### 세션별 마지막 실행 설정
+
+2026-10-10 소스 변경부터 로컬 세션의 마지막 모델·effort와 확인된 Codex Fast
+상태를 앱 프로필의 `session-model-memory.json`에 저장한다. CLI 기본 설정 파일을
+수정하지 않고 다음 실행에 해당 모델·추론 강도·서비스 티어 인수를 전달한다.
+수동 종료·휴면·재시작·정상 종료·앱 종료 전에 값을 보존하며 앱을 다시 열어도 복원한다.
+자동 복원은 같은 세션 ID·도구·계정·작업 폴더에 적용한다. SSH와 일반 Shell은 제외한다.
+
+Codex 분산 세션은 기본 대화의 `thread/settings/updated` 알림으로 다음 메시지 전의
+변경까지 관찰한다. 작업자 대화의 설정은 제외한다. 일반 Codex는 실제 입력창 아래의
+모델·effort 상태줄, Codex·Claude는 최근 대화 기록으로 확인 가능한 값을 보완한다.
+Claude가 모델 별칭을 전체 ID로 기록하며 effort를 생략해도 마지막 확인한 effort는
+유지한다. native 설정에서 추론 강도가 기본값으로 돌아온 경우에는 이전 명시값을 복원하지 않는다.
+Fast 표시가 없거나 대화 기록에 서비스 티어가 없으면 Off로 추정하지 않고 마지막
+확인값을 유지한다. Claude Fast는 이 구현 범위에 포함하지 않는다.
+
+새로 선택한 모델·effort는 이전 프로세스의 종료 기록보다 우선한다. 작업 중 **저장
+(다음 시작)**한 설정과 명시적인 CLI 기본값 초기화도 보존하며, 같은 세션 ID와 계정의
+명시적 선택은 휴면 자식 세션의 폴더 상속에도 적용한다. 다른 계정에는 적용하지 않는다.
+채팅에서 모델·effort만 바꿀 때 확인된 Fast 값을 유지하고 선택창에 함께 표시한다.
+선택창을 열어 둔 사이 CLI에서 Fast를 바꿔도 최신 확인값을 사용한다. 목록 조회 중
+도구·계정·작업 폴더·명시적 모델 설정이 바뀌면 오래된 선택을 적용하지 않고 다시 확인한다.
+고급 실행에서 모델·서비스 티어를 직접 지정하면 자동 복원 값과의 충돌을 피한다.
+
+검증 명령 `npm run codex:session-settings-smoke`는 `ACEDIA_CODEX_BINARY`로 지정한
+설치된 Codex를 격리된 프로필·loopback 모델 응답으로 실행한다. 실제 대화 ID를 유지한
+휴면·프로필 재로드·재개, 전역 기본값 변경 이후 모델·effort 복원, 새 선택 우선 적용과
+Fast/Off 인수의 native config 해석을 확인한다. 실제 로그인 계정의 Fast 지원·과금은
+검증하지 않는다. 전체 182개 파일·1,287개 검사, 최종 관련 회귀 검사, 프로덕션 빌드와
+설치된 Codex 0.162.0의 재개·설정 인수 검증을 통과했다. 2026-10-10 화면 검증을
+다시 실행해 `electron:chat-model-smoke`의 940·390·300px와 App 렌더러 검사를 통과했다.
+별도 프로필의 실제 개발 앱(Vite `4420` + Electron main + 설치된 Codex)에서도
+`/model`로 모델·effort를 바꾼 직후, 다음 메시지를 보내기 전에 현재값을 감지하고
+채팅 선택창에 같은 값이 표시되는 것을 확인했다. UI에서 세션을 비활성화한 뒤 다시
+열었을 때 저장된 모델·effort와 원래 대화 ID를 유지했고, 실제 CLI 요청의 모델·effort도
+확인했다. 종료 후 검사용 CLI의 전역 기본값을 다른 모델·effort로 바꾸어도 세션의
+저장값으로 복원했다. 이 개발 앱 검사도 격리된 CLI 홈과 loopback 모델 응답을 사용한다.
+이 변경은 [EXE 1.8.1.74](release-1-8-1-74.md)의 배포 대상에 포함한다.
 
 검증 명령은 `app/`에서 `npm run electron:session-model-smoke`다. 실제 Remote 화면의
 1024px·390px 메뉴, 모델별 effort 변경, 우클릭 대상, 작업 중 저장과 재시작 제한을 확인한다.

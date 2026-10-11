@@ -199,7 +199,8 @@ async function exercise() {
   await key(searchInput, 'ArrowDown'); check(document.activeElement.dataset.searchId === 'shader', 'Keyboard selected a foreign conversation');
   await key(document.activeElement, 'Escape');
   window.sidebarFixtureInUse = []; await new Promise(resolve => setTimeout(resolve, 1200));
-  await search('C:\\FIXTURE\\TOON'); check(results('project').length === 1 && results('session')[0]?.dataset.searchId === 'shader', 'Windows path search');
+  await search(' "C:\\FIXTURE\\TOON\\" '); check(results('project').length === 1 && results('session')[0]?.dataset.searchId === 'shader', 'Quoted Windows project path search');
+  await search('C:\\FIXTURE\\SHADER-SESSION'); check(results('project').length === 0 && results('session')[0]?.dataset.searchId === 'shader', 'Session working folder search');
   await search('不存在-no-result'); check(!results('project').length && !results('session').length && find('.sidebar-search-results').textContent.includes('일치하는'), 'Empty search feedback');
   await key(searchInput, 'ArrowDown'); check(document.activeElement === searchInput, 'Empty search moved focus into hidden browse rows');
   await key(searchInput, 'Escape');
@@ -208,6 +209,10 @@ async function exercise() {
   await key(searchInput, 'k', { ctrlKey: true }); check(document.querySelector('.quick-open'), 'Configured global search shortcut did not open Quick Search from inline input');
   const quickInput = find('.quick-open input');
   check(find('.quick-open').getAttribute('aria-label') === 'Quick Search', 'Global search display name');
+  setInput('.quick-open input', ' "C:\\FIXTURE\\TOON\\" '); await wait();
+  check(document.querySelectorAll('.quick-open-kind-project').length === 1 && document.querySelectorAll('.quick-open-kind-session').length === 1 && find('.quick-open-results').textContent.includes('셰이더'), 'Quick Search lost projects or sessions with a different working folder when pasting a Windows path');
+  setInput('.quick-open input', 'C:\\FIXTURE\\SHADER-SESSION'); await wait();
+  check(!document.querySelector('.quick-open-kind-project') && document.querySelectorAll('.quick-open-kind-session').length === 1 && find('.quick-open-results').textContent.includes('셰이더'), 'Quick Search lost the session working folder');
   setInput('.quick-open input', 'no-result'); await wait(); await key(quickInput, 'ArrowDown');
   setInput('.quick-open input', '이미지'); await wait();
   check(find('.quick-open-results').textContent.includes('리모트 이미지') && document.querySelector('.quick-open-result[aria-selected="true"]'), 'Quick Search lost selection after empty results');
@@ -286,6 +291,66 @@ async function exercise() {
   check(composer.isConnected && composer.value === '검색 중에도 보존할 작성 중인 메시지', 'Inline search reset or replaced the conversation draft');
   visible('.terminal-area .pane-chat-toggle[aria-label="터미널 뷰로 전환"]').click(); await wait();
   return 'SIDEBAR_REAL_APP_INTERACTIONS_OK';
+}
+
+async function exerciseSessionActions() {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 220));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const find = selector => { const element = document.querySelector(selector); check(element, 'Missing: ' + selector); return element; };
+  const recent = id => `.sidebar-recents [data-sidebar-agent-id="${id}"]`;
+  const stored = id => JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(agent => agent.id === id);
+  const start = async id => {
+    find(recent(id)).dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); await wait();
+    const standby = [...document.querySelectorAll('.terminal-area .session-standby button')].find(button => button.getBoundingClientRect().width > 0);
+    if (standby) { standby.click(); await wait(); }
+    check(window.layoutCalls.some(call => call.command === 'spawn_pty' && call.args.id === id), 'Session did not attach: ' + id);
+    // The fixture's simulated PTY does not emit the real CLI's SessionStart hook.
+    window.sidebarFixtureEmit('agent:hook-event', {id, event: 'session-start', session_id: 'session-' + id, received_at: Date.now()}); await wait();
+    check(find(recent(id)).querySelector('.sidebar-session-close'), 'Running session has no stop button: ' + id);
+  };
+  const close = async selector => {
+    const before = window.layoutCalls.length;
+    const button = find(selector + ' .sidebar-session-close');
+    button.dispatchEvent(new PointerEvent('pointerdown', {pointerId: 15, button: 0, bubbles: true}));
+    button.dispatchEvent(new PointerEvent('pointerup', {pointerId: 15, button: 0, bubbles: true}));
+    button.click(); await wait();
+    const calls = window.layoutCalls.slice(before);
+    const stops = calls.filter(call => ['terminal_session_action', 'kill_pty'].includes(call.command));
+    check(stops.length === 1 && stops[0].command === 'terminal_session_action' && stops[0].args.id === 'ux' && stops[0].args.action === 'sleep', 'Close stopped the wrong session or stopped it more than once');
+    check(!calls.some(call => call.command === 'spawn_pty' && call.args.id === 'ux'), 'Close immediately restarted the session');
+    check(stored('ux')?.resumeEligible === false && !stored('ux').sidebarArchived, 'Close removed or archived the conversation instead of stopping it');
+    check(!document.querySelector('[data-sidebar-agent-id="ux"] .sidebar-session-close'), 'Stopped session still offers stop');
+  };
+  find('.sidebar-primary-nav > button').click(); await wait();
+  await start('ux'); await start('shader');
+  check(!find(recent('routing')).querySelector('.sidebar-session-close'), 'Inactive session offers stop');
+  const project = find('[data-sidebar-project-id="acedia"] .project-item');
+  if (project.getAttribute('aria-expanded') !== 'true') { project.click(); await wait(); }
+  find('.sidebar-primary-nav > button').click(); await wait();
+  const nested = '[data-sidebar-project-id="acedia"] [data-sidebar-agent-id="ux"]';
+  for (const selector of [recent('ux'), nested]) {
+    find(selector).dispatchEvent(new MouseEvent('dblclick', {bubbles: true})); await wait();
+    check(!document.querySelector('.modal'), 'Double-click opened rename');
+  }
+  find(recent('ux')).dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 160, clientY: 180})); await wait();
+  const rename = [...document.querySelectorAll('.ctx-menu button')].find(button => /rename|이름 변경|별명 변경/i.test(button.textContent));
+  check(rename, 'Context menu lost Rename'); rename.click(); await wait();
+  check(find('.modal input').value === stored('ux').name, 'Rename opened the wrong session');
+  find('.modal input').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); await wait();
+  await close(nested);
+  check(find(recent('shader')).getAttribute('aria-current') === 'page' && find(recent('shader')).querySelector('.sidebar-session-close'), 'Closing a background session changed the foreground session');
+  await start('ux'); await close(recent('ux'));
+  await start('ux');
+  const input = find('.sidebar-workspace-search input');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, stored('ux').name);
+  input.dispatchEvent(new Event('input', {bubbles: true})); await wait();
+  const result = '[data-sidebar-search-result="session"][data-search-id="ux"]';
+  find(result).dispatchEvent(new MouseEvent('dblclick', {bubbles: true})); await wait();
+  check(!document.querySelector('.modal'), 'Search double-click opened rename');
+  await close(result);
+  check(input.value === stored('ux').name && document.querySelector(result), 'Closing from search lost the query or conversation');
+  input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); await wait();
+  return 'SIDEBAR_SESSION_ACTIONS_OK stop from project/recent/search, history retained, no focus stealing, context-menu-only rename';
 }
 
 async function exerciseSearchReveal() {
@@ -420,6 +485,8 @@ if (process.versions.electron) {
     }
     win.setContentSize(1280, 820); await new Promise(resolve => setTimeout(resolve, 220));
     console.log(await win.webContents.executeJavaScript(`(${exerciseSearchReveal.toString()})()`));
+    console.log(await win.webContents.executeJavaScript(`(${exerciseSessionActions.toString()})()`));
+    await fs.writeFile(path.join(directory, 'sidebar-session-actions.png'), (await win.webContents.capturePage()).toPNG());
     if (errors.length) throw Error(errors.join('\n'));
     app.exit(0);
   } catch (error) {
