@@ -21,7 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.75 EXE release](release-1-8-1-75.md) - Remember new-session agent and Dangerous mode, stabilize host PTY chat submission and preserve image-rich Codex history through bounded asynchronous HTTP decoding and fragmented WebSocket transport.
+* [Acedia 1.8.1.75 EXE release](release-1-8-1-75.md) - Remember new-session agent and Dangerous mode, stabilize host PTY chat submission and preserve image-rich Codex history through bounded asynchronous HTTP decoding and fragmented WebSocket transport; stable EXE published and public download verified.
 * [Acedia 1.8.1.74 EXE release](release-1-8-1-74.md) - Remember per-session model, effort and Fast settings; sidebar close and path search, a fixed Chat queue, and automatic routed quota updates with five-minute fallback polling; stable EXE published and public download verified.
 * [Acedia 1.8.1.73 EXE release](release-1-8-1-73.md) - Persistent, visible unread completion, Windows notification and taskbar fixes, and Tab-selectable Chat steering or completion reservations; stable EXE published and public download verified.
 * [Acedia 1.8.1.72 EXE release](release-1-8-1-72.md) - Color-coded split screens and matching session badges, dedicated Codex/Claude logos, and Codex questions during work; stable EXE published and public download verified.

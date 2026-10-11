@@ -39,3 +39,24 @@ last_updated: 2026-10-11
 배포 전 검사 증빙: `output/full-suite-exe-1.8.1.75.log`, `output/mobile-tests-exe-1.8.1.75.log`,
 `output/build-frontend-1.8.1.75.log`, `output/new-session-release-1.8.1.75.log`,
 `output/chat-delivery-release-1.8.1.75.log`.
+
+- 고정 소스 `b79cb624c58e1561bb08602ef584b362cc5ea313`를 푸시하고 격리 출력 폴더에서 EXE 빌드를 통과했다. 별도 로컬 APK 경로 설정이 없어 초기 준비가 멈췄으며, 이전 배포에 포함된 APK의 인증서·패키지·아키텍처·해시를 다시 검증해 재사용했다.
+- packaged Git query·bridge·문서 브라우저 재사용·Dashboard 및 종료/트레이/보안 lifecycle 검사를 통과했다. 패키지의 런타임·렌더러 **286개 파일**이 빌드 원본과 일치한다.
+- FileVersion **1.8.1.75**, npm 호환 ProductVersion **1.8.1**, 설치 파일·manifest의 크기·SHA-256을 확인했다. Authenticode는 기존 EXE 채널과 같은 `NotSigned`다. packaged 검사에서 기존 `AttachConsole failed`와 GPU 진단이 출력됐으나 필수 성공 marker와 종료 코드 0을 확인했다.
+
+패키지·공개 배포 증빙: `output/build-exe-1.8.1.75-isolated.log`,
+`output/packaged-smoke-1.8.1.75.log`, `output/packaged-lifecycle-1.8.1.75.log`,
+`output/exe-release-1.8.1.75/local-verification.json`, `output/publish-exe-1.8.1.75.log`,
+`output/public-update-verification-1.8.1.75.log`, `.build-tools/public-verified-1.8.1.75.json`.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.75](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.75)를 2026-10-11 **15:26:29 KST**에 게시했다. 태그·제품 소스는 `b79cb624c58e1561bb08602ef584b362cc5ea313`이다.
+- **15:27:15 KST**에 **1.8.1.73·1.8.1.74 → 1.8.1.75** 감지와 공개 설치 파일 전체 다운로드, 세 자산의 크기·SHA-256 검증을 통과했다.
+- 기존 APK를 포함한 EXE 배포다. 사용자 앱·프로필로 검증하거나 설치 파일을 실행하지 않았다. 앱 설정의 Check → Update로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.75-x64.exe` | 151345803 | `884b40d6bbccf019076e9408d2f70e124e05551b13ee593b3ecb9b895a6ae912` |
+| `Acedia-Setup-1.8.1.75-x64.exe.blockmap` | 159452 | `896258b82f28ade7417ad248ea1d1e7c1f6e772ccf1e23b318fbd9ccf96552e1` |
+| `latest-exe.json` | 256 | `906b7e718fcd30cee3bc5cd7d81ebb2b0ee4f8cc2f952097d9775b957c28cbfa` |
