@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { prepareLaunchCommand, mergeLaunchEnvironment, splitGeneratedCommand } from "./agent-launch.mjs";
 import { selectedAccountId } from "./provider-accounts.mjs";
 import { normalizeSessionModel, sessionModelArgs } from "../shared/session-model.mjs";
+import { updateNativeSessionModel } from "./session-model-memory.mjs";
 import { normalizeLaunchOptions } from "../shared/launch-options.mjs";
 import { codexRemoteTuiArgs } from "./account-pool-session.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
@@ -134,7 +135,7 @@ export function createTerminalLauncher({
               ...(Object.hasOwn(value.settings || {}, "serviceTier") ? { serviceTier: value.settings.serviceTier } : {}) });
             const entry = terminalSessions.get(id);
             if (entry?.modelMemoryLaunchId === args.modelMemoryLaunchId && nativeModel) {
-              entry.runtimeModelSettings = nativeModel;
+              updateNativeSessionModel(entry, nativeModel);
               onModelSettings(entry);
             }
           },
@@ -240,7 +241,6 @@ export function createTerminalLauncher({
       configuredModelSettings: remembered.requested,
       modelMemoryToken: remembered.token,
       modelMemoryLaunchId: args.modelMemoryLaunchId,
-      runtimeModelSettings: nativeModel(),
       resumeContext: args.resumeContext,
       initTimer: null,
       aiToolId,
@@ -269,6 +269,7 @@ export function createTerminalLauncher({
         }
       },
     };
+    updateNativeSessionModel(entry, nativeModel());
     if (!terminalSessions.register(entry, spawnGeneration)) {
       return { reattached: false, cancelled: true };
     }

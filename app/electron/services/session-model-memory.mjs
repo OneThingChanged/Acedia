@@ -22,22 +22,44 @@ export function nativeCodexModel(entry) {
   // Long drafts can contain model-looking lines. Prefer the bottom status
   // row over draft text immediately below the composer.
   for (const line of lines.slice(composer + 1).reverse()) {
-    const match = line.match(/^\s*(?:[⚡✦]\s*)?([a-z0-9][a-z0-9._:/ -]*?)\s+(none|minimal|low|medium|high|xhigh|max|ultra)(?:\s+\((fast|ultrafast)\))?\s*[·•]/i);
+    const match = line.match(/^\s*(?:[⚡✦]\s*)?([a-z0-9][a-z0-9._:/ -]*?)\s+(none|minimal|low|medium|high|xhigh|max|ultra)(?:\s+(?:\((fast|ultrafast|standard)\)|(fast|ultrafast|standard)))?\s*[·•]/i);
     if (!match) continue;
     const model = match[1].trim().toLowerCase().replace(/\s+/g, "-");
     // Only a dedicated status item can establish speed. A folder named Fast
     // or assistant content elsewhere in the viewport is not a tier indicator.
     const items = line.split(/[·•]/).slice(1).map(item => item.trim());
-    const tier = match[3]?.toLowerCase() || (items.some(item => /^(?:⚡\s*)?Ultrafast$/i.test(item)) ? "ultrafast"
+    const inline = (match[3] || match[4])?.toLowerCase();
+    const tier = (inline === "standard" ? "default" : inline) || (items.some(item => /^(?:⚡\s*)?Ultrafast$/i.test(item)) ? "ultrafast"
       : items.some(item => /^(?:⚡\s*)?Fast$/i.test(item)) ? "fast" : items.some(item => /^Standard$/i.test(item)) ? "default" : undefined);
     return normalizeSessionModel({ model, effort: match[2].toLowerCase(), ...(tier ? { serviceTier: tier } : {}) });
   }
   return undefined;
 }
 
+export function updateNativeSessionModel(entry, settings) {
+  const native = normalizeSessionModel(settings);
+  if (!native) return;
+  entry.runtimeModelSettings = native;
+  // The notification can arrive before its TUI repaint. Remember the footer
+  // that was already visible so it cannot undo the newly reported settings.
+  entry.runtimeModelFooter = nativeCodexModel(entry) ?? null;
+}
+
 function rememberedModel(entry, previous, observed) {
-  const native = normalizeSessionModel(entry.runtimeModelSettings);
-  const settings = mergeSessionModel(native || nativeCodexModel(entry) || observed, previous);
+  let native = normalizeSessionModel(entry.runtimeModelSettings);
+  const footer = nativeCodexModel(entry);
+  if (native && footer && Object.hasOwn(entry, "runtimeModelFooter") && !sameSessionModel(footer, entry.runtimeModelFooter)) {
+    // /model can update the TUI before a new turn or settings notification.
+    // A changed footer supersedes the older routed thread snapshot, and must
+    // remain current even while a later popup hides the status line.
+    native = mergeSessionModel(footer, native);
+    // Codex displays the native priority tier as "fast". Preserve that exact
+    // confirmed launch value when the footer only changes model or effort.
+    if (footer.serviceTier === "fast" && entry.runtimeModelSettings.serviceTier === "priority") native.serviceTier = "priority";
+    entry.runtimeModelSettings = native;
+    entry.runtimeModelFooter = footer;
+  }
+  const settings = mergeSessionModel(native || footer || observed, previous);
   // Native thread settings are a complete snapshot. An unset effort must not
   // inherit the old explicit effort; it resumes with the model's default.
   if (!native || native.effort || !settings) return settings;

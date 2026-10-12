@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SessionModelMemory, nativeCodexModel } from "./session-model-memory.mjs";
+import { SessionModelMemory, nativeCodexModel, updateNativeSessionModel } from "./session-model-memory.mjs";
 import { normalizeSessionModel, sessionModelArgs } from "../shared/session-model.mjs";
 
 const roots = [];
@@ -20,6 +20,41 @@ function fixture() {
 }
 
 describe("per-session native model memory", () => {
+  it("remembers a routed /model change with inline Fast before another turn and keeps it while the footer is hidden", () => {
+    const f = fixture();
+    let viewport = "";
+    const old = { model: "gpt-5.6-luna", effort: "max", serviceTier: "priority" };
+    const entry = { ...f.args, modelSettings: old, filter: { viewportText: () => viewport } };
+    updateNativeSessionModel(entry, old); f.memory.started(entry);
+    viewport = "› Ask Codex to do anything\nGPT-5.6-Luna max fast · G:\\Project";
+    f.memory.remember(entry);
+    viewport = "› Ask Codex to do anything\nGPT-6.1-Sol xhigh fast · G:\\Project";
+    f.memory.remember(entry);
+    // Closing while a popup or a running command hides the footer must not
+    // bring the thread's original model back into the saved metadata.
+    viewport = "Choose a model\nGPT-5.6-Luna max fast · G:\\Project";
+    f.memory.remember(entry);
+    expect(new SessionModelMemory(f.file).resolve(f.args).settings)
+      .toEqual({ model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "priority" });
+  });
+
+  it("keeps a new native notification ahead of the old footer until the TUI redraws", () => {
+    const f = fixture();
+    let viewport = "› Ask Codex\nGPT-5.6-Luna max fast · G:\\Project";
+    const old = { model: "gpt-5.6-luna", effort: "max", serviceTier: "priority" };
+    const next = { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "priority" };
+    const entry = { ...f.args, modelSettings: old, filter: { viewportText: () => viewport } };
+    updateNativeSessionModel(entry, old); f.memory.started(entry);
+    updateNativeSessionModel(entry, next); f.memory.remember(entry);
+    expect(f.memory.resolve(f.args).settings).toEqual(next);
+    viewport = "› Ask Codex\nGPT-6.1-Sol xhigh fast · G:\\Project";
+    f.memory.remember(entry);
+    expect(f.memory.resolve(f.args).settings).toEqual(next);
+    viewport = "› Ask Codex\nGPT-6.1-Sol high · G:\\Project · Standard";
+    f.memory.remember(entry);
+    expect(f.memory.resolve(f.args).settings).toEqual({ model: "gpt-6.1-sol", effort: "high", serviceTier: "default" });
+  });
+
   it("restores terminal changes after closing and reloading the app profile", () => {
     const f = fixture();
     const original = { model: "gpt-6-sol", effort: "low" };
@@ -162,6 +197,10 @@ describe("per-session native model memory", () => {
 
 describe("native Codex footer observation", () => {
   const entry = text => ({ aiToolId: "codex", filter: { viewportText: () => text } });
+  it.each([["fast", "fast"], ["ultrafast", "ultrafast"], ["standard", "default"], ["(fast)", "fast"]])("reads inline %s next to effort", (label, serviceTier) => {
+    expect(nativeCodexModel(entry(`› Ask Codex to do anything\nGPT-6.1-Sol xhigh ${label} · G:\\Project`)))
+      .toEqual({ model: "gpt-6.1-sol", effort: "xhigh", serviceTier });
+  });
   it("reads the current composer footer before the next turn exists", () => {
     expect(nativeCodexModel(entry("Assistant text\n› Ask Codex to do anything\nGPT-6-Astra max · G:\\Project · Fast")))
       .toEqual({ model: "gpt-6-astra", effort: "max", serviceTier: "fast" });

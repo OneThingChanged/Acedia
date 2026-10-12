@@ -142,13 +142,21 @@ fixture 계정을 사용하며 실제 로그인 계정에 모델 요청을 보�
 수동 종료·휴면·재시작·정상 종료·앱 종료 전에 값을 보존하며 앱을 다시 열어도 복원한다.
 자동 복원은 같은 세션 ID·도구·계정·작업 폴더에 적용한다. SSH와 일반 Shell은 제외한다.
 
-Codex 분산 세션은 기본 대화의 `thread/settings/updated` 알림으로 다음 메시지 전의
-변경까지 관찰한다. 작업자 대화의 설정은 제외한다. 일반 Codex는 실제 입력창 아래의
-모델·effort 상태줄, Codex·Claude는 최근 대화 기록으로 확인 가능한 값을 보완한다.
+Codex 분산 세션은 기본 대화의 `thread/settings/updated` 알림과 실제 입력창 아래의
+모델·effort 상태줄로 다음 메시지 전의 변경까지 관찰한다. 작업자 대화의 설정은
+제외한다. 일반 Codex도 같은 상태줄을 읽으며, Codex·Claude는 최근 대화 기록으로
+확인 가능한 값을 보완한다.
 Claude가 모델 별칭을 전체 ID로 기록하며 effort를 생략해도 마지막 확인한 effort는
 유지한다. native 설정에서 추론 강도가 기본값으로 돌아온 경우에는 이전 명시값을 복원하지 않는다.
 Fast 표시가 없거나 대화 기록에 서비스 티어가 없으면 Off로 추정하지 않고 마지막
 확인값을 유지한다. Claude Fast는 이 구현 범위에 포함하지 않는다.
+
+[1.8.1.78](release-1-8-1-78.md)에서 effort 바로 뒤의 `xhigh fast`·`max ultrafast` 형식도
+읽도록 보완했다. 이전 감지기는 괄호 또는 별도 상태 항목의 Fast만 인식해 변경값을
+놓칠 수 있었다. 분산 대화의 오래된 native 모델 정보보다 새로 바뀐 상태줄을 우선하고,
+그 값을 유지해 모델 선택창 등으로 상태줄이 가려져도 이전 모델로 돌아가지 않는다.
+새 설정 알림 직후 남아 있는 이전 화면은 알림 시점의 상태줄과 비교해 제외한다.
+native `priority`가 화면에서 `fast`로 표시되면 확인된 서비스 티어 값을 유지한다.
 
 새로 선택한 모델·effort는 이전 프로세스의 종료 기록보다 우선한다. 작업 중 **저장
 (다음 시작)**한 설정과 명시적인 모델 초기화도 보존하며, 초기화한 세션은 Acedia 기본
@@ -173,6 +181,15 @@ Fast/Off 인수의 native config 해석을 확인한다. 실제 로그인 계정
 확인했다. 종료 후 검사용 CLI의 전역 기본값을 다른 모델·effort로 바꾸어도 세션의
 저장값으로 복원했다. 이 개발 앱 검사도 격리된 CLI 홈과 loopback 모델 응답을 사용한다.
 이 변경은 [EXE 1.8.1.74](release-1-8-1-74.md)에 포함되어 공개 배포·다운로드 검증을 마쳤다.
+
+Fast 상태줄 회귀 검증은 `npm run codex:session-settings-smoke -- --inline-fast`다.
+Codex **0.162.1**에서 **Luna / max / Fast → `/model`로 Sol / xhigh / Fast 선택 →
+추가 메시지 없이 바로 휴면 → 저장 파일 재로드 → 같은 대화 재개**를 확인했다.
+재개한 실제 상태줄과 로컬 서버로 전달된 요청의 모델·effort·티어도 확인했다.
+격리된 프로필, 합성 인증 정보와 loopback 응답만 사용한다. 관련 **4개 파일·109개 검사**도
+통과했다. 기존 일반 모델·effort 복원과 명시적 선택·Fast/Off 인수의 native 검증도
+재실행해 통과했다 (`output/model-settings-native-regression.log`). 증빙은 `output/model-inline-fast-regression.log`,
+`output/model-inline-fast-native.log`, `output/session-settings-cli/profile-o9xZfV/passed.json`이다.
 
 검증 명령은 `app/`에서 `npm run electron:session-model-smoke`다. 실제 Remote 화면의
 1024px·390px 메뉴, 모델별 effort 변경, 우클릭 대상, 작업 중 저장과 재시작 제한을 확인한다.
