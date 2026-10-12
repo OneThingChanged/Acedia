@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.78
 description: "Fast 상태에서 터미널로 변경한 모델·effort가 재개 시 이전 설정으로 돌아가는 오류 수정."
-status: review
+status: stable
 last_updated: 2026-10-12
 ---
 
@@ -29,9 +29,29 @@ last_updated: 2026-10-12
 - 설치된 Codex **0.162.1**에서 **Luna / max / Fast → `/model`로 Sol / xhigh / Fast 선택 → 추가 메시지 없이 휴면 → 저장 파일 재로드 → 같은 대화 재개**를 확인했다. 재개한 실제 상태줄과 loopback 서버 요청의 모델·effort·서비스 티어도 확인했다.
 - 기존 일반 모델·effort 복원, 명시적 선택과 Fast/Off 인수의 native 검증도 재실행해 통과했다. 격리 프로필과 합성 인증 정보만 사용한다.
 - 제품과 Android 소스 버전은 **1.8.1.78**, npm 호환 버전은 **1.8.1**이다. 포함하는 기존 APK는 **1.8.1.39/code 21**이다.
-- 배포 전 전체 **188개 파일·1,363개 검사**를 통과했다. 버전·APK 계약 검사도 이 전체 검사에 포함한다. 빌드·packaged 및 공개 다운로드 결과는 완료 후 기록한다.
+- 배포 전 전체 **188개 파일·1,363개 검사**를 통과했다. 버전·APK 계약 검사도 이 전체 검사에 포함한다. TypeScript·Vite 빌드를 통과했으며 기존 큰 번들 경고는 유지된다.
+- 고정 소스 `a56f5ffff06892097038d9595ef456ecc8984a87`를 푸시하고 별도 출력 폴더에서 EXE를 빌드했다. 기존 APK의 인증서·패키지·아키텍처·SHA-256을 다시 확인했다.
+- 실제 packaged Git query·기본 모델 IPC·bridge·문서 브라우저 재사용·Dashboard와 종료·트레이·보안 lifecycle 검사를 통과했다. 패키지의 런타임·렌더러 **294개 파일**이 빌드 원본과 일치한다.
+- FileVersion **1.8.1.78**, npm 호환 ProductVersion **1.8.1**, 설치 파일과 manifest의 크기·SHA-256을 확인했다. Authenticode는 기존 EXE 채널과 같은 `NotSigned`다. packaged 검사에서 기존 `AttachConsole failed` 진단이 출력됐으나 필수 성공 marker와 종료 코드 0을 확인했다.
 
 기능 검증 증빙: `output/model-inline-fast-regression.log`, `output/model-inline-fast-native.log`,
 `output/model-settings-native-regression.log`, `output/session-settings-cli/profile-o9xZfV/passed.json`.
 
 배포 전 전체 검사 증빙: `output/full-suite-exe-1.8.1.78.log`.
+
+배포 검증 증빙: `output/build-frontend-1.8.1.78.log`, `output/build-exe-1.8.1.78-isolated.log`,
+`output/packaged-smoke-1.8.1.78.log`, `output/packaged-lifecycle-1.8.1.78.log`,
+`output/exe-release-1.8.1.78/local-verification.json`, `output/publish-exe-1.8.1.78.log`,
+`output/public-update-verification-1.8.1.78.log`, `.build-tools/public-verified-1.8.1.78.json`.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.78](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.78)를 2026-10-12 **09:41:42 KST**에 게시했다. 태그와 빌드 소스는 `a56f5ffff06892097038d9595ef456ecc8984a87`이다.
+- **09:42:51 KST**에 현재 버전 입력 **1.8.1.77·1.8.1.76 → 1.8.1.78** 감지, 공개 설치 파일 전체 다운로드와 세 자산의 크기·SHA-256 검증을 통과했다. 1.8.1.76은 별도 EXE가 없는 소스 버전이며 버전 비교 입력으로 확인했다.
+- 기존 APK를 포함한 Standard EXE 배포다. 사용자 앱·프로필을 변경하거나 설치 파일을 실행하지 않았다. 앱 설정의 **Check → Update**로 적용한다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.1.78-x64.exe` | 151353470 | `9fc0cec9dad09e3b1fa0ec3945e21dc4494da0392a3be06c8ff20b999dde0d65` |
+| `Acedia-Setup-1.8.1.78-x64.exe.blockmap` | 159344 | `f1ee6c65cc24aa1c7b7b73d8656b75fd0344c6bd59165e6ccf5a43c65cf9ccc2` |
+| `latest-exe.json` | 256 | `c6629636c7e88c895554fec2befa5064d0bd525cd980183ffa81ed780722e4f6` |

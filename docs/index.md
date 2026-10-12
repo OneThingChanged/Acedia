@@ -21,7 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.78 EXE release](release-1-8-1-78.md) - Preserve terminal model/effort changes with inline Fast and prevent stale routed settings from overwriting the latest selection; EXE build and publication verification in progress.
+* [Acedia 1.8.1.78 EXE release](release-1-8-1-78.md) - Preserve terminal model/effort changes with inline Fast and prevent stale routed settings from overwriting the latest selection; stable EXE published and public download verified.
 * [Acedia 1.8.1.77 EXE release](release-1-8-1-77.md) - Configurable default models, effort and Codex Fast; sidebar hover actions, closed-console EPIPE protection, and the chat/transport refactor; stable EXE published and public download verified.
 * [Chat submission and Codex transport refactor](refactor-chat-transport-2026-10-11.md) - Source 1.8.1.76 separates host submission coordination and bounded WebSocket transport; included in the 1.8.1.77 EXE release.
 * [Acedia 1.8.1.75 EXE release](release-1-8-1-75.md) - Remember new-session agent and Dangerous mode, stabilize host PTY chat submission and preserve image-rich Codex history through bounded asynchronous HTTP decoding and fragmented WebSocket transport; stable EXE published and public download verified.
@@ -122,7 +122,7 @@ configuration that supports it.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents and downloads, usage, session model/effort editing and visible waiting questions.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
 * [Workspace MCP](workspace-mcp.md) - Project/session creation and verified task delivery between live Codex sessions.
-* [Remote service](remote-service.md) - Remote/PWA/Android access, desktop-equivalent All/Active/Sleeping filters, original downloads, session model/effort editing, waiting questions and authentication boundaries.
+* [Remote service](remote-service.md) - Remote/PWA/Android access, filters, downloads, session model/effort editing and authentication boundaries; [2026-10-12 desktop/Remote comparison](remote-service.md#desktop-and-remote-feature-comparison-2026-10-12) records existing features and remaining UI gaps.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.
 * [세션별 사용량](session-usage.md) - 세션별 토큰·USD 환산액, 정확한 대화 연결, 부모·자식 합계, 미산정 기록과 CSV.

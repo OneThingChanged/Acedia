@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-08
+last_updated: 2026-10-12
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -162,6 +162,38 @@ added to the Documents index. Remote PWA cache v87 includes the large HTML previ
 The client modules are individually allowlisted as JavaScript assets and included
 in the service-worker precache and network-first application assets. Additions
 must update both the server map and worker asset list.[^remote-documents][^remote-http]
+
+## Desktop and Remote feature comparison (2026-10-12)
+
+사용자의 요청으로 1.8.1.78 소스의 Remote 웹과 최근 데스크톱 기능을 코드 기준으로
+비교했다. 이 단계는 구현 현황 확인이며 아래 보완 기능을 웹에 적용한 상태는 아니다.
+Dashboard·Remote·Android WebView는 같은 `remote-pwa`를 사용하므로 해당 웹 클라이언트를
+고치면 세 환경에 함께 반영한다. 데스크톱의 React 변경은 이 클라이언트에 자동 반영되지 않는다.
+
+| 기능 | 현재 웹 구현 | 남은 차이 |
+| --- | --- | --- |
+| 세션 모델·effort | 헤더 버튼과 우클릭 메뉴, 계정 모델 목록, 다음 시작 저장·같은 대화 재시작 | 입력창 모델 버튼, Fast 표시·선택이 없다. 선택 초기값은 현재값보다 `saved`를 우선한다. `native` 현재값도 시작 설정으로 표시한다. |
+| 모델 선택의 준비 상태 | `/api/session/model`이 호스트의 재시작 가능 여부를 제공 | 이후 클라이언트 `update()`가 hook 기반으로 재계산하므로 native 입력창이 준비된 재개 세션과 조건이 어긋날 수 있다. effort의 모델 기본값도 목록의 defaultEffort로 명시 저장한다. |
+| 모델·effort·Fast 복원 | 실행·저장은 데스크톱 호스트의 공통 서비스 사용 | 1.8.1.78 호스트를 적용하면 이번 복원 수정은 원격 실행에도 적용된다. Acedia 기본 모델을 웹에서 편집하는 화면과 API는 없다. |
+| 사용자·답변 구분 | 사용자 말풍선은 오른쪽, 답변은 왼쪽; 추론·도구·개별 diff 접기 제공 | 전용 제공자 로고와 최근 데스크톱의 답변별 수정 파일 요약·더보기 창은 없다. |
+| 채팅 이미지·뷰어 | 이미지 경로 링크와 별도 뷰어의 확대·축소·이동, 원본 다운로드 | 이미지 블록은 `🖼 이미지` 텍스트로 표시한다. 채팅 썸네일과 뷰어의 이미지 복사 버튼이 없다. |
+| 채팅 갱신 | 최근 대화부터 렌더링, 이전 페이지 병합과 스크롤 복원 | 단일 채팅과 Screen 채팅 모두 본문을 `replaceChildren`으로 교체한다. 썸네일 추가 시 기존 노드·선택·접힘 상태를 유지하는 갱신도 필요하다. |
+| Working·입력 큐 | 작업 중 표시·중단, 전송 결과 불확실 시 큐 보류·재시도, 큐는 본문 스크롤 밖에 배치 | Working은 본문 안에 있다. 작업 중 추가 입력/완료 후 예약을 고르는 방식과 Tab 전환이 없다. 큐는 준비된 다음에만 전송한다. |
+| 질문·첨부·링크 | 공유 질문 폼과 비동기 질문 응답, 이미지·ZIP의 붙여넣기/드롭/첨부, Markdown·JSON·HTML·영상·이미지·폴더 링크 | C++·TS 등 코드 파일은 `chatFileKind`와 자동 경로 링크의 대상에 포함되지 않는다. |
+| 사이드바 프로젝트·검색 | 프로젝트 이름별 세션 구분, All/Active/Sleeping, 세션·프로젝트 이름과 경로 검색 | 프로젝트는 접기 버튼 대신 텍스트 라벨이다. 세션 없는 프로젝트의 독립 검색 결과와 Windows 경로 구분자 통일은 없다. |
+| 사이드바 세션·Screen | 상태 점·상태 이름, 모델 우클릭, 세션 헤더의 rename; Screen 목록에 색상 표시 | 세션의 닫기 버튼·관리 메뉴·제공자 로고, 세션과 연결된 Screen 색상 배지가 없다. Screen 색은 표시 순서 기반이며 검색 시 같은 Screen의 색이 바뀔 수 있다. |
+| 작업 완료·알림 | 완료 상태와 브라우저 알림, 질문 배지·세션별 알림 설정 | 완료를 읽을 때까지 유지하는 별도 표시·읽음 처리가 없다. Windows 작업표시줄 동작은 웹 배지·알림 UX로 맞춰야 한다. |
+| 새 세션 옵션 | 도구·프로젝트·분산 계정·Dangerous mode 선택 | 창을 열 때 첫 도구와 Dangerous=false로 초기화한다. 성공한 생성의 agent·agent별 Dangerous 선택을 다시 쓰는 웹 처리가 없다. |
+
+다음 구현 순서는 **채팅(모델/Fast·이미지·파일·고정 Working·큐 선택) →
+사이드바(프로젝트 접기·로고·색상·닫기·완료 읽음) → 새 세션/기본 설정**으로 잡는다.
+각 단계에서 1024px와 390px, 질문 대기·작업 중·휴면·재개 상태를 확인하고,
+새 자산/API의 접근 검사와 서비스 워커 갱신을 함께 검증한다.
+
+비교 근거: `remote-pwa/index.html`, `remote-pwa/app.js`의 `renderNavigation`,
+`renderChat`, `renderScreenChat`, `renderComposerQueue`, `openCreateSessionEditor`,
+`remote-pwa/session-model.js`, `remote-pwa/chat-render.js`, `remote-pwa/chat-markup.js`,
+`remote-pwa/styles.css`, `services/web-services.mjs`의 `/api/session/model`·`/api/session/submit`.
 
 ## Large HTML previews (1.8.1.50 EXE)
 
