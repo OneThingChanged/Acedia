@@ -341,7 +341,7 @@ start their processes. Sleeping entries appear under All or Sleeping and are
 excluded from Active. Returning from the tray reconnects sessions confirmed live by
 the host and keeps the others dormant.[^app-shell][^pane-slot][^sidebar]
 
-Development source as of 2026-10-12 removes Acedia's document/HTML worker presets.
+Acedia 1.8.1.79 removes Acedia's document/HTML worker presets.
 Settings, creation dialogs and session properties no longer offer content-worker
 routing. Legacy workerSettings values are ignored on load and omitted on save;
 launches no longer generate worker role files, force subagent defaults or inject
