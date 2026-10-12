@@ -1,7 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
-import { SessionWorkerDisclosure } from "./SessionWorkerDisclosure";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { LaunchOptions } from "../lib/launchOptions";
 import { AccountSelect } from "./ProviderAccounts";
@@ -47,7 +46,6 @@ export function NewProjectModal({
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
   const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
-  const [workerSettings, setWorkerSettings] = useState(() => loadAgentDefaults("codex").workerSettings);
   const [dangerous, setDangerous] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<LaunchOptions>();
   const [launchValid, setLaunchValid] = useState(true);
@@ -93,7 +91,6 @@ export function NewProjectModal({
         aiToolId,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
-        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
         sshHostId,
         remoteFolder: remoteFolder.trim(),
         projectFolderId: projectFolderId || undefined,
@@ -109,7 +106,6 @@ export function NewProjectModal({
         claudeAccountId: aiToolId === "claude" ? claudeAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
-        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
         projectFolderId: projectFolderId || undefined,
       });
     }
@@ -176,7 +172,7 @@ export function NewProjectModal({
                   setAiToolId(nextToolId);
                   setDangerous(defaults.dangerous && !!toolForId(nextToolId).dangerousFlag);
                   setLaunchOptions(defaults.launchOptions); setLaunchValid(true);
-                  if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); setWorkerSettings(defaults.workerSettings); }
+                  if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); }
                   if (nextToolId === "claude") setClaudeAccountId(defaults.claudeAccountId);
                 }}>
                   <option value="" disabled>{text("도구 선택…", "Select a tool…")}</option>
@@ -206,9 +202,7 @@ export function NewProjectModal({
               </div>}
             </section>
           </div>
-          {(aiToolId === "codex" || (!!selectedTool.command && !remote)) && <div className="new-project-options">
-            {aiToolId === "codex" && <SessionWorkerDisclosure settings={workerSettings}
-              disabledTools={disabledTools} onChange={setWorkerSettings} />}
+          {(!!selectedTool.command && !remote) && <div className="new-project-options">
             {!!selectedTool.command && !remote && <AdvancedLaunchOptions key={aiToolId} toolId={aiToolId}
               value={launchOptions} onChange={setLaunchOptions} onValidityChange={setLaunchValid} />}
           </div>}

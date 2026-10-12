@@ -1,5 +1,8 @@
-const CACHE_NAME = "multiagent-remote-v93";
+const CACHE_NAME = "multiagent-remote-v94";
 const STATIC_ASSETS = [
+  "/pwa/chat-files.js",
+  "/pwa/model-editor.js",
+  "/pwa/workspace-ui.js",
   "/",
   "/pwa/styles.css",
   "/pwa/terminal-touch.js",
@@ -62,6 +65,9 @@ self.addEventListener("fetch", (event) => {
   // new build lands immediately instead of being pinned to a stale cache.
   // Vendor/static assets (xterm, icons) stay cache-first for speed.
   const isAppShell =
+    url.pathname === "/pwa/chat-files.js" ||
+    url.pathname === "/pwa/model-editor.js" ||
+    url.pathname === "/pwa/workspace-ui.js" ||
      url.pathname === "/pwa/session-model.js" ||
     url.pathname === "/pwa/hosting.js" ||
     url.pathname === "/pwa/account-pool.js" ||

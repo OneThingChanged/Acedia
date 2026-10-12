@@ -7,7 +7,6 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { AGENT_DEFAULTS_KEY, loadAgentDefaults, saveAgentDefaults, type AgentDefaults } from "../lib/agentDefaults";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { AccountsPanel, AccountSelect } from "./ProviderAccounts";
-import { SessionWorkerFields } from "./SessionWorkerFields";
 import { PoolAccountSelect } from "./PoolAccountSelect";
 import { DefaultSessionModelSettings } from "./DefaultSessionModelSettings";
 
@@ -188,7 +187,7 @@ export function AgentsSettings({
           {tab === "claude" && <div className="agent-settings-row" {...settingTarget(prefix + ".defaultAccount")}><SettingScope id={prefix + ".defaultAccount"} /><AccountSelect provider="claude" value={defaults.claudeAccountId} onChange={claudeAccountId => updateDefaults({ claudeAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Claude 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Claude sessions.")} /></div>}
           <details open={tab !== "codex"}><summary>{text("실행 옵션", "Launch options")}</summary>
             <label className="agent-settings-row" {...settingTarget(prefix + ".dangerous")}><div><div className="agent-row-title">{text("권한 확인 생략", "Skip approval prompts")}<SettingScope id={prefix + ".dangerous"} /></div><div className="agent-row-sub">{text("새 세션의 Dangerous 모드 기본값", "Default Dangerous mode for new sessions")}</div></div><input type="checkbox" role="switch" checked={defaults.dangerous} onChange={e => updateDefaults({ dangerous: e.target.checked })} /></label>
-            {tab === "codex" && <><label className="agent-settings-row" {...settingTarget("agents.codex.altScreen")}><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}<SettingScope id="agents.codex.altScreen" /></div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label><div className="agent-settings-row"><SessionWorkerFields settingsPrefix="agents.codex.workers" settings={defaults.workerSettings} disabledTools={disabledTools} onChange={workerSettings => updateDefaults({ workerSettings })} /></div></>}
+            {tab === "codex" && <><label className="agent-settings-row" {...settingTarget("agents.codex.altScreen")}><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}<SettingScope id="agents.codex.altScreen" /></div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label></>}
           </details>
         </div><p className="agent-hint">{text("자동 저장됩니다. 기존 세션의 계정과 실행 옵션은 변경되지 않습니다.", "Saved automatically. Existing session accounts and options remain unchanged.")}</p>
       </>}

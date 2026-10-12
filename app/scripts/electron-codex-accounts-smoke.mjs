@@ -78,6 +78,11 @@ try {
       ipcMain.handle('claude_accounts_create', (_event,args) => claudeAccounts.create(args.label));
       ipcMain.handle('claude_accounts_login', (_event,args) => claudeAccounts.beginLogin(args.accountId));
       ipcMain.handle('claude_accounts_cancel_login', () => claudeAccounts.cancelLogin());
+      ipcMain.handle('notification_preferences_get', () => ({ revision: 0, completion: true, bell: false, suppressFocused: true, powerMode: 'off' }));
+      ipcMain.handle('power_policy_status', () => ({ active: false, workingCount: 0 }));
+      ipcMain.handle('account_pool_choices', () => ({ enabled: false, accounts: [] }));
+      ipcMain.handle('get_model_defaults', (_event, args) => ({ provider: args.provider, revision: 0, settings: { model: args.provider === 'codex' ? 'gpt-6-sol' : 'sonnet', effort: 'medium' } }));
+      ipcMain.handle('get_default_model_catalog', (_event, args) => ({ provider: args.provider, accountLabel: 'Fixture', models: [{ model: args.provider === 'codex' ? 'gpt-6-sol' : 'sonnet', label: 'Fixture model', efforts: [{ effort: 'medium' }] }] }));
       ipcMain.handle('check_tools', () => ({codex:{available:true},claude:{available:true},qwen:{available:true},cline:{available:true}}));
       ipcMain.handle('qwen_region_get', () => ({available:true, region:'international', regions:[{id:'international',label:'International'}]}));
       ipcMain.handle('session_storage_list', () => ({sessions:[]}));
@@ -89,7 +94,7 @@ try {
       for (const command of ['monitor_server_status', 'remote_server_status', 'tunnel_status']) ipcMain.handle(command, () => ({running:false}));
       ipcMain.handle('remote_access_list', () => ({pending:[],approved:[]}));
       const win = new BrowserWindow({show:false, width:1100, height:900,
-        webPreferences:{nodeIntegration:true, contextIsolation:false, backgroundThrottling:false, offscreen: true}});
+        webPreferences:{nodeIntegration:true, contextIsolation:false, backgroundThrottling:false}});
       win.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message); });
       try {
         await win.loadFile(${JSON.stringify(path.join(temporary, "index.html"))});
@@ -108,24 +113,22 @@ try {
           const account = (await window.multiAgentElectron.invoke('codex_accounts_list'))[1];
           window.showSettings(); await wait();
           const tabs = [...document.querySelectorAll('[role=tab]')];
-          check(tabs.length === 5, 'Expected five tool tabs');
+          check(tabs.length === 6, 'Expected six tool tabs');
           tabs[2].click(); await wait();
           check(document.querySelector('[data-account-provider=claude]'), 'Claude account management missing');
           check(!document.querySelector('[data-account-provider=codex]'), 'Codex accounts leaked into Claude tab');
-          tabs[3].click(); await wait();
+          tabs.find(tab => tab.textContent.includes('Qwen')).click(); await wait();
           check(document.body.textContent.includes('Qwen 리전'), 'Qwen region missing');
           tabs[1].click(); await wait();
-          const defaults = document.querySelector('.agent-defaults');
+          const defaults = document.querySelector('[data-setting-id=\"agents.codex.defaultAccount\"]').closest('.agent-defaults');
           const accountDefault = defaults.querySelector('select'); accountDefault.value = account.id;
           accountDefault.dispatchEvent(new Event('change', {bubbles:true})); await wait();
           defaults.querySelector('summary').click(); await wait();
           const switches = [...defaults.querySelectorAll('input[role=switch]')];
           switches[0].click(); await wait(); switches[1].click(); await wait();
-          for (const select of defaults.querySelectorAll('.session-worker-fields select')) {
-            select.value = ''; select.dispatchEvent(new Event('change', {bubbles:true})); await wait();
-          }
+          check(!defaults.querySelector('.session-worker-fields'), 'Retired worker defaults are visible');
           window.showAccounts(); await wait(); window.showSettings(); await wait();
-          check(document.querySelector('.agent-defaults select').value === account.id, 'Default account did not persist');
+          check(document.querySelector('[data-setting-id=\"agents.codex.defaultAccount\"] select').value === account.id, 'Default account did not persist');
           window.showNew(); await wait();
           check(document.querySelector('.field-check input').checked, 'Dangerous default missing from new session');
 
@@ -135,13 +138,13 @@ try {
           click('만들기'); await wait();
           check(window.created.codexAccountId === account.id, 'New session lost account binding');
           check(window.created.useAltScreen === true && window.created.dangerous === true, 'Launch defaults not applied');
-          check(window.created.workerSettings === undefined, 'Disabled worker defaults lost');
+          check(!Object.hasOwn(window.created, 'workerSettings'), 'Retired worker defaults were submitted');
           window.showProperties(true); await wait();
           click('실행 옵션'); await wait();
           check(document.querySelector('select').disabled, 'Running session allowed account switching');
           window.showProperties(false); await wait();
           const idle = document.querySelector('select'); check(!idle.disabled, 'Inactive session cannot switch');
-          idle.value = account.id; idle.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+          idle.value = account.id; idle.dispatchEvent(new Event('change', {bubbles:true})); await wait(); click('변경 저장'); await wait();
           check(window.switched === account.id, 'Inactive account switch not delivered');
           window.showSettings(); await wait();
           click('Claude'); await wait();
@@ -152,7 +155,7 @@ try {
           click('추가하고 로그인'); await wait(2300);
           check(document.body.textContent.includes('로그인 저장됨'), 'Claude login completion missing');
           const claudeAccount = (await window.multiAgentElectron.invoke('claude_accounts_list'))[1];
-          const claudeDefault = document.querySelector('.agent-defaults select');
+          const claudeDefault = document.querySelector('[data-setting-id=\"agents.claude.defaultAccount\"] select');
           claudeDefault.value = claudeAccount.id; claudeDefault.dispatchEvent(new Event('change', {bubbles:true})); await wait();
           window.showNew('claude'); await wait();
           const claudeSelect = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === claudeAccount.id));
@@ -164,7 +167,7 @@ try {
           window.showProperties(false, 'claude'); await wait();
           const claudeIdle = document.querySelector('select');
           check(!claudeIdle.disabled, 'Inactive Claude cannot switch');
-          claudeIdle.value = claudeAccount.id; claudeIdle.dispatchEvent(new Event('change', {bubbles:true})); await wait();
+          claudeIdle.value = claudeAccount.id; claudeIdle.dispatchEvent(new Event('change', {bubbles:true})); await wait(); click('변경 저장'); await wait();
           check(window.switched === claudeAccount.id, 'Claude account switch not delivered');
           localStorage.setItem('multiagent.appLanguage.v1', 'ko');
           window.showAppSettings(); await wait();
@@ -271,5 +274,5 @@ try {
   if (code !== 0) throw new Error(`Codex account UI smoke failed: ${code}`);
 } finally {
   if (path.dirname(temporary) !== path.resolve(os.tmpdir()) || !path.basename(temporary).startsWith("multiagent-account-ui-")) throw new Error("Unexpected cleanup path");
-  await fs.rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await fs.rm(temporary, { recursive: true, maxRetries: 5, retryDelay: 200 });
 }

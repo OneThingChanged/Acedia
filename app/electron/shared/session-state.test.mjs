@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { isAgentRuntimeActive } from '../../src/lib/agentActivity';
 import { isStandbySession } from '../../src/lib/sessionStandby';
-import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, projectSessionRuntime, sessionFilterCounts } from './session-state.mjs';
+import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, projectSessionRuntime, sessionFilterCounts, resolveSessionWorkStatus } from './session-state.mjs';
 
 describe('Remote session lifecycle filters', () => {
+  it('uses completion hooks over stale renderer work and switches back for new work', () => {
+    const agent = { status: 'working', runtimeStatus: 'running', hook: { event: 'done', lastTs: 100 } };
+    expect(resolveSessionWorkStatus(agent)).toBe('done');
+    expect(resolveSessionWorkStatus({ ...agent, status: 'done', hook: { event: 'working', lastTs: 200 } })).toBe('working');
+    expect(resolveSessionWorkStatus({ ...agent, status: 'done', hook: { event: 'tool-end' } })).toBe('working');
+    expect(resolveSessionWorkStatus({ ...agent, status: 'done', hook: { event: 'waiting', interactive_question: 'Answer?' } })).toBe('question');
+    expect(resolveSessionWorkStatus({ ...agent, hook: { event: 'cancelled' } })).toBe('idle');
+    expect(resolveSessionWorkStatus({ ...agent, hook: null })).toBe('working');
+  });
+
+  it('does not revive offline sessions or complete a startup using an old hook', () => {
+    for (const status of ['offline', 'exited', 'unreachable']) expect(resolveSessionWorkStatus({ status, hook: { event: 'done' } })).toBe(status);
+    for (const runtimeStatus of ['starting', 'recovering']) expect(resolveSessionWorkStatus({ status: 'working', runtimeStatus, hook: { event: 'done' } })).toBe(runtimeStatus);
+  });
   const sessions = [
     { status: 'running' }, { status: 'working' }, { status: 'waiting' },
     { status: 'blocked' }, { status: 'running', runtimeStatus: 'recovering' },

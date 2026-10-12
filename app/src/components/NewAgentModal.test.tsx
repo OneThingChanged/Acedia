@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { NewAgentModal } from "./NewAgentModal";
 
 describe("NewAgentModal", () => {
-  it("preselects Luna max for both workers when Codex is the default tool", () => {
+  it("keeps launch controls without document or HTML worker settings", () => {
     const html = renderToStaticMarkup(
       <NewAgentModal
         project={{
@@ -19,7 +19,8 @@ describe("NewAgentModal", () => {
       />
     );
 
-    expect(html).toContain("문서·HTML 병렬 작업자");
-    expect(html.match(/value="codex-luna-max" selected=""/g)).toHaveLength(2);
+    expect(html).toContain("Alt-screen 모드");
+    expect(html).not.toContain("문서·HTML 병렬 작업자");
+    expect(html).not.toContain("session-worker");
   });
 });

@@ -30,7 +30,7 @@
 .new-session-icon { width: 17px; height: 17px; flex-shrink: 0; color: var(--app-muted); }
 .new-session-project .new-session-icon { width: 15px; height: 15px; }
 .new-session-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 26px 20px; scrollbar-width: thin; }
-.new-session-basics, .new-session-workers { min-width: 0; }
+.new-session-basics { min-width: 0; }
 .new-session-section-heading { display: flex; align-items: center; gap: 8px; margin: 0 0 15px; font-size: 14px; font-weight: 600; color: var(--app-heading); }
 .new-session-modal .field { margin: 0; min-width: 0; gap: 6px; }
 .new-session-modal .field-label { font-size: 12px; }
@@ -52,31 +52,6 @@
 .new-session-execution .field-check { margin: 0; padding: 11px 13px; border-radius: 7px; }
 .new-session-execution .field-check-neutral { align-items: center; padding-block: 10px; }
 .new-session-execution .field-check-neutral input { margin-top: 0; }
-.new-session-workers { padding: 14px; border-top: 1px solid var(--app-border); }
-.new-session-workers .session-worker-fields { margin: 0; padding: 0; background: transparent; border: 0; }
-.new-session-workers .session-worker-heading { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.new-session-workers .session-worker-description { font-size: 12px; line-height: 1.6; margin: 6px 0 16px; }
-.new-session-workers .session-worker-field { display: grid; grid-template-columns: 94px minmax(0, 1fr) 88px; gap: 9px; margin: 0 0 13px; padding: 14px; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-panel-soft); }
-.new-session-workers .session-worker-field > legend { float: left; grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; width: 100%; margin: 0 0 3px; padding: 0; font-size: 13px; font-weight: 600; color: var(--app-heading); }
-.new-session-worker-icon { width: 28px; height: 28px; flex-shrink: 0; padding: 6px; background: var(--app-button-bg); border-radius: 6px; color: var(--app-muted); }
-.new-session-worker-state { margin-left: auto; padding: 1px 6px; border: 1px solid var(--app-border); border-radius: 4px; color: var(--app-success-dot); background: var(--app-panel); font-size: 10px; font-weight: 500; white-space: nowrap; }
-.new-session-workers .session-worker-field[data-enabled="false"] { grid-template-columns: minmax(0, 1fr); }
-.new-session-workers .session-worker-field[data-enabled="false"] .new-session-worker-state { color: var(--app-muted); }
-.new-session-workers .session-worker-model-fields { display: contents; }
-.new-session-workers .session-worker-model-fields > .session-worker-hint { display: none; }
-.new-session-workers .session-worker-field .field-label { font-size: 11px; }
-.new-session-workers .session-worker-field :is(input, select) { height: 36px; padding-left: 8px; padding-right: 8px; font-size: 12px; }
-.new-session-workers .session-worker-hint { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
-.session-worker-disclosure { margin-top: 14px; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-panel-soft); }
-.session-worker-disclosure > summary { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 5px 8px; padding: 12px 14px; list-style: none; cursor: pointer; }
-.session-worker-disclosure > summary::-webkit-details-marker { display: none; }
-.session-worker-disclosure > summary::before { content: "▸"; color: var(--app-muted); }
-.session-worker-disclosure[open] > summary::before { transform: rotate(90deg); }
-.session-worker-disclosure-label { color: var(--app-heading); font-size: 13px; font-weight: 600; }
-.session-worker-overview { grid-column: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 11px; line-height: 1.5; color: var(--app-muted); }
-.session-worker-overview > span { display: flex; flex-wrap: wrap; gap: 0 6px; min-width: 0; }
-.session-worker-overview > span > span:last-child { overflow-wrap: anywhere; }
-.session-worker-disclosure .session-worker-heading, .session-worker-disclosure .session-worker-description { display: none; }
 .new-session-modal .advanced-launch-options { margin: 14px 0 0; }
 .modal.new-project-modal { width: 920px; }
 .new-project-modal .new-session-header .modal-title { margin: 0; }
@@ -89,7 +64,6 @@
 .new-project-session { padding-left: 26px; border-left: 1px solid var(--app-border); }
 .new-session-modal .new-project-tool { margin-bottom: 12px; }
 .new-project-modal .advanced-launch-options summary { padding: 12px 14px; }
-.new-project-modal .session-worker-overview { grid-template-columns: minmax(0, 1fr); }
 .new-project-modal .new-session-execution .field-check { padding: 10px; align-items: center; }
 .new-project-modal .new-session-execution input { margin-top: 0; }
 .new-session-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 26px; background: var(--app-panel-soft); border-top: 1px solid var(--app-border); }
@@ -103,7 +77,6 @@
   .new-project-columns, .new-project-options { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .new-project-options { gap: 0; }
   .new-project-session { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--app-border); }
-  .new-session-workers .session-worker-field { grid-template-columns: 118px minmax(0, 1fr) 92px; }
 }
 @media (max-width: 480px) {
   .new-session-backdrop { padding: 10px; }
@@ -112,10 +85,6 @@
   .new-session-header .modal-title { font-size: 19px; }
   .new-session-identity, .new-session-accounts { column-gap: 10px; }
   .new-session-execution { grid-template-columns: minmax(0, 1fr); }
-  .session-worker-overview { grid-template-columns: minmax(0, 1fr); }
-  .new-session-workers .session-worker-field { grid-template-columns: minmax(0, 1fr) 88px; padding: 12px; gap: 10px; }
-  .new-session-workers .session-worker-field > .field { grid-column: 1 / -1; }
-  .new-session-workers .session-worker-field[data-enabled="false"] { grid-template-columns: minmax(0, 1fr); }
   .new-session-footer { padding: 13px 18px; }
   .new-session-footer button { min-height: 44px; padding: 10px 13px; }
 }

@@ -3,7 +3,8 @@ import { text } from "./dom.js";
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
-const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:mp4|webm|md|markdown|html?|json|png|jpe?g|gif|webp|bmp|svg|ico)(?::\d+(?::\d+)?)?/gi;
+const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:mp4|webm|md|markdown|html?|jsonc?|png|jpe?g|gif|webp|bmp|svg|ico|txt|tsx?|jsx?|mjs|cjs|py|rs|go|cpp|hpp|cc|cs|c|h|java|kt|swift|css|scss|ya?ml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)(?![a-z0-9])(?::\d+(?::\d+)?)?/gi;
+const CODE_FILE = /\.(?:txt|ts|tsx|js|jsx|mjs|cjs|py|rs|go|c|h|cpp|hpp|cc|cs|java|kt|swift|css|scss|jsonc|yaml|yml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)$/i;
 
 function localHostingUrl(value) {
   try {
@@ -28,6 +29,7 @@ function cleanChatFilePath(value) {
     .replace(/(:\d+)(?::\d+)?$/, "")
     .split(/[?#]/)[0];
   try { result = decodeURIComponent(result); } catch {}
+  if (/^file:\/\//i.test(result)) { try { result = decodeURIComponent(new URL(result).pathname); } catch {} }
   result = result.trim();
   return /^\/[A-Za-z]:[\\/]/.test(result) ? result.slice(1) : result;
 }
@@ -41,6 +43,7 @@ function chatFileKind(value) {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) return null;
   if (/\.(?:md|markdown)$/i.test(path)) return "markdown";
   if (/\.json$/i.test(path)) return "text";
+  if (CODE_FILE.test(path)) return 'text';
   if (/\.(?:html|htm)$/i.test(path)) return "html";
   if (/\.(?:png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(path)) return "image";
   if (/\.(?:mp4|webm)$/i.test(path)) return "video";
@@ -83,6 +86,7 @@ function inlineMd(text, agent = null) {
     return stash(httpLinkMarkup(url, url, agent)) + rawUrl.slice(url.length);
   });
   source = source.replace(CHAT_FILE_PATH_RE, (path) => stash(chatFileMarkup(path, path, agent, { code: true })));
+  source = source.replace(/(?:\/?[A-Za-z]:[\\/]|\.\.?[\\/])[^\s"'<>|*?()[\]{},;]+\.(?:tsx?|jsx?|mjs|cjs|py|rs|go|cpp|hpp|c|h|cs|java|kt|css|yaml|yml|toml|xml|ps1)(?::\d+(?::\d+)?)?/gi, path => stash(chatFileMarkup(path, path, agent, { code: true })));
   let out = escapeHtml(source);
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");

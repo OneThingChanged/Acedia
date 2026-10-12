@@ -34,6 +34,24 @@ export function sessionFilterCounts(agents) {
   return counts;
 }
 
+// The renderer can keep its previous work status after a completion hook.
+// Runtime transitions still win; otherwise use the latest host-owned hook.
+export function resolveSessionWorkStatus(agent) {
+  const status = String(agent?.status || '').toLowerCase();
+  if (['exited', 'unreachable', 'offline'].includes(status)) return status;
+  const runtime = String(agent?.runtimeStatus || '').toLowerCase();
+  if (['starting', 'recovering'].includes(runtime)) return runtime;
+  if (['starting', 'recovering'].includes(status)) return status;
+  const event = String(agent?.hook?.event || '').toLowerCase();
+  if (event === 'done') return 'done';
+  if (['cancelled', 'canceled', 'interrupted', 'aborted'].includes(event)) return 'idle';
+  if (['working', 'tool-start', 'tool-end'].includes(event)) return 'working';
+  if (event === 'question' || (event === 'waiting' && agent.hook?.interactive_question)) return 'question';
+  if (['waiting', 'blocked', 'permission-request'].includes(event)) return event;
+  if (['idle', 'session-start'].includes(event)) return 'idle';
+  return status;
+}
+
 // Live PTYs win over delayed renderer metadata. Without a PTY, only an
 // explicit startup/recovery remains Active; old running/hook states do not.
 export function projectSessionRuntime(agent, live) {

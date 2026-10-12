@@ -33,7 +33,7 @@ if (process.versions.electron) {
     const invoke = (command, args = {}) => window.webContents.executeJavaScript(`window.multiAgentElectron.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`);
     const executable = path.join(root, 'fixture-cli.ps1');
     fs.writeFileSync(executable, 'Write-Output "ACEDIA_WORKSPACE_FIXTURE_CLI"\n[Console]::ReadLine() | Out-Null\n');
-    await window.webContents.executeJavaScript(`localStorage.setItem('multiagent.agentDefaults.v1', ${JSON.stringify(JSON.stringify({ codex: { launchOptions: { executable }, workerSettings: null, dangerous: false } }))})`);
+    await window.webContents.executeJavaScript(`localStorage.setItem('multiagent.agentDefaults.v1', ${JSON.stringify(JSON.stringify({ codex: { launchOptions: { executable }, dangerous: false } }))})`);
     await invoke('spawn_pty', { id: 'workspace-mcp-caller', aiToolId: 'none', cwd: root, cols: 80, rows: 24 });
     console.log('WORKSPACE_FIXTURE_CALLER_READY');
     const infoPath = path.join(process.env.MULTIAGENT_LOCAL_DATA, 'hook-info.json');

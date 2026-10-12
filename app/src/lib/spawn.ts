@@ -4,7 +4,6 @@ import type { Agent, Project, SessionResumeContext, SshHost } from "../types";
 import { resolveSessionSettings } from "./sessionHierarchy";
 import { resolveProjectSettings } from "./projectHierarchy";
 import { findSshHost } from "./sshHosts";
-import { addSessionWorkerArgs, workerRoles } from "./sessionWorkers";
 import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
 import { handoffPromptForAccount } from "./accountHandoff";
 
@@ -218,22 +217,10 @@ export async function buildSpawnArgs(
       cmd,
       agent.useAltScreen === true
     );
-    const roles = agent.aiToolId === "codex" ? workerRoles(agent.workerSettings) : {};
-    // Local role files must not be sent to an SSH host. Remote workers use the
-    // explicit model/effort spawn overrides in the generated instructions.
-    const roleFiles = !sshHost && Object.keys(roles).length
-      ? await invoke<Partial<Record<"documents" | "html", string>>>("prepare_worker_roles", { roles })
-      : {};
-    if (!sshHost && Object.keys(roles).some(kind => !roleFiles?.[kind as keyof typeof roleFiles])) {
-      throw new Error("작업자 모델 설정 파일을 준비하지 못했습니다. Worker role configuration is unavailable.");
+    if (agent.aiToolId === "codex" && settings.instructions) {
+      const instructions = JSON.stringify(settings.instructions).replace(/'/g, "\\u0027");
+      cmd += ` -c 'developer_instructions=${instructions}'`;
     }
-    cmd = addSessionWorkerArgs(
-      agent.aiToolId,
-      cmd,
-      agent.workerSettings,
-      roleFiles,
-      settings.instructions
-    );
     if (agent.aiToolId === "claude" && settings.instructions) {
       if (sshHost) throw new Error("SSH Claude 세션의 추가 지침은 아직 지원하지 않습니다. Additional instructions for SSH Claude sessions are not supported.");
     }

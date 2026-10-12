@@ -26,10 +26,6 @@ async function exerciseUI() {
     }
     await wait();
   };
-  const worker = kind => document.querySelector(`[data-worker-kind="${kind}"]`);
-  const toggleWorkers = async () => {
-    document.querySelector(".session-worker-disclosure > summary").click(); await wait();
-  };
   const showCodex = async () => {
     window.fixtureShow(); await wait(); await change(tool(), "codex"); await wait();
   };
@@ -37,8 +33,7 @@ async function exerciseUI() {
   document.querySelector("#fixture-open").focus(); document.querySelector("#fixture-open").click();
   await wait(); await change(tool(), "codex"); await wait();
   check(dialog().getAttribute("role") === "dialog" && dialog().getAttribute("aria-modal") === "true", "Missing dialog semantics");
-  check(!document.querySelector(".session-worker-disclosure").open, "Workers should start collapsed");
-  check(document.querySelector(".session-worker-overview").textContent.includes("gpt-6-luna"), "Hidden defaults have no summary");
+  check(!document.querySelector(".session-worker-disclosure, [data-testid=\"session-worker-settings\"]"), "Retired worker settings are visible");
   name().focus();
   name().dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
   check(document.activeElement === button(), "Backward focus trap");
@@ -52,26 +47,13 @@ async function exerciseUI() {
   check(accounts.length === 2 && !accounts[0].disabled && !accounts[1].disabled, "Accounts did not load");
   await change(accounts[0], "11111111-1111-4111-8111-111111111111");
   await change(accounts[1], "22222222-2222-4222-8222-222222222222");
-  await toggleWorkers();
-  await change(worker("documents").querySelector("[data-worker-model]"), "gpt-6-sol");
-  await change(worker("documents").querySelector("[data-worker-effort]"), "ultra");
-  await change(worker("html").querySelector("select"), "claude-opus");
-  await change(worker("html").querySelector("[data-worker-model]"), "sonnet");
-  await change(worker("html").querySelector("[data-worker-effort]"), "high");
   const checks = document.querySelectorAll(".new-session-execution input");
-  checks[1].click(); await wait(); await toggleWorkers(); button().click(); await wait();
+  checks[1].click(); await wait(); button().click(); await wait();
   const payload = window.fixtureCreated;
   check(payload.name === "Plugin flow" && payload.aiToolId === "codex", "Lost name or provider");
   check(payload.codexAccountId === accounts[0].value && payload.codexPoolAccountId === accounts[1].value, "Lost account choices");
   check(payload.dangerous && payload.useAltScreen, "Lost execution flags");
-  check(payload.workerSettings.documents.model === "gpt-6-sol" && payload.workerSettings.documents.effort === "ultra", "Lost document worker settings");
-  check(payload.workerSettings.html.model === "sonnet" && payload.workerSettings.html.effort === "high", "Lost HTML worker settings");
-  check(document.querySelector(".session-worker-overview").textContent.includes("sonnet"), "Worker summary did not update");
-  await toggleWorkers();
-  await change(worker("documents").querySelector("[data-worker-model]"), "gpt-5.5");
-  check(worker("documents").querySelector("[data-worker-effort]").value === "xhigh", "Invalid effort was kept");
-  await change(worker("html").querySelector("select"), "");
-  button().click(); await wait(); check(!window.fixtureCreated.workerSettings.html, "Disabled worker was submitted");
+  check(!Object.hasOwn(payload, "workerSettings"), "Retired worker settings were submitted");
   await change(tool(), "claude");
   await change(document.querySelector(".new-session-accounts select"), "11111111-1111-4111-8111-111111111111");
   button().click(); await wait();
@@ -113,18 +95,12 @@ async function exerciseUI() {
   const projectAccounts = document.querySelectorAll(".new-session-accounts select");
   await change(projectAccounts[0], "11111111-1111-4111-8111-111111111111");
   await change(projectAccounts[1], "22222222-2222-4222-8222-222222222222");
-  check(!document.querySelector(".session-worker-disclosure").open, "Project workers should start collapsed");
+  check(!document.querySelector(".session-worker-disclosure"), "Retired project workers are visible");
   button().click(); await wait();
   check(window.fixtureCreated.name === "Compact project" && window.fixtureCreated.folder === "C:/fixture/browsed-project", "Lost project basics");
   check(window.fixtureCreated.projectFolderId === "local-folder", "Lost sidebar folder");
   check(window.fixtureCreated.codexAccountId === projectAccounts[0].value && window.fixtureCreated.codexPoolAccountId === projectAccounts[1].value, "Lost first-session accounts");
-  check(window.fixtureCreated.workerSettings.documents === "codex-luna-max" && window.fixtureCreated.workerSettings.html === "codex-luna-max", "Collapsed defaults were not submitted");
-  await toggleWorkers();
-  await change(worker("documents").querySelector("[data-worker-model]"), "gpt-6-sol");
-  await change(worker("html").querySelector("select"), "");
-  await toggleWorkers(); button().click(); await wait();
-  check(window.fixtureCreated.workerSettings.documents.model === "gpt-6-sol" && !window.fixtureCreated.workerSettings.html, "Collapsed project edits were not submitted");
-  check(document.querySelector(".session-worker-overview").textContent.includes("사용 안 함"), "Disabled worker missing from summary");
+  check(!Object.hasOwn(window.fixtureCreated, "workerSettings"), "Retired project worker settings were submitted");
   const projectAdvanced = document.querySelector(".advanced-launch-options details");
   projectAdvanced.open = true; await wait();
   [...projectAdvanced.querySelectorAll("button")].find(control => control.textContent === "직접 지정").click(); await wait();
@@ -203,12 +179,11 @@ function runElectronUI(temporary, artifacts) {
     })()`);
     console.log('NEW_SESSION_PREFERENCES_RELOAD_OK');
     for (const kind of ["project", "session"]) {
-    for (const [width, height, theme, language, advanced, workers] of [
+    for (const [width, height, theme, language, advanced] of [
       [1366, 768, "soft", "ko", false], [1920, 1080, "soft", "ko", false],
       [1366, 768, "light", "en", false], [1024, 768, "warm", "en", false],
       [390, 844, "soft", "ko", false], [375, 667, "light", "en", false],
       [844, 375, "soft", "ko", false], [1366, 768, "soft", "ko", true], [390, 844, "soft", "ko", true],
-      [1366, 768, "soft", "ko", false, true], [390, 844, "soft", "ko", false, true],
     ]) {
       win.setContentSize(width, height);
       await win.webContents.executeJavaScript(`window.fixtureShow(${JSON.stringify({ kind, theme, language })})`);
@@ -217,9 +192,8 @@ function runElectronUI(temporary, artifacts) {
         const waitFor=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,40));}throw Error('Fixture did not settle');};
         await waitFor(()=>document.querySelector('.new-session-modal') && document.querySelector('.app').classList.contains('app-theme-${theme}'));
         const tool=document.querySelector('.new-session-identity select, .new-project-tool select');tool.value='codex';tool.dispatchEvent(new Event('change',{bubbles:true}));
-        await waitFor(()=>document.querySelector('[data-testid="session-worker-settings"]') && document.querySelectorAll('.new-session-accounts select').length===2 && [...document.querySelectorAll('.new-session-accounts select')].every(el=>!el.disabled));
+        await waitFor(()=>document.querySelectorAll('.new-session-accounts select').length===2 && [...document.querySelectorAll('.new-session-accounts select')].every(el=>!el.disabled));
         if(${advanced}) {document.querySelector('.advanced-launch-options details').open=true;await new Promise(r=>setTimeout(r,100));document.querySelector('.new-session-body').scrollTop=100000;}
-        if(${!!workers}) {document.querySelector('.session-worker-disclosure').open=true;await new Promise(r=>setTimeout(r,100));}
         await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       })()`);
       const state = await win.webContents.executeJavaScript(`(() => {
@@ -227,11 +201,11 @@ function runElectronUI(temporary, artifacts) {
         return {viewport:[innerWidth,innerHeight],dialogWidth:dialog.getBoundingClientRect().width,dialogHeight:dialog.getBoundingClientRect().height,scroll:body.scrollHeight>body.clientHeight+1,horizontalOverflow:body.scrollWidth>body.clientWidth+1 || dialog.scrollWidth>dialog.clientWidth+1,footerVisible:footer.bottom<=innerHeight && footer.top>=0};
       })()`);
       const image = await win.webContents.capturePage();
-      await fs.writeFile(path.join(artifacts, `${kind}-${width}x${height}-${theme}-${language}${advanced ? "-advanced" : workers ? "-workers" : ""}.png`), image.toPNG());
-      if (state.horizontalOverflow || !state.footerVisible || (width >= 1366 && !advanced && !workers && state.scroll)) {
+      await fs.writeFile(path.join(artifacts, `${kind}-${width}x${height}-${theme}-${language}${advanced ? "-advanced" : ""}.png`), image.toPNG());
+      if (state.horizontalOverflow || !state.footerVisible || (width >= 1366 && !advanced && state.scroll)) {
         throw new Error(`Creation layout failed: ${kind} ${width}x${height} ${JSON.stringify(state)}`);
       }
-      console.log("CREATION_LAYOUT_OK", kind, theme, language, advanced ? "advanced" : workers ? "workers" : "default", JSON.stringify(state));
+      console.log("CREATION_LAYOUT_OK", kind, theme, language, advanced ? "advanced" : "default", JSON.stringify(state));
     }
     }
     if (errors.length) throw new Error(errors.join("\n"));

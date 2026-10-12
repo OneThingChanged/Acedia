@@ -4,7 +4,6 @@ import { toolForId } from "../types";
 import { findSshHost, sshHostSummary } from "../lib/sshHosts";
 import { AccountLabel, AccountSelect } from "./ProviderAccounts";
 import { PoolAccountSelect } from "./PoolAccountSelect";
-import { SessionWorkerFields } from "./SessionWorkerFields";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { SessionStorageList } from "./SessionStorageList";
@@ -12,17 +11,17 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { PropertiesDialog, PropertyFacts, PropertyPath, nextPropertiesTabIndex } from "./PropertiesDialog";
 
 export const nextSessionPropertiesTabIndex = nextPropertiesTabIndex;
-type Options = Pick<Agent, "dangerous" | "useAltScreen" | "workerSettings" | "launchOptions" | "codexPoolAccountId">;
+type Options = Pick<Agent, "dangerous" | "useAltScreen" | "launchOptions" | "codexPoolAccountId">;
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const accountId = (agent: Agent) => (agent.aiToolId === "claude" ? agent.claudeAccountId : agent.codexAccountId) || "default";
 const accountEditable = (agent: Agent) => agent.deferredStart || agent.status === "idle" || agent.status === "exited";
 
-export function SessionPropertiesModal({ agent, project, onUpdateAgent, onAccountChange, onSessionDeleted, disabledTools = [], onClose }: {
+export function SessionPropertiesModal({ agent, project, onUpdateAgent, onAccountChange, onSessionDeleted, onClose }: {
   agent: Agent; project: Project | null;
   onUpdateAgent: (id: string, patch: Partial<Options>) => void;
   onAccountChange?: (accountId: string, includeHandoff: boolean) => Promise<void>;
   onSessionDeleted?: (aiToolId: string, sessionId: string) => void;
-  disabledTools?: string[]; onClose: () => void;
+  onClose: () => void;
 }) {
   const { language, text } = useAppLanguage();
   const [activeTab, setActiveTab] = useState("overview");
@@ -97,7 +96,7 @@ export function SessionPropertiesModal({ agent, project, onUpdateAgent, onAccoun
       {agent.aiToolId === "codex" && !sshHostId && <PoolAccountSelect value={draft.codexPoolAccountId} disabled={!accountEditable(agent)} onChange={value => edit("codexPoolAccountId", value || undefined)} />}
       {tool.dangerousFlag && <label className="session-props-toggle"><input type="checkbox" checked={draft.dangerous} onChange={e => edit("dangerous", e.target.checked)}/><span className="session-props-toggle-body"><span className="session-props-toggle-title">{text("권한 확인 생략", "Skip permission prompts")}</span><span className="session-props-toggle-desc">{tool.dangerousFlag}</span></span></label>}
       {agent.aiToolId === "codex" && <label className="session-props-toggle"><input type="checkbox" checked={draft.useAltScreen === true} onChange={e => edit("useAltScreen", e.target.checked || undefined)}/><span className="session-props-toggle-body"><span className="session-props-toggle-title">{text("Alt-screen 모드", "Alt-screen mode")}</span><span className="session-props-toggle-desc">{text("터미널 스크롤백 검색·드래그 복사를 사용하려면 끈 상태로 두세요.", "Keep disabled for terminal scrollback search and drag-to-copy.")}</span></span></label>}
-    </div>{agent.aiToolId === "codex" && <div className="property-card"><h4>{text("보조 작업자", "Workers")}</h4><SessionWorkerFields settings={draft.workerSettings} disabledTools={disabledTools} onChange={value => edit("workerSettings", value)} className="session-worker-fields session-worker-fields-props"/></div>}</div>
+    </div></div>
     {tool.command && !sshHostId && <AdvancedLaunchOptions key={`${agent.id}-${editorVersion}`} toolId={agent.aiToolId} value={draft.launchOptions} onChange={value => edit("launchOptions", value)} onValidityChange={setValid} commitOnEdit expanded onLoadDefaults={() => loadAgentDefaults(agent.aiToolId).launchOptions}/>}
     {tool.command && sshHostId && <p className="property-note">{text("CLI 경로·추가 인수·환경변수 편집은 로컬 세션에서 지원합니다.", "CLI path, arguments and environment editing are available for local sessions.")}</p>}</fieldset></>;
   return <PropertiesDialog title={agent.name} subtitle={`${text("세션 속성", "Session properties")} · ${tool.label}`} activeTab={activeTab} onTabChange={setActiveTab} onClose={onClose} dirty={dirty} busy={saving} tabs={[

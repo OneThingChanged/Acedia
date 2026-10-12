@@ -399,7 +399,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v93');
+    expect(workerBody).toContain('multiagent-remote-v94');
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "attachments.js", "session-model.js", "session-state.js"]) {
@@ -538,7 +538,7 @@ describe("Electron dashboard server", () => {
     })}`);
     fs.writeFileSync(path.join(projectRoot, "docs", "large.png"), "");
     fs.truncateSync(path.join(projectRoot, "docs", "large.png"), 25 * 1024 * 1024 + 1);
-    fs.writeFileSync(path.join(projectRoot, "notes.txt"), "not allowed");
+    fs.writeFileSync(path.join(projectRoot, "notes.txt"), "plain text");
     fs.writeFileSync(path.join(projectRoot, "docs", "blocked.bin"), "not allowed");
     fs.writeFileSync(path.join(projectRoot, "node_modules", "hidden.md"), "# hidden");
     fs.writeFileSync(path.join(projectRoot, ".build-tools", "android-sdk", "cmake.org.html"), "<h1>Build tool</h1>");
@@ -638,6 +638,9 @@ describe("Electron dashboard server", () => {
     const unsupported = await fetch(
       `${status.url}/api/docs/read?${new URLSearchParams({ projectId: "local", path: "notes.txt" })}`,
     );
+    const unsupportedBinary = await fetch(
+      `${status.url}/api/docs/read?${new URLSearchParams({ projectId: "local", path: "docs/blocked.bin" })}`,
+    );
     const oversized = await fetch(
       `${status.url}/api/docs/read?${new URLSearchParams({ projectId: "local", path: "docs/large.md" })}`,
     );
@@ -715,7 +718,9 @@ describe("Electron dashboard server", () => {
     expect(imageOversized.status).toBe(413);
     expect(traversal.status).toBe(403);
     expect(absoluteOutside.status).toBe(200); // Direct PC owner can open explicit result paths.
-    expect(unsupported.status).toBe(415);
+    expect(unsupported.status).toBe(200); // Explicit text-file links now open in the protected reader.
+    expect((await unsupported.json()).kind).toBe('text');
+    expect(unsupportedBinary.status).toBe(415);
     expect(oversized.status).toBe(413);
     expect(ssh.status).toBe(409);
     expect(previewIssue.status).toBe(302);

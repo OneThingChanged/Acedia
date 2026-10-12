@@ -42,6 +42,17 @@ describe("Remote chat file links", () => {
     expect(links.chatFileKind("K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json")).toBe("text");
   });
 
+  it('opens complete code extensions and file URLs without truncating a path', () => {
+    for (const extension of ['ts', 'tsx', 'cpp', 'hpp', 'css', 'cmake', 'jsonc', 'yaml']) {
+      const file = `G:/Project/source/main.${extension}`;
+      expect(links.inlineMd(`${file}:42`, agent)).toContain(`data-chat-file-path="${file}"`);
+      expect(links.chatFileKind(file)).toBe('text');
+    }
+    expect(links.cleanChatFilePath('file:///G:/Project/source/with%20space.ts')).toBe('G:/Project/source/with space.ts');
+    expect(links.inlineMd('[Source](file:///G:/Project/source/main.ts)', agent)).toContain('data-chat-file-path="G:/Project/source/main.ts"');
+    expect(links.chatFileKind('result.exe')).toBeNull();
+  });
+
   it("keeps external image URLs external and does not link without a project", () => {
     const external = links.inlineMd("https://example.com/result.png", agent);
     const noProject = links.inlineMd("docs/README.md", null);

@@ -95,9 +95,6 @@ import { useTerminalSettingsSync } from "./hooks/useTerminalSettingsSync";
 import { playNotificationSound, loadNotificationSound, shouldSilenceOsNotification } from "./lib/notificationSound";
 import { buildSpawnArgs } from "./lib/spawn";
 import {
-  normalizeSessionWorkerSettings,
-} from "./lib/sessionWorkers";
-import {
   AGENT_ACTIVITY_STALE_AFTER_MS,
   applyAgentHookEvent,
   applyAgentRuntimeStatus,
@@ -321,7 +318,6 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     aiToolId: agent.aiToolId,
     dangerous: agent.dangerous,
     useAltScreen: agent.useAltScreen || undefined,
-    workerSettings: normalizeSessionWorkerSettings(agent.workerSettings),
     idleResumeSessionId: agent.idleResumeSessionId,
     shellCommand: agent.aiToolId === "none" ? agent.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(agent.launchOptions),
@@ -469,7 +465,6 @@ function agentFromStored(
     pendingAccountHandoff: stored.pendingAccountHandoff,
     dangerous: !!stored.dangerous,
     useAltScreen: stored.useAltScreen || undefined,
-    workerSettings: normalizeSessionWorkerSettings(stored.workerSettings),
     idleResumeSessionId: stored.idleResumeSessionId,
     shellCommand: aiToolId === "none" ? stored.shellCommand : undefined,
     launchOptions: normalizeLaunchOptions(stored.launchOptions),
@@ -2930,10 +2925,6 @@ function App() {
       const inherited = parent ? resolveSessionSettings(parent, agentsRef.current, projectsRef.current) : undefined;
       const id = options.agentId ?? crypto.randomUUID();
       const tool = toolForId(payload.aiToolId);
-      const hasExplicitWorkerSettings = Object.prototype.hasOwnProperty.call(
-        payload,
-        "workerSettings"
-      );
       const addAgent = () => {
         const next: Agent[] = [
           ...agentsRef.current,
@@ -2955,12 +2946,6 @@ function App() {
                 ? payload.launchOptions : loadAgentDefaults(tool.id).launchOptions
             ) : undefined,
             useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
-            workerSettings:
-              tool.id === "codex"
-                ? hasExplicitWorkerSettings
-                  ? normalizeSessionWorkerSettings(payload.workerSettings)
-                  : loadAgentDefaults(tool.id).workerSettings
-                : undefined,
             status: "starting",
             runtimeStatus: "starting",
             createdAt: Date.now(),
@@ -3960,6 +3945,10 @@ function App() {
       renameAgent(id, name);
     }).then(track);
 
+    listen<{ id: string }>('remote:deactivate-session', event => {
+      if (!cancelled && agentsRef.current.some(agent => agent.id === event.payload?.id)) void deactivateAgent(event.payload.id);
+    }).then(track);
+
     listen<{ requestId: string; id: string; settings: SessionModel | null; restart: boolean }>("remote:session-model", (event) => {
       if (cancelled) return;
       const payload = event.payload;
@@ -4015,6 +4004,7 @@ function App() {
     };
   }, [
     createAgent,
+    deactivateAgent,
     createProject,
     disabledTools,
     isCoordinatorWindow,
@@ -4762,7 +4752,6 @@ function App() {
                 }));
               }}
               onSessionDeleted={clearDeletedSessionReferences}
-              disabledTools={disabledTools}
               onClose={() => setPropertiesAgentId(null)}
             />
           );

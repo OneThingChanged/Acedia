@@ -10,9 +10,7 @@ import { folderTail } from "../lib/path";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { newSessionDangerous, newSessionToolId, rememberNewSession } from "../lib/newSessionPreferences";
 import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
-import { SessionWorkerDisclosure } from "./SessionWorkerDisclosure";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
-import type { SessionWorkerSettings } from "../types";
 import "./NewAgentModal.css";
 
 export function NewAgentModal({
@@ -54,9 +52,6 @@ export function NewAgentModal({
   const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
   const [dangerous, setDangerous] = useState(() => newSessionDangerous(aiToolId));
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
-  const [workerSettings, setWorkerSettings] = useState<
-    SessionWorkerSettings | undefined
-  >(() => loadAgentDefaults("codex").workerSettings);
   const selectedTool = toolForId(aiToolId);
   const [launchOptions, setLaunchOptions] = useState(() => loadAgentDefaults(aiToolId).launchOptions);
   const [launchValid, setLaunchValid] = useState(true);
@@ -83,7 +78,6 @@ export function NewAgentModal({
         claudeAccountId: !project?.sshHostId && aiToolId === "claude" ? claudeAccountId : undefined,
         dangerous: dangerous && supportsDangerous,
         useAltScreen: aiToolId === "codex" ? useAltScreen : undefined,
-        workerSettings: aiToolId === "codex" ? workerSettings : undefined,
       });
       if (created !== false) {
         try { rememberNewSession(aiToolId, dangerous && supportsDangerous); }
@@ -131,7 +125,6 @@ export function NewAgentModal({
                     if (toolId === "codex") {
                       setCodexAccountId(defaults.codexAccountId);
                       setUseAltScreen(defaults.useAltScreen);
-                      setWorkerSettings(defaults.workerSettings);
                     }
                     if (toolId === "claude") setClaudeAccountId(defaults.claudeAccountId);
                   }}>
@@ -159,8 +152,6 @@ export function NewAgentModal({
                 {aiToolId === "codex" && <label className="field-check field-check-neutral"><input type="checkbox" checked={useAltScreen} onChange={e => setUseAltScreen(e.target.checked)} /><span>{text("Alt-screen 모드", "Alt-screen mode")}</span></label>}
               </div>
             </section>
-          {aiToolId === "codex" && <SessionWorkerDisclosure settings={workerSettings}
-            disabledTools={disabledTools} onChange={setWorkerSettings} />}
           {!!selectedTool.command && !project?.sshHostId && <AdvancedLaunchOptions key={aiToolId} toolId={aiToolId}
             value={launchOptions} onChange={setLaunchOptions} onValidityChange={setLaunchValid} />}
         </div>

@@ -20,7 +20,7 @@
     <header class="topbar">
       <div class="brand">
         <button class="mobile-menu-button" id="sidebarToggle" type="button" aria-label="탐색 메뉴 열기">☰</button>
-        <span class="brand-mark" aria-hidden="true">M</span>
+        <img class="brand-mark" src="/icon.svg" alt="" aria-hidden="true">
         <div>
           <strong>Acedia</strong>
           <span>Remote Monitor</span>
@@ -86,6 +86,7 @@
 
         <button class="overview-button" id="hostingButton" type="button"><span class="overview-icon" aria-hidden="true">▣</span><span><strong>Hosting</strong><small>로컬 웹페이지 보기</small></span></button>
 
+        <button class="overview-button" id="defaultModelsButton" type="button"><span class="overview-icon">⚙</span><span><strong>기본 모델</strong></span></button>
         <label class="search-box">
           <span aria-hidden="true">⌕</span>
           <input id="searchInput" type="search" placeholder="Screen · 프로젝트 · 세션 검색" autocomplete="off">
@@ -406,6 +407,7 @@
 
             <section id="chatPrompt" class="chat-prompt-host" role="status" aria-live="polite" hidden></section>
 
+            <section id="chatWorking" class="chat-working-bar" hidden><span class="chat-thinking-dots"><i></i><i></i><i></i></span><strong>작업 중</strong><span id="chatWorkingTool"></span><button class="small-button" id="chatWorkDetails" type="button">작업 상세</button><button class="small-button" id="chatWorkingStop" type="button">■ 중단</button></section>
             <form class="composer" id="composerForm">
               <div class="composer-queue" id="composerQueue" hidden></div>
               <div class="composer-ac" id="composerAc" hidden></div>
@@ -413,7 +415,7 @@
               <div class="composer-main-row">
                 <button class="composer-attach-button" id="attachmentButton" type="button" title="이미지 또는 ZIP 첨부, 붙여넣기 또는 드래그 앤 드롭" aria-label="이미지 또는 ZIP 첨부, 붙여넣기 또는 드래그 앤 드롭">📎</button>
                 <input id="attachmentInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,.zip,application/zip,application/x-zip-compressed" multiple hidden>
-                <textarea id="messageInput" rows="1" maxlength="4000" placeholder="메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈" aria-label="추가 지시 또는 질문 답변"></textarea>
+                <div class="composer-input-column"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="메시지 입력 · Enter 전송 · Shift+Enter 줄바꿈" aria-label="추가 지시 또는 질문 답변"></textarea><div class="composer-settings"><button id="composerModelButton" class="small-button" type="button" hidden>모델 / effort</button><button id="composerDeliveryButton" class="small-button" type="button">완료 후 예약 · Tab</button></div></div>
                 <button class="send-button" id="sendButton" type="submit">전송</button>
               </div>
             </form>
@@ -430,7 +432,7 @@
             <span id="filePreviewPath"></span>
           </div>
           <span class="document-kind" id="filePreviewKind"></span>
-          <button class="small-button file-download-button" id="filePreviewDownload" type="button" hidden>다운로드</button>
+          <button class="icon-button" id="filePreviewCopy" type="button" title="이미지 복사" aria-label="이미지 복사" hidden>⧉</button><button class="small-button file-download-button" id="filePreviewDownload" type="button" hidden>다운로드</button>
           <button class="icon-button" id="filePreviewClose" type="button" title="미리보기 닫기" aria-label="미리보기 닫기">×</button>
         </header>
         <div class="file-preview-image-tools" id="filePreviewImageTools" hidden>
@@ -489,7 +491,7 @@
     </div>
 
     <div class="document-context-menu" id="sessionContextMenu" role="menu" aria-label="세션 설정" hidden>
-      <button type="button" role="menuitem">모델 / effort 변경</button>
+      <button type="button" role="menuitem" data-session-action="model">모델 / effort 변경</button><button type="button" role="menuitem" data-session-action="rename">이름 변경</button><button type="button" role="menuitem" data-session-action="close">세션 닫기</button>
     </div>
     <div class="session-editor-overlay" id="sessionModelOverlay" role="dialog" aria-modal="true" aria-labelledby="sessionModelTitle" hidden>
       <form class="session-editor-dialog" id="sessionModelForm">
@@ -497,12 +499,12 @@
           <div><span class="panel-kicker" id="sessionModelProvider">CODEX</span><h2 id="sessionModelTitle">모델 / effort 변경</h2></div>
           <button class="icon-button" id="sessionModelClose" type="button" aria-label="닫기">×</button>
         </header>
-        <strong id="sessionModelTarget"></strong>
+        <label class="session-editor-field" id="sessionModelDefaultField" hidden><span>AI 도구</span><select id="sessionModelDefaultProvider"><option value="codex">Codex</option><option value="claude">Claude</option></select></label><strong id="sessionModelTarget"></strong>
         <div class="session-model-summary"><span id="sessionModelCurrent"></span><span id="sessionModelSaved"></span></div>
         <p class="session-model-note" id="sessionModelCatalogNote" hidden>Claude 목록은 설치된 CLI의 모델 별칭입니다. 계정 접근 권한과 모델별 effort 지원은 실행 시 Claude CLI가 확인합니다.</p>
         <label class="session-editor-field"><span>모델</span><select id="sessionModelSelect" disabled></select></label>
         <label class="session-editor-field"><span>Reasoning effort</span><select id="sessionEffortSelect" disabled></select><small id="sessionEffortHint"></small></label>
-        <p class="session-model-note">설정은 이 세션에만 저장합니다. 재시작하면 같은 대화를 이어갑니다. 작업 중에는 다음 시작에 적용할 설정을 저장하세요.</p>
+        <label class="session-editor-field" id="sessionFastField" hidden><span>Fast</span><select id="sessionFastSelect"><option value="keep">현재 유지</option><option value="default">꺼짐</option><option value="fast">켜짐</option></select></label><p class="session-model-note" id="sessionModelDefaultNote" hidden>기본 모델은 설정이 없는 세션에 적용합니다. 세션별 선택은 그대로 유지합니다.</p><p class="session-model-note" id="sessionModelSessionNote">설정은 이 세션에만 저장합니다. 재시작하면 같은 대화를 이어갑니다. 작업 중에는 다음 시작에 적용할 설정을 저장하세요.</p>
         <p class="session-editor-message" id="sessionModelMessage" role="status" hidden></p>
         <button class="small-button" id="sessionModelRetry" type="button" hidden>다시 불러오기</button>
         <footer>
@@ -532,6 +534,7 @@
       </div>
     </dialog>
 
+    <dialog id="chatFilesDialog" class="chat-files-dialog"><header><strong>관련 파일</strong><button type="button" class="icon-button" id="chatFilesClose" aria-label="닫기">×</button></header><input id="chatFilesSearch" type="search" placeholder="파일명 또는 경로 검색"><div id="chatFilesList"></div></dialog>
     <nav class="mobile-nav" aria-label="모바일 메뉴">
       <button class="active" id="mobileMonitorButton" type="button" hidden><span>▦</span>모니터</button>
       <button id="mobileSessionsButton" type="button"><span>▥</span>세션</button>

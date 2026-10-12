@@ -32,7 +32,6 @@ import {
   pruneAgent,
   validateLayout,
 } from "./layout";
-import { normalizeSessionWorkerSettings } from "./sessionWorkers";
 import { normalizeLaunchOptions } from "./launchOptions";
 import { normalizeSessionModel } from "../../electron/shared/session-model.mjs";
 
@@ -169,7 +168,6 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         pendingAccountHandoff: c.pendingAccountHandoff,
         dangerous: !!c.dangerous,
         useAltScreen: c.useAltScreen || undefined,
-        workerSettings: normalizeSessionWorkerSettings(c.workerSettings),
         idleResumeSessionId: typeof c.idleResumeSessionId === "string" ? c.idleResumeSessionId : undefined,
         shellCommand: c.aiToolId === "none" && typeof c.shellCommand === "string" ? c.shellCommand : undefined,
         launchOptions: normalizeLaunchOptions(c.launchOptions),

@@ -39,7 +39,7 @@ app.whenReady().then(async () => {
     web.syncView({ language: "ko", projects: [{ id: "p", name: "Model project", folder: root }], agents });
     const status = await web.start();
     for (const width of [1024, 390]) {
-      const win = new BrowserWindow({ width, height: 850, show: false, webPreferences: { sandbox: true, contextIsolation: true, offscreen: true, backgroundThrottling: false } });
+      const win = new BrowserWindow({ width, height: 850, show: false, webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false } });
       windows.push(win);
       const errors = [];
       win.webContents.on("console-message", event => { if (event.level === "error") { errors.push(event.message); console.error(event.message); } });
@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
       assert(await win.webContents.executeJavaScript("document.querySelector('#sessionModelRestart').disabled"), "Working Codex session could be restarted");
       await win.webContents.executeJavaScript("document.querySelector('#sessionModelSelect').value='fixture-b';document.querySelector('#sessionModelSelect').dispatchEvent(new Event('change'));document.querySelector('#sessionModelForm').requestSubmit()");
       await waitFor(win, "document.querySelector('#sessionModelOverlay').hidden");
-      assert(updates.at(-1).id === "codex-session" && !updates.at(-1).restart && updates.at(-1).settings.effort === "medium", "Codex save/default effort request failed");
+      assert(updates.at(-1).id === "codex-session" && !updates.at(-1).restart && !Object.hasOwn(updates.at(-1).settings, 'effort'), "Model default effort must remain implicit");
       await win.webContents.executeJavaScript("document.querySelector('#sessionModelButton').click()");
       await waitFor(win, "!document.querySelector('#sessionModelSave').disabled");
       await win.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");

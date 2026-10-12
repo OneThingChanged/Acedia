@@ -2446,61 +2446,6 @@ body,
   color: var(--app-soft-text);
 }
 
-.session-worker-fields {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--app-border);
-  border-radius: 6px;
-  background: var(--app-panel-soft);
-}
-
-.session-worker-fields-props {
-  margin: 2px 0;
-  padding: 10px 0 2px;
-  border-width: 1px 0 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.session-worker-heading {
-  color: var(--app-heading);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.session-worker-description,
-.session-worker-hint {
-  color: var(--app-muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.session-worker-description {
-  margin: 3px 0 10px;
-}
-
-.session-worker-field {
-  min-width: 0;
-  padding: 8px 0;
-  border: 0;
-  border-top: 1px solid var(--app-border);
-  gap: 4px;
-  margin-bottom: 9px;
-}
-
-.session-worker-model-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(80px, 110px);
-  gap: 4px 10px;
-}
-.session-worker-model-fields .field { min-width: 0; }
-.session-worker-model-fields input,
-.session-worker-model-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
-.session-worker-model-fields > .session-worker-hint { grid-column: 1 / -1; overflow-wrap: anywhere; }
-
-.session-worker-field:last-child {
-  margin-bottom: 0;
-}
 .session-props-row {
   display: flex;
   gap: 12px;
@@ -6529,7 +6474,7 @@ body.files-resizing .files-resizer::after {
 .agent-account-badge { display: inline-block; margin-left: 8px; padding: 2px 5px; font-size: 10px; font-weight: normal; border: 1px solid var(--app-border); border-radius: 4px; color: var(--app-muted); }
 .agent-account-add input { flex: 1; min-width: 0; padding: 8px 10px; color: var(--app-text); background: var(--app-input-bg); border: 1px solid var(--app-border); border-radius: 5px; font-size: 12px; }
 .agent-settings-row button { flex-shrink: 0; }
-.agent-defaults .field, .agent-defaults .session-worker-fields { width: 100%; margin: 0; }
+.agent-defaults .field { width: 100%; margin: 0; }
 .agent-defaults summary { cursor: pointer; padding: 14px 16px; font-size: 13px; border-top: 1px solid var(--app-border); }
 .agent-settings-info { border-left: 2px solid var(--app-accent, #64adff); padding: 12px 14px; background: var(--app-button-bg); color: var(--app-muted); font-size: 12px; line-height: 1.8; }
 .codex-account-management > .check-hint { display: block; margin: 0 0 12px; line-height: 1.8; }

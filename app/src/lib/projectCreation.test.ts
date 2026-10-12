@@ -51,10 +51,6 @@ describe("buildNewProjectWithFirstAgent", () => {
       codexPoolAccountId: "12345678-1234-1234-1234-123456789abc",
       aiLabel: "Codex",
       dangerous: true,
-      workerSettings: {
-        documents: "codex-luna-max",
-        html: "codex-luna-max",
-      },
       status: "starting",
       runtimeStatus: "starting",
       createdAt: 1234,
@@ -79,7 +75,7 @@ describe("buildNewProjectWithFirstAgent", () => {
     expect(project.remoteFolder).toBe("/srv/project");
     expect(agent.sshHostId).toBe("host-1");
     expect(agent.remoteFolder).toBe("/srv/project");
-    expect(agent.workerSettings).toBeUndefined();
+    expect(agent).not.toHaveProperty("workerSettings");
   });
 
   it("discards dangerous mode for a tool without a dangerous flag", () => {

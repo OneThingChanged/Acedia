@@ -1,10 +1,13 @@
 import { t } from "./i18n.js";
 import { make } from "./dom.js";
 import { inlineMd, mdToHtml } from "./chat-markup.js";
+import { providerLogo } from './workspace-ui.js';
+import { renderFiles, filesForTurn, renderStoredImages } from './chat-files.js';
 
-function renderChatUser(text, agent) {
+function renderChatUser(text, agent, block) {
   const node = make("div", "chat-user");
   node.innerHTML = inlineMd(text, agent);
+  if (block) node.append(renderStoredImages(block, agent));
   return node;
 }
 
@@ -32,10 +35,10 @@ function renderDiff(diff) {
   return box;
 }
 
-function renderAssistantTurn(run, agent = null) {
+function renderAssistantTurn(run, agent = null, artifacts = []) {
   const turn = make("div", "chat-turn");
   const role = make("div", "chat-role");
-  role.append(make("span", "av", "✦"), document.createTextNode("Assistant"));
+  role.append(providerLogo(agent?.aiToolId), document.createTextNode(agent?.aiToolId === 'claude' ? 'Claude' : 'Codex'));
   turn.appendChild(role);
 
   const tools = [];
@@ -90,6 +93,7 @@ function renderAssistantTurn(run, agent = null) {
     turn.appendChild(group);
   }
   for (const node of bodyNodes) turn.appendChild(node);
+  const files = renderFiles(filesForTurn(artifacts, run), agent); if (files) turn.append(files);
   return turn;
 }
 

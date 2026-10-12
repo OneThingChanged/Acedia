@@ -38,6 +38,7 @@ const REMOTE_DOCUMENT_SKIPPED_DIRS = new Set([
   "target",
 ]);
 const MAX_REMOTE_DOCUMENT_FILES = 500;
+const REMOTE_TEXT_FILE = /\.(?:json|jsonc|txt|ts|tsx|js|jsx|mjs|cjs|py|rs|go|c|h|cpp|hpp|cc|cs|java|kt|swift|css|scss|yaml|yml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)$/i;
 const MAX_REMOTE_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const MAX_REMOTE_HTML_PREVIEW_BYTES = 32 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -316,8 +317,8 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
     agentId,
   );
   const extension = path.extname(resolved).toLowerCase();
-  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (extension === ".json" ? "text" : null);
-  if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown, HTML, JSON 파일만 열 수 있습니다.");
+  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_TEXT_FILE.test(resolved) ? "text" : null);
+  if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown, HTML, JSON 또는 코드·텍스트 파일만 열 수 있습니다.");
   if (stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
     throw new RemoteDocumentError(413, "2MB보다 큰 문서는 Remote에서 열 수 없습니다.");
   }
@@ -336,7 +337,7 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
 async function sendRemoteDocumentDownload(request, response, ...args) {
   const { resolved, stats } = await resolveRemoteProjectFile(...args);
   const extension = path.extname(resolved).toLowerCase();
-  if (!REMOTE_DOCUMENT_EXTENSIONS.has(extension) && !REMOTE_IMAGE_EXTENSIONS.has(extension) && extension !== ".json") {
+  if (!REMOTE_DOCUMENT_EXTENSIONS.has(extension) && !REMOTE_IMAGE_EXTENSIONS.has(extension) && !REMOTE_TEXT_FILE.test(resolved)) {
     throw new RemoteDocumentError(415, "지원하지 않는 다운로드 형식입니다.");
   }
   const name = path.basename(resolved);
@@ -778,7 +779,7 @@ async function listRemoteFolder(state, projectId, requestedPath, agentId) {
     if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile()) || REMOTE_DOCUMENT_SKIPPED_DIRS.has(entry.name.toLowerCase())) continue;
     if (entries.length === MAX_REMOTE_DOCUMENT_FILES) { truncated = true; break; }
     const extension = path.extname(entry.name).toLowerCase();
-    const kind = entry.isDirectory() ? 'folder' : REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_IMAGE_EXTENSIONS.has(extension) ? 'image' : extension === '.json' ? 'text' : null);
+    const kind = entry.isDirectory() ? 'folder' : REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_IMAGE_EXTENSIONS.has(extension) ? 'image' : REMOTE_TEXT_FILE.test(entry.name) ? 'text' : null);
     entries.push({ name: entry.name, path: path.join(resolved, entry.name), kind });
   }
   entries.sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder') || a.name.localeCompare(b.name));

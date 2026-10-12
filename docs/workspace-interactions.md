@@ -7,18 +7,12 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
     resource: ../app/electron/services/chat-message-submission.mjs
     title: "Host chat submission and conversation reset coordination"
-  - id: session-workers
-    resource: ../app/src/lib/sessionWorkers.ts
-    title: "Worker models, reasoning effort and launch instructions"
-  - id: worker-role-config
-    resource: ../app/electron/services/worker-role-config.mjs
-    title: "Per-worker Codex configuration layers"
   - id: app-shell
     resource: ../app/src/App.tsx
     title: "Workspace shell and actions"
@@ -347,17 +341,15 @@ start their processes. Sleeping entries appear under All or Sleeping and are
 excluded from Active. Returning from the tray reconnects sessions confirmed live by
 the host and keeps the others dormant.[^app-shell][^pane-slot][^sidebar]
 
-New Codex sessions and existing Luna presets resolve to `gpt-6-luna` with `max`
-reasoning. Settings > Codex, the creation dialog and session properties expose
-separate provider, model and reasoning-effort fields for documentation/Markdown
-and HTML. The model dropdown always shows the full suggestion list, including Luna, Sol
-and Astra; a separate custom option accepts a model ID. Known
-Codex models show their supported effort levels; custom model availability
-depends on the installed CLI and account. Both workers can be disabled.
-Changes apply on the next PTY launch, including resumed conversations.
-Local Codex workers receive independent, content-addressed TOML role layers;
-SSH launches instead request explicit model/effort spawn overrides and never
-reference local role-file paths.[^session-workers][^worker-role-config]
+Development source as of 2026-10-12 removes Acedia's document/HTML worker presets.
+Settings, creation dialogs and session properties no longer offer content-worker
+routing. Legacy workerSettings values are ignored on load and omitted on save;
+launches no longer generate worker role files, force subagent defaults or inject
+content-delegation instructions. User-authored project/session instructions,
+ordinary model/effort/Fast settings, account routing and native subagent monitoring
+remain independent. Previously generated role files are left in place so running
+sessions and historical records are preserved. The change applies to subsequent
+CLI launches from a build containing this source.[^app-shell]
 
 Project, project-folder and session deletion use in-app confirmation instead
 of blocking native dialogs. Deletion-blocked notices also remain in the
@@ -850,11 +842,10 @@ Codex and Claude can run different accounts in separate sessions simultaneously;
 see [Claude account profiles](claude-accounts.md).
 
 New-session defaults are stored in `multiagent.agentDefaults.v1`. Codex supports
-a default local account, Dangerous mode, Alt-screen, and document/HTML workers;
+a default local account, Dangerous mode and Alt-screen;
 Claude supports a default local account and Dangerous mode; Qwen supports
 Dangerous mode. New Session and New Project creation
-load these defaults and allow overrides. Explicitly disabled workers remain off
-after reload. Existing sessions retain their own accounts and options. Local
+load these defaults and allow overrides. Existing sessions retain their own accounts and options. Local
 Codex and Claude accounts are not applied to SSH sessions. Failed preference writes are
 shown as errors rather than reported as saved.
 
@@ -865,7 +856,7 @@ dialog reads these preferences after reopening or reloading the app. Tools
 without Dangerous mode always submit it as off; disabled/removed tools fall
 back to an enabled choice. Child-session creation prefers its enabled parent
 tool. Cancelled or failed creation does not replace the remembered choices.
-Accounts, workers, Alt-screen and advanced launch options still come from the
+Accounts, Alt-screen and advanced launch options still come from the
 per-tool Settings defaults; this preference does not modify those defaults.
 
 Settings govern available tools, hooks, shortcuts, Remote, SSH, appearance,
@@ -904,8 +895,6 @@ The domain invariants behind these interactions are documented in
 [System architecture](system-architecture.md).
 
 [^app-shell]: Workspace shell and actions
-[^session-workers]: Worker models, reasoning effort and launch instructions
-[^worker-role-config]: Per-worker Codex configuration layers
 [^session-lifecycle-actions]: Session deletion and runtime lifecycle actions
 [^workspace-focus]: Active terminal focus recovery
 [^sidebar]: Workspace navigation and recent conversations

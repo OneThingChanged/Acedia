@@ -84,7 +84,6 @@ export const CORE_TRANSLATIONS: readonly TranslationRow[] = [
   ["This region is already selected", "已选择此区域", "已選取此區域", "このリージョンは選択済みです", "Esta región ya está seleccionada"],
   ["Could not load the region. Reopen settings to retry.", "无法加载区域信息，请重新打开设置。", "無法載入區域資訊，請重新開啟設定。", "リージョン情報を取得できません。設定を開き直してください。", "No se pudo cargar la región. Vuelve a abrir la configuración."],
   ["~/.qwen/settings.json was not found (Qwen is not configured).", "未找到 ~/.qwen/settings.json（尚未配置 Qwen）。", "找不到 ~/.qwen/settings.json（尚未設定 Qwen）。", "~/.qwen/settings.json が見つかりません（Qwen 未設定）。", "No se encontró ~/.qwen/settings.json (Qwen no está configurado)."],
-  ["Document and HTML parallel workers", "文档与 HTML 并行工作者", "文件與 HTML 平行工作者", "文書・HTML 並列ワーカー", "Agentes paralelos de documentos y HTML"],
   ["Only independent tasks are delegated; the primary Codex integrates and verifies the results.", "仅委派独立任务，由主 Codex 汇总和验证结果。", "僅委派獨立工作，由主要 Codex 整合並驗證結果。", "独立した作業のみを委任し、メインの Codex が結果を統合・検証します。", "Solo se delegan tareas independientes; el Codex principal integra y verifica los resultados."],
   ["Documents and Markdown", "文档与 Markdown", "文件與 Markdown", "文書・Markdown", "Documentos y Markdown"],
   ["Worker used for writing and organizing documents", "用于编写和整理文档的工作者", "用於撰寫與整理文件的工作者", "文書の作成・整理に使用するワーカー", "Agente para redactar y organizar documentos"],

@@ -4,6 +4,7 @@ import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-acce
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes } from "../shared/remote-attachments.mjs";
 import { sendJson } from "./remote-http.mjs";
+import { serveRemoteWorkspaceApi, remoteSubmitOptions } from './remote-workspace-api.mjs';
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -116,6 +117,9 @@ const REMOTE_ATTACHMENT_TYPES = new Map([
     || (buffer.length >= 22 && buffer.readUInt32LE(0) === 0x06054b50) }],
 ]);
 const REMOTE_PWA_ASSETS = new Map([
+  ["/pwa/chat-files.js", { file: "chat-files.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/model-editor.js", { file: "model-editor.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/workspace-ui.js", { file: "workspace-ui.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/dom.js", { file: "dom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/i18n.js", { file: "i18n.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/translations.js", { file: "translations.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -952,7 +956,8 @@ export class LocalDashboardService {
               sendJson(response, 501, { error: "message submission unavailable" });
               return;
             }
-            const submission = await this.submissions.submit(body.requestId, id, message, () => p.submitPty(id, message));
+            const options = remoteSubmitOptions(body);
+            const submission = await this.submissions.submit(body.requestId, id, message, () => p.submitPty(id, message, options));
             sendJson(response, submission.status, submission.body);
             return;
           }
@@ -989,6 +994,7 @@ export class LocalDashboardService {
             sendJson(response, 200, { ok: true, status: "idle" });
             return;
           }
+          if (await serveRemoteWorkspaceApi(request, response, url, { providers: p, snapshot: () => this.snapshot(), allowed: () => this.isLocalOrigin(request), readJson })) return;
           if (await respondToSessionModel(request, response, url, p.sessionModels, this.isLocalOrigin(request))) return;
           if (request.method === "POST" && url.pathname === "/api/session/create") {
             if (!this.isLocalOrigin(request)) { sendJson(response, 403, { error: "blocked" }); return; }
@@ -1064,7 +1070,7 @@ export class LocalDashboardService {
         }
         response.writeHead(404).end();
       } catch (error) {
-        sendJson(response, 500, { error: error.message });
+        sendJson(response, error.statusCode || 500, { error: error.message });
       }
     });
     try { this.port = await listen(this.server, desiredPort, this.lanActive ? "0.0.0.0" : "127.0.0.1"); }
@@ -1089,7 +1095,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, modelDefaults, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    Object.assign(this, { chatImages, modelDefaults, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
     this.notificationAllowed = notificationAllowed ?? (() => true);
@@ -1172,6 +1179,10 @@ export class RemoteDashboardService {
       Array.isArray(runtime.agents) ? runtime.agents : this.agents,
       runtime.view && typeof runtime.view === "object" ? runtime.view : this.view,
     );
+  }
+
+  workspaceSnapshot() {
+    return { agents: this.agents, view: this.view, ...(this.stateProvider?.() ?? {}) };
   }
 
   accessList() { return { pending: [...this.access.pending], approved: [...this.access.approved] }; }
@@ -1800,8 +1811,9 @@ export class RemoteDashboardService {
             sendJson(response, 400, { error: "invalid message" });
             return;
           }
-          const submission = await this.submissions.submit(body.requestId, id, message, () => this.submitPty(id, message));
-            sendJson(response, submission.status, submission.body);
+          const options = remoteSubmitOptions(body);
+          const submission = await this.submissions.submit(body.requestId, id, message, () => this.submitPty(id, message, options));
+          sendJson(response, submission.status, submission.body);
           return;
         }
         if (request.method === "POST" && url.pathname === "/api/attachment") {
@@ -1860,6 +1872,7 @@ export class RemoteDashboardService {
           sendJson(response, 200, { ok: true, status: "idle" });
           return;
         }
+        if (await serveRemoteWorkspaceApi(request, response, url, { providers: this, snapshot: () => this.workspaceSnapshot(), allowed: () => this.isSameOrigin(request), readJson })) return;
         if (await respondToSessionModel(request, response, url, this.sessionModels, this.isSameOrigin(request))) return;
         if (request.method === "POST" && url.pathname === "/api/session/create") {
           if (!this.isSameOrigin(request)) {
@@ -1933,7 +1946,7 @@ export class RemoteDashboardService {
         if (request.method === "GET" && sendRemoteAsset(response, url.pathname)) return;
         response.writeHead(404).end();
       } catch (error) {
-        sendJson(response, 500, { error: error.message });
+        sendJson(response, error.statusCode || 500, { error: error.message });
       }
     });
     const configuredPort = Number(this.config.server_port);

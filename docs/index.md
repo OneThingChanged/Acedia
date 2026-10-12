@@ -21,6 +21,8 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.79 EXE release](release-1-8-1-79.md) - Remote 웹 기능, 완료 상태 수정과 문서·HTML 작업자 분배 제거; EXE 배포 검증 진행.
+* [Remote 웹 개선 검증](remote-workspace-review-2026-10-12.md) - 공용 웹 기능·완료 상태 검증과 외부 접속 지연 조사: 잘못된 UNC 파일 조회와 큰 대화 기록 반복 전송.
 * [Acedia 1.8.1.78 EXE release](release-1-8-1-78.md) - Preserve terminal model/effort changes with inline Fast and prevent stale routed settings from overwriting the latest selection; stable EXE published and public download verified.
 * [Acedia 1.8.1.77 EXE release](release-1-8-1-77.md) - Configurable default models, effort and Codex Fast; sidebar hover actions, closed-console EPIPE protection, and the chat/transport refactor; stable EXE published and public download verified.
 * [Chat submission and Codex transport refactor](refactor-chat-transport-2026-10-11.md) - Source 1.8.1.76 separates host submission coordination and bounded WebSocket transport; included in the 1.8.1.77 EXE release.

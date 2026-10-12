@@ -62,13 +62,16 @@ void app.whenReady().then(async () => {
         const errors = [];
         win.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
         await win.loadURL(url + '/?usage=1&filter=all');
+        // Hidden Chromium windows can freeze a drawer transition between
+        // capture frames. Verify its settled geometry deterministically.
+        await win.webContents.insertCSS('.navigation-pane { transition: none !important; }');
         await waitFor(win, `${counts}==='13,7,2' && ${rowCount}===13`);
         assert(await win.webContents.executeJavaScript("[...document.querySelectorAll('#filters .session-filter-label')].map(node=>node.textContent).join(',')==='All,Active,Sleeping'"), 'Wrong filter labels');
         assert(await win.webContents.executeJavaScript("document.querySelectorAll('#filters button').length===3"), 'Old status buttons remain');
         if (width < 800) await win.webContents.executeJavaScript("if(document.querySelector('#sidebarToggle').getAttribute('aria-expanded')!=='true')document.querySelector('#sidebarToggle').click()");
         await click(win, 'active');
         await waitFor(win, `${rowCount}===7`);
-        assert(await win.webContents.executeJavaScript("[...document.querySelectorAll('#sessionList .project-label')].map(node=>node.textContent).join(',')==='Active project'"), 'Active includes unrelated projects');
+        assert(await win.webContents.executeJavaScript("[...document.querySelectorAll('#sessionList .project-toggle')].map(node=>node.dataset.projectId).join(',')==='active'"), 'Active includes unrelated projects');
         assert(await win.webContents.executeJavaScript("['starting','recovering','working','waiting','blocked','done'].every(id=>document.querySelector('#sessionList [data-agent-id='+id+']'))"), 'Active lost initialization or work states');
         await click(win, 'sleeping');
         await waitFor(win, `${rowCount}===2`);
@@ -79,7 +82,10 @@ void app.whenReady().then(async () => {
         fs.mkdirSync(output, { recursive: true });
         await win.webContents.executeJavaScript("document.querySelector('#filters').scrollIntoView({block:'center'})");
         await win.webContents.executeJavaScript("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,220))))");
-        if (width < 800) assert(await win.webContents.executeJavaScript("document.querySelector('#sidebarToggle').getAttribute('aria-expanded')==='true' && document.querySelector('#navigationPane').getBoundingClientRect().left>=0"), 'Mobile drawer closed during filtering');
+        if (width < 800) {
+          const drawer = await win.webContents.executeJavaScript("({expanded:document.querySelector('#sidebarToggle').getAttribute('aria-expanded'),left:document.querySelector('#navigationPane').getBoundingClientRect().left,scrollLeft:document.documentElement.scrollLeft,classes:document.querySelector('#navigationPane').className,transform:getComputedStyle(document.querySelector('#navigationPane')).transform,parentScroll:document.querySelector('#navigationPane').parentElement.scrollLeft})");
+          assert(drawer.expanded === 'true' && drawer.left >= -1, `Mobile drawer closed during filtering: ${JSON.stringify(drawer)}`);
+        }
         fs.writeFileSync(path.join(output, `${name}-${width}.png`), (await win.webContents.capturePage()).toPNG());
         await win.webContents.executeJavaScript("const search=document.querySelector('#searchInput');search.value='Active project';search.dispatchEvent(new Event('input',{bubbles:true}))");
         await waitFor(win, `${rowCount}===0`);

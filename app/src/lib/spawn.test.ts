@@ -341,31 +341,15 @@ describe("buildSpawnArgs resume recovery", () => {
     await expect(buildSpawnArgs(managed, { "agent-a": "other-account-session" }, vi.fn())).rejects.toThrow();
   });
 
-  it("applies worker settings when an existing Codex session is resumed", async () => {
+  it("ignores legacy content workers on resume and preserves user instructions", async () => {
     invokeMock.mockResolvedValueOnce("existing-session");
-    invokeMock.mockResolvedValueOnce({ documents: "C:/fixture/worker.toml" });
-
-    const result = await buildSpawnArgs(
-      {
-        ...agent,
-        lastSessionId: "existing-session",
-        workerSettings: {
-          documents: "codex-luna-max",
-          html: "claude-opus",
-        },
-      },
-      null,
-      vi.fn()
-    );
-
-    expect(result.initCommand).toContain(
-      "codex resume existing-session --no-alt-screen"
-    );
-    expect(result.initCommand).toContain(
-      "agents.default_subagent_model=\"gpt-6-luna\""
-    );
-    expect(result.initCommand).toContain("claude -p --model opus");
-    expect(result.initCommand).toContain('agents.multiagent_docs_writer.config_file="C:/fixture/worker.toml"');
+    const legacy = { ...agent, lastSessionId: "existing-session", sessionHierarchy: { instructions: "Keep the user's instructions.\nUse Korean." }, workerSettings: { documents: "codex-luna-max", html: "claude-opus" } };
+    const result = await buildSpawnArgs(legacy, null, vi.fn());
+    expect(result.initCommand).toContain("codex resume existing-session --no-alt-screen");
+    expect(result.initCommand).toContain("developer_instructions=");
+    expect(result.initCommand).toContain("user\\u0027s");
+    expect(result.initCommand).not.toMatch(/default_subagent|multiagent_docs_writer|multiagent_html_builder|features.multi_agent|agents.enabled|claude -p/);
+    expect(invokeMock.mock.calls.some(([command]) => command === "prepare_worker_roles")).toBe(false);
   });
 
   it("passes a pending handoff only to a fresh target-account conversation", async () => {

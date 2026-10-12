@@ -1,5 +1,4 @@
 export type RuntimeCommand =
-  | "prepare_worker_roles"
   | "collector_status" | "collector_enroll" | "collector_accounts" | "collector_configure" | "collector_flush" | "collector_sources" | "collector_pause"
   | "accounts_removed" | "codex_accounts_rename" | "claude_accounts_rename" | "codex_accounts_remove" | "claude_accounts_remove"
   | "idle_preferences_get" | "idle_preferences_set" | "idle_view_update" | "idle_session_suspend"
@@ -87,7 +86,7 @@ export type RuntimeEventName =
   | "pty:data" | "agent:idle-suspended" | "agent:capacity-retry" | "agent:session-delivery" | "terminal:bell" | "pty:exit" | "desktop-pet:update"
   | "desktop-pet:position-reset" | "desktop-pet:activate"
   | "desktop-pet:close-requested" | "remote:access-request"
-  | "remote:restart-session" | "remote:create-session" | "remote:rename-session"
+  | "remote:restart-session" | "remote:create-session" | "remote:rename-session" | "remote:deactivate-session"
   | "remote:session-model"
   | "chat:changed"
   | "app:close-requested" | "app:close-cancelled" | "agent:hook-event" | "session:notifications"

@@ -1,6 +1,5 @@
 import { COMMAND_DEFINITIONS } from "./commandRegistry";
 import { toolForId } from "../types";
-import { availableSessionWorkerOptions } from "./sessionWorkers";
 
 export type SettingsCategory = "collector" | "idle" | "status" | "commands" | "browser" | "general" | "language" | "agents" | "terminal" | "data" | "shortcuts" | "hooks" | "dashboard" | "remote" | "vcs" | "ssh" | "about";
 type Copy = readonly [string, string];
@@ -34,7 +33,7 @@ export const SETTING_SCOPES = {
 export type SettingScope = keyof typeof SETTING_SCOPES;
 export type SettingDefinition = {
   id: string; category: SettingsCategory; label: Copy; scope: SettingScope; keywords: string;
-  agentTab?: string; requiresWorkers?: boolean;
+  agentTab?: string;
 };
 export type SettingsContext = { buildVariant: "standard" | "company" | "store"; disabledTools: readonly string[] };
 export type SettingsNavigation = { id: string; sequence: number; agentTab?: string };
@@ -105,8 +104,6 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("agents.codex.altScreen", "agents", "Alt-screen 모드", "Alt-screen mode", "newSession", "대체 화면 alternate screen", { agentTab: "codex" }),
   entry("agents.codex.sessionAccountMode", "agents", "계정 선택 방식", "Account selection mode", "nextLaunch", "세션 시작 재시작 계정 선택 자동 수동 묻기 질문 창 분산 pool automatic manual prompt", { agentTab: "codex" }),
   entry("agents.codex.automaticPoolAccount", "agents", "자동 시작 기본 계정", "Default account for automatic start", "nextLaunch", "세션 시작 분산 기본 계정 자동 배정 routing pool default account", { agentTab: "codex" }),
-  entry("agents.codex.workers.documents", "agents", "문서·Markdown 작업자", "Documents and Markdown worker", "newSession", "병렬 작업자 프리셋 parallel workers", { agentTab: "codex", requiresWorkers: true }),
-  entry("agents.codex.workers.html", "agents", "HTML 작업자", "HTML worker", "newSession", "병렬 작업자 프리셋 parallel workers", { agentTab: "codex", requiresWorkers: true }),
   entry("agents.qwen.region", "agents", "Qwen 리전 (나라)", "Qwen region", "nextLaunch", "나라 국가 country ModelStudio", { agentTab: "qwen" }),
   entry("data.storage", "data", "대화·산출물 저장 위치", "Conversation and artifact storage", "action", "데이터 경로 SQLite storage root 데이터베이스"),
   ...COMMAND_DEFINITIONS.map(command => entry("shortcuts." + command.id, "shortcuts", command.title, command.titleEn, "app", command.description + " " + command.descriptionEn + " keyboard shortcut 키보드")),
@@ -145,8 +142,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
 const byId = new Map(SETTINGS_CATALOG.map(item => [item.id, item]));
 export const settingById = (id: string) => byId.get(id);
 export const availableSettings = (context: SettingsContext) => SETTINGS_CATALOG.filter(item =>
-  !(context.buildVariant === "company" && (item.category === "remote" || item.id === "dashboard.lan")) &&
-  (!item.requiresWorkers || availableSessionWorkerOptions(context.disabledTools).length > 0));
+  !(context.buildVariant === "company" && (item.category === "remote" || item.id === "dashboard.lan")));
 export function settingBreadcrumb(item: SettingDefinition, text: (ko: string, en: string) => string) {
   const category = text(...SETTINGS_CATEGORIES[item.category]);
   return item.agentTab ? category + " › " + (item.agentTab === "common" ? text("공통", "General") : toolForId(item.agentTab).label) : category;

@@ -1,7 +1,6 @@
 import { listSubagents } from './services/subagent-monitor.mjs';
 import { assertRemoteConfigured } from "./shared/tunnel-config.mjs";
 import { sessionWebServers, openServerChrome } from './services/session-web-servers.mjs';
-import { prepareWorkerRoleFiles } from './services/worker-role-config.mjs';
 import { idlePreferences, IdleSessionPolicy } from './services/idle-session-policy.mjs';
 import { Collector } from './usage-collector/collector.mjs';
 import { notificationPreferences, allowNotification, WorkPowerPolicy } from './services/notification-policy.mjs';
@@ -80,7 +79,7 @@ import { SessionModelDefaults } from "./services/session-model-defaults.mjs";
 import { guardConsoleOutput } from "./services/stdio-logging.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
 import { readCodexModels, normalizeSessionModel, claudeModelCatalog } from "./shared/session-model.mjs";
-import { projectSessionRuntime } from "./shared/session-state.mjs";
+import { projectSessionRuntime, resolveSessionWorkStatus } from "./shared/session-state.mjs";
 import { TerminalSessionService } from "./services/terminal-session-service.mjs";
 import {
   findWindowsExecutable,
@@ -811,7 +810,7 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
       notifications: sessionNotifications.get(agent.id),
       notificationPolicy: { completion: policy.completion, question: policy.question },
       capacityRetry: live ? capacityRetry.get(agent.id) : null,
-      status: live ? capacityRetry.isActive(agent.id) ? 'working' : completedWithoutHook ? "done" : agent.status : "offline",
+      status: live ? capacityRetry.isActive(agent.id) ? 'working' : completedWithoutHook ? "done" : resolveSessionWorkStatus({ ...agent, hook }) : "offline",
       output: sanitizeTerminalOutput(
         maxOutput > 0 ? ptys.get(agent.id)?.buffer.snapshot().slice(-maxOutput) ?? "" : ""
       ),
@@ -1173,7 +1172,7 @@ const sessionProviders = {
     terminalSessions.write(agentId, data);
     return true;
   },
-  async submitPty(id, message) {
+  async submitPty(id, message, options = {}) {
     const agentId = asString(id).trim();
     capacityRetry.cancel(agentId);
     const pending = (await currentQuestion(agentId))?.question;
@@ -1187,13 +1186,17 @@ const sessionProviders = {
     const entry = ptys.get(agentId);
     const ptyProcess = entry?.process;
     if (!ptyProcess || !value.trim() || value.length > 8 * 1024) return false;
+    if (options.steering && (entry.aiToolId !== 'codex' || entry.ssh)) return false;
     const resetting = !entry.ssh && entry.aiToolId === 'codex' && /^\/(?:clear|new)(?:\s|$)/.test(value.trim());
     if (resetting && !deliveryComposerReady(entry)) return false;
     const previousSessionId = agentSessionIds.get(agentId) || accountBindings.get(agentId)?.sessionId;
-    const isCurrent = () => ptys.get(agentId) === entry && entry.process === ptyProcess;
+    const isCurrent = () => ptys.get(agentId) === entry && entry.process === ptyProcess
+      && (!options.sessionId || !agentSessionIds.get(agentId) || agentSessionIds.get(agentId) === options.sessionId);
+    if (!isCurrent()) return false;
     return submitPtyMessage({
       ptyProcess,
       message: value,
+      waitForOutputQuiet: options.steering !== true,
       ...(resetting ? { confirm: async () => {
         const sessionId = await confirmCodexConversationReset({ entry, previousSessionId, isCurrent,
           sessionId: () => agentSessionIds.get(agentId) });
@@ -1213,6 +1216,29 @@ const sessionProviders = {
     return entry?.process ? { cols: entry.process.cols, rows: entry.process.rows } : null;
   },
   chatProvider: (id, options) => chatBlocksForAgent(id, null, options),
+  chatImages: (id, sequence) => conversationStoreManager.readImages({ agentId: id, sequence }),
+  modelDefaults: {
+    async read(provider) { return { ...sessionModelDefaults.get(provider), ...await defaultModelCatalog({ provider, accountId: 'default' }) }; },
+    async save(body) {
+      if (body.revision !== sessionModelDefaults.get(body.provider).revision) {
+        throw Object.assign(new Error('기본 설정이 다른 창에서 변경되었습니다. 다시 불러오세요.'), { statusCode: 409 });
+      }
+      const catalog = await defaultModelCatalog({ provider: body.provider, accountId: 'default' });
+      try { return sessionModelDefaults.save(body.provider, body.settings, body.revision, catalog.models); }
+      catch (error) { if (!error.code) error.statusCode = 400; throw error; }
+    },
+  },
+  async closeSession(id) {
+    const agent = sessionModelAgent(id);
+    if (!agent) return false;
+    const target = workspaceWindows.get(detachedAgents.get(id) || coordinatorWebContentsId);
+    if (!target) throw new Error('작업창 연결을 확인하세요.');
+    sendEvent(target, 'remote:deactivate-session', { id });
+    const deadline = Date.now() + 8000;
+    while (ptys.has(id) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (ptys.has(id)) throw new Error('세션 종료를 확인하지 못했습니다. 작업창을 확인하세요.');
+    return true;
+  },
   restartSession: (id) => remoteSessionActivationBroker.activate(asString(id)),
   createSession: (payload) => remoteSessionCreateBroker.create(payload),
   renameSession: (payload) => {
@@ -5001,8 +5027,6 @@ async function invokeCommand(event, command, rawArgs) {
       if (!claimAgentForWindow(args.id, event.sender.id)) throw new Error('다른 작업창에서 사용 중인 세션입니다.');
       return capacityRetry.cancel(args.id);
     }
-    case "prepare_worker_roles":
-      return prepareWorkerRoleFiles(hookBaseDir, args.roles);
     case "runtime_flags":
       return {
         ...(runtimeByWebContents.get(event.sender.id) ?? {

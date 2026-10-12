@@ -16,7 +16,7 @@ if (!localStorage.getItem("organization-fixture-seeded")) {
     { ...base, id: "docs", name: "Docs", lastSessionId: "own-docs-chat", sessionHierarchy: { parentId: "root", createdById: "root", inheritModel: true, instructions: "Docs rules" } },
     { ...base, id: "other", projectId: "other-project", name: "Other" },
   ]);
-  store("multiagent.agentDefaults.v1", { codex: { dangerous: false, workerSettings: null } });
+  store("multiagent.agentDefaults.v1", { codex: { dangerous: false } });
   store("multiagent.groups.v1", [{ id: "screen", projectId: "project", layout: { type: "leaf", id: "leaf-root", tabs: ["root"], activeIndex: 0 } }]);
   store("multiagent.view.v1", { activeProjectId: "project", activeGroupId: "screen", activePath: [] });
 }
@@ -32,7 +32,6 @@ window.multiAgentElectron = {
     if (command === "claim_agent_for_window") return { claimed: true };
     if (command === "spawn_pty") return { reattached: false };
     if (command === "resolve_cli_session") return args?.preferredSessionId || null;
-    if (command === "prepare_worker_roles") return { documents: "C:/fixture/docs.toml", html: "C:/fixture/html.toml" };
     if (command === "document_browser_list") return { browsers: [] };
     if (["session_web_servers", "subagent_list", "list_ports", "list_git_submodules", "session_deliveries_get"].includes(command)) return [];
     if (command === "usage_rate_limits_get") return { updatedAt: Date.now(), limits: [] };

@@ -40,7 +40,7 @@ describe("per-tool new session defaults", () => {
     storage();
     expect(loadAgentDefaults("agy").dangerous).toBe(false);
     saveAgentDefaults("agy", { ...loadAgentDefaults("agy"), dangerous: true, useAltScreen: true });
-    expect(loadAgentDefaults("agy")).toMatchObject({ dangerous: true, useAltScreen: false, workerSettings: undefined });
+    expect(loadAgentDefaults("agy")).toMatchObject({ dangerous: true, useAltScreen: false });
     const { agent } = buildNewProjectWithFirstAgent({ name: "Antigravity", folder: "project", aiToolId: "agy", dangerous: false });
     expect(agent.aiToolId).toBe("agy");
     expect(agent.dangerous).toBe(false);
@@ -82,27 +82,42 @@ describe("per-tool new session defaults", () => {
   });
   it("retains existing defaults on missing or corrupt preferences", () => {
     const data = storage();
-    expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default", workerSettings: { documents: "codex-luna-max", html: "codex-luna-max" } });
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default" });
     data.set(AGENT_DEFAULTS_KEY, "bad JSON");
     expect(loadAgentDefaults("claude").dangerous).toBe(false);
   });
-  it("persists explicit disabled workers and isolates tool settings", () => {
+  it("persists launch defaults and isolates tool settings", () => {
     storage();
-    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerous: true, useAltScreen: true, workerSettings: undefined });
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerous: true, useAltScreen: true });
     saveAgentDefaults("claude", { ...loadAgentDefaults("claude"), dangerous: false });
-    expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: true, useAltScreen: true, workerSettings: undefined });
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: true, useAltScreen: true });
     expect(loadAgentDefaults("claude").dangerous).toBe(false);
   });
   it("ignores unsupported fields and malformed account identifiers", () => {
-    expect(normalizeAgentDefaults("cline", { dangerous: true, useAltScreen: true, codexAccountId: "../bad" })).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default", workerSettings: undefined });
+    expect(normalizeAgentDefaults("cline", { dangerous: true, useAltScreen: true, codexAccountId: "../bad" })).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default" });
     expect(normalizeAgentDefaults("codex", { dangerous: "true" }).dangerous).toBe(false);
   });
-  it("keeps explicit creation overrides including disabled workers", () => {
+  it("keeps explicit creation overrides", () => {
     storage();
     saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), useAltScreen: true });
-    const { agent } = buildNewProjectWithFirstAgent({ name: "P", folder: "project", aiToolId: "codex", dangerous: false, useAltScreen: false, workerSettings: undefined }, { createId: () => "id" });
+    const { agent } = buildNewProjectWithFirstAgent({ name: "P", folder: "project", aiToolId: "codex", dangerous: false, useAltScreen: false }, { createId: () => "id" });
     expect(agent.useAltScreen).toBe(false);
-    expect(agent.workerSettings).toBeUndefined();
+    expect(agent).not.toHaveProperty("workerSettings");
+  });
+  it("drops retired worker settings while preserving saved accounts and launch options", () => {
+    const data = storage();
+    const legacy = { dangerous: true, useAltScreen: true, workerSettings: { documents: "codex-luna-max", html: "claude-opus" } };
+    data.set(AGENT_DEFAULTS_KEY, JSON.stringify({ codex: legacy }));
+    const defaults = loadAgentDefaults("codex");
+    expect(defaults).not.toHaveProperty("workerSettings");
+    saveAgentDefaults("codex", defaults);
+    expect(JSON.parse(data.get(AGENT_DEFAULTS_KEY)!).codex).not.toHaveProperty("workerSettings");
+    const { project, agent } = buildNewProjectWithFirstAgent({ name: "P", folder: "project", aiToolId: "codex", ...legacy });
+    expect(agent).not.toHaveProperty("workerSettings");
+    const raw = { ...agent, workerSettings: legacy.workerSettings };
+    const stored = loadStoredAgents([raw], [project])[0];
+    expect(stored).not.toHaveProperty("workerSettings");
+    expect(stored).toMatchObject({ dangerous: true, useAltScreen: true, codexAccountId: agent.codexAccountId });
   });
   it("reports failed writes instead of silently showing unsaved preferences", () => {
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => { throw Error("quota"); } });

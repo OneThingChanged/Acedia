@@ -146,7 +146,7 @@ and model defaults/memory/launcher tests. See [model defaults](agent-launch-opti
 for priority and scope.
 
 `electron:new-session-smoke` verifies the [desktop session creation dialog](session-creation.md):
-account/worker/launch payloads, keyboard focus and cancellation, fixed header/footer,
+account/launch payloads, keyboard focus and cancellation, fixed header/footer,
 and desktop/narrow/landscape layouts across Korean/English and dark/light themes.
 It uses an isolated Electron profile and fixture account responses.
 

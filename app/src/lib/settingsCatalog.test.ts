@@ -21,13 +21,15 @@ describe("settings search catalog", () => {
     const results = searchSettings("カーソル", context, (_ko, en) => en === "Cursor shape" ? "カーソルの形" : en);
     expect(results[0].id).toBe("terminal.cursorStyle");
   });
-  it("filters unavailable channels and worker options without hiding disabled tools", () => {
+  it("filters unavailable channels without hiding disabled tools", () => {
     expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.category === "remote")).toBe(false);
     expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.id === "dashboard.lan")).toBe(false);
     expect(searchSettings("LAN", context).some(item => item.id === "dashboard.lan")).toBe(true);
     expect(availableSettings({ ...context, buildVariant: "store" }).some(item => item.category === "remote")).toBe(true);
     const disabled = availableSettings({ ...context, disabledTools: ["codex", "claude"] });
-    expect(disabled.some(item => item.requiresWorkers)).toBe(false);
+    expect(searchSettings("작업자", context)).toEqual([]);
+    expect(settingById("agents.codex.workers.documents")).toBeUndefined();
+    expect(settingById("agents.codex.workers.html")).toBeUndefined();
     expect(disabled.some(item => item.id === "agents.claude.enabled")).toBe(true);
   });
   it("uses unique stable targets, complete scopes and the actual shortcut registry", () => {

@@ -7,11 +7,13 @@ import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketL
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml } from "./chat-markup.js";
+import { providerLogo, screenColor, searchText, reconcileChat } from './workspace-ui.js';
+import { filesForTurn, renderStoredImages } from './chat-files.js';
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
-import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts } from "./session-state.js";
+import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus } from "./session-state.js";
 import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage } from "./attachments.js";
 
 bindShellTranslations(document);
@@ -232,6 +234,15 @@ const STATUS_ORDER = Object.keys(STATUS);
 const FILTER_LABELS = { get all() { return t("전체 세션"); }, get active() { return t("활성 세션"); }, get sleeping() { return t("휴면 세션"); } };
 const SESSION_FILTER_KEY = "multiagent.remote.sessionFilter.v1";
 
+function storedList(key) { try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.slice(-500) : []; } catch { return []; } }
+function launchPreferences() { try { const value = JSON.parse(localStorage.getItem(launchPreferenceKey) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
+const projectFolds = new Set(storedList('multiagent.remote.projectFolds.v1').filter(id => typeof id === 'string'));
+const completedUnread = new Map(storedList('multiagent.remote.completedUnread.v1').filter(row => Array.isArray(row) && row.length === 2));
+const completionSeen = new Map(storedList('multiagent.remote.completionSeen.v1').filter(row => Array.isArray(row) && row.length === 2));
+const deliveryModes = new Map();
+const launchPreferenceKey = 'multiagent.remote.launchPreferences.v1';
+const rememberCompletion = () => { try { localStorage.setItem('multiagent.remote.completedUnread.v1', JSON.stringify([...completedUnread].slice(-500))); localStorage.setItem('multiagent.remote.completionSeen.v1', JSON.stringify([...completionSeen].slice(-500))); } catch {} };
+function acknowledgeCompletion(id) { if (completedUnread.has(id)) { completionSeen.set(id, completedUnread.get(id)); completedUnread.delete(id); rememberCompletion(); renderNavigation(); } }
 let remoteState = { agents: [], view: { projects: [], agents: [], groups: [] } };
 const initialUrl = new URL(location.href);
 let openLinkedQuestionInChat = initialUrl.searchParams.has('agent');
@@ -415,9 +426,11 @@ async function respondPrompt(agentId, prompt, option, key) {
 function promptCard(agent, prompt, data, openTerminal) {
   const key = promptKey(agent, prompt, data);
   const state = promptResponses.get(agent.id)?.key === key ? promptResponses.get(agent.id) : null;
-  const card = make("div", `chat-prompt ${prompt.kind}`);
+  const asyncQuestion = pendingQuestionFor(agent, data)?.async === true;
+  const card = make("div", `chat-prompt ${prompt.kind}${asyncQuestion ? ' async-question' : ''}`);
+  card.classList.toggle('has-answer-state', !!(state?.sending || state?.sent || state?.error));
   card.setAttribute("role", "status");
-  card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : "답변 대기 중")));
+  card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : asyncQuestion ? '작업 중 질문' : "답변 대기 중")));
   if (prompt.answerStyle === 'codex-form') {
     let draft = questionDrafts.get(agent.id);
     if (draft?.key !== key) { draft = { key, answers: prompt.questions.map(q => ({ id: q.id, optionIndex: q.options.length ? undefined : null, text: '' })) }; questionDrafts.set(agent.id, draft); }
@@ -440,7 +453,7 @@ function promptCard(agent, prompt, data, openTerminal) {
     ? t("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.")
     : state?.sent
     ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
-    : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
+    : asyncQuestion ? t('작업은 계속 진행 중입니다. 답변을 선택해 보낼 수 있습니다.') : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
   if (state?.error) {
     const error = make("div", "chat-prompt-error", t("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요."));
     error.setAttribute("role", "alert");
@@ -472,7 +485,7 @@ function renderWaitingPrompt(agent, data) {
     ui.chatPrompt.dataset.renderKey = "";
     return;
   }
-  const key = `${getLanguage()}|${promptKey(agent, prompt, data)}|${JSON.stringify(promptResponses.get(agent.id) || {})}`;
+  const key = `${getLanguage()}|${promptKey(agent, prompt, data)}|${pendingQuestionFor(agent, data)?.async === true}|${JSON.stringify(promptResponses.get(agent.id) || {})}`;
   if (key !== ui.chatPrompt.dataset.renderKey) {
     const position = captureChatScroll();
     ui.chatPrompt.dataset.renderKey = key;
@@ -483,7 +496,7 @@ function renderWaitingPrompt(agent, data) {
 
 function statusOf(agent) {
   const hookEvent = text(agent?.hook?.event).toLowerCase();
-  const rawStatus = text(agent?.status).toLowerCase();
+  const rawStatus = resolveSessionWorkStatus(agent);
   if (["exited", "unreachable", "offline"].includes(rawStatus)) return "offline";
   if (["cancelled", "canceled", "interrupted", "aborted"].includes(hookEvent)) return "idle";
   if (rawStatus === "recovering") return "recovering";
@@ -631,7 +644,7 @@ function matchesQuery(agent, query) {
   const project = projectMap().get(agent.projectId);
   const folder = remoteState.view?.projectFolders?.find((item) => item.id === project?.projectFolderId);
   return [agent.name, agent.id, projectName(agent), agent.folder, project?.folder, folder?.name, toolName(agent), agent.hook?.prompt]
-    .some((value) => text(value).toLowerCase().includes(query));
+    .some((value) => searchText(value).includes(searchText(query)));
 }
 
 function visibleAgents() {
@@ -732,7 +745,8 @@ function renderSummary() {
   ui.totalCount.textContent = String(allAgents().length);
   ui.documentProjectCount.textContent = String(localDocumentProjects().length);
   if ("setAppBadge" in navigator) {
-    if (counts.attention + counts.question > 0) navigator.setAppBadge(counts.attention + counts.question).catch(() => {});
+    const unread = new Set(allAgents().filter(agent => ['attention', 'question'].includes(displayStatusOf(agent)) || completedUnread.has(agent.id)).map(agent => agent.id)).size;
+    if (unread > 0) navigator.setAppBadge(unread).catch(() => {});
     else navigator.clearAppBadge?.().catch(() => {});
   }
 }
@@ -741,6 +755,7 @@ const sessionModelEditor = createSessionModelEditor({
   getAgent: id => agentMap().get(id),
   selectedId: () => selection.type === "session" ? selection.id : null,
   projectName, statusOf, showToast,
+  rename: id => { selectSession(id); openRenameSessionEditor(); }, closeSession: closeRemoteSession,
   refresh: async () => { await fetchState(); },
 });
 
@@ -768,7 +783,7 @@ function renderNavigation() {
     button.type = "button";
     button.classList.toggle("selected", selection.type === "screen" && selection.id === screen.id);
     const rail = make("span", "screen-rail");
-    rail.setAttribute("aria-hidden", "true");
+    rail.setAttribute("aria-hidden", "true"); rail.style.background = screenColor(screen.number);
     const copy = make("span", "screen-copy");
     copy.append(make("strong", "", `Screen ${screen.number}`), make("small", "", screen.label));
     button.append(rail, copy, make("span", "screen-direction", screen.layout.direction === "v" ? "↕" : "↔"));
@@ -780,45 +795,51 @@ function renderNavigation() {
 
   const agents = visibleAgents();
   ui.visibleSessionCount.textContent = String(agents.length);
-  const structureKey = JSON.stringify(agents.map((agent) => [agent.id, projectName(agent)]));
+  const memberships = new Map();
+  for (const screen of screenGroups()) for (const id of screen.memberIds) memberships.set(id, screen);
+  const projects = new Map((remoteState.view?.projects || []).map(project => [project.id, project]));
+  for (const agent of agents) if (!projects.has(agent.projectId)) projects.set(agent.projectId, { id: agent.projectId, name: projectName(agent) });
+  const structureKey = JSON.stringify([agents.map(agent => [agent.id, agent.projectId, agent.aiToolId]), [...projectFolds], query,
+    [...projects.values()].map(project => [project.id, project.name]), [...memberships].map(([id, screen]) => [id, screen.number])]);
   if (structureKey !== sessionNavigationStructureKey) {
     sessionNavigationStructureKey = structureKey;
-    const sessionFragment = document.createDocumentFragment();
-    let currentProject = null;
-    for (const agent of agents) {
-      const project = projectName(agent);
-      if (project !== currentProject) {
-        currentProject = project;
-        sessionFragment.appendChild(make("div", "project-label", project));
+    const fragment = document.createDocumentFragment();
+    for (const project of projects.values()) {
+      const members = agents.filter(agent => agent.projectId === project.id);
+      if (!members.length && (!query || ![project.name, project.folder].some(value => searchText(value).includes(searchText(query))))) continue;
+      const expanded = !!query || !projectFolds.has(project.id);
+      const heading = make('button', 'project-label project-toggle', (expanded ? '▾ ' : '▸ ') + (project.name || t('기타')) + ' · ' + members.length);
+      heading.type = 'button'; heading.dataset.projectId = project.id; heading.setAttribute('aria-expanded', String(expanded));
+      heading.addEventListener('click', () => { projectFolds.has(project.id) ? projectFolds.delete(project.id) : projectFolds.add(project.id); try { localStorage.setItem('multiagent.remote.projectFolds.v1', JSON.stringify([...projectFolds])); } catch {} sessionNavigationStructureKey = ''; renderNavigation(); });
+      fragment.append(heading);
+      if (!expanded) continue;
+      for (const agent of members) {
+        const row = make('div', 'session-row'); row.dataset.agentId = agent.id;
+        const button = make('button', 'session-select'); button.type = 'button';
+        const dot = make('span', 'status-dot'); dot.setAttribute('aria-hidden', 'true');
+        const copy = make('span', 'session-copy'); copy.append(make('strong', ''), make('small', ''));
+        button.append(dot, providerLogo(agent.aiToolId), copy); button.addEventListener('click', () => selectSession(agent.id));
+        const actions = make('span', 'session-row-actions');
+        const screen = memberships.get(agent.id);
+        if (screen) { row.style.setProperty('--screen-color', screenColor(screen.number)); row.classList.add('has-screen'); actions.append(make('span', 'session-screen-badge', 'S' + screen.number)); }
+        const close = make('button', 'session-close', '×'); close.type = 'button'; close.setAttribute('aria-label', t('세션 닫기') + ' · ' + agent.name);
+        close.addEventListener('click', () => { void closeRemoteSession(agent.id); }); actions.append(close);
+        row.append(button, make('span', 'session-status'), actions); fragment.append(row);
+        row.addEventListener('click', event => { if (!event.target.closest('button')) selectSession(agent.id); });
       }
-      const button = make("button", "session-row");
-      button.type = "button";
-      button.dataset.agentId = agent.id;
-      const dot = make("span", "status-dot");
-      dot.setAttribute("aria-hidden", "true");
-      const copy = make("span", "session-copy");
-      copy.append(make("strong", ""), make("small", ""));
-      button.append(dot, copy, make("span", "session-status"));
-      button.addEventListener("click", () => selectSession(agent.id));
-      sessionFragment.appendChild(button);
     }
-    ui.sessionList.replaceChildren(sessionFragment);
+    ui.sessionList.replaceChildren(fragment);
   }
-  const sessionRows = new Map(
-    [...ui.sessionList.querySelectorAll(".session-row")]
-      .map((button) => [button.dataset.agentId, button]),
-  );
+  const sessionRows = new Map([...ui.sessionList.querySelectorAll('.session-row')].map(row => [row.dataset.agentId, row]));
   for (const agent of agents) {
-    const button = sessionRows.get(agent.id);
-    if (!button) continue;
-    const status = displayStatusOf(agent);
-    button.dataset.status = status;
-    button.classList.toggle("selected", selection.type === "session" && selection.id === agent.id);
-    const dot = button.querySelector(".status-dot");
-    dot.className = `status-dot ${status}`;
-    button.querySelector(".session-copy strong").textContent = text(agent.name || agent.id);
-    button.querySelector(".session-copy small").textContent = `${toolName(agent)} · ${outputPreview(agent)}`;
-    button.querySelector(".session-status").textContent = STATUS[status].label;
+    const row = sessionRows.get(agent.id); if (!row) continue;
+    const status = displayStatusOf(agent); row.dataset.status = status;
+    row.classList.toggle('selected', selection.type === 'session' && selection.id === agent.id);
+    row.classList.toggle('unread-completion', completedUnread.has(agent.id));
+    row.querySelector('.status-dot').className = 'status-dot ' + status;
+    row.querySelector('.session-copy strong').textContent = text(agent.name || agent.id);
+    row.querySelector('.session-copy small').textContent = outputPreview(agent) || projectName(agent);
+    row.querySelector('.session-status').textContent = completedUnread.has(agent.id) ? '✓ ' + t('완료') : STATUS[status].label;
   }
   ui.emptyState.hidden = agents.length !== 0;
   ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")
@@ -1072,13 +1093,12 @@ function renderLayoutNode(node, screen) {
 
 function screenChatRenderKey(data, agent) {
   const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
-  const last = blocks[blocks.length - 1];
   const prompt = promptFor(agent, data);
   return JSON.stringify([
     getLanguage(),
     agent?.id,
-    blocks.length,
-    String(last?.text ?? last?.output ?? "").length,
+    blocks,
+    data?.artifacts,
     data?.unsupported ? 1 : 0,
     data?.missing ? 1 : 0,
     data?.error ? 1 : 0,
@@ -1158,13 +1178,13 @@ function renderScreenChat(container, data, agent) {
     let index = 0;
     while (index < blocks.length) {
       const block = blocks[index];
-      if (block.role === "user" && block.kind === "text") {
-        ranges.push({ user: true, start: index, end: index + 1 });
-        index += 1;
+      if (block.role === "user" && ['text', 'image'].includes(block.kind)) {
+        const start = index; do { index += 1; } while (index < blocks.length && blocks[index].role === 'user' && blocks[index].kind === 'image');
+        ranges.push({ user: true, start, end: index });
       } else {
         const start = index;
         do { index += 1; }
-        while (index < blocks.length && !(blocks[index].role === "user" && blocks[index].kind === "text"));
+        while (index < blocks.length && !(blocks[index].role === "user" && ['text', 'image'].includes(blocks[index].kind)));
         ranges.push({ user: false, start, end: index });
       }
     }
@@ -1176,13 +1196,7 @@ function renderScreenChat(container, data, agent) {
       fragment.appendChild(more);
     }
     for (const range of visible) {
-      if (range.user) {
-        const turn = make("div", "chat-turn user");
-        turn.appendChild(renderChatUser(blocks[range.start].text, agent));
-        fragment.appendChild(turn);
-      } else {
-        fragment.appendChild(renderAssistantTurn(blocks.slice(range.start, range.end), agent));
-      }
+      appendConversationTurn(container, fragment, range, blocks, agent, data);
     }
   }
 
@@ -1214,7 +1228,7 @@ function renderScreenChat(container, data, agent) {
     fragment.appendChild(promptCard(agent, prompt, data, () => { selectSession(agent.id); setSessionViewMode("term"); }));
   } else promptResponses.delete(agent.id);
 
-  container.replaceChildren(fragment);
+  reconcileChat(container, fragment);
   if (nearBottom) requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
 }
 
@@ -2138,12 +2152,36 @@ function resetFilePreviewContent() {
     filePreviewObjectUrl = "";
   }
   ui.filePreviewImage.removeAttribute("src");
+  document.getElementById('filePreviewCopy').hidden = true;
   ui.filePreviewImage.alt = "";
   ui.filePreviewMarkdown.replaceChildren();
   ui.filePreviewMarkdown.hidden = true;
   ui.filePreviewImageWrap.hidden = true;
   ui.filePreviewMessage.hidden = false;
 }
+
+document.addEventListener('chat:image', event => {
+  if (ui.filePreviewOverlay.hidden) filePreviewPreviousFocus = document.activeElement;
+  resetFilePreviewContent(); ++filePreviewRequest;
+  filePreviewContext = null; syncFileDownloadButtons();
+  ui.filePreviewTitle.textContent = event.detail.name || t('이미지'); ui.filePreviewPath.textContent = '';
+  ui.filePreviewKind.textContent = t('이미지'); ui.filePreviewMessage.hidden = true;
+  ui.filePreviewImage.src = event.detail.src; ui.filePreviewImage.alt = event.detail.name || t('이미지');
+  ui.filePreviewImageWrap.hidden = false; ui.filePreviewOverlay.hidden = false;
+  document.documentElement.classList.add('file-preview-open'); document.getElementById('filePreviewCopy').hidden = false;
+  ui.filePreviewClose.focus();
+});
+document.getElementById('filePreviewCopy').addEventListener('click', async () => {
+  try {
+    const image = ui.filePreviewImage;
+    if (!navigator.clipboard?.write || !window.ClipboardItem || !image.naturalWidth) throw Error(t('이미지 복사를 사용할 수 없습니다.'));
+    const png = new Promise((resolve, reject) => {
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0); canvas.toBlob(blob => blob ? resolve(blob) : reject(Error(t('이미지 복사 실패'))), 'image/png');
+    });
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]); showToast(t('이미지를 복사했습니다.'));
+  } catch (error) { showToast(error.message || t('이미지 복사 실패')); }
+});
 
 function closeFilePreview() {
   filePreviewRequest += 1;
@@ -2237,7 +2275,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   document.documentElement.classList.add("file-preview-open");
   ui.filePreviewTitle.textContent = path.split(/[\\/]/).pop() || path;
   ui.filePreviewPath.textContent = path;
-  ui.filePreviewKind.textContent = kind === "video" ? "VIDEO" : kind === "markdown" ? "MARKDOWN" : kind === "text" ? "JSON" : "IMAGE";
+  ui.filePreviewKind.textContent = kind === "video" ? "VIDEO" : kind === "markdown" ? "MARKDOWN" : kind === "text" ? path.split('.').at(-1).toUpperCase() : "IMAGE";
   ui.filePreviewMessage.textContent = t("파일을 불러오는 중…");
   ui.filePreviewClose.focus();
 
@@ -2293,6 +2331,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
     ui.filePreviewImage.alt = ui.filePreviewTitle.textContent;
     ui.filePreviewMessage.hidden = true;
     ui.filePreviewImageWrap.hidden = false;
+    document.getElementById('filePreviewCopy').hidden = false;
   } catch (error) {
     if (requestId !== filePreviewRequest) return;
     ui.filePreviewMessage.hidden = false;
@@ -3268,7 +3307,8 @@ function openCreateSessionEditor() {
     option.value = tool.id;
     return option;
   }));
-  ui.sessionEditorTool.value = tools[0].id;
+  const preferences = launchPreferences();
+  ui.sessionEditorTool.value = tools.some(tool => tool.id === preferences.agent) ? preferences.agent : tools[0].id;
   sessionEditorPoolChoices = [];
   sessionEditorPoolEnabled = false;
   ui.sessionEditorPool.value = "";
@@ -3286,7 +3326,7 @@ function openCreateSessionEditor() {
     syncSessionEditorPool();
   }).catch(() => {});
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
-  ui.sessionEditorDangerous.checked = false;
+  ui.sessionEditorDangerous.checked = preferences.dangerous?.[ui.sessionEditorTool.value] === true;
   syncSessionEditorDangerous();
   ui.sessionEditorOverlay.hidden = false;
   ui.sessionEditorName.focus();
@@ -3357,6 +3397,7 @@ async function submitSessionEditor() {
     );
     if (!response.ok) throw new Error(await apiError(response));
     const result = await response.json();
+    if (creating) { try { const saved = JSON.parse(localStorage.getItem(launchPreferenceKey) || '{}'); localStorage.setItem(launchPreferenceKey, JSON.stringify({ agent: body.aiToolId, dangerous: { ...saved.dangerous, [body.aiToolId]: body.dangerous } })); } catch {} }
     if (!creating) {
       remoteState.agents = remoteState.agents.map((agent) => (
         agent.id === body.id ? { ...agent, name } : agent
@@ -3384,6 +3425,7 @@ async function submitSessionEditor() {
 }
 
 function selectSession(id, fromScreenId = null) {
+  acknowledgeCompletion(id);
   if (!agentMap().has(id)) return;
   selection = { type: "session", id };
   returnScreenId = isMobile() ? null : fromScreenId;
@@ -3435,7 +3477,8 @@ function selectUsage() {
   }
 }
 
-async function sendInput(agentId, message, { quiet = false, requestId = submissionId() } = {}) {
+function conversationId(agent) { return agent?.hook?.session_id || agent?.lastSessionId || chatHistoryStore.get(agent?.id)?.sessionId || undefined; }
+async function sendInput(agentId, message, { quiet = false, requestId = submissionId(), steering = false, sessionId = conversationId(agentMap().get(agentId)) } = {}) {
   const text = message.trim();
   if (!agentId || !text) return false;
   const previousConversation = { sessionId: chatHistoryStore.get(agentId)?.sessionId,
@@ -3445,7 +3488,7 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: agentId, message: text, requestId }),
+      body: JSON.stringify({ id: agentId, message: text, requestId, steering, sessionId }),
     });
     if (!response.ok) {
       if (response.status === 409 && (result.outcome === "unknown" ||
@@ -3486,6 +3529,7 @@ function currentAttachments() {
 }
 
 function updateComposerSendState() {
+  updateWorking();
   const agent = selectedAgent();
   const attachments = currentAttachments();
   const hasMessage = Boolean(ui.messageInput.value.trim());
@@ -3503,7 +3547,7 @@ function updateComposerSendState() {
     ? initializingTerminal
       ? t("세션 초기화가 끝나면 입력할 수 있습니다")
       : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다') : t("메시지 입력 · Enter 전송 · Ctrl+Enter 줄바꿈");
+    : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다') : t("메시지 입력 · Enter 전송 · Shift+Enter 줄바꿈");
   ui.sendButton.textContent = t(waitingForAnswer ? '예약' : '전송');
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
@@ -3845,7 +3889,9 @@ function renderComposerQueue() {
   if (!agent || !queue.length) { el.hidden = true; restoreChatScroll(chatScroll); return; }
   el.hidden = false;
   const error = sessionQueueErrors.get(agent.id);
-  const head = make("div", "composer-queue-head", error === "outcome-unknown"
+  const head = make("div", "composer-queue-head", error === 'conversation-changed'
+    ? t('대화가 변경되었습니다. 예약 내용을 확인하고 다시 보내세요.') : error === 'closed'
+    ? t('세션을 닫아 예약 전송을 멈췄습니다.') : error === "outcome-unknown"
     ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
     : error === "activation-timeout"
       ? t("예약 대기열 {0} · 세션 시작이 지연되고 있습니다. 실행되면 자동 전송합니다.", [queue.length])
@@ -3855,13 +3901,17 @@ function renderComposerQueue() {
       ? t("대화 확인 후 다시 보내기") : error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
     retry.type = "button";
     retry.addEventListener("click", () => {
+      if (error === 'conversation-changed') {
+        if (!window.confirm(t('변경된 대화에 예약 메시지를 보내시겠습니까?'))) return;
+        queue.forEach(entry => { entry.sessionId = conversationId(agent); });
+      }
       if (error === "outcome-unknown") {
         if (!window.confirm(t("대화 기록에 이 메시지가 없고 터미널 입력란이 비어 있는지 확인했나요? 새 요청으로 다시 보내면 중복될 수 있습니다."))) return;
         uncertainSubmissions.delete(queue[0].requestId);
         queue[0].requestId = submissionId();
       }
       sessionQueueErrors.delete(agent.id);
-      if (error === "send-failed" || error === "outcome-unknown") void drainQueues();
+      if (error === "send-failed" || error === "outcome-unknown" || error === 'conversation-changed') void drainQueues();
       else void requestSessionActivation(agent.id, { queuedMessage: true });
     });
     head.append(" · ", retry);
@@ -3918,7 +3968,12 @@ async function drainQueues() {
       if (Date.now() - lastSendAt < QUEUE_COOLDOWN_MS) continue;
       sessionLastSendAt.set(agentId, Date.now());
       const head = queue[0];
-      const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId });
+      if (head.sessionId && conversationId(agent) && head.sessionId !== conversationId(agent)) {
+        sessionQueueErrors.set(agentId, 'conversation-changed');
+        if (selectedAgent()?.id === agentId) renderComposerQueue();
+        continue;
+      }
+      const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId, sessionId: head.sessionId });
       if (!sent) {
         sessionQueueErrors.set(agentId, uncertainSubmissions.has(head.requestId) ? "outcome-unknown" : "send-failed");
         if (selectedAgent()?.id === agentId) renderComposerQueue();
@@ -3981,11 +4036,34 @@ async function waitForSessionReady(agentId) {
   return false;
 }
 
+async function closeRemoteSession(id) {
+  try { const response = await fetch('/api/session/close', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) });
+    if (!response.ok) throw Error(await apiError(response));
+    if (sessionQueues.get(id)?.length) sessionQueueErrors.set(id, 'closed');
+    renderComposerQueue(); await fetchState(); showToast(t('세션을 닫았습니다.')); }
+  catch (error) { showToast(error.message); }
+}
+function updateWorking() {
+  const agent = selectedAgent(), bar = document.getElementById('chatWorking');
+  bar.hidden = sessionViewMode !== 'chat' || !agent || statusOf(agent) !== 'working' || lastChatData?.lifecycle === 'idle' || !!blockingPrompt(agent, lastChatData);
+  document.getElementById('chatWorkingTool').textContent = lastChatData?.activeTool || '';
+  const mode = deliveryModes.get(agent?.id) || 'queued';
+  const toggle = document.getElementById('composerDeliveryButton');
+  toggle.hidden = agent?.aiToolId !== 'codex' || !!agent?.sshHostId;
+  toggle.textContent = t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
+  toggle.title = toggle.textContent;
+}
+function toggleDelivery() { const agent = selectedAgent(); if (agent?.aiToolId !== 'codex' || agent.sshHostId) return; deliveryModes.set(agent.id, deliveryModes.get(agent.id) === 'steer' ? 'queued' : 'steer'); updateWorking(); }
+document.getElementById('composerDeliveryButton').addEventListener('click', toggleDelivery);
+document.getElementById('chatWorkingStop').addEventListener('click', () => { void cancelSession(selectedAgent()?.id); });
+document.getElementById('chatWorkDetails').addEventListener('click', () => { const node = [...ui.chatView.querySelectorAll('.chat-work')].at(-1); if (node) { node.open = true; node.scrollIntoView({ block: 'nearest' }); } });
+document.getElementById('chatFilesClose').addEventListener('click', () => document.getElementById('chatFilesDialog').close());
 async function sendSelectedMessage() {
   const agent = selectedAgent();
   const message = ui.messageInput.value.trim();
   const attachments = currentAttachments();
   if (!agent || sendingAgents.has(agent.id) || attachments.some((attachment) => attachment.uploading)) return;
+  acknowledgeCompletion(agent.id);
   const outgoing = remoteAttachmentMessage(message, attachments);
   if (!outgoing) return;
   const snapshot = { revision: composerRevisions.get(agent.id) || 0, draft: ui.messageInput.value, attachments: attachments.slice() };
@@ -3996,7 +4074,7 @@ async function sendSelectedMessage() {
     pendingSubmissions.delete(agent.id);
   }
   const entry = pendingSubmissions.get(agent.id)?.text === outgoing
-    ? pendingSubmissions.get(agent.id) : { text: outgoing, requestId: submissionId() };
+    ? pendingSubmissions.get(agent.id) : { text: outgoing, requestId: submissionId(), sessionId: conversationId(agent) };
   pendingSubmissions.set(agent.id, entry);
   sendingAgents.add(agent.id);
   updateComposerSendState();
@@ -4019,10 +4097,11 @@ async function sendSelectedMessage() {
       return;
     }
     const cooled = Date.now() - (sessionLastSendAt.get(agent.id) || 0) >= QUEUE_COOLDOWN_MS;
-    if (agentReady(agent) && !agentBusy(agent) && queue.length === 0 && cooled) {
+    const steering = deliveryModes.get(agent.id) === 'steer' && agent.aiToolId === 'codex' && agentBusy(agent) && (!promptFor(agent, lastChatData) || lastChatData?.pendingQuestion?.async);
+    if (steering || (agentReady(agent) && !agentBusy(agent) && queue.length === 0 && cooled)) {
       ui.sendButton.disabled = true;
       sessionLastSendAt.set(agent.id, Date.now());
-      const sent = await sendInput(agent.id, outgoing, { requestId: entry.requestId });
+      const sent = await sendInput(agent.id, outgoing, { requestId: entry.requestId, steering, sessionId: entry.sessionId });
       if (sent) {
         pendingSubmissions.delete(agent.id);
         clearAcceptedComposer(agent.id, snapshot);
@@ -4042,6 +4121,18 @@ async function sendSelectedMessage() {
   }
 }
 
+function appendConversationTurn(container, fragment, range, blocks, agent, data) {
+  const run = blocks.slice(range.start, range.end), files = filesForTurn(data?.artifacts || [], run);
+  const key = agent.id + ':' + (data?.sessionId || '') + ':' + (run[0]?.sequence || range.start) + ':' + !!range.user;
+  const signature = JSON.stringify([run, files]);
+  const previous = [...container.children].find(node => node.dataset.chatKey === key);
+  let turn;
+  if (previous?.dataset.chatSignature === signature) turn = make('div', '');
+  else if (range.user) { turn = make('div', 'chat-turn user'); const message = renderChatUser(run.filter(block => block.kind === 'text').map(block => block.text || '').join('\n'), agent, run[0]);
+    run.slice(1).filter(block => block.kind === 'image').forEach(block => message.append(renderStoredImages(block, agent))); turn.append(message); }
+  else turn = renderAssistantTurn(run, agent, data?.artifacts || []);
+  turn.dataset.chatKey = key; turn.dataset.chatSignature = signature; fragment.append(turn);
+}
 // ---- Live terminals (xterm) ----
 // Each visible pane gets its own xterm mirroring the desktop terminal: raw PTY
 // output streams in over SSE and every keystroke goes straight back to the PTY.
@@ -4849,13 +4940,13 @@ function renderChat(data) {
     let i = 0;
     while (i < blocks.length) {
       const b = blocks[i];
-      if (b.role === "user" && b.kind === "text") {
-        ranges.push({ user: true, start: i, end: i + 1 });
-        i += 1;
+      if (b.role === "user" && ["text", "image"].includes(b.kind)) {
+        const start = i; do { i += 1; } while (i < blocks.length && blocks[i].role === "user" && blocks[i].kind === 'image');
+        ranges.push({ user: true, start, end: i });
       } else {
         const start = i;
         do { i += 1; }
-        while (i < blocks.length && !(blocks[i].role === "user" && blocks[i].kind === "text"));
+        while (i < blocks.length && !(blocks[i].role === "user" && ["text", "image"].includes(blocks[i].kind)));
         ranges.push({ user: false, start, end: i });
       }
     }
@@ -4891,13 +4982,7 @@ function renderChat(data) {
     }
     const agent = selectedAgent();
     for (const range of ranges.slice(hidden)) {
-      if (range.user) {
-        const turn = make("div", "chat-turn user");
-        turn.appendChild(renderChatUser(blocks[range.start].text, agent));
-        frag.appendChild(turn);
-      } else {
-        frag.appendChild(renderAssistantTurn(blocks.slice(range.start, range.end), agent));
-      }
+      appendConversationTurn(el, frag, range, blocks, agent, data);
     }
   }
   // "작업 중…" indicator while the selected agent is working (like Codex's 생각 중).
@@ -4907,18 +4992,7 @@ function renderChat(data) {
     const retryCard = agent && capacityRetryCard(agent);
     if (retryCard) frag.appendChild(retryCard);
     const chatStatus = agent ? statusOf(agent) : "offline";
-    if (agent && chatStatus === "working" && data?.lifecycle !== "idle" && !blockingPrompt(agent, data)) {
-      const think = make("div", "chat-thinking");
-      const dots = make("span", "chat-thinking-dots");
-      dots.append(make("i", ""), make("i", ""), make("i", ""));
-      think.append(dots, document.createTextNode(t("작업 중…")));
-      const stop = make("button", "chat-stop", t("■ 중단"));
-      stop.type = "button";
-      stop.title = t("진행 취소 (Esc)");
-      stop.addEventListener("click", () => { void cancelSession(agent.id); });
-      think.appendChild(stop);
-      frag.appendChild(think);
-    } else if (agent && ["recovering", "starting"].includes(chatStatus)) {
+    if (agent && ["recovering", "starting"].includes(chatStatus)) {
       const think = make("div", "chat-thinking");
       const dots = make("span", "chat-thinking-dots");
       dots.append(make("i", ""), make("i", ""), make("i", ""));
@@ -4930,7 +5004,8 @@ function renderChat(data) {
     }
   }
 
-  el.replaceChildren(frag);
+  reconcileChat(el, frag);
+  updateWorking();
   restoreChatScroll(chatScroll);
   renderWaitingPrompt(selectedAgent(), data);
 }
@@ -4986,15 +5061,17 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     if (!data?.unsupported && !data?.error && blocks.length) {
       const added = Math.max(0, blocks.length - previous.length);
       if (prepend) chatVisible += added;
+      const artifacts = [...new Map([...(sessionChanged ? [] : cached?.data?.artifacts || []), ...(data.artifacts || [])]
+        .map(file => [`${file.sourceSequence}:${searchText(file.path)}:${file.usage}`, file])).values()];
       data = prepend
         ? {
             ...cached?.data,
             ...data,
-            blocks,
+            blocks, artifacts,
             missing: false,
             lifecycle: cached?.data?.lifecycle ?? data.lifecycle,
           }
-        : { ...data, blocks, missing: false };
+        : { ...data, blocks, artifacts, missing: false };
       chatHistoryStore.set(agentId, { sessionId: data.sessionId || cached?.sessionId, data });
     } else if (data?.missing && previous.length) {
       data = { ...cached.data, lifecycle: data.lifecycle ?? cached.data.lifecycle, pendingQuestion: data.pendingQuestion ?? null };
@@ -5004,8 +5081,8 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     }
     const last = blocks[blocks.length - 1];
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
-    const key = `${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
-    if (key === lastChatKey) return;
+    const key = `${JSON.stringify([blocks, data?.artifacts])}|${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
+    if (key === lastChatKey) { updateWorking(); return; }
     lastChatKey = key;
     renderChat(data);
   } catch {
@@ -5102,6 +5179,11 @@ function processActivityNotifications(agents) {
   const next = new Map();
   for (const agent of agents) {
     const status = statusOf(agent);
+    if (status === 'working' || status === 'starting' || status === 'recovering') { if (completedUnread.delete(agent.id)) rememberCompletion(); }
+    if (status === 'done' || (agent.hook?.event === 'done' && !['working', 'starting', 'recovering'].includes(status))) {
+      const token = String(agent.hook?.lastTs || agent.hook?.received_at || agent.hook?.timestamp || (previousActivity.get(agent.id)?.status === 'working' ? Date.now() : null) || completedUnread.get(agent.id) || completionSeen.get(agent.id) || Date.now());
+      if (completionSeen.get(agent.id) !== token && completedUnread.get(agent.id) !== token) { completedUnread.set(agent.id, token); rememberCompletion(); }
+    }
     const question = questionOf(agent);
     const questionId = agent.hook?.question_id;
     const questionKey = question ? `${questionId || agent.hook?.received_at || ""}:${question}` : "";
@@ -5662,6 +5744,7 @@ ui.documentSidebarBackdrop.addEventListener("click", () => setDocumentSidebarOpe
 ui.appShell.addEventListener("click", (event) => {
   const link = event.target.closest(".chat-file-link");
   if (!link) return;
+  if (link.closest('#chatFilesDialog')) document.getElementById('chatFilesDialog').close();
   event.preventDefault();
   const hostedUrl = localHostingUrl(link.dataset.chatHostingUrl);
   if (hostedUrl) {
@@ -5707,7 +5790,7 @@ ui.sessionEditorProject.addEventListener("change", () => {
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
   syncSessionEditorPool();
 });
-ui.sessionEditorTool.addEventListener("change", () => { syncSessionEditorDangerous(); syncSessionEditorPool(); });
+ui.sessionEditorTool.addEventListener("change", () => { ui.sessionEditorDangerous.checked = launchPreferences().dangerous?.[ui.sessionEditorTool.value] === true; syncSessionEditorDangerous(); syncSessionEditorPool(); });
 ui.sessionEditorForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void submitSessionEditor();
@@ -5934,7 +6017,8 @@ ui.messageInput.addEventListener("input", () => {
 ui.messageInput.addEventListener("blur", () => setTimeout(() => { acItems = []; renderComposerAc(); }, 120));
 ui.messageInput.addEventListener("keydown", (event) => {
   if (event.isComposing || event.keyCode === 229) return;
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+  if (event.key === 'Tab' && !event.shiftKey && !acItems.length && selectedAgent()?.aiToolId === 'codex') { event.preventDefault(); toggleDelivery(); return; }
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey || event.shiftKey)) {
     event.preventDefault();
     const input = ui.messageInput;
     input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");

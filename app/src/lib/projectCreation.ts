@@ -5,7 +5,6 @@ import {
   type NewProjectPayload,
   type Project,
 } from "../types";
-import { normalizeSessionWorkerSettings } from "./sessionWorkers";
 import { loadAgentDefaults } from "./agentDefaults";
 import { normalizeLaunchOptions } from "./launchOptions";
 import { newSessionPoolAccountId } from "./sessionLaunchAccount";
@@ -58,8 +57,6 @@ export function buildNewProjectWithFirstAgent(
     claudeAccountId: !sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
     dangerous: payload.dangerous && !!tool.dangerousFlag,
     useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
-    workerSettings: tool.id === "codex" ? Object.prototype.hasOwnProperty.call(payload, "workerSettings")
-      ? normalizeSessionWorkerSettings(payload.workerSettings) : loadAgentDefaults(tool.id).workerSettings : undefined,
     status: "starting",
     runtimeStatus: "starting",
     createdAt: now,
