@@ -21,6 +21,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.81 source changes](release-1-8-1-81.md) - Remote 터미널 마지막 줄 잘림과 이전 Luna 모델 표시 수정; 소스 검증 완료, 설치 파일 빌드·공개 배포 전.
 * [Acedia 1.8.1.80 EXE release](release-1-8-1-80.md) - 앱 시작 시 업데이트 안내, 줄바꿈된 영상 링크와 내장 Git 설정 검사 보강; 안정 EXE 게시와 공개 다운로드 검증 완료.
 * [Acedia 1.8.1.79 EXE release](release-1-8-1-79.md) - Remote 웹 기능, 완료 상태 수정과 문서·HTML 작업자 분배 제거; 안정 EXE 게시와 공개 다운로드 검증 완료.
 * [Remote 웹 개선 검증](remote-workspace-review-2026-10-12.md) - 공용 웹 기능·완료 상태 검증과 외부 접속 지연 조사: 잘못된 UNC 파일 조회와 큰 대화 기록 반복 전송.

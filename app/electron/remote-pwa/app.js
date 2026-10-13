@@ -4316,7 +4316,21 @@ function buildTerminal(container, fontSize) {
     unseenOutput: false,
     connectionState: "disconnected",
     disposeTouchScroll: null,
+    resizeObserver: null,
+    fitFrame: null,
   };
+  const scheduleFit = () => {
+    if (instance.fitFrame !== null) return;
+    instance.fitFrame = requestAnimationFrame(() => {
+      instance.fitFrame = null;
+      refitTerminal(instance, container);
+    });
+  };
+  if (typeof ResizeObserver === "function") {
+    instance.resizeObserver = new ResizeObserver(scheduleFit);
+    instance.resizeObserver.observe(container);
+  }
+  term.onResize(scheduleFit);
   term.onScroll(() => {
     if (terminalAtBottom(instance)) {
       instance.followOutput = true;
@@ -4434,6 +4448,8 @@ function releaseTerminal(container) {
   if (!instance) return;
   closeStream(instance);
   instance.disposeTouchScroll?.();
+  instance.resizeObserver?.disconnect();
+  if (instance.fitFrame !== null) cancelAnimationFrame(instance.fitFrame);
   try { instance.term.dispose(); } catch { /* already disposed */ }
   terminals.delete(container);
 }
@@ -4449,20 +4465,23 @@ function terminalBufferText(instance) {
 }
 
 // The terminal mirrors the desktop PTY's rows and columns, which are wider and
-// taller than a phone viewport. Fit both axes so mobile starts at the top-left
-// but still includes the bottom row; pinch to zoom for detail. PC panes large
+// taller than a phone viewport. Fit both axes to the content box so the last
+// row stays visible without changing the desktop PTY size. PC panes large
 // enough for the PTY keep the natural 1:1 render.
 function refitTerminal(instance, container) {
   const element = instance?.term?.element;
   if (!element || !container) return;
   element.style.transformOrigin = "top left";
   element.style.transform = "";
-  container.style.height = "";
   const screen = element.querySelector(".xterm-screen");
   const naturalWidth = screen?.offsetWidth || element.offsetWidth;
   const naturalHeight = screen?.offsetHeight || element.offsetHeight;
-  const availableWidth = container.clientWidth;
-  const availableHeight = container.clientHeight;
+  // clientWidth/clientHeight include padding. Scaling to those dimensions
+  // overflows the clipped content box and hides the final PTY row.
+  const styles = getComputedStyle(container);
+  const padding = edge => Number.parseFloat(styles[edge]) || 0;
+  const availableWidth = Math.max(0, container.clientWidth - padding("paddingLeft") - padding("paddingRight"));
+  const availableHeight = Math.max(0, container.clientHeight - padding("paddingTop") - padding("paddingBottom"));
   if (!naturalWidth || !naturalHeight || !availableWidth || !availableHeight) return;
   const scale = Math.min(
     1,

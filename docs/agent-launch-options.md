@@ -4,7 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 기본 모델·effort·Fast와 CLI 실행 파일, 추가 인수, 환경변수의 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -157,6 +157,13 @@ Fast 표시가 없거나 대화 기록에 서비스 티어가 없으면 Off로 �
 그 값을 유지해 모델 선택창 등으로 상태줄이 가려져도 이전 모델로 돌아가지 않는다.
 새 설정 알림 직후 남아 있는 이전 화면은 알림 시점의 상태줄과 비교해 제외한다.
 native `priority`가 화면에서 `fast`로 표시되면 확인된 서비스 티어 값을 유지한다.
+
+[1.8.1.81 소스](release-1-8-1-81.md)는 알림 직후 이전 화면을 제외하는 대기 시간을
+2초로 제한한다. 현재 상태줄이 먼저 바뀐 뒤 오래된 대화 설정이 도착하면 같은 상태줄의
+추가 변화를 무한히 기다리지 않고 모델·effort·Fast를 다시 맞춘다. 같은 설정 알림은
+대기 시간을 연장하지 않는다. 상태줄이 가려진 동안에는 확인된 native 설정을 유지하며,
+다음 시작용으로 명시적으로 저장한 설정은 별도로 보존한다. 데스크톱·Remote·Dashboard가
+같은 호스트 모델 조회 서비스를 사용한다. 이 소스 수정은 아직 공개 EXE에 포함되지 않았다.
 
 새로 선택한 모델·effort는 이전 프로세스의 종료 기록보다 우선한다. 작업 중 **저장
 (다음 시작)**한 설정과 명시적인 모델 초기화도 보존하며, 초기화한 세션은 Acedia 기본

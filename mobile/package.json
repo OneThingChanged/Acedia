@@ -3,7 +3,7 @@
   "description": "Native Android client for the Acedia Remote service.",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.80",
+  "multiAgentReleaseVersion": "1.8.1.81",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

@@ -55,6 +55,46 @@ describe("per-session native model memory", () => {
     expect(f.memory.resolve(f.args).settings).toEqual({ model: "gpt-6.1-sol", effort: "high", serviceTier: "default" });
   });
 
+  it("reconciles a routed snapshot with an already visible current footer after the repaint wait", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const f = fixture();
+    let viewport = "› Ask Codex\nGPT-6.1-Sol xhigh fast · G:\\Project";
+    const old = { model: "gpt-5.6-luna", effort: "max", serviceTier: "priority" };
+    const actual = { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "priority" };
+    const entry = { ...f.args, modelSettings: old, filter: { viewportText: () => viewport } };
+    try {
+      updateNativeSessionModel(entry, old); f.memory.started(entry);
+      // The unchanged footer was already current when the routed snapshot
+      // arrived. Waiting for another repaint must not freeze Luna forever.
+      clock.mockReturnValue(10_500);
+      expect(f.memory.remember(entry)).toEqual(old);
+      clock.mockReturnValue(14_500);
+      updateNativeSessionModel(entry, old);
+      clock.mockReturnValue(15_000);
+      expect(f.memory.remember(entry)).toEqual(actual);
+      viewport = "Choose a model";
+      expect(f.memory.remember(entry)).toEqual(actual);
+      expect(new SessionModelMemory(f.file).resolve(f.args).settings).toEqual(actual);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("bounds the repaint wait without letting an older transcript replace an invisible native footer", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const f = fixture();
+    let viewport = "› Ask Codex\nGPT-5.6-Luna max fast · G:\\Project";
+    const old = { model: "gpt-5.6-luna", effort: "max", serviceTier: "priority" };
+    const actual = { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "priority" };
+    const entry = { ...f.args, modelSettings: old, filter: { viewportText: () => viewport } };
+    try {
+      updateNativeSessionModel(entry, actual); f.memory.started(entry);
+      clock.mockReturnValue(10_500);
+      expect(f.memory.remember(entry, old)).toEqual(actual);
+      viewport = "Choose a model";
+      clock.mockReturnValue(15_000);
+      expect(f.memory.remember(entry, old)).toEqual(actual);
+    } finally { clock.mockRestore(); }
+  });
+
   it("restores terminal changes after closing and reloading the app profile", () => {
     const f = fixture();
     const original = { model: "gpt-6-sol", effort: "low" };

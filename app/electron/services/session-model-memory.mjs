@@ -11,6 +11,7 @@ const folderKey = value => {
   return process.platform === "win32" ? folder.toLowerCase() : folder;
 };
 const scopeFor = entry => `${entry.aiToolId}:${selectedAccountId(entry)}:${folderKey(entry.cwd)}`;
+const NATIVE_MODEL_REPAINT_MS = 2000;
 
 // Read the native footer after its composer, never model-looking assistant text.
 // Fast is optional in configurable status lines: absence is unknown, not Off.
@@ -39,7 +40,11 @@ export function nativeCodexModel(entry) {
 export function updateNativeSessionModel(entry, settings) {
   const native = normalizeSessionModel(settings);
   if (!native) return;
+  // Repeated copies of the same thread snapshot must not restart the wait or
+  // move its baseline past a /model repaint that has already happened.
+  if (sameSessionModel(native, entry.runtimeModelSettings) && Object.hasOwn(entry, "runtimeModelFooter")) return;
   entry.runtimeModelSettings = native;
+  entry.runtimeModelUpdatedAt = Date.now();
   // The notification can arrive before its TUI repaint. Remember the footer
   // that was already visible so it cannot undo the newly reported settings.
   entry.runtimeModelFooter = nativeCodexModel(entry) ?? null;
@@ -48,10 +53,15 @@ export function updateNativeSessionModel(entry, settings) {
 function rememberedModel(entry, previous, observed) {
   let native = normalizeSessionModel(entry.runtimeModelSettings);
   const footer = nativeCodexModel(entry);
-  if (native && footer && Object.hasOwn(entry, "runtimeModelFooter") && !sameSessionModel(footer, entry.runtimeModelFooter)) {
+  const repaintExpired = Number.isFinite(entry.runtimeModelUpdatedAt)
+    && Date.now() - entry.runtimeModelUpdatedAt >= NATIVE_MODEL_REPAINT_MS;
+  if (native && footer && Object.hasOwn(entry, "runtimeModelFooter")
+    && (!sameSessionModel(footer, entry.runtimeModelFooter) || repaintExpired)) {
     // /model can update the TUI before a new turn or settings notification.
     // A changed footer supersedes the older routed thread snapshot, and must
     // remain current even while a later popup hides the status line.
+    // A snapshot can also arrive after the current footer has repainted. Its
+    // unchanged baseline is only a brief repaint guard, never permanent truth.
     native = mergeSessionModel(footer, native);
     // Codex displays the native priority tier as "fast". Preserve that exact
     // confirmed launch value when the footer only changes model or effort.

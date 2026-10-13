@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -23,6 +23,15 @@ sources:
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
+  - id: remote-terminal-smoke
+    resource: ../app/scripts/electron-remote-terminal-smoke.mjs
+    title: "Remote and Dashboard terminal footer and container-resize verification"
+  - id: session-model-memory
+    resource: ../app/electron/services/session-model-memory.mjs
+    title: "Current native model observation and per-session model memory"
+  - id: session-model-memory-tests
+    resource: ../app/electron/services/session-model-memory.test.mjs
+    title: "Native model repaint reconciliation and restart memory regression checks"
   - id: remote-attachments
     resource: ../app/electron/shared/remote-attachments.mjs
     title: "Shared image and ZIP attachment classification, limits and message paths"
@@ -626,6 +635,45 @@ enabling pinch zoom. The Android client also disables WebView's built-in zoom
 controls, so an updated APK is needed for that native setting; the PWA change
 is delivered through service-worker cache v72.[^remote-styles][^mobile-remote-screen]
 
+Development source 1.8.1.81 on 2026-10-13 corrects the terminal's fitted content area:
+`clientWidth` and `clientHeight` include padding, which previously let the
+terminal extend 16px below the single-session content boundary and clip its
+last row. Fitting now subtracts all four padding edges. A container
+`ResizeObserver` schedules a refit when the composer or pane changes size,
+including changes without a window resize; disposal disconnects the observer
+and cancels the pending frame. The desktop PTY's row and column counts remain
+unchanged.[^remote-client]
+
+A real SSE fixture with a 120-column, 100-row terminal and a final-row footer
+reproduced the clipping before the change. Afterward, Remote and Dashboard
+passed 22 geometry/footer checks across 1440×1132, 1024×760 and 390×844 views,
+composer growth/shrink before the next state poll, and desktop split panes.
+The fixture sent no input to the host. Captures were visually checked, and
+11 existing touch/mobile-layout checks passed. Evidence is retained in
+`output/remote-terminal-bottom-baseline.log`,
+`output/remote-terminal-bottom-fixed.log` and `output/remote-terminal-smoke/`.
+The web cache is v95 in this source change; it is not yet included in the
+published 1.8.1.80 host.[^remote-terminal-smoke]
+
+On 2026-10-13, read-only inspection of the reported ProjectWitch session
+found `gpt-6.1-sol` / `xhigh` / Fast in the actual terminal and Sol / xhigh
+in its latest turn context, while the running host's model API still returned
+`gpt-5.6-luna` / `max` / priority. Saved settings were Sol; those settings alone
+do not establish the currently running model. The installed host had not yet
+received this source correction.
+
+The native-model repaint guard now expires after two seconds. A thread snapshot
+may arrive after the current footer has already repainted; waiting indefinitely
+for that unchanged footer to change again could retain an older model. Once
+the guard expires, a visible native footer reconciles the model, effort and
+speed. Identical notifications do not restart the wait. When a popup hides the
+footer, confirmed native settings remain authoritative over an older transcript.
+Explicit next-start settings are preserved. Regression tests reproduce the
+Sol-footer/Luna-snapshot mismatch and verify the correction; the focused model,
+launcher and routed-session suites pass 111 checks. This change updates desktop,
+Remote and Dashboard through the shared host model service and has not yet been
+published.[^session-model-memory][^session-model-memory-tests]
+
 ## Conversation UX prototype
 
 The interactive Remote prototype keeps the conversation as the primary surface
@@ -776,6 +824,9 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker
 [^remote-client]: Remote PWA client
+[^remote-terminal-smoke]: Remote and Dashboard terminal footer and container-resize verification
+[^session-model-memory]: Current native model observation and per-session model memory
+[^session-model-memory-tests]: Native model repaint reconciliation and restart memory regression checks
 [^remote-attachments]: Shared image and ZIP attachment classification, limits and message paths
 [^remote-attachments-smoke]: Real Remote and Dashboard attachment selection, upload and submission
 [^session-filters]: Shared Remote session lifecycle filters and PTY projection
