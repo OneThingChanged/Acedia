@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.80
 description: "앱 시작 시 EXE 업데이트 안내, 줄바꿈된 영상 링크 수정과 내장 Git 설정 검사 보강."
-status: review
+status: stable
 last_updated: 2026-10-13
 ---
 
@@ -31,6 +31,23 @@ Standard EXE 업데이트다. 기존 서명 APK **1.8.1.39/code 21**을 포함�
 - 줄바꿈된 영상 링크는 실제 포인터 클릭과 관련 **16개 검사**, Git 설정 검사는 NUL 파일에서 버전 조회가 성공하더라도 강화된 검사가 실패하는 회귀 시나리오와 관련 **15개 검사**로 검증했다.
 - 제품·Android 소스 버전은 **1.8.1.80**, npm 호환 버전은 **1.8.1**이다. 기존 APK **1.8.1.39/code 21**을 재사용한다. Vite의 기존 큰 chunk 경고는 남아 있다.
 
-소스 고정 EXE·packaged 검사와 공개 배포 정보는 완료 후 기록한다.
+- 고정 소스 `bc02ae80830bcc88937532ca5e99764102ddfa52`를 푸시하고 별도 `exe-1.8.1.80` 출력 폴더에서 빌드했다. 패키지의 런타임·렌더러 **299개 파일**이 빌드 원본과 일치한다.
+- 실제 packaged Git query·모델 기본값 IPC·bridge·Dashboard·브라우저 재사용 검사와 종료·트레이·보안 lifecycle 검사를 통과했다. 첫 병렬 packaged 검사에서는 휴면 fixture의 중단 결과가 `null`로 반환되어 실패했으며, **같은 산출물**을 단독 검사해 해당 중단·정확한 대화 복구와 전체 bridge를 통과했다. 기존 `node-pty`의 `AttachConsole failed` 진단도 출력되었지만 단독 검사와 lifecycle은 필수 성공 marker 및 종료 코드 0을 확인했다.
+- EXE 내부의 Git 설정 557바이트를 직접 추출해 공식 MinGit 원본 SHA-256 `4b27ceb03e73554574a61d336a1d1af680be285d9ca0ad51814b89dd464c1413`과 일치하고 NUL 바이트가 없는 것을 확인했다. 강화한 설정 읽기 검사도 통과했다.
+- 설치 파일 FileVersion **1.8.1.80**, npm 호환 ProductVersion **1.8.1**, manifest·세 자산의 크기·SHA-256을 확인했다. Authenticode는 기존 EXE 채널과 같은 `NotSigned`다.
 
 Git 설치본 진단은 [Workspace interactions](workspace-interactions.md)에 기록했다. 손상 파일 16개를 백업·복구했고, 원본 ZIP·EXE 내부 파일과 격리 NSIS 압축 해제·복사 검사에서는 손상이 재현되지 않았다. 손상의 최초 원인은 미확정이며 이 릴리스는 Git 설정 검사를 보강한다.
+
+검증 증빙: `output/full-suite-exe-1.8.1.80-fixed.log`,
+`output/startup-update-exe-1.8.1.80.log`, `output/startup-update-smoke/`,
+`output/build-frontend-1.8.1.80.log`, `output/build-exe-1.8.1.80-isolated.log`,
+`output/packaged-smoke-1.8.1.80.log`, `output/packaged-smoke-1.8.1.80-sequential.log`,
+`output/packaged-lifecycle-1.8.1.80.log`, `output/exe-release-1.8.1.80/`,
+`output/publish-exe-1.8.1.80.log`, `output/public-update-verification-1.8.1.80.log`.
+
+## 공개 배포
+
+- [GitHub 안정 릴리스 v1.8.1.80](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.80)를 2026-10-13 **09:56:54 KST**에 게시했다. 태그와 빌드 소스는 `bc02ae80830bcc88937532ca5e99764102ddfa52`다.
+- **09:59:57 KST**에 **1.8.1.78·1.8.1.79 → 1.8.1.80** 감지와 공개 설치 파일 전체 다운로드, 세 자산의 크기·SHA-256 검증을 통과했다.
+- EXE는 **151,362,490바이트**, SHA-256은 `baa064433b0b72fabe4bcb734e6fbfcb78a2b776cc92ab83c4286e96ff3d320a`다. 같은 빌드의 blockmap과 `latest-exe.json`을 함께 게시했다.
+- 사용 중인 앱·프로필을 변경하거나 설치 파일을 실행하지 않았다. 이번 버전은 기존 앱 설정의 **Check → Update**로 적용하고, 이후 새 버전부터 시작 시 업데이트 안내를 사용한다.
