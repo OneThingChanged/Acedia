@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -133,6 +133,15 @@ sources:
   - id: git-bundle
     resource: ../app/scripts/bundle-git-runtime.mjs
     title: "Pinned Windows MinGit packaging"
+  - id: startup-update-ui
+    resource: ../app/src/components/StartupUpdatePrompt.tsx
+    title: "Startup EXE update prompt, progress and retry"
+  - id: startup-update-service
+    resource: ../app/electron/services/startup-update.mjs
+    title: "One startup update check and prompt owner per app launch"
+  - id: startup-update-smoke
+    resource: ../app/scripts/electron-startup-update-smoke.mjs
+    title: "Native startup update actions and dismissal verification"
   - id: document-viewer
     resource: ../app/src/components/DocViewer.tsx
     title: "Document viewer"
@@ -411,6 +420,19 @@ direct mouse hit detection use the same boundary. Palette and RGB highlights,
 Korean folder names (including names ending in `는`), and wrapped paths retain
 their full path text. Uncolored paths keep the existing filename matching;
 URLs and OSC 8 hyperlinks keep their separate recognition.[^terminal-links][^terminal-links-smoke]
+
+Development source as of 2026-10-13 also recovers parenthesized file paths when
+the TUI reserves a right-hand gutter before a hard line break. Both the first
+row and the indented continuation open the full path, including long MP4 names.
+An explicitly bounded file path retains its continuation when the TUI changes
+foreground colors across rows. Ordinary colored paths still stop before adjacent
+prose; blank, unrelated or short rows are not joined. The native pointer regression
+reproduced the truncated ProjectWitch video as a folder link before the fix and
+now opens its full file target from either row. It covers palette/RGB continuations,
+reserved padding, existing soft/hard wrapping, Unicode suffixes and file URL/OSC 8
+links. The targeted 16 tests and TypeScript check passed. This source change is
+included in source 1.8.1.80; publication is tracked in the
+[release record](release-1-8-1-80.md).[^terminal-links-smoke]
 
 File URLs such as `file:///C:/Users/name/.codex/generated_images/result.png`
 use the local filesystem resolver. Clicking the scheme, drive, or a wrapped
@@ -768,6 +790,24 @@ Recycle Bin. MultiAgent refuses deletion while the associated session has a
 live terminal, then removes the deleted paths from its catalog after a
 successful move.[^session-storage-ui][^session-storage-service]
 
+## Startup updates
+
+Starting with source 1.8.1.80, a packaged Standard EXE checks for a newer public
+EXE in the background after the workspace loads. One window owns the prompt
+for the application process, including concurrent windows and React remounts.
+**Update now** begins the verified download and shows progress, then uses the
+existing close coordinator to save open sessions before installing and
+restarting. Failed downloads or cancelled close preparation keep the prompt
+open with retry and Later actions. **Later** dismisses the prompt for this
+process; the next app launch checks again. A current version, failed check or
+offline network shows no startup dialog. Development, packaged smoke, Company
+and Store runs do not use this EXE prompt. Manual settings checks remain
+available. Native actions and Korean/English prompts were verified at 1280px
+and 390px widths.[^startup-update-ui][^startup-update-service][^startup-update-smoke]
+
+See [EXE updates](exe-release-workflow.md) and the
+[1.8.1.80 release record](release-1-8-1-80.md).
+
 ## Files, Git, and documents
 
 The right sidebar selects the project root or a discovered child Git repository,
@@ -788,6 +828,21 @@ official archive's pinned size and SHA256, include the complete runtime and
 licenses, and check that it runs without Git on PATH. The development tree can
 also use its local `.build-tools/mingit` cache; no Git binaries are committed.
 [^git-runtime][^git-bundle]
+
+On 2026-10-13 the installed 1.8.1.79 Git panel failed with `bad config line 1`:
+the bundled `etc/gitconfig` and 15 other bundled Git files contained only NUL
+bytes. All 16 files were backed up and restored from the matching unpacked
+build after comparison with the SHA256-verified official MinGit archive. The
+installed runtime's 374 files then matched the build, and the panel's host
+query read ProjectWitch's branch, 26 changes and eight recent commits. The EXE's
+embedded archive also contained the correct bytes; isolated NSIS extraction
+and copying did not reproduce the damage, so its original cause remains
+undetermined. Local evidence and backups are retained under
+`output/git-runtime-recovery-20261013-092122/`. Bundle verification now also
+parses the packaged system configuration explicitly, without external includes,
+so an inherited `GIT_CONFIG_NOSYSTEM` cannot hide this failure. This verification
+change is included in source 1.8.1.80; publication is tracked in the
+[release record](release-1-8-1-80.md).[^git-bundle]
 
 Git commands trust the selected, canonical worktree only for that invocation,
 including submodule/worktree `.git` files and projects opened below the root.
@@ -932,6 +987,9 @@ The domain invariants behind these interactions are documented in
 [^git-runtime]: Installed and bundled Git executable selection
 [^git-command]: Scoped Git commands and typed failures
 [^git-bundle]: Pinned Windows MinGit packaging
+[^startup-update-ui]: Startup EXE update prompt, progress and retry
+[^startup-update-service]: One startup update check and prompt owner per app launch
+[^startup-update-smoke]: Native startup update actions and dismissal verification
 [^document-viewer]: Document viewer
 [^settings]: Settings surface
 [^app-language]: Application language preference

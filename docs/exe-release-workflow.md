@@ -3,7 +3,7 @@ type: Playbook
 title: EXE와 Store 배포 채널
 description: "독립 EXE의 GitHub 업데이트, Store와의 병행 설치, 릴리스 생성 및 검증 절차."
 status: stable
-last_updated: 2026-10-02
+last_updated: 2026-10-13
 sources:
   - resource: ../app/electron/runtime-variant.cjs
     title: 채널별 설치·업데이트 분리
@@ -43,6 +43,15 @@ sources:
 새 설치본은 설정의 Update 영역에 `EXE · GitHub`를 표시한다.
 이후 Check로 새 버전을 확인하고 Update를 누르면 다운로드·검증 후 세션을 저장하고
 설치 프로그램을 실행한다. Store 설치본의 Update 영역은 Store 열기를 제공한다.
+
+Standard EXE 1.8.1.80부터 앱 시작 시 최신 공개 EXE를 백그라운드로 확인한다.
+새 버전이 있으면 한 작업창에서 **지금 업데이트 / 나중에**를 묻는다. 나중에를
+선택하면 같은 실행 중에는 다시 묻지 않고 다음 앱 실행 때 확인한다. 다운로드는
+업데이트 버튼을 누른 뒤 시작하며, 진행률과 실패 시 재시도를 제공한다. 다운로드
+무결성 검증 뒤 기존 종료 조정기로 열린 세션을 저장하고 설치를 시작한다. 오프라인이나
+조회 실패는 앱 시작을 막지 않으며 수동 Check → Update도 계속 사용할 수 있다.
+개발 실행·packaged 검사·Company·Store에서는 이 EXE 시작 안내를 실행하지 않는다.
+이전 설치본에는 안내가 없으므로 최초 1.8.1.80 적용은 기존 설정의 Check → Update를 사용한다.
 
 ## GitHub 배포
 

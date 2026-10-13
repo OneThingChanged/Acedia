@@ -104,6 +104,7 @@ import { fetchCodexUsage } from "./services/codex-usage.mjs";
 import { DiagnosticsService } from "./services/diagnostics-service.mjs";
 import { UpdaterLifecycle } from "./services/updater-lifecycle.mjs";
 import { GithubExeUpdateService } from "./services/github-exe-update.mjs";
+import { StartupUpdateService } from "./services/startup-update.mjs";
 import { LocalDeveloperUpdateService } from "./services/local-developer-update.mjs";
 import { cleanupLegacyElectronShortcuts } from "./services/windows-shortcut-cleanup.mjs";
 import { discoverGitSubmodules } from "./services/git-submodules.mjs";
@@ -1374,6 +1375,12 @@ const updaterLifecycle = new UpdaterLifecycle({
     console.error("[electron] updater did not terminate the app; forcing exit");
     app.exit(0);
   },
+});
+const startupUpdates = new StartupUpdateService({
+  enabled: app.isPackaged && runtimeVariant.id === "standard" && runtimeVariant.updateProvider === "github"
+    && !(bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke),
+  check: checkForElectronUpdate,
+  record: (event, detail) => updaterLifecycle.record(event, detail),
 });
 if (runtimeVariant.updateProvider === "github") {
   autoUpdater.on("error", (error) => {
@@ -5039,6 +5046,7 @@ async function invokeCommand(event, command, rawArgs) {
         advanced_launch_options: true,
         remote_enabled: runtimeVariant.remoteEnabled,
         update_provider: runtimeVariant.updateProvider,
+        startup_update_enabled: startupUpdates.enabled,
         live_agent_ids: [...terminalSessions.keys()],
       };
     case "renderer_ready": {
@@ -6056,6 +6064,11 @@ async function invokeCommand(event, command, rawArgs) {
       return readPublicKey();
     case "generate_ssh_key":
       return generateSshKey();
+    case "startup_update_check":
+      return workspaceWindows.has(eventSenderWindow(event)?.id) ? startupUpdates.claim(event.sender.id) : null;
+    case "startup_update_dismiss":
+      if (workspaceWindows.has(eventSenderWindow(event)?.id)) startupUpdates.dismiss(event.sender.id);
+      return null;
     case "check_for_update":
       return checkForElectronUpdate();
     case "download_and_install_update":

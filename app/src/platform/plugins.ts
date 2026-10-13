@@ -66,10 +66,10 @@ export async function requestPermission() {
   return electronBridge() ? "granted" as const : "denied" as const;
 }
 
-export async function check(): Promise<Update | null> {
+async function checkUpdate(command: "check_for_update" | "startup_update_check"): Promise<Update | null> {
   const bridge = electronBridge();
   if (!bridge) throw new Error("Electron bridge is unavailable");
-  const info = await bridge.invoke<{ version: string } | null>("check_for_update");
+  const info = await bridge.invoke<{ version: string } | null>(command);
   if (!info) return null;
   return {
     version: info.version,
@@ -86,6 +86,12 @@ export async function check(): Promise<Update | null> {
       }
     },
   };
+}
+
+export const check = () => checkUpdate("check_for_update");
+export const checkStartupUpdate = () => checkUpdate("startup_update_check");
+export async function dismissStartupUpdate() {
+  await electronBridge()?.invoke("startup_update_dismiss");
 }
 
 export async function getDeveloperUpdateSettings() {

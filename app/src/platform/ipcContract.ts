@@ -74,6 +74,7 @@ export type RuntimeCommand =
   | "start_monitor_server" | "stop_monitor_server" | "ssh_password_set"
   | "ssh_password_clear" | "ssh_password_has" | "ssh_test"
   | "get_ssh_public_key" | "generate_ssh_key" | "check_for_update"
+  | "startup_update_check" | "startup_update_dismiss"
   | "download_and_install_update" | "get_developer_update_settings"
   | "set_developer_update_directory" | "check_for_developer_update"
   | "install_developer_update" | "storage_snapshot_get"

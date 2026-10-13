@@ -166,6 +166,8 @@ const INVOKE_COMMANDS = Object.freeze([
   "get_ssh_public_key",
   "generate_ssh_key",
   "check_for_update",
+  "startup_update_check",
+  "startup_update_dismiss",
   "download_and_install_update",
   "get_developer_update_settings",
   "set_developer_update_directory",

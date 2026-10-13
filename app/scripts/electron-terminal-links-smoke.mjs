@@ -24,11 +24,11 @@ try {
       const output = hard ? 'report (' + file.slice(0,70) + '\\r\\n  ' + file.slice(70) + ')' : 'report (' + file + ')';
       await new Promise(resolve => entry.term.write(output, resolve));
     };
-    window.seedRaw = async output => {
+    window.seedRaw = async (output, cols = 80) => {
       // Keep each color fixture independent of xterm's cached hover links.
       entry.term.dispose(); entry.el.remove();
       entry = createEntry('fixture', open, open, open, open);
-      document.body.appendChild(entry.el); entry.term.open(entry.el); entry.term.resize(80, 20);
+      document.body.appendChild(entry.el); entry.term.open(entry.el); entry.term.resize(cols, 20);
       window.opened = []; window.invocations = [];
       await new Promise(resolve => entry.term.write(output, resolve));
     };
@@ -47,7 +47,7 @@ try {
     const assert = require('node:assert/strict');
     app.setPath('userData', ${JSON.stringify(path.join(temporary, "profile"))});
     app.whenReady().then(async () => { try {
-      const win = new BrowserWindow({show:false,width:1200,height:700,webPreferences:{offscreen:true,backgroundThrottling:false}});
+      const win = new BrowserWindow({show:false,width:1200,height:700,webPreferences:{backgroundThrottling:false}});
       win.webContents.on('console-message', details => { if (details.level === 'error') console.error(details.message); });
       await win.loadFile(${JSON.stringify(path.join(temporary, "index.html"))});
       const wait = () => new Promise(resolve=>setTimeout(resolve,200));
@@ -73,6 +73,21 @@ try {
         win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
         win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point}); await wait();
       };
+      const video = 'Client/Saved/Recordings/AXRecorder/ee5cfe44b121416685f60d491bb25327/projectwitch-autoplay-1node_20261007_041800_981.mp4';
+      const prefix = '영상 (';
+      const cut = video.indexOf('1node_');
+      for (const [gutter, continuationColor] of [[2, '\\x1b[32m'], [8, '\\x1b[32m'], [2, '\\x1b[38;2;80;190;120m']]) {
+        const cols = width(prefix + video.slice(0, cut)) + gutter;
+        const output = prefix + '\\x1b[32m' + video.slice(0, cut) + '\\x1b[39m\\r\\n  ' + continuationColor + video.slice(cut) + '\\x1b[39m)';
+        win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+        await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(output)+','+cols+')'); await wait();
+        for (const [row,col] of [[0,width(prefix)+8],[1,5]]) {
+          assert.deepEqual(await win.webContents.executeJavaScript('window.hit('+row+','+col+')'), {kind:'terminal',text:video}, 'Truncated hard-wrapped video; gutter='+gutter);
+          await click([row,col]);
+          assert.equal(await win.webContents.executeJavaScript('window.opened.at(-1)'), video);
+        }
+      }
+      console.log('TERMINAL_HARD_WRAPPED_VIDEO_POINTER_OK');
       const paths = ['03_Development/GitHub/SubStorage', '자료/프로젝트는', 'C:\\\\Projects\\\\한글 프로젝트는', '03_Development/GitHub/a-very-long-folder-name-that-wraps-across-the-terminal/SubStorage'];
       for (const color of ['\\x1b[32m', '\\x1b[38;2;80;190;120m']) {
         for (const file of paths) {

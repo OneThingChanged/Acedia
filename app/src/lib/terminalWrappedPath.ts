@@ -5,6 +5,9 @@ type CellRef = { row: number; col: number; width: number };
 // Some TUIs wrap with CRLF and indentation rather than xterm soft wraps.
 // Recover only a bounded, parenthesized path at the right edge, never prose.
 export function buildHardWrappedPath(buffer: IBuffer, cols: number, row: number) {
+  // TUI content can stop before the terminal edge to reserve a gutter. Keep
+  // recovery near that edge while allowing up to 12 cells of layout padding.
+  const wrapGutter = Math.min(12, Math.max(4, Math.floor(cols / 4)));
   for (let start = Math.max(0, row - 7); start <= row; start++) {
     let text = "";
     const cellMap: CellRef[] = [];
@@ -42,7 +45,7 @@ export function buildHardWrappedPath(buffer: IBuffer, cols: number, row: number)
       // Continue only inside an open path, with no whitespace or prose.
       if (!/\((?:[A-Za-z]:)?[^\s()]*[\\/][^\s()]*$/.test(text)) break;
       const last = cellMap[cellMap.length - 1];
-      if (!last || last.col + last.width < cols - 4) break;
+      if (!last || last.col + last.width < cols - wrapGutter) break;
     }
   }
   return null;

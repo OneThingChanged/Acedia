@@ -1,0 +1,7 @@
+.startup-update-backdrop { z-index: 1200; }
+.startup-update-modal { width: 440px; max-width: calc(100vw - 40px); overflow-wrap: anywhere; }
+.startup-update-modal p { font-size: 13px; line-height: 1.6; color: var(--app-text-muted); }
+.startup-update-versions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.startup-update-versions strong { color: var(--app-text); }
+.startup-update-progress progress { width: 100%; accent-color: var(--app-accent); }
+.startup-update-modal .startup-update-error { color: var(--app-danger, #ed6a6a); }

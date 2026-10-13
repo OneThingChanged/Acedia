@@ -44,6 +44,14 @@ describe("TUI hard-wrapped terminal paths", () => {
     }
   });
 
+  it("recovers a video filename with reserved TUI padding and a wide-character prefix", () => {
+    const b = buffer(["영상 (Client/Saved/Recordings/AX/", "  capture_041800_981.mp4)"]);
+    for (const row of [0, 1]) {
+      expect(buildHardWrappedPath(b, 40, row)?.text)
+        .toContain("(Client/Saved/Recordings/AX/capture_041800_981.mp4)");
+    }
+  });
+
   it("leaves ordinary soft wrapping to the existing logical-line reader", () => {
     expect(buildHardWrappedPath(buffer(["(docs/very-long-folder/", "file.md)"], [1]), 23, 1)).toBeNull();
   });

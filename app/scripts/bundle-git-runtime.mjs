@@ -55,8 +55,14 @@ export async function verifyBundledGit(resourcesDirectory) {
   const env = { ...process.env, PATH: "" };
   // Windows environment keys are case insensitive, including in child_process.
   for (const key of Object.keys(env)) if (key.toUpperCase() === "PATH") env[key] = "";
-  const { stdout } = await execute(path.join(directory, "cmd", "git.exe"), ["--version"], { env, windowsHide: true, timeout: 10_000 });
+  const executable = path.join(directory, "cmd", "git.exe");
+  const options = { env, windowsHide: true, timeout: 10_000 };
+  const { stdout } = await execute(executable, ["--version"], options);
   if (stdout.trim() !== `git version ${GIT_RUNTIME.version}`) throw new Error(`Unexpected packaged Git version: ${stdout.trim()}`);
+  // --version does not parse Git configuration. Read the packaged file
+  // explicitly so GIT_CONFIG_NOSYSTEM cannot hide a broken system config.
+  // External includes belong to the user's installation, not this check.
+  await execute(executable, ["config", "--file", path.join(directory, "etc", "gitconfig"), "--no-includes", "--list"], options);
 }
 
 export default async function bundleGitRuntime(context) {

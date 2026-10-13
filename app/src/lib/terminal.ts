@@ -593,6 +593,13 @@ function boundPathMatchToForeground(
   const firstCell = first && term.buffer.active.getLine(first.row)?.getCell(first.col);
   if (!firstCell || firstCell.isFgDefault()) return match;
 
+  // Parenthesized file paths already have an explicit boundary. A TUI may
+  // repaint a wrapped continuation with another foreground color; that does
+  // not shorten the path. Keep color-based trimming for adjacent prose.
+  if (logical.text[match.startIndex - 1] === "(" &&
+      logical.text[match.endIndex] === ")" &&
+      /\.[A-Za-z0-9]{1,16}(?::\d+(?::\d+)?)?$/.test(match.text)) return match;
+
   // Highlighted paths can touch prose, e.g. green `SubStorage` + default `는`.
   // Use the ANSI foreground boundary for both the target and clickable range;
   // uncolored paths retain their ordinary Unicode filename matching.

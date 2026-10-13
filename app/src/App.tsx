@@ -1,4 +1,5 @@
 import { markIdleSuspended } from './lib/idleSessions';
+import { StartupUpdatePrompt } from "./components/StartupUpdatePrompt";
 import { viewedImagePaths } from './lib/viewedImagePath';
 import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
@@ -237,6 +238,7 @@ type RuntimeFlags = {
   build_variant?: "standard" | "company" | "store";
   remote_enabled?: boolean;
   update_provider?: "github" | "local-developer" | "microsoft-store";
+  startup_update_enabled?: boolean;
   live_agent_ids?: string[];
 };
 
@@ -4523,6 +4525,7 @@ function App() {
           onSelectProject={selectProject}
         />
       )}
+      <StartupUpdatePrompt enabled={runtimeFlags?.startup_update_enabled ?? false} />
       {settingsOpen && (
         <SettingsModal
           projects={projects} onRunSavedCommand={runSavedCommand}
