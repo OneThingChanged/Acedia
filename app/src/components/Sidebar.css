@@ -107,10 +107,11 @@
 .sidebar-session-actions { display: flex; align-items: center; flex-shrink: 0; }
 .sidebar-workspace .sidebar-session-actions > button { width: 24px; height: 26px; margin-right: 0; }
 .sidebar-workspace .sidebar-session-actions .sidebar-row-menu { opacity: 1; }
-.sidebar-workspace .sidebar-recent-row :is(.agent-screen-badge, .agent-danger, .sidebar-session-actions) { opacity: 0; pointer-events: none; }
-.sidebar-workspace .sidebar-recent-row:is(:hover, :focus-visible, :has(:focus-visible)) :is(.agent-screen-badge, .agent-danger, .sidebar-session-actions) { opacity: 1; pointer-events: auto; }
+.sidebar-session-trailing { display: none; align-items: center; gap: 9px; flex: 0 0 auto; }
+.sidebar-project-session-row .sidebar-session-trailing { gap: 7px; }
+.sidebar-workspace .sidebar-recent-row:is(:hover, :focus-visible, :has(:focus-visible)) .sidebar-session-trailing { display: flex; }
 @media (hover: none) {
-  .sidebar-workspace .sidebar-recent-row :is(.agent-screen-badge, .agent-danger, .sidebar-session-actions) { opacity: 1; pointer-events: auto; }
+  .sidebar-workspace .sidebar-recent-row .sidebar-session-trailing { display: flex; }
 }
 .sidebar-session-close .sidebar-icon { width: 14px; height: 14px; }
 .sidebar-workspace .screen-groups { padding: 0; margin-top: 15px; border: 0; }

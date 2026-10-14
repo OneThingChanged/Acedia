@@ -1,11 +1,40 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { Terminal } from "@xterm/xterm/lib/xterm.mjs";
 import {
   BoundedTerminalBuffer,
   CodexScrollbackFilter,
   PassThroughTerminalFilter,
   SequencedTerminalBuffer,
+  SynchronizedTerminalFilter,
 } from "./terminal-stream.mjs";
+
+it('delivers a fragmented nested Qwen repaint atomically and retains OSC links, colors and cursor controls', () => {
+  const filter = new SynchronizedTerminalFilter();
+  const frame = '\x1b[?2026h\x1b[2J\x1b[H\x1b[?2026h\x1b[31m한글\x1b[0m\x1b]8;;https://example.com\x07link\x1b]8;;\x07\x1b[?2026l\r\nfooter\x1b[?2026l';
+  let result = '';
+  for (const char of frame.slice(0,-1)) { const output = filter.push(char); expect(output).toBe(''); result += output; }
+  result += filter.push(frame.slice(-1));
+  expect(result).toBe(frame); expect(filter.push('plain shell output')).toBe('plain shell output');
+  expect(filter.finish()).toBe(''); filter.dispose();
+});
+
+it('releases a missing frame end within the watchdog, bounds memory and cancels stale callbacks on disposal', () => {
+  vi.useFakeTimers();
+  const releases = [], filter = new SynchronizedTerminalFilter({ maxCharacters: 50 });
+  filter.setOutputSink(data => releases.push(data));
+  try {
+    expect(filter.push('\x1b[?2026hpartial')).toBe('');
+    vi.advanceTimersByTime(100);
+    expect(releases).toEqual(['\x1b[?2026hpartial\x1b[?2026l']);
+    expect(filter.push('next')).toBe('next');
+    expect(filter.push('\x1b[?2026h'+'x'.repeat(51))).toBe('\x1b[?2026h'+'x'.repeat(51)+'\x1b[?2026l');
+    expect(filter.push('\x1b[')).toBe(''); vi.advanceTimersByTime(100); expect(releases.at(-1)).toBe('\x1b[');
+    expect(filter.push('\x1b[?2026hclosing')).toBe('');
+    expect(filter.finish()).toBe('\x1b[?2026hclosing\x1b[?2026l');
+    expect(filter.push('\x1b[?2026hdisposed')).toBe(''); filter.dispose(); vi.advanceTimersByTime(200);
+    expect(releases).toHaveLength(2);
+  } finally { filter.dispose(); vi.useRealTimers(); }
+});
 
 function createTerminal(cols = 20, rows = 4) {
   return new Terminal({ cols, rows, scrollback: 100, allowProposedApi: true });

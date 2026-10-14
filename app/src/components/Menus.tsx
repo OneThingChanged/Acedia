@@ -370,6 +370,7 @@ export function ContextMenu({
   isSessionLocked,
   canPinSession,
   canDeactivate,
+  canRestart = true,
   onClose,
   onAction,
   sidebarPinned = false,
@@ -381,6 +382,7 @@ export function ContextMenu({
   isSessionLocked: boolean;
   canPinSession: boolean;
   canDeactivate: boolean;
+  canRestart?: boolean;
   onClose: () => void;
   onAction: (
     action: SessionContextAction
@@ -448,6 +450,10 @@ export function ContextMenu({
           disabled={!canDeactivate}
         >
           {text("세션 비활성화", "Deactivate session")}
+        </button>
+        <button className="ctx-item" data-session-action="restart" onClick={() => onAction("restart")} disabled={!canRestart}
+          title={text("현재 작업을 중단하고 같은 세션을 다시 시작합니다.", "Interrupt current work and restart this session.")}>
+          {text("재시작", "Restart")}
         </button>
         <button className="ctx-item" onClick={() => onAction("relink")}>
           {text("현재 세션으로 재등록", "Relink to current session")}

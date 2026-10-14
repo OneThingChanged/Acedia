@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import { ActiveQuestions, AsyncQuestionNotifier, QUESTION_TAIL_BYTES } from './active-questions.mjs';
 import { hasQueuedCodexQuestion, codexQuestionFrame } from './question-responder.mjs';
+import { CommandApprovalResponder } from './command-approval.mjs';
 
 const line = payload => JSON.stringify({ type: 'response_item', payload }) + '\n';
 const call = { type: 'function_call', call_id: 'q1', name: 'functions.request_user_input', arguments: '{"questions":[{"id":"color","question":"Which?","options":[{"label":"Blue"}]}]}' };
@@ -22,9 +23,12 @@ describe('active question tail monitor', () => {
       const source = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
       const currentQuestionSource = source.match(/async function currentQuestion\(id\) \{[\s\S]*?\r?\n\}/)?.[0];
       expect(currentQuestionSource).toBeTruthy();
+      const ptys = new Map([['a', { aiToolId: 'codex', startedAt: 0, filter: { viewportText: () => screen } }]]);
+      const agentSessionIds = new Map([['a', 'session-one']]);
       const currentQuestion = vm.runInNewContext(`(${currentQuestionSource})`, {
-        ptys: new Map([['a', { aiToolId: 'codex', startedAt: 0, filter: { viewportText: () => screen } }]]),
-        agentSessionIds: new Map([['a', 'session-one']]), accountBindings: new Map(),
+        ptys, agentSessionIds, accountBindings: new Map(),
+        commandApprovals: new CommandApprovalResponder({ entry: id => ptys.get(id),
+          snapshot: () => screen, sessionId: id => agentSessionIds.get(id) }),
         accountTranscriptRoot: () => root, selectedAccountId: () => 'default',
         agentTranscripts: new Map([['a', transcriptPath]]), activeQuestions: new ActiveQuestions(),
         hasQueuedCodexQuestion, codexQuestionFrame,
@@ -36,6 +40,17 @@ describe('active question tail monitor', () => {
       screen = 'Question 1/2 (2 unanswered)\nWhich body bones?\n› 1. Existing bones\nenter to submit all';
       expect((await currentQuestion('a')).question?.id).toBe('q1');
       screen = 'Working · Browsing\nQueued follow-up inputs\n› Continue';
+      expect((await currentQuestion('a')).question).toBeNull();
+      // An execution approval is absent from JSONL; only the current native
+      // selector can supply it. It must take priority over an old async call.
+      screen = ['Would you like to run the following command?', 'Environment: local', '$ git status --short',
+        '› 1. Yes, proceed (y)', "  2. Yes, and don't ask again for commands that start with `git status --short` (p)",
+        '  3. No, and tell Codex what to do differently (esc)', 'Press enter to confirm or esc to cancel'].join('\n');
+      const approval = await currentQuestion('a');
+      expect(approval.question.toolName).toBe('command-approval');
+      expect(approval.sessionId).toBe('session-one');
+      expect(approval.question.question).toContain('git status --short');
+      screen = '› Ask Codex to do anything';
       expect((await currentQuestion('a')).question).toBeNull();
     } finally { await fs.rm(root, { recursive: true }); }
   });

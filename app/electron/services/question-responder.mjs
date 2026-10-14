@@ -42,13 +42,18 @@ export function validateQuestionAnswers(question, answers) {
 // The CLI owns the form. Verify it before each step and never replay a partly
 // sent answer. Every client shares this lock and the same authoritative call ID.
 export class QuestionResponder {
-  constructor({ entry, current, snapshot, wait = ms => new Promise(r => setTimeout(r, ms)) }) {
+  constructor({ entry, current, snapshot, approvals = null, wait = ms => new Promise(r => setTimeout(r, ms)) }) {
     this.entry = entry; this.current = current; this.snapshot = snapshot; this.wait = wait;
     this.busy = new Set(); this.submitted = new Map();
+    this.approvals = approvals;
   }
-  isBusy(id) { return this.busy.has(id); }
+  isBusy(id) { return this.busy.has(id) || !!this.approvals?.isBusy(id); }
   async answer(id, request) {
-    if (this.busy.has(id)) throw new Error('An answer is already being submitted');
+    if (this.isBusy(id)) throw new Error('An answer is already being submitted');
+    if (Object.hasOwn(request, 'approvalChoice')) {
+      if (!this.approvals) throw new Error('Command approvals unavailable');
+      return this.approvals.answer(id, request);
+    }
     if (typeof request.questionId !== 'string' || !request.questionId || request.questionId.length > 200
       || typeof request.sessionId !== 'string' || !request.sessionId || request.sessionId.length > 200) throw new TypeError('Question identity required');
     const key = JSON.stringify([id, request.sessionId, request.questionId]);

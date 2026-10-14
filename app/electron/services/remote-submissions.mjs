@@ -64,8 +64,11 @@ export class RemoteSubmissions {
       try {
         notSent = await execute() === false;
         result = notSent ? failure(409, "session is not active") : { status: 200, body: { ok: true } };
-      } catch {
-        result = unknownOutcome();
+      } catch (error) {
+        if (error?.outcome === 'not-sent') {
+          notSent = true;
+          result = { status: error.statusCode || 409, body: { error: error.message, outcome: 'not-sent', reason: error.reason } };
+        } else result = unknownOutcome();
       }
       entry.result = result;
       // A definitive rejection before submission is safe to retry after activation.

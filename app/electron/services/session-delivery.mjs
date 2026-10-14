@@ -9,9 +9,9 @@ const watching = r => ['sending', 'sent', 'received', 'unconfirmed'].includes(r.
 const marker = /\[Acedia handoff: ([0-9a-f-]{36})\]/;
 const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
 
-export function deliveryComposerReady(entry) {
+export function deliveryComposerReady(entry, { allowWorking = false } = {}) {
   const screen = entry.filter.viewportText?.() || '';
-  if (/esc to interrupt|Queued follow-up inputs|shift\+.*answer/i.test(screen)) return false;
+  if (!allowWorking && /esc to interrupt|Queued follow-up inputs|shift\+.*answer/i.test(screen)) return false;
   const buffer = entry.filter.shadow?.buffer.active;
   const line = buffer?.getLine(buffer.baseY + buffer.cursorY);
   const text = line?.translateToString(true) || '';

@@ -49,6 +49,33 @@ describe("RemoteSessionActivationBroker", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it("explicitly restarts an active session only after acknowledgement and rejects overlapping requests", async () => {
+    const dispatch = vi.fn(() => true);
+    let runtime = { generation: 1 };
+    const broker = new RemoteSessionActivationBroker({ dispatch, isActive: () => true,
+      runtimeIdentity: () => runtime,
+      idFactory: () => "restart-request", timeoutMs: 1000 });
+    const result = broker.activate("right-clicked", { restart: true });
+    expect(dispatch).toHaveBeenCalledWith({ requestId: "restart-request", id: "right-clicked", restart: true });
+    await expect(broker.activate("right-clicked", { restart: true })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(broker.activate("right-clicked")).rejects.toMatchObject({ statusCode: 409 });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(broker.complete({ requestId: "restart-request", id: "other", ok: true })).toBe(false);
+    runtime = { generation: 2 };
+    expect(broker.complete({ requestId: "restart-request", id: "right-clicked", ok: true })).toBe(true);
+    await expect(result).resolves.toMatchObject({ id: "right-clicked", restarted: true });
+    await expect(broker.activate("right-clicked")).resolves.toMatchObject({ restarted: false });
+  });
+
+  it("does not report a successful explicit restart when the old runtime remains active", async () => {
+    const runtime = {};
+    const broker = new RemoteSessionActivationBroker({ dispatch: () => true, isActive: () => true,
+      runtimeIdentity: () => runtime, idFactory: () => "unchanged", timeoutMs: 1000 });
+    const result = broker.activate("clicked", { restart: true });
+    broker.complete({ requestId: "unchanged", id: "clicked", ok: true });
+    await expect(result).rejects.toMatchObject({ statusCode: 409 });
+  });
+
   it("rejects false acknowledgements and missing PTYs", async () => {
     const broker = new RemoteSessionActivationBroker({
       dispatch: () => true,

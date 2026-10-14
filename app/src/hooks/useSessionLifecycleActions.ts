@@ -27,6 +27,8 @@ type SessionLifecycleOptions = {
   beforeDeleteConfirm?: () => void;
   afterDeleteSettled?: () => void;
   onDeleteBlocked?: () => void;
+  beforeRestart?: (agentId: string) => void;
+  pinnedSessionId?: (agentId: string) => string | undefined;
 };
 
 function disposeTerminal(
@@ -51,9 +53,55 @@ export function useSessionLifecycleActions({
   beforeDeleteConfirm,
   afterDeleteSettled,
   onDeleteBlocked,
+  beforeRestart,
+  pinnedSessionId,
 }: SessionLifecycleOptions) {
   const [pendingDeletion, setPendingDeletion] = useState<Agent | null>(null);
   const deletingRef = useRef(false);
+  const restartingRef = useRef(new Set<string>());
+  const [restartingAgentIds, setRestartingAgentIds] = useState<Set<string>>(new Set());
+  const restartAgent = useCallback(async (agentId: string, spawn: (id: string, options: {
+    recovering: boolean; resumeSessionId?: string; poolResumeOwnerId?: string;
+  }) => Promise<{ ok: boolean; error?: string }>) => {
+    const agent = agentsRef.current.find(candidate => candidate.id === agentId);
+    if (!agent || detachedAgentIdsRef.current.has(agentId)) throw new Error("Session is unavailable or belongs to another window.");
+    if (restartingRef.current.has(agentId) || ["starting", "recovering"].includes(agent.runtimeStatus || agent.status)) {
+      throw new Error("Session is already starting or restarting.");
+    }
+    restartingRef.current.add(agentId); setRestartingAgentIds(new Set(restartingRef.current));
+    try {
+      let result: { sessionId: string | null; poolResumeOwnerId?: string } = { sessionId: null };
+      if (isElectronRuntime() && !agent.sshHostId && ["codex", "claude"].includes(agent.aiToolId)) {
+        result = await invoke("restart_session_model", { id: agentId,
+          expectedSessionId: pinnedSessionId?.(agentId), interrupt: true });
+      } else if (isElectronRuntime()) {
+        await invoke("terminal_session_action", { id: agentId, action: "restart" });
+      } else {
+        await invoke("kill_pty", { id: agentId });
+      }
+      if (!agentsRef.current.some(candidate => candidate.id === agentId) || detachedAgentIdsRef.current.has(agentId)) {
+        throw new Error("Session changed while restarting.");
+      }
+      beforeRestart?.(agentId);
+      const entry = termsRef.current.get(agentId);
+      if (entry) {
+        try { saveScrollback(agentId, entry.serialize.serialize({ scrollback: 1000 })); } catch {}
+      }
+      disposeTerminal(termsRef, agentId);
+      // Replace only the right-clicked session. Its pane and the current
+      // selection stay in place; an unopened session starts in the background.
+      const next = agentsRef.current.map(candidate => candidate.id === agentId ? {
+        ...candidate, lastSessionId: result.sessionId || candidate.lastSessionId, deferredStart: false,
+        terminalEpoch: (candidate.terminalEpoch || 0) + 1,
+      } : candidate);
+      agentsRef.current = next; setAgents(next);
+      const started = await spawn(agentId, { recovering: true,
+        resumeSessionId: result.sessionId || undefined, poolResumeOwnerId: result.poolResumeOwnerId });
+      if (!started.ok) throw new Error(started.error || "Session restart failed.");
+    } finally {
+      restartingRef.current.delete(agentId); setRestartingAgentIds(new Set(restartingRef.current));
+    }
+  }, [agentsRef, beforeRestart, detachedAgentIdsRef, pinnedSessionId, setAgents, termsRef]);
   const recoverExitedAgent = useCallback(async (agentId: string) => {
     const wasIdle =
       agentsRef.current.find((agent) => agent.id === agentId)?.status === "idle";
@@ -215,6 +263,8 @@ export function useSessionLifecycleActions({
   ]);
 
   return {
+    restartAgent,
+    restartingAgentIds,
     recoverExitedAgent,
     deactivateAgent,
     setAgentStatus,

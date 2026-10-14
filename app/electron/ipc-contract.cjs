@@ -75,6 +75,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "read_text_file",
   "read_chat_transcript",
   "chat_blocks",
+  "chat_block_details",
   "read_chat_images",
   "conversation_record_user_message",
   "conversation_storage_get",
@@ -631,6 +632,10 @@ function assertInvokeRequest(command, rawArgs) {
       if (args.beforeSequence !== undefined) {
         assertPositiveInteger(args.beforeSequence, "chat block cursor", Number.MAX_SAFE_INTEGER);
       }
+      if (args.afterSequence !== undefined) assertPositiveInteger(args.afterSequence, "chat update cursor", Number.MAX_SAFE_INTEGER);
+      if (args.turnLimit !== undefined) assertPositiveInteger(args.turnLimit, "chat turn limit", 20);
+      if (args.conversationId !== undefined && (typeof args.conversationId !== 'string' || !args.conversationId || args.conversationId.length > 200)) throw new TypeError('Invalid conversation identity');
+      if (args.beforeSequence !== undefined && args.afterSequence !== undefined) throw new TypeError('Conflicting chat cursors');
       if (args.limit !== undefined) {
         assertPositiveInteger(args.limit, "chat block limit", 1000);
       }
@@ -638,6 +643,13 @@ function assertInvokeRequest(command, rawArgs) {
     case "read_chat_images":
       if (typeof args.id !== "string" || !args.id.trim() || args.id.length > 256) throw new TypeError("Electron image agent id must be a non-empty string");
       assertPositiveInteger(args.sequence, "chat image block", Number.MAX_SAFE_INTEGER);
+      break;
+    case 'chat_block_details':
+      for (const key of ['id', 'sessionId', 'conversationId']) {
+        if (typeof args[key] !== 'string' || !args[key] || args[key].length > 200) throw new TypeError('Invalid chat detail identity');
+      }
+      if (!Array.isArray(args.sequences) || args.sequences.length < 1 || args.sequences.length > 20
+        || args.sequences.some(sequence => !Number.isSafeInteger(sequence) || sequence < 1)) throw new TypeError('Invalid chat detail sequences');
       break;
     case "conversation_record_user_message":
       if (typeof args.id !== "string" || !args.id.trim() || args.id.length > 256) {

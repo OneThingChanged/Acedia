@@ -193,7 +193,8 @@ async function exerciseRemote(BrowserWindow, directory) {
         chat = baseChat;
         await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         chat = { ...baseChat, lifecycle:'working', pendingQuestion:{ id:'remote-async', toolName:'request_user_input_async', async:true, question:JSON.stringify({ questions:[{ title:'작업 중 경로를 선택해 주세요', options:['현재 경로','다른 경로'] }] }) } };
-        await waitFor(win, "document.querySelector('#chatPrompt').textContent.includes('작업 중 경로') && !!document.querySelector('#chatView .chat-thinking')");
+        await waitFor(win, "document.querySelector('#chatPrompt').textContent.includes('작업 중 경로') && !document.querySelector('#chatWorking').hidden");
+        assert(await win.webContents.executeJavaScript("document.querySelector('#chatWorking').getBoundingClientRect().height>0 && !document.querySelector('#chatView .chat-thinking')"), 'Async question hid the pinned work indicator or duplicated it in chat history');
         await win.webContents.executeJavaScript("document.querySelector('#chatPrompt input[type=radio]').click();document.querySelector('#chatPrompt .question-submit').click()");
         await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt-hint').textContent.includes('답변을 보냈습니다')");
         assert(answers.at(-1).questionId==='remote-async' && answers.at(-1).answers[0].id==='async-0', 'Remote async question schema or identity missing');

@@ -370,6 +370,75 @@ export class CodexScrollbackFilter {
   }
 }
 
+/** Forward complete Qwen redraws in one segment, without altering scrollback.
+ * Qwen's outer write wrapper and Ink can nest DEC 2026 markers. Collect the
+ * outer frame so the inner reset cannot expose a partially repainted viewport.
+ * A bounded watchdog releases malformed frames instead of freezing a session.
+ */
+export class SynchronizedTerminalFilter {
+  constructor({ maxCharacters = 512 * 1024, timeoutMs = 100 } = {}) {
+    this.maxCharacters = maxCharacters;
+    this.timeoutMs = timeoutMs;
+    this.pending = '';
+    this.frame = [];
+    this.frameLength = 0;
+    this.depth = 0;
+    this.timer = null;
+    this.sink = null;
+    this.disposed = false;
+  }
+
+  setOutputSink(sink) { this.sink = sink; }
+
+  push(chunk) {
+    if (this.disposed) return String(chunk ?? '');
+    const input = this.pending + String(chunk ?? '');
+    this.pending = '';
+    const output = [];
+    let cursor = 0;
+    const accept = value => {
+      if (this.depth) { this.frame.push(value); this.frameLength += value.length; }
+      else output.push(value);
+    };
+    while (cursor < input.length) {
+      const escape = input.indexOf(ESC, cursor);
+      if (escape < 0) { accept(input.slice(cursor)); break; }
+      accept(input.slice(cursor, escape));
+      const sequence = readEscapeSequence(input, escape);
+      if (!sequence?.complete) { this.pending = input.slice(escape); break; }
+      if (sequence.value === SYNC_OUTPUT_START) {
+        this.depth += 1;
+        accept(sequence.value);
+      } else if (sequence.value === SYNC_OUTPUT_END && this.depth) {
+        accept(sequence.value);
+        this.depth -= 1;
+        if (!this.depth) output.push(this.#drain(false));
+      } else accept(sequence.value);
+      cursor = sequence.end;
+    }
+    if (this.frameLength + this.pending.length > this.maxCharacters) output.push(this.finish());
+    if ((this.depth || this.pending) && !this.timer && this.sink) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        if (!this.disposed) this.sink?.(this.finish());
+      }, this.timeoutMs);
+      this.timer.unref?.();
+    } else if (!this.depth && !this.pending) this.#clearTimer();
+    return output.join('');
+  }
+
+  #clearTimer() { if (this.timer) clearTimeout(this.timer); this.timer = null; }
+  #drain(recover) {
+    const value = this.frame.join('') + this.pending + (recover && this.depth ? SYNC_OUTPUT_END : '');
+    this.frame = []; this.frameLength = 0; this.pending = ''; this.depth = 0;
+    this.#clearTimer();
+    return value;
+  }
+  finish() { return this.#drain(true); }
+  resize() {}
+  dispose() { this.#clearTimer(); this.disposed = true; this.frame = []; this.pending = ''; this.sink = null; }
+}
+
 export class PassThroughTerminalFilter {
   push(chunk) {
     return String(chunk ?? "");

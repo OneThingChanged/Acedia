@@ -9,7 +9,6 @@ import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
 import { SidebarIcon } from "./SidebarIcon";
 import { ProviderLogo } from "./ProviderLogo";
-import { CompletionBadge } from "./CompletionBadge";
 import "./Sidebar.css";
 
 type SidebarProps = SidebarProjectTreeProps & {
@@ -197,6 +196,7 @@ function WorkspaceSidebar(props: SidebarProps) {
       : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : agent.status;
     return <li key={agent.id} data-sidebar-agent-id={agent.id} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
+      aria-label={unread ? `${agent.name} · ${text('읽지 않은 작업 완료', 'Unread completion')}` : undefined}
       title={`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${agent.remoteFolder || project.remoteFolder}` : agent.folder}\n${statusTitle}`}
       onPointerDown={event => startPointer(agent, event, fromSearch)}
       onKeyDown={event => { if (event.target !== event.currentTarget || detached || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAgent(agent.id, fromSearch); } }}
@@ -204,13 +204,15 @@ function WorkspaceSidebar(props: SidebarProps) {
       <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
       <ProviderLogo toolId={agent.aiToolId} />
       <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={project?.folder}>{fromSearch ? highlight(project?.name || text("미분류", "Uncategorized")) : project?.name || text("미분류", "Uncategorized")}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null}</span>}</div>
-      {unread && <CompletionBadge />}
+      <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
       {agent.dangerous && <span className="agent-danger" title={text("권한 확인을 생략하는 세션", "Session skips permission prompts")}>!</span>}
-      {detached ? <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span> : <div className="sidebar-session-actions">
+      {!detached && <div className="sidebar-session-actions">
         <button className="sidebar-icon-button sidebar-row-menu" aria-label={text(`${agent.name} 대화 메뉴`, `${agent.name} conversation menu`)} title={text("대화 메뉴", "Conversation menu")} aria-haspopup="menu" onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, ...menuPosition(event)); }}>···</button>
         {isAgentRuntimeActive(agent) && <button className="sidebar-icon-button sidebar-session-close" aria-label={text(`${agent.name} 세션 끄기`, `Stop ${agent.name} session`)} title={text("세션 끄기 (대화 기록 유지)", "Stop session (keep conversation history)")} onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onDeactivate(agent.id); }}><SidebarIcon name="close" /></button>}
       </div>}
+      </div>
+      {detached && <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span>}
     </li>;
   };
 

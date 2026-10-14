@@ -396,6 +396,7 @@ export type SessionContextAction =
   | "pin-session"
   | "clear-session-pin"
   | "deactivate"
+  | "restart"
   | "delete"
   | "relink"
   | "properties";

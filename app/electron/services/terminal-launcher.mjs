@@ -9,8 +9,9 @@ import { updateNativeSessionModel } from "./session-model-memory.mjs";
 import { normalizeLaunchOptions } from "../shared/launch-options.mjs";
 import { codexRemoteTuiArgs } from "./account-pool-session.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
+import { refreshWindowsPath } from './executable-path.mjs';
 import { buildInteractiveSshArgs, findWindowsExecutable } from "./ssh-service.mjs";
-import { CodexScrollbackFilter, PassThroughTerminalFilter } from "./terminal-stream.mjs";
+import { CodexScrollbackFilter, PassThroughTerminalFilter, SynchronizedTerminalFilter } from "./terminal-stream.mjs";
 import { terminateWindowsProcessTree } from "./process-tree.mjs";
 
 const HOOK_TOOLS = new Set(["codex", "claude", "qwen"]);
@@ -54,6 +55,7 @@ export function createTerminalLauncher({
   onRegistered = () => {},
   baseEnv = process.env,
   platform = process.platform,
+  refreshPath = env => refreshWindowsPath(env, platform),
   resolveSshExecutable = () => findWindowsExecutable(platform === "win32" ? "ssh.exe" : "ssh"),
 }) {
   async function prepareLaunch(args, id, aiToolId) {
@@ -119,7 +121,14 @@ export function createTerminalLauncher({
         );
       }
       const ptyCols = asPositiveInt(args.cols, 120);
-      const launchEnvironment = mergeLaunchEnvironment(accountEnv, args.launchOptions, platform);
+      const launchEnvironment = mergeLaunchEnvironment(ssh ? accountEnv : refreshPath(accountEnv), args.launchOptions, platform);
+      // Qwen does not recognize xterm-256color as synchronized-output capable.
+      // Our desktop and Remote xterm 6 renderers support DEC 2026; let the CLI
+      // bracket erase/repaint writes so intermediate empty frames stay hidden.
+      // Preserve explicit opt-outs and avoid advertising a remote SSH terminal.
+      if (!ssh && aiToolId === 'qwen' && launchEnvironment.QWEN_CODE_SYNCHRONIZED_OUTPUT === undefined) {
+        launchEnvironment.QWEN_CODE_SYNCHRONIZED_OUTPUT = '1';
+      }
       const modelArgs = ["codex", "claude"].includes(aiToolId) ? sessionModelArgs(args.modelSettings, args.launchOptions, aiToolId) : [];
       const referenceArgs = referenceFolderArgs(args.sessionReferenceFolders, aiToolId, Boolean(ssh));
       const launchOptions = normalizeLaunchOptions(args.launchOptions);
@@ -203,7 +212,7 @@ export function createTerminalLauncher({
     const outputFilter =
       aiToolId === "codex"
         ? new CodexScrollbackFilter(ptyRows, ptyCols)
-        : new PassThroughTerminalFilter();
+        : aiToolId === 'qwen' ? new SynchronizedTerminalFilter() : new PassThroughTerminalFilter();
     let processHandle;
     const agyLaunchId = !ssh && aiToolId === "agy" ? randomUUID() : "";
     try {

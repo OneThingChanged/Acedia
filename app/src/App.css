@@ -5544,6 +5544,9 @@ body.files-resizing .files-resizer::after {
   background: color-mix(in srgb, var(--app-danger, #f85149) 8%, var(--app-panel, var(--app-bg)));
 }
 .chat-prompt-startup { max-height: 65%; }
+.chat-prompt-command { max-height: 65%; }
+.chat-prompt-approval-scope { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--app-border); }
+.chat-prompt-command .chat-prompt-option { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
 .chat-prompt-text { flex: 1 1 auto; min-height: 0; overflow-y: auto; font-size: 13px; color: var(--app-text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .chat-prompt-heading { flex: 0 0 auto; color: var(--app-warning, #e3b341); font-size: 13px; }
 .chat-prompt-hint { flex: 0 0 auto; color: var(--app-muted); font-size: 12px; }

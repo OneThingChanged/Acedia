@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -19,6 +19,9 @@ sources:
   - id: session-lifecycle-actions
     resource: ../app/src/hooks/useSessionLifecycleActions.ts
     title: "Session deletion and runtime lifecycle actions"
+  - id: session-restart-smoke
+    resource: ../app/scripts/electron-session-restart-smoke.mjs
+    title: "Context-menu Restart clicks, session identity and lifecycle failure verification"
   - id: workspace-focus
     resource: ../app/src/lib/workspaceFocus.ts
     title: "Active terminal focus recovery"
@@ -118,6 +121,15 @@ sources:
   - id: chat-question-smoke
     resource: ../app/scripts/electron-chat-question-smoke.mjs
     title: "Desktop, native terminal startup and Remote question verification"
+  - id: command-approvals
+    resource: ../app/electron/services/command-approval.mjs
+    title: "Live Codex command approval recognition and guarded answers"
+  - id: approval-ui-smoke
+    resource: ../app/scripts/electron-chat-approval-smoke.mjs
+    title: "Chat, Remote and Dashboard approval choices and stale-command verification"
+  - id: approval-cli-smoke
+    resource: ../app/scripts/codex-approval-cli-smoke.mjs
+    title: "Isolated installed Codex allow-once and denial verification"
   - id: file-tree
     resource: ../app/src/components/FileTreePanel.tsx
     title: "File tree panel"
@@ -166,6 +178,9 @@ sources:
   - id: conversation-store
     resource: ../app/electron/services/conversation-store.mjs
     title: "Per-session conversation store"
+  - id: electron-main
+    resource: ../app/electron/main.mjs
+    title: "Chat transcript paging and background ingestion"
 ---
 
 # Workspace interactions
@@ -243,8 +258,8 @@ Each project starts folded on first use. Its expanded state is saved separately
 from the session picker's expansion and restored after reopening; selecting a
 conversation or receiving session updates does not reopen a deliberately folded
 project. Several projects can remain open at once. Inline conversations use
-compact, indented title rows with status dots, selected state, completion/split
-badges and the existing conversation menu; they sort by sidebar pin and recent
+compact, indented title rows with status dots, selected state, completion
+highlights, split badges and the existing conversation menu; they sort by sidebar pin and recent
 visit time and omit archived entries. Pointer selection and Enter/Space open the
 same conversation as the recent list, respecting sessions in use in other
 windows. Hover/focus shows a chevron on the project icon and exposes its menu
@@ -266,14 +281,43 @@ through the shared session catalog.[^sidebar][^sidebar-navigation][^app-shell]
 Active sessions also have an **×** button in recent conversations, expanded
 projects and search results. Session screen badges, Dangerous mode markers and
 the menu/stop controls appear on row hover or keyboard focus; selecting a row
-does not keep those controls visible after the mouse leaves. Their space is
-reserved to keep text and row geometry stable. Touch devices retain visible
-controls. Completion badges and the colored screen rail stay visible.
+does not keep those controls visible after the mouse leaves. Hidden controls
+take no layout space, giving the session title the full available row width.
+Touch devices retain visible controls. The Done badge is removed; unread
+completion highlights and the colored screen rail remain visible.
 The **×** button immediately deactivates that session and removes
 its open pane while retaining the conversation in the catalog; other sessions
 keep running. Sleeping or stopped sessions and sessions owned by another window
 do not show the button. Double-clicking a session no longer opens rename; use
 **Rename** in the right-click or item menu.[^sidebar][^sidebar-project-tree]
+
+Development source on 2026-10-13 adds **Restart** to the session right-click
+and item menu in recent conversations and expanded projects. The clicked
+session restarts even when another conversation is selected; its pane, Screen
+placement and the current selection are preserved. Unopened sessions restart
+in the background. Restart interrupts current work. Starting/recovering sessions,
+overlapping requests and sessions owned by another window are blocked.
+[^context-menus][^session-lifecycle-actions]
+
+For local Codex/Claude, the host verifies a known conversation ID, group pin,
+account and routed owner before stopping the process, captures its latest
+model/effort/Fast settings, then resumes that exact conversation. Model-change
+restart continues to require completed work; the context-menu action explicitly
+allows interruption. Preparation failure leaves the existing terminal view in
+place. A launch failure reports an error with saved history available for retry.
+An isolated Electron fixture uses actual right-click/Restart pointer input and
+checks target identity, settings/history, duplicate clicks, failed preparation,
+ownership and sleeping sessions. Host calls in that UI fixture are mocked, so
+it does not interrupt a user's real CLI. Evidence is in
+`output/session-context-restart-smoke.log` and `output/session-restart-smoke/`.
+The feature is implemented in source and has not yet been published.
+[^session-restart-smoke][^app-shell]
+
+Focused model, launcher, IPC, HTTP, activation-broker, menu and window-ownership
+verification passed **127 checks in seven files**. TypeScript and the frontend
+Vite build passed; the existing large-chunk warning remains. These checks are
+recorded in `output/session-restart-focused-tests.log` and
+`output/session-restart-frontend-build.log`.
 
 The recent-list filters offer **All / Active / Sleeping**, with counts for the
 selected project scope, excluding archived entries.
@@ -406,6 +450,21 @@ click, and a failed folder open reports a toast.[^app-shell][^context-menus]
 
 ## Terminal and chat
 
+Source 1.8.1.82 enables Qwen's synchronized-output capability for local sessions.
+The host forwards a complete repaint as one segment to desktop and Remote
+terminals, including nested Qwen/Ink redraw boundaries, so a partial erase does
+not briefly replace the visible footer. It preserves colors, cursor movement,
+links and the CLI's scrollback semantics. Incomplete frames are released within
+100 ms and buffering is bounded to 512 Ki characters; disposal cancels pending
+callbacks so they cannot reach a restarted session. Explicit Qwen opt-outs remain
+effective and SSH launches do not receive the local capability override.
+The [Qwen terminal smoke](../app/scripts/electron-qwen-terminal-smoke.mjs) compares
+the intermediate DOM against the old behavior and checks an isolated installed
+Qwen 0.25.1 draft and cursor movement without sending a model request. The tested
+68 PTY chunks became 31 output segments, with the same final terminal content.
+Existing Qwen processes acquire the launch setting after session Restart; the
+release publication is tracked in [1.8.1.82](release-1-8-1-82.md).
+
 The Terminal settings panel controls font, size, line height, cursor, scrollback,
 selection copying and right-click pasting for local and SSH terminal views.
 Preferences retain the legacy font-size value, share the Ctrl+wheel setting,
@@ -477,13 +536,53 @@ inactive chat-capable session first activates it and then waits for startup
 readiness before delivery.[^terminal-area]
 
 Chat history is loaded from a durable SQLite index keyed by MultiAgent agent,
-provider, and provider session ID. Recent blocks appear first, older blocks are
-paged on demand, and local composer text is recorded before PTY delivery then
+provider, and provider session ID. Chat initially requests the latest **five user
+turns** with their complete assistant runs; scrolling near the top requests five
+earlier turns. An independent latest-sequence cursor requests only new blocks
+during live updates, preserving the older-history cursor. Prepending uses the
+visible message's position as a scroll anchor, including when a live answer
+arrives during the request. A failed older-page request preserves the thread and
+offers retry. Loaded history is bounded to **120 user turns**; Jump to latest
+refetches the latest page if its end has been evicted. Local composer text is recorded before PTY delivery then
 confirmed against the provider transcript without duplication. Local files are
 attached to the assistant response that created, modified or referenced them. The
 rendered thread keeps tool calls in transcript order, groups only adjacent tool
 work, labels assistant output by provider, and exposes a jump-to-latest control
 when the operator reads above newly arriving output.[^chat-view][^chat-files][^conversation-store]
+
+Cold provider transcripts with more than 256 KiB left to import are indexed in
+the background with a yield between batches. Chat shows a compact recent tail
+while indexing, then replaces it with sequenced history. Live work state and
+questions remain available independently of the history page. This does not
+delete or rewrite the provider transcript.[^electron-main][^conversation-store]
+
+Chat's host submission coordinator is shared by desktop, Remote and Dashboard.
+For a local Codex message, it checks that the actual terminal composer is empty
+and ready before typing. An existing draft or interrupted paste is preserved
+when a retry is rejected; a second copy is not appended. Explicit steering
+may proceed during work but still requires an empty native composer. Ordinary
+single-line input sends one Enter after the 500ms paste-burst window even if
+the terminal's footer continues repainting. Multiline render/settling and
+process/conversation identity checks remain in force. The isolated
+[native submission smoke](../app/scripts/codex-chat-submit-smoke.mjs) verifies
+one actual Codex user record under simulated continuous repaint events, draft
+rejection before any write and explicit retry after review. Publication remains
+pending.[^chat-submission][^electron-main]
+
+Paged history carries short tool labels, completion/error state and identity;
+raw command output and diffs are fetched only when an individual work item is
+expanded. Detail requests bind the block IDs to the owning agent, provider
+session and stored conversation. Native attachment reads wait until the user
+message approaches the viewport, while unchanged polling keeps loaded previews
+in place.[^chat-view][^conversation-store]
+
+2026-10-14 source validation uses an isolated 200-turn SQLite fixture: the
+initial response falls from **703,351 bytes** (the previous 400-block request)
+to **11,713 bytes** (five complete turns with compact work records), about 98%
+less. The [pagination smoke](../app/scripts/electron-chat-pagination-smoke.mjs)
+checks desktop plus Remote/Dashboard at 1024/390px, lazy details, delta polling,
+scroll anchoring, concurrent live updates and retry. These are fixture results,
+not a public-tunnel latency measurement. Publication remains pending.
 
 Desktop Chat centers the conversation and composer in a shared 760px reading
 column with a proportional UI font; code and tool output retain a monospace
@@ -655,6 +754,23 @@ native form with the corresponding shortcut before verifying its question and
 sending only the user's answers. Ordinary queued messages or a missing hint
 never receive answer keys. A tool call's proposed diff alone does not mark it completed;
 its result is required.[^chat-view][^chat-work-state][^chat-transcript]
+
+Current source adds **Approval needed / 승인 필요** for recognized local Codex
+command approvals. Chat displays the original reason, environment and command,
+and the full recurring approval scope. **Allow once**, **Don't ask again for
+this prefix** and **Deny** use the existing answer service, with a separate
+terminal action. Full details scroll independently while the buttons stay
+visible. The service assigns a current approval ID and verifies the process,
+conversation, command, choices and selected row before confirmation. A changed
+or partly submitted dialog stops key delivery; unknown forms and SSH retain
+the terminal fallback. No command is approved automatically.[^command-approvals]
+
+Isolated desktop Chat and Remote/Dashboard UI checks passed normal and narrow
+layouts, all three desktop decisions, exact request identity, changed-command
+rejection and verified native arrow delivery. The installed Codex **0.162.1**
+fixture also passed allow-once execution of a harmless marker and denial that
+cancels the turn, using only a local mock model and fresh profile. These changes
+are source-only until the next EXE release.[^approval-ui-smoke][^approval-cli-smoke]
 
 The rounded composer has session project/connection context, file attachment,
 provider label, queue/send and an interrupt button while work is active. The
@@ -934,7 +1050,7 @@ preservation, preference persistence across remounts, and switching back to Kore
 [^settings][^app-language]
 
 Completion attention is visual and can also drive desktop/Remote notifications.
-Unread completions show a checkmarked Done badge in sidebar conversation lists.
+Unread completions highlight sidebar conversation rows without a Done badge.
 Recent rows retain a green background and outline after three short pulses;
 reduced-motion preferences disable the pulses. Sleeping or exiting does not
 acknowledge completion. Selecting the conversation, reading its attention item,
@@ -951,6 +1067,7 @@ The domain invariants behind these interactions are documented in
 
 [^app-shell]: Workspace shell and actions
 [^session-lifecycle-actions]: Session deletion and runtime lifecycle actions
+[^session-restart-smoke]: Context-menu Restart clicks, session identity and lifecycle failure verification
 [^workspace-focus]: Active terminal focus recovery
 [^sidebar]: Workspace navigation and recent conversations
 [^sidebar-project-tree]: Project folders, SSH machines and session picker
@@ -982,6 +1099,9 @@ The domain invariants behind these interactions are documented in
 [^chat-copy]: Chat clipboard actions and feedback
 [^terminal-startup-prompt]: Live Codex startup questions and verified selection
 [^chat-question-smoke]: Desktop, native terminal startup and Remote question verification
+[^command-approvals]: Live Codex command approval recognition and guarded answers
+[^approval-ui-smoke]: Chat, Remote and Dashboard approval choices and stale-command verification
+[^approval-cli-smoke]: Isolated installed Codex allow-once and denial verification
 [^file-tree]: File tree panel
 [^git-discovery]: Child Git repository discovery
 [^git-runtime]: Installed and bundled Git executable selection
@@ -996,3 +1116,5 @@ The domain invariants behind these interactions are documented in
 [^session-storage-ui]: Session JSONL storage catalog UI
 [^session-storage-service]: Session JSONL metadata catalog
 [^conversation-store]: Per-session conversation store
+[^electron-main]: Chat transcript paging and background ingestion
+[^chat-submission]: Host chat submission and conversation reset coordination

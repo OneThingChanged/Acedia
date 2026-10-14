@@ -3,7 +3,7 @@ export type ChatQuestion = { id: string; text: string; multiSelect: boolean; opt
 export type ChatAnswer = { id: string; optionIndex: number | null; text?: string };
 export type ChatPrompt = {
   kind: "question" | "permission" | "authentication";
-  answerStyle: "arrow" | "digit" | "terminal" | "codex-form";
+  answerStyle: "arrow" | "digit" | "terminal" | "codex-form" | "codex-approval";
   text: string;
   options: ChatPromptOption[];
   questions?: ChatQuestion[];

@@ -9,6 +9,17 @@ import {
 } from "./pty-submit.mjs";
 
 describe("PTY message submission", () => {
+  it('submits one single-line message even while an idle footer keeps repainting', async () => {
+    let clock = 0, listener;
+    const writes = [];
+    await submitPtyMessage({
+      ptyProcess: { write: value => writes.push({ value, at: clock }), onData: fn => { listener = fn; return { dispose() {} }; } },
+      message: '옷 머리카락은 보디 모션만 관여하고 그외부분은 물리쪽에 맡기고 신경쓰지말자',
+      now: () => clock, wait: async ms => { clock += ms; listener('footer repaint'); },
+    });
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toEqual({ value: '\r', at: PTY_SUBMIT_DELAY_MS });
+  });
   it("submits steering once after the safe delay even when a working spinner keeps repainting", async () => {
     let clock = 0, listener;
     const writes = [];

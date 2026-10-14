@@ -65,6 +65,30 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it('enables Qwen atomic repaints only on local terminals and preserves an explicit opt-out', async () => {
+    const f = fixture();
+    await f.launch({ ...f.args, aiToolId: 'qwen' });
+    expect(f.dependencies.spawnProcess.mock.calls[0][2].env.QWEN_CODE_SYNCHRONIZED_OUTPUT).toBe('1');
+    await f.launch({ ...f.args, id: 'opt-out', aiToolId: 'qwen',
+      launchOptions: { env: [{ name: 'QWEN_CODE_SYNCHRONIZED_OUTPUT', value: '0' }] } });
+    expect(f.dependencies.spawnProcess.mock.calls[1][2].env.QWEN_CODE_SYNCHRONIZED_OUTPUT).toBe('0');
+    await f.launch({ ...f.args, id: 'remote', aiToolId: 'qwen', ssh: { host: 'fixture.invalid', username: 'test', authMethod: 'key' } });
+    expect(f.dependencies.spawnProcess.mock.calls[2][2].env).not.toHaveProperty('QWEN_CODE_SYNCHRONIZED_OUTPUT');
+    expect(f.dependencies.baseEnv).not.toHaveProperty('QWEN_CODE_SYNCHRONIZED_OUTPUT');
+  });
+  it('refreshes newly installed CLI paths before per-session environment overrides, preserving account isolation', async () => {
+    const f = fixture(), refreshPath = vi.fn(env => ({ ...env, Path: env.Path + ';new-install' }));
+    const launch = createTerminalLauncher({ ...f.dependencies, refreshPath, platform: 'win32', defaultShell: () => 'powershell.exe' });
+    await launch({ ...f.args, aiToolId: 'claude', claudeAccountId: 'account-a' });
+    expect(f.dependencies.spawnProcess.mock.calls[0][2].env.Path).toBe('fixture-path;new-install');
+    expect(f.providers.claude.environment.mock.results[0].value.Path).toBe('fixture-path');
+    await launch({ ...f.args, id: 'session-b', aiToolId: 'claude', claudeAccountId: 'account-b',
+      launchOptions: { env: [{ name: 'PATH', value: 'explicit-session-path' }] } });
+    const env = f.dependencies.spawnProcess.mock.calls[1][2].env;
+    expect(env.PATH).toBe('explicit-session-path'); expect(env).not.toHaveProperty('Path');
+    expect(env.CLAUDE_CONFIG_DIR).toContain('account-b');
+    expect(refreshPath).toHaveBeenCalledTimes(2);
+  });
   it.each(["codex", "claude"])("passes Acedia defaults through the unconfigured %s launch and remembers a later terminal change", async aiToolId => {
     vi.useFakeTimers();
     const f = fixture();

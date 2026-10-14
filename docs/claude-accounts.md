@@ -7,7 +7,12 @@ tags:
   - accounts
   - sessions
 status: stable
+last_updated: 2026-10-15
 sources:
+  - resource: ../app/electron/services/executable-path.mjs
+  - resource: ../app/electron/services/executable-path.test.mjs
+  - resource: ../app/electron/services/claude-cli-resolution.test.mjs
+  - resource: ../app/electron/services/terminal-launcher.mjs
   - resource: ../app/electron/services/provider-accounts.mjs
   - resource: ../app/electron/services/claude-accounts.mjs
   - resource: ../app/electron/services/provider-accounts.test.mjs
@@ -25,6 +30,27 @@ sources:
 # Claude account profiles
 
 ## User workflow
+
+If a new local Claude session reports `CLI executable was not found` immediately
+after installation, the desktop process may still have its earlier Windows PATH.
+The 2026-10-15 source refreshes stored Windows user/machine PATH entries when
+preparing local terminal children, without changing the parent process or
+running sessions. It keeps inherited paths first, preserves account configuration
+directories, and applies an explicit session PATH override afterwards. CLI
+availability, account sign-in and model-help discovery also retry against the
+current stored paths when the inherited PATH has no match. A missing explicitly
+configured executable remains an error. Stored PATH reads are cached for five
+seconds and an unavailable registry leaves the inherited environment intact.
+Automatic detection is shared by all new, resumed and restarted local Claude
+sessions, rather than requiring a saved executable path on each session.
+Account sign-in and model-help children also receive the refreshed environment,
+including the npm `.cmd` fallback and separate account configuration directories.
+
+Source validation passed 61 launch/environment/account/login/model-help tests and discovered and
+executed the installed WinGet Claude Code 2.1.292 with an intentionally stale
+parent PATH. Publication remains pending. Before updating the app, specifying
+the installed `claude.exe` in the session's advanced executable setting avoids
+the stale PATH without interrupting other sessions.
 
 When the CLI reports `Login expired · Please run /login`, desktop and Remote chat
 show **Claude 로그인 필요 / Claude sign-in required** instead of a question. Open

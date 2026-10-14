@@ -6,7 +6,10 @@ import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { submitPtyMessage } from "./pty-submit.mjs";
 
 const roots = [];
-afterEach(() => roots.splice(0).forEach(root => fs.rmSync(root, { recursive: true, force: true })));
+afterEach(() => roots.splice(0).forEach(root => {
+  if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('remote-submit-')) throw Error('Invalid cleanup path');
+  fs.rmSync(root, { recursive: true });
+}));
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "remote-submit-"));
   roots.push(root);
@@ -35,6 +38,16 @@ it("does not replay uncertain outcomes or accept changed content under the same 
   expect((await new RemoteSubmissions(file).submit(id, "a", "hello", execute)).body.outcome).toBe("unknown");
   expect((await ledger.submit(id, "a", "different", execute)).status).toBe(409);
   expect(execute).toHaveBeenCalledTimes(1);
+});
+it('distinguishes a pre-paste composer rejection from an unknown post-paste failure', async () => {
+  const { file, ledger, id } = fixture();
+  const reject = vi.fn(() => { throw Object.assign(new Error('Check existing terminal input'),
+    { outcome: 'not-sent', reason: 'composer-not-ready', statusCode: 409 }); });
+  expect(await ledger.submit(id, 'a', 'message', reject)).toMatchObject({ status: 409,
+    body: { outcome: 'not-sent', reason: 'composer-not-ready' } });
+  const accept = vi.fn(async () => true);
+  expect((await new RemoteSubmissions(file).submit(id, 'a', 'message', accept)).status).toBe(200);
+  expect(accept).toHaveBeenCalledOnce();
 });
 it("fails closed for persisted pending work, corrupt history and expired requests", async () => {
   const { file, ledger, id } = fixture();

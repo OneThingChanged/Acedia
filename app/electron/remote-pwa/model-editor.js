@@ -1,5 +1,5 @@
 import { t } from './i18n.js';
-export function createSessionModelEditor({ getAgent, selectedId, projectName, showToast, refresh, rename, closeSession }) {
+export function createSessionModelEditor({ getAgent, selectedId, projectName, showToast, refresh, rename, closeSession, restartSession }) {
   const $ = id => document.getElementById(id);
   const menu = $('sessionContextMenu'), overlay = $('sessionModelOverlay'), form = $('sessionModelForm');
   const model = $('sessionModelSelect'), effort = $('sessionEffortSelect'), fast = $('sessionFastSelect');
@@ -90,22 +90,27 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, sh
     if (!row) return;
     event.preventDefault(); menuTarget = row.dataset.agentId; source = row;
     menu.querySelector('[data-session-action=model]').hidden = !supported(getAgent(menuTarget));
+    const restarting = menu.querySelector('[data-session-action=restart]');
+    restarting.disabled = !restartSession || ['starting', 'recovering'].includes(getAgent(menuTarget)?.runtimeStatus || getAgent(menuTarget)?.status);
     menu.hidden = false; menu.style.left = `${Math.max(8, Math.min(event.clientX || 12, innerWidth - menu.offsetWidth - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(event.clientY || 60, innerHeight - menu.offsetHeight - 8))}px`;
-    menu.querySelector('button:not([hidden])')?.focus();
+    menu.querySelector('button:not([hidden]):not(:disabled)')?.focus();
   }
   $('sessionList').addEventListener('contextmenu', event => openMenu(event, event.target.closest('[data-agent-id]')));
   $('sessionList').addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) openMenu(event, event.target.closest('[data-agent-id]')); });
   menu.addEventListener('click', event => {
-    const action = event.target.closest('[data-session-action]')?.dataset.sessionAction;
+    const button = event.target.closest('[data-session-action]');
+    if (button?.disabled) return;
+    const action = button?.dataset.sessionAction;
     if (!action) return; menu.hidden = true;
     if (action === 'model') open(menuTarget, source);
     if (action === 'rename') rename?.(menuTarget);
     if (action === 'close') void closeSession?.(menuTarget);
+    if (action === 'restart') void restartSession?.(menuTarget);
   });
   menu.addEventListener('keydown', event => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const buttons = [...menu.querySelectorAll('button:not([hidden])')];
+    const buttons = [...menu.querySelectorAll('button:not([hidden]):not(:disabled)')];
     const index = buttons.indexOf(document.activeElement);
     event.preventDefault();
     buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length]?.focus();

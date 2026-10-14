@@ -38,6 +38,28 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('host chat submission coordination', () => {
+  it('rejects a parked terminal draft before retrying paste or Enter', async () => {
+    const f = fixture(); f.state.ready = false;
+    await expect(f.submit(request)).rejects.toMatchObject({ outcome: 'not-sent', reason: 'composer-not-ready' });
+    expect(f.process.write).not.toHaveBeenCalled();
+    expect(f.onInput).not.toHaveBeenCalled();
+    f.state.ready = true;
+    const retry = f.submit(request);
+    await vi.advanceTimersByTimeAsync(PTY_SUBMIT_DELAY_MS);
+    expect(await retry).toBe(true);
+    expect(f.process.write.mock.calls).toEqual([[request.message], ['\r']]);
+  });
+
+  it('checks the live composer for both ordinary sends and steering', async () => {
+    const f = fixture(); f.dependencies.composerReady = vi.fn(() => true);
+    const submit = createChatMessageSubmitter(f.dependencies);
+    for (const steering of [false, true]) {
+      const sent = submit({ ...request, steering });
+      await vi.advanceTimersByTimeAsync(PTY_SUBMIT_DELAY_MS);
+      expect(await sent).toBe(true);
+      expect(f.dependencies.composerReady).toHaveBeenLastCalledWith(f.entry, { allowWorking: steering });
+    }
+  });
   it.each([
     ['missing terminal', f => f.sessions.delete(id)],
     ['missing process', f => { f.entry.process = null; }],

@@ -54,7 +54,10 @@ export async function submitPtyMessage({
     // An ongoing turn repaints its spinner continuously; that output cannot
     // establish paste quietness. Steering still waits through the paste-burst
     // window and requires a visible multiline render, but ignores the spinner.
-    while ((bracketedPaste && observesOutput && !sawOutput) || (waitForOutputQuiet && now() - lastOutput < PTY_SUBMIT_QUIET_MS)) {
+    // Single-line input has no bracketed-paste render to settle. Footer/clock
+    // repaints can continue indefinitely even at an idle prompt; waiting for
+    // all output to stop leaves the text parked without its Enter.
+    while (bracketedPaste && ((observesOutput && !sawOutput) || (waitForOutputQuiet && now() - lastOutput < PTY_SUBMIT_QUIET_MS))) {
       if (!isCurrent() || now() - started >= PTY_SUBMIT_TIMEOUT_MS) {
         throw new Error("Terminal changed or paste did not settle; submission outcome unknown.");
       }

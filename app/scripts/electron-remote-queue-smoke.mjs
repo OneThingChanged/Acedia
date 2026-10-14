@@ -12,6 +12,7 @@ app.on('window-all-closed', () => {});
 const services = [], windows = [];
 const submissions = [], activations = [];
 let agents, exitCode = 0;
+let blockedReady = false;
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const timer = setTimeout(() => { console.error('Remote queue smoke timed out'); app.exit(1); }, 90_000);
@@ -31,6 +32,8 @@ const providers = {
     submissions.push({ id, message });
     if (id === 'failed') return false;
     if (id === 'unknown') throw new Error('Fixture outcome unknown');
+    if (id === 'blocked' && !blockedReady) throw Object.assign(new Error('Existing terminal draft'),
+      { outcome: 'not-sent', reason: 'composer-not-ready', statusCode: 409 });
     Object.assign(agents.find(agent => agent.id === id), { status: 'working', hook: { event: 'working' } });
     return true;
   },
@@ -42,7 +45,8 @@ async function waitFor(win, expression) {
     if (await win.webContents.executeJavaScript(expression)) return;
     await pause(70);
   }
-  throw new Error(`Queue condition failed: ${expression}`);
+  const state = await win.webContents.executeJavaScript("({name:document.querySelector('#detailName').textContent,queue:document.querySelector('#composerQueue').textContent,toast:document.querySelector('#toast').textContent})");
+  throw new Error(`Queue condition failed: ${expression}\n${JSON.stringify(state)}\n${JSON.stringify(submissions.slice(-5))}`);
 }
 async function select(win, id) {
   await win.webContents.executeJavaScript(`document.querySelector('.session-row[data-agent-id="${id}"]').click()`);
@@ -89,7 +93,8 @@ void app.whenReady().then(async () => {
       for (const width of [1280, 375]) {
         console.log('Remote queue', name, width);
         submissions.length = 0; activations.length = 0;
-        agents = ['long', 'late', 'question', 'fifo', 'failed', 'unknown', 'legacy'].map(id => ({
+        blockedReady = false;
+        agents = ['long', 'late', 'question', 'fifo', 'failed', 'unknown', 'blocked', 'legacy'].map(id => ({
           id, name: id, projectId: 'p1', aiToolId: width === 375 ? 'claude' : 'codex', status: 'offline', runtimeStatus: 'idle',
         }));
         const win = new BrowserWindow({ width, height: 850, show: false, webPreferences: {
@@ -179,6 +184,19 @@ void app.whenReady().then(async () => {
           assert(sent(id).length === 1 && await win.webContents.executeJavaScript(queued),
             'Activation recovery automatically retried a failed or unknown submission');
         }
+        await select(win, 'blocked'); await state(win, 'blocked', 'working');
+        await send(win, 'preserve a parked draft'); await state(win, 'blocked', 'done');
+        await waitFor(win, "document.querySelector('#composerQueue').textContent.includes('no new message was sent')");
+        await pause(700);
+        assert(sent('blocked').length === 1 && await win.webContents.executeJavaScript(queued), 'A blocked composer was automatically retried');
+        await win.webContents.executeJavaScript("[...document.querySelectorAll('#composerQueue button')].find(button=>button.textContent==='Check terminal').click()");
+        await waitFor(win, "!document.querySelector('#outputPanel').hidden");
+        blockedReady = true;
+        await win.webContents.executeJavaScript(retry + '.click()');
+        await waitFor(win, `!(${queued})`);
+        assert(sent('blocked').length === 2, 'Explicit retry did not resume after the terminal was reviewed');
+        await win.webContents.executeJavaScript("document.querySelector('#sessionMode [data-mode=chat]').click()");
+        await select(win, 'unknown');
         assert(await win.webContents.executeJavaScript('document.documentElement.scrollWidth<=innerWidth'), 'Queue overflowed the viewport');
         if (width < 800) {
           win.setSize(844, 480);
@@ -190,14 +208,14 @@ void app.whenReady().then(async () => {
         win.destroy();
       }
     }
-    console.log('REMOTE_DASHBOARD_QUEUE_OK long-turn late-activation question fifo session-isolation legacy-state failed-unknown-paused desktop mobile codex claude');
+    console.log('REMOTE_DASHBOARD_QUEUE_OK long-turn late-activation question fifo session-isolation legacy-state failed-unknown-paused blocked-draft-terminal-review desktop mobile codex claude');
   } catch (error) { console.error(error); exitCode = 1; }
   finally {
     clearTimeout(timer);
     for (const win of windows) if (!win.isDestroyed()) win.destroy();
     for (const service of services) await service.stop();
     if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-remote-queue-')) throw new Error('Unexpected cleanup path');
-    try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Isolated Chromium profile may briefly be held. */ }
+    try { fs.rmSync(root, { recursive: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Isolated Chromium profile may briefly be held. */ }
     app.exit(exitCode);
   }
 });

@@ -128,6 +128,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-prompt.js", { file: "../shared/chat-prompt.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/chat-pagination.js", { file: "../shared/chat-pagination.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/question-form.js", { file: "question-form.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -483,6 +484,25 @@ async function serveSessionInteraction(request, response, url, providers, allowe
   return true;
 }
 
+function chatPageOptions(url) {
+  const before = Number(url.searchParams.get('before')), limit = Number(url.searchParams.get('limit'));
+  const options = { beforeSequence: Number.isSafeInteger(before) && before > 0 ? before : null,
+    limit: Number.isSafeInteger(limit) && limit > 0 ? Math.min(400, limit) : 400 };
+  for (const [param, key, max] of [['after', 'afterSequence', Number.MAX_SAFE_INTEGER], ['turns', 'turnLimit', 20]]) {
+    if (!url.searchParams.has(param)) continue;
+    const value = Number(url.searchParams.get(param));
+    if (!Number.isSafeInteger(value) || value < 1 || value > max) throw new TypeError('Invalid chat cursor or page size');
+    options[key] = value;
+  }
+  if (options.beforeSequence && options.afterSequence) throw new TypeError('Conflicting chat cursors');
+  if (url.searchParams.has('conversation')) {
+    const id = url.searchParams.get('conversation');
+    if (!id || id.length > 200) throw new TypeError('Invalid conversation identity');
+    options.conversationId = id;
+  }
+  return options;
+}
+
 async function serveSessionUsage(request, response, url, provider, service) {
   if (request.method !== 'GET' || url.pathname !== '/api/usage/sessions') return false;
   const range = url.searchParams.get('range') || 'today';
@@ -657,13 +677,16 @@ function sendRemoteAttachmentError(response, error) {
   sendJson(response, status, { error: error?.message || "파일을 첨부하지 못했습니다." });
 }
 
-async function respondToSessionRestart(response, restartSession, id) {
+async function respondToSessionRestart(response, restartSession, id, body = {}) {
+  if (body.restart != null && typeof body.restart !== "boolean") {
+    sendJson(response, 400, { error: "invalid restart option" }); return;
+  }
   if (typeof restartSession !== "function") {
     sendJson(response, 501, { error: "session activation unavailable" });
     return;
   }
   try {
-    const result = await restartSession(id);
+    const result = body.restart === true ? await restartSession(id, { restart: true }) : await restartSession(id);
     if (result === false || result === null) {
       sendJson(response, 409, { error: "session could not be activated" });
       return;
@@ -979,7 +1002,7 @@ export class LocalDashboardService {
             const body = await readJson(request);
             const id = String(body.id || "").trim();
             if (!id) { sendJson(response, 400, { error: "invalid session id" }); return; }
-            await respondToSessionRestart(response, p.restartSession, id);
+            await respondToSessionRestart(response, p.restartSession, id, body);
             return;
           }
           if (request.method === "POST" && url.pathname === "/api/session/cancel") {
@@ -1032,14 +1055,9 @@ export class LocalDashboardService {
           }
           if (request.method === "GET" && url.pathname === "/api/chat") {
             const id = String(url.searchParams.get("id") || "").trim();
-            const beforeSequence = Number(url.searchParams.get("before"));
-            const requestedLimit = Number(url.searchParams.get("limit"));
-            const options = {
-              beforeSequence: Number.isSafeInteger(beforeSequence) && beforeSequence > 0 ? beforeSequence : null,
-              limit: Number.isSafeInteger(requestedLimit) && requestedLimit > 0
-                ? Math.min(400, requestedLimit)
-                : 400,
-            };
+            let options;
+          try { options = chatPageOptions(url); }
+          catch (error) { sendJson(response, 400, { error: error.message, blocks: [] }); return; }
             try {
               sendJson(response, 200, (await p.chatProvider?.(id, options)) ?? { blocks: [], missing: true });
             } catch (error) {
@@ -1095,8 +1113,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, modelDefaults, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
-    Object.assign(this, { chatImages, modelDefaults, closeSession });
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    Object.assign(this, { chatImages, chatDetails, modelDefaults, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
     this.notificationAllowed = notificationAllowed ?? (() => true);
@@ -1847,7 +1865,7 @@ export class RemoteDashboardService {
             sendJson(response, 400, { error: "invalid session id" });
             return;
           }
-          await respondToSessionRestart(response, this.restartSession, id);
+          await respondToSessionRestart(response, this.restartSession, id, body);
           return;
         }
         if (request.method === "POST" && url.pathname === "/api/session/cancel") {
@@ -1922,14 +1940,9 @@ export class RemoteDashboardService {
         }
         if (request.method === "GET" && url.pathname === "/api/chat") {
           const id = String(url.searchParams.get("id") || "").trim();
-          const beforeSequence = Number(url.searchParams.get("before"));
-          const requestedLimit = Number(url.searchParams.get("limit"));
-          const options = {
-            beforeSequence: Number.isSafeInteger(beforeSequence) && beforeSequence > 0 ? beforeSequence : null,
-            limit: Number.isSafeInteger(requestedLimit) && requestedLimit > 0
-              ? Math.min(400, requestedLimit)
-              : 400,
-          };
+          let options;
+          try { options = chatPageOptions(url); }
+          catch (error) { sendJson(response, 400, { error: error.message, blocks: [] }); return; }
           try {
             const result = (await this.chatProvider?.(id, options)) ?? { blocks: [], missing: true };
             sendJson(response, 200, result);

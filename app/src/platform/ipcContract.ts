@@ -38,7 +38,7 @@ export type RuntimeCommand =
   | "document_browser_inspect" | "document_browser_attach_annotation" | "document_browser_close"
   | "read_markdown_file" | "resolve_markdown_path" | "list_directory"
   | "list_git_submodules"
-  | "subagent_list" | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "read_chat_images" | "search_files"
+  | "subagent_list" | "read_text_file" | "read_chat_transcript" | "chat_blocks" | "chat_block_details" | "read_chat_images" | "search_files"
   | "conversation_record_user_message" | "conversation_storage_get" | "conversation_storage_set"
   | "session_storage_list" | "session_storage_delete"
   | "git_status" | "git_changes" | "git_stage"
@@ -253,6 +253,7 @@ export type ChatBlock = {
   output?: string;
   isError?: boolean;
   sequence?: number;
+  deferred?: boolean;
   callId?: string;
   fileChanges?: (ChatFileChange & { path: string })[];
 };
@@ -271,6 +272,10 @@ export type ChatBlocksResult = {
   conversationId?: string | null;
   hasOlder?: boolean;
   firstSequence?: number | null;
+  lastSequence?: number | null;
+  pageMode?: 'initial' | 'older' | 'delta' | 'tail';
+  hasNewer?: boolean;
+  newerWindow?: boolean;
   total?: number;
   indexing?: boolean;
   artifacts?: ConversationArtifact[];
@@ -417,7 +422,7 @@ export type RuntimeCommandContract = {
     result: boolean;
   };
   restart_session_model: {
-    args: { id: string; expectedSessionId?: string };
+    args: { id: string; expectedSessionId?: string; interrupt?: boolean };
     result: { sessionId: string | null; poolResumeOwnerId?: string };
   };
   get_session_model: {
@@ -513,12 +518,16 @@ export type RuntimeCommandContract = {
     result: { sessionId: string; parentSessionId: string; name: string; path: string; updatedAt: number; model?: string; effort?: string; activity?: string }[];
   };
   chat_blocks: {
-    args: { id: string; sessionId?: string; beforeSequence?: number; limit?: number };
+    args: { id: string; sessionId?: string; beforeSequence?: number; afterSequence?: number; conversationId?: string; turnLimit?: number; limit?: number };
     result: ChatBlocksResult;
   };
   read_chat_images: {
     args: { id: string; sequence: number };
     result: ChatImageSource[];
+  };
+  chat_block_details: {
+    args: { id: string; sessionId: string; conversationId: string; sequences: number[] };
+    result: { blocks: ChatBlock[] };
   };
   conversation_record_user_message: {
     args: { id: string; sessionId?: string; text: string };

@@ -14,6 +14,42 @@ afterEach(async () => {
   }
 });
 describe.each(['remote', 'dashboard'])('%s workspace API', kind => {
+  it('forwards paging cursors and fetches work details only for validated authenticated requests', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-api-')); roots.push(root);
+    const pages = [], details = [];
+    const providers = {
+      chatProvider: async (id, options) => { pages.push({ id, options }); return { blocks: [], pageMode: 'delta' }; },
+      chatDetails: async (id, options) => { details.push({ id, options }); return { blocks: [{ sequence: 10, output: 'full detail' }] }; },
+    };
+    const stateProvider = () => ({ agents: [{ id: 'a' }], view: { agents: [{ id: 'a' }] } });
+    const service = kind === 'remote'
+      ? new RemoteDashboardService({ baseDir: root, stateProvider, ...providers })
+      : new LocalDashboardService({ baseDir: root, configName: 'dashboard.json', title: 'Test', defaultPort: 0, stateProvider, providers });
+    if (kind === 'remote') service.config.server_port = 0;
+    services.push(service); const { url } = await service.start();
+    const get = query => fetch(`${url}/api/chat?id=a&${query}`);
+    expect((await get('turns=5&after=10&conversation=c')).status).toBe(200);
+    expect((await get('turns=5&before=10&conversation=c')).status).toBe(200);
+    expect(pages).toEqual([
+      { id: 'a', options: { beforeSequence: null, limit: 400, turnLimit: 5, afterSequence: 10, conversationId: 'c' } },
+      { id: 'a', options: { beforeSequence: 10, limit: 400, turnLimit: 5, conversationId: 'c' } },
+    ]);
+    for (const query of ['turns=21', 'turns=0', 'after=-1', 'before=1&after=2', 'conversation=']) {
+      expect((await get(query)).status).toBe(400);
+    }
+    expect(pages).toHaveLength(2);
+    const body = { id: 'a', sessionId: 's', conversationId: 'c', sequences: [10, 11] };
+    const post = (payload, headers = {}) => fetch(`${url}/api/chat/details`, { method: 'POST',
+      headers: { origin: url, 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload) });
+    expect(await post(body).then(response => response.json())).toEqual({ blocks: [{ sequence: 10, output: 'full detail' }] });
+    expect((await post(body, { origin: 'https://attacker.invalid', 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+    expect((await post({ ...body, id: 'unknown' })).status).toBe(404);
+    for (const patch of [{ sessionId: '' }, { conversationId: '' }, { sequences: [] }, { sequences: [0] }, { sequences: ['10'] }, { sequences: Array(21).fill(10) }]) {
+      expect((await post({ ...body, ...patch })).status).toBe(400);
+    }
+    expect((await fetch(`${url}/api/chat/details`)).status).toBe(405);
+    expect(details).toEqual([{ id: 'a', options: { sessionId: 's', conversationId: 'c', sequences: [10, 11] } }]);
+  });
   it('binds image reads to a known session and validates mutations without executing rejected requests', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-api-')); roots.push(root);
     const calls = [], defaults = new SessionModelDefaults(path.join(root, 'defaults.json'));
@@ -57,8 +93,8 @@ it('requires Remote authentication before exposing images, defaults or close', a
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-api-')); roots.push(root);
   const service = new RemoteDashboardService({ baseDir: root, stateProvider: () => ({ agents: [{ id: 'a' }] }), chatImages: () => { throw Error('Unauthenticated provider call'); } });
   service.config.server_port = 0; services.push(service); const { url } = await service.start();
-  for (const route of ['/api/chat/images?id=a&sequence=1', '/api/session/defaults?provider=codex', '/api/session/close']) {
-    const response = await fetch(`${url}${route}`, { ...(route.endsWith('close') ? { method: 'POST', body: '{"id":"a"}', headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.4' } } : { headers: { 'cf-connecting-ip': '203.0.113.4' } }) });
+  for (const route of ['/api/chat/images?id=a&sequence=1', '/api/chat/details', '/api/session/defaults?provider=codex', '/api/session/close']) {
+    const response = await fetch(`${url}${route}`, { ...(route.endsWith('close') || route.endsWith('details') ? { method: 'POST', body: '{"id":"a"}', headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.4' } } : { headers: { 'cf-connecting-ip': '203.0.113.4' } }) });
     expect(response.status).toBe(401);
   }
 });

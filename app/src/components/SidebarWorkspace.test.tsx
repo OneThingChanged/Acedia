@@ -61,6 +61,7 @@ describe("workspace sidebar", () => {
   it("shows textual question state, unread completion, and marks foreign sessions unavailable", () => {
     const html = render([agent("question", { status: "question", runtimeStatus: "running" }), agent("foreign")], { detachedAgentIds: new Set(["foreign"]), unreadCompletedAgentIds: new Set(["question"]) });
     expect(html).toContain("답변 필요"); expect(html).toContain("읽지 않은 작업 완료");
+    expect(html).not.toContain('agent-completion-badge');
     expect(html).toMatch(/data-sidebar-agent-id="foreign"[^>]+tabindex="-1" aria-disabled="true"/);
     expect(html).not.toContain('aria-label="foreign 대화 메뉴"');
   });

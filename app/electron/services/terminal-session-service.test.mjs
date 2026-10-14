@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { PassThroughTerminalFilter } from "./terminal-stream.mjs";
+import { PassThroughTerminalFilter, SynchronizedTerminalFilter } from "./terminal-stream.mjs";
 import { TerminalSessionService } from "./terminal-session-service.mjs";
 
 function fakePty() {
@@ -29,6 +29,23 @@ function register(service, id, process = fakePty(), extra = {}) {
   expect(accepted).toBe(true);
   return process;
 }
+
+it('publishes watchdog output in sequence and prevents a closed Qwen frame from reaching a replacement session', () => {
+  vi.useFakeTimers();
+  const deliveries = [], service = new TerminalSessionService({sendDataToView:(_view,data)=>deliveries.push(data)});
+  try {
+    const pty = register(service, 'qwen', fakePty(), {filter:new SynchronizedTerminalFilter()});
+    service.attach('qwen',1);
+    pty.emitData('before'); pty.emitData('\x1b[?2026hpartial');
+    expect(deliveries).toHaveLength(1);
+    vi.advanceTimersByTime(100);
+    expect(deliveries.at(-1)).toMatchObject({sequenceStart:6,data:'\x1b[?2026hpartial\x1b[?2026l'});
+    expect(service.snapshotSince('qwen').data).toBe(deliveries.map(item=>item.data).join(''));
+    pty.emitData('\x1b[?2026hstale');service.close('qwen');register(service,'qwen');
+    vi.advanceTimersByTime(200);
+    expect(deliveries).toHaveLength(2);expect(service.snapshotSince('qwen').data).toBe('');
+  } finally {service.closeAll();vi.useRealTimers();}
+});
 
 it("buffers hidden output and replays it only to an attached view", () => {
   const deliveries = [];

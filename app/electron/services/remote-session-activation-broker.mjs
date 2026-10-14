@@ -15,22 +15,28 @@ export class RemoteSessionActivationBroker {
   constructor({
     dispatch,
     isActive = () => false,
+    runtimeIdentity = () => null,
     timeoutMs = 30_000,
     idFactory = randomUUID,
   }) {
     this.dispatch = dispatch;
     this.isActive = isActive;
+    this.runtimeIdentity = runtimeIdentity;
     this.timeoutMs = timeoutMs;
     this.idFactory = idFactory;
     this.pending = new Map();
   }
 
-  activate(id) {
+  activate(id, { restart = false } = {}) {
     const agentId = String(id || "").trim();
     if (!agentId) {
       return Promise.reject(createStatusError("세션 ID가 비어 있습니다.", 400));
     }
-    if (this.isActive(agentId)) {
+    if (typeof restart !== "boolean") return Promise.reject(createStatusError("Invalid restart option.", 400));
+    if ([...this.pending.values()].some(item => item.id === agentId)) {
+      return Promise.reject(createStatusError("세션이 이미 시작 또는 재시작 중입니다.", 409));
+    }
+    if (!restart && this.isActive(agentId)) {
       return Promise.resolve({ id: agentId, active: true, restarted: false });
     }
 
@@ -44,9 +50,10 @@ export class RemoteSessionActivationBroker {
         ));
       }, this.timeoutMs);
 
-      this.pending.set(requestId, { id: agentId, resolve, reject, timeout });
+      this.pending.set(requestId, { id: agentId, resolve, reject, timeout,
+        previousRuntime: restart ? this.runtimeIdentity(agentId) : null });
       try {
-        if (this.dispatch({ requestId, id: agentId }) === false) {
+        if (this.dispatch({ requestId, id: agentId, ...(restart ? { restart: true } : {}) }) === false) {
           this.rejectPending(
             requestId,
             "세션 활성화를 처리할 데스크톱 창이 준비되지 않았습니다.",
@@ -81,6 +88,10 @@ export class RemoteSessionActivationBroker {
         "터미널 생성 완료를 확인하지 못했습니다.",
         409,
       ));
+      return true;
+    }
+    if (pending.previousRuntime && pending.previousRuntime === this.runtimeIdentity(id)) {
+      pending.reject(createStatusError("기존 터미널이 교체되지 않아 재시작을 확인하지 못했습니다.", 409));
       return true;
     }
     pending.resolve({ id, active: true, restarted: true });

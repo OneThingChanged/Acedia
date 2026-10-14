@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v95";
+const CACHE_NAME = "multiagent-remote-v99";
 const STATIC_ASSETS = [
   "/pwa/chat-files.js",
   "/pwa/model-editor.js",
@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   "/pwa/image-zoom.js",
   "/pwa/chat-render.js",
   "/pwa/chat-history.js",
+  "/pwa/chat-pagination.js",
   "/pwa/chat-prompt.js",
   "/pwa/question-form.js",
   "/pwa/requests.js",
@@ -81,6 +82,7 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/pwa/image-zoom.js" ||
     url.pathname === "/pwa/chat-render.js" ||
     url.pathname === "/pwa/chat-history.js" ||
+    url.pathname === "/pwa/chat-pagination.js" ||
      url.pathname === "/pwa/chat-prompt.js" ||
      url.pathname === "/pwa/question-form.js" ||
     url.pathname === "/pwa/requests.js" ||

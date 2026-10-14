@@ -2237,7 +2237,11 @@ function App() {
     []
   );
 
+  const pinnedSessionIdForRestart = useCallback((agentId: string) =>
+    groupsRef.current.find(group => collectAgentIds(group.layout).has(agentId))?.sessionPins?.[agentId], []);
   const {
+    restartAgent,
+    restartingAgentIds,
     recoverExitedAgent,
     deactivateAgent,
     setAgentStatus,
@@ -2253,6 +2257,8 @@ function App() {
     termsRef,
     setAgents,
     applyGroupOp,
+    beforeRestart: clearAgentStartupReadyTimer,
+    pinnedSessionId: pinnedSessionIdForRestart,
     beforeDeleteConfirm: flushTransientInteractionState,
     afterDeleteSettled: settleSessionDeletionUi,
     onDeleteBlocked: () => { void catalogConfirmation.confirm({
@@ -3199,51 +3205,6 @@ function App() {
     [pushToast, text]
   );
 
-  const onContextAction = useCallback(
-    (
-      action: SessionContextAction
-    ) => {
-      if (!contextMenu) return;
-      const id = contextMenu.agentId;
-      if (action === "delete") {
-        void removeAgent(id);
-        return;
-      }
-      dismissTransientMenus();
-      if (action === "open") requestSelectAgent(id);
-      else if (action === "open-new-window") openNewAppWindow(id);
-      else if (action === "tab") openAsTab(id);
-      else if (action === "split-h") splitWith(id, "h");
-      else if (action === "split-v") splitWith(id, "v");
-      else if (action === "rename") setRenameSessionId(id);
-      else if (action === "sidebar-pin") setSidebarPreference(id, "sidebarPinned");
-      else if (action === "sidebar-archive") setSidebarPreference(id, "sidebarArchived");
-      else if (action === "pin-session") pinContextGroupSessions(id);
-      else if (action === "clear-session-pin") clearContextGroupSessionPins(id);
-      else if (action === "deactivate") {
-        void deactivateAgent(id);
-      } else if (action === "relink") {
-        relinkSession(id);
-      } else if (action === "properties") {
-        setPropertiesAgentId(id);
-      }
-    },
-    [
-      contextMenu,
-      requestSelectAgent,
-      openNewAppWindow,
-      openAsTab,
-      splitWith,
-      pinContextGroupSessions,
-      clearContextGroupSessionPins,
-      deactivateAgent,
-      dismissTransientMenus,
-      removeAgent,
-      relinkSession,
-      setSidebarPreference,
-    ]
-  );
-
   // ---- Stable drag callbacks
 
   const handleDragStart = useCallback((fromAgentId: string) => {
@@ -3808,6 +3769,37 @@ function App() {
     ]
   );
 
+  const onContextAction = useCallback((action: SessionContextAction) => {
+    if (!contextMenu) return;
+    const id = contextMenu.agentId;
+    if (action === "delete") { void removeAgent(id); return; }
+    dismissTransientMenus();
+    if (action === "open") void requestSelectAgent(id);
+    else if (action === "open-new-window") openNewAppWindow(id);
+    else if (action === "tab") openAsTab(id);
+    else if (action === "split-h") splitWith(id, "h");
+    else if (action === "split-v") splitWith(id, "v");
+    else if (action === "rename") setRenameSessionId(id);
+    else if (action === "sidebar-pin") setSidebarPreference(id, "sidebarPinned");
+    else if (action === "sidebar-archive") setSidebarPreference(id, "sidebarArchived");
+    else if (action === "pin-session") pinContextGroupSessions(id);
+    else if (action === "clear-session-pin") clearContextGroupSessionPins(id);
+    else if (action === "deactivate") void deactivateAgent(id);
+    else if (action === "restart") {
+      void restartAgent(id, spawnAgentInBackground).then(() => {
+        const agent = agentsRef.current.find(item => item.id === id);
+        if (agent) pushToast(id, agent.name, text("세션을 다시 시작했습니다.", "Session restarted."));
+      }).catch(error => {
+        const agent = agentsRef.current.find(item => item.id === id);
+        if (agent) pushToast(id, agent.name, text(`재시작 실패: ${String(error)}`, `Restart failed: ${String(error)}`));
+      });
+    } else if (action === "relink") relinkSession(id);
+    else if (action === "properties") setPropertiesAgentId(id);
+  }, [contextMenu, requestSelectAgent, openNewAppWindow, openAsTab, splitWith,
+    pinContextGroupSessions, clearContextGroupSessionPins, deactivateAgent,
+    dismissTransientMenus, removeAgent, relinkSession, setSidebarPreference,
+    restartAgent, spawnAgentInBackground, pushToast, text]);
+
   // Remote and local MCP session management share the coordinator renderer so
   // multiple workspace windows cannot activate, create, or rename a session twice.
   useEffect(() => {
@@ -3819,7 +3811,7 @@ function App() {
       else unlisteners.push(unlisten);
     };
 
-    listen<{ requestId: string; id: string }>("remote:restart-session", (event) => {
+    listen<{ requestId: string; id: string; restart?: boolean }>("remote:restart-session", (event) => {
       if (cancelled) return;
       const payload = event.payload;
       if (!payload.requestId || !payload.id) return;
@@ -3838,6 +3830,11 @@ function App() {
           error: text("세션을 찾을 수 없습니다.", "Session not found."),
           statusCode: 404,
         });
+        return;
+      }
+      if (payload.restart) {
+        void restartAgent(payload.id, spawnAgentInBackground).then(() => complete({ ok: true }))
+          .catch(reason => complete({ ok: false, error: String(reason), statusCode: 409 }));
         return;
       }
       void spawnAgentInBackground(payload.id, { verifyActive: true })
@@ -4013,6 +4010,7 @@ function App() {
     remoteEnabled,
     renameAgent,
     spawnAgentInBackground,
+    restartAgent,
     clearAgentStartupReadyTimer,
     text,
   ]);
@@ -4815,6 +4813,10 @@ function App() {
             );
             return agent ? isAgentRuntimeActive(agent) : false;
           })()}
+          canRestart={!detachedAgentIdsRef.current.has(visibleContextMenu.agentId)
+            && !restartingAgentIds.has(visibleContextMenu.agentId)
+            && !agents.some(agent => agent.id === visibleContextMenu.agentId
+              && ["starting", "recovering"].includes(agent.runtimeStatus || agent.status))}
           onClose={dismissTransientMenus}
           onAction={onContextAction}
         />

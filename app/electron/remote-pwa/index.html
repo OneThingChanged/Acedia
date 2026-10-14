@@ -406,6 +406,7 @@
             </section>
 
             <section id="chatPrompt" class="chat-prompt-host" role="status" aria-live="polite" hidden></section>
+            <button id="chatJumpLatest" type="button" class="small-button chat-jump-latest" hidden>↓ 최신 대화로 이동</button>
 
             <section id="chatWorking" class="chat-working-bar" hidden><span class="chat-thinking-dots"><i></i><i></i><i></i></span><strong>작업 중</strong><span id="chatWorkingTool"></span><button class="small-button" id="chatWorkDetails" type="button">작업 상세</button><button class="small-button" id="chatWorkingStop" type="button">■ 중단</button></section>
             <form class="composer" id="composerForm">
@@ -491,7 +492,7 @@
     </div>
 
     <div class="document-context-menu" id="sessionContextMenu" role="menu" aria-label="세션 설정" hidden>
-      <button type="button" role="menuitem" data-session-action="model">모델 / effort 변경</button><button type="button" role="menuitem" data-session-action="rename">이름 변경</button><button type="button" role="menuitem" data-session-action="close">세션 닫기</button>
+      <button type="button" role="menuitem" data-session-action="model">모델 / effort 변경</button><button type="button" role="menuitem" data-session-action="rename">이름 변경</button><button type="button" role="menuitem" data-session-action="restart" title="현재 작업을 중단하고 같은 세션을 다시 시작합니다.">재시작</button><button type="button" role="menuitem" data-session-action="close">세션 닫기</button>
     </div>
     <div class="session-editor-overlay" id="sessionModelOverlay" role="dialog" aria-modal="true" aria-labelledby="sessionModelTitle" hidden>
       <form class="session-editor-dialog" id="sessionModelForm">

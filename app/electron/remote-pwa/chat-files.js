@@ -66,10 +66,26 @@ function trimImages() {
     imageSizes.delete(cacheKey); imageLoads.delete(cacheKey);
   }
 }
+const deferredImages = new Map();
+const deferredImageObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => {
+  for (const entry of entries) if (entry.isIntersecting) {
+    const load = deferredImages.get(entry.target);
+    deferredImages.delete(entry.target); deferredImageObserver.unobserve(entry.target); load?.();
+  }
+}, { rootMargin: '240px' });
+if (deferredImageObserver && typeof MutationObserver !== 'undefined') {
+  new MutationObserver(() => {
+    for (const box of deferredImages.keys()) if (!box.isConnected) {
+      deferredImageObserver.unobserve(box); deferredImages.delete(box);
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+}
 export function renderStoredImages(block, agent) {
   const box = make('div', 'chat-inline-images');
   if (!Number.isSafeInteger(block.sequence) || !agent?.id) return box;
   const cacheKey = `${agent.id}:${block.sequence}`; box.dataset.imageKey = cacheKey;
+  const load = () => {
+    delete box.dataset.loading;
   // Cache resolved and in-flight reads. A turn repaint never starts another
   // bitmap request, and image-only user turns use their original sequence.
   let pending = imageLoads.get(cacheKey);
@@ -94,5 +110,8 @@ export function renderStoredImages(block, agent) {
       } else if (source.path) box.append(fileButton({ path: source.path, kind: 'image' }, agent));
     });
   });
+  };
+  if (imageLoads.has(cacheKey) || !deferredImageObserver) load();
+  else { box.dataset.loading = '1'; deferredImages.set(box, load); deferredImageObserver.observe(box); }
   return box;
 }

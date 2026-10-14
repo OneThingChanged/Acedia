@@ -9,6 +9,7 @@ import { SessionNotifications } from './services/session-notifications.mjs';
 import { ActiveQuestions, AsyncQuestionNotifier } from './services/active-questions.mjs';
 import { QuestionResponder, hasQueuedCodexQuestion, codexQuestionFrame } from './services/question-responder.mjs';
 import { isQuestionTool } from './shared/chat-prompt.mjs';
+import { selectChatTurns, compactChatBlocks } from './shared/chat-pagination.mjs';
 import { SavedCommands } from "./services/saved-commands.mjs";
 import { removeProviderAccount } from "./services/account-removal.mjs";
 import { browserProfile, BrowserTabStore, restorableBrowserUrl, restoreBrowserTabs } from "./services/browser-profiles.mjs";
@@ -60,6 +61,7 @@ import { ReopenJournal } from "./services/reopen-journal.mjs";
 import { CodexAccounts } from "./services/codex-accounts.mjs";
 import { AccountPool } from "./services/account-pool.mjs";
 import { prepareLaunchCommand } from "./services/agent-launch.mjs";
+import { findExecutableOnPath, refreshWindowsPath } from './services/executable-path.mjs';
 import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
@@ -75,6 +77,7 @@ import { RemoteSessionActivationBroker } from "./services/remote-session-activat
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
 import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
 import { SessionModelMemory, nativeCodexModel } from "./services/session-model-memory.mjs";
+import { CommandApprovalResponder } from "./services/command-approval.mjs";
 import { SessionModelDefaults } from "./services/session-model-defaults.mjs";
 import { guardConsoleOutput } from "./services/stdio-logging.mjs";
 import { AccountPoolRpc } from "./services/account-pool-rpc.mjs";
@@ -270,7 +273,7 @@ const ptys = new Map();
 let sessionModelMemory;
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
-  onBeforeClose: entry => sessionModelMemory.remember(entry),
+  onBeforeClose: entry => { commandApprovals.forget(entry.id); sessionModelMemory.remember(entry); },
   onInput: id => capacityRetry.cancel(id),
   onBell(id) {
     const now = Date.now();
@@ -435,8 +438,9 @@ const codexAccounts = new CodexAccounts(app.getPath("userData"), {
   },
 });
 const claudeAccounts = new ClaudeAccounts(app.getPath("userData"), {
-  startLogin: (env) => {
-    const native = process.platform === "win32" ? findExecutableOnPath("claude.exe") : null;
+  startLogin: (base) => {
+    const env = refreshWindowsPath(base);
+    const native = process.platform === "win32" ? findExecutableOnPath("claude.exe", { env }) : null;
     const options = { name: "xterm-256color", cols: 120, rows: 30, cwd: os.homedir(), env };
     if (native) return nodePty.spawn(native, ["auth", "login"], options);
     const command = process.platform === "win32" ? "claude.cmd auth login" : "claude auth login";
@@ -486,8 +490,11 @@ const notificationSettings = notificationPreferences(app.getPath('userData'));
 const sessionNotifications = new SessionNotifications(app.getPath('userData'));
 const activeQuestions = new ActiveQuestions();
 const asyncQuestionNotifier = new AsyncQuestionNotifier(payload => remoteService.notifyAgentQuestion(payload));
+const commandApprovals = new CommandApprovalResponder({ entry: id => ptys.get(id),
+  snapshot: id => ptys.get(id)?.filter.viewportText?.() || '',
+  sessionId: id => agentSessionIds.get(id) || accountBindings.get(id)?.sessionId });
 const questionResponder = new QuestionResponder({ entry: id => ptys.get(id), current: currentQuestion,
-  snapshot: id => ptys.get(id)?.filter.viewportText?.() || '' });
+  snapshot: id => ptys.get(id)?.filter.viewportText?.() || '', approvals: commandApprovals });
 const announcedQuestions = new Map();
 const announcedAsyncQuestions = new Map();
 
@@ -504,9 +511,14 @@ async function currentQuestion(id) {
   const entry = ptys.get(id);
   if (!entry || entry.ssh) return null;
   const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
+  const approval = commandApprovals.read(id, sessionId);
+  if (approval) return approval;
   const root = accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
   const result = await activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
     transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt });
+  if (ptys.get(id) !== entry) return null;
+  const resolvedApproval = commandApprovals.read(id, result?.sessionId);
+  if (resolvedApproval) return resolvedApproval;
   // A resumed log can contain accepted calls whose queue no longer exists.
   if (result?.question?.async) {
     const screen = entry.filter.viewportText?.() || '';
@@ -1021,6 +1033,7 @@ function dispatchRemoteSessionActivation(payload) {
 const remoteSessionActivationBroker = new RemoteSessionActivationBroker({
   dispatch: dispatchRemoteSessionActivation,
   isActive: (id) => ptys.has(id),
+  runtimeIdentity: id => ptys.get(id) || null,
 });
 
 const remoteSessionModelBroker = new RemoteSessionModelBroker({
@@ -1045,12 +1058,13 @@ async function providerModelCatalog({ provider, accountId = "default", routed = 
   if (!cached || cached.until < Date.now()) {
     const promise = (async () => {
       if (provider === "claude") {
-        const native = process.platform === "win32" ? findExecutableOnPath("claude.exe") : "claude";
+        const env = refreshWindowsPath(claudeAccounts.environment(accountId));
+        const native = process.platform === "win32" ? findExecutableOnPath("claude.exe", { env }) : "claude";
         const command = native ? { file: native, args: ["--help"] } : {
           file: defaultShell(null), args: ["-NoLogo", "-NoProfile", "-Command", "claude.cmd --help"],
         };
         const help = await new Promise((resolve, reject) => execFile(command.file, command.args,
-          { env: claudeAccounts.environment(accountId), windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 512 * 1024 },
+          { env, windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 512 * 1024 },
           (error, stdout) => error ? reject(new Error("Claude CLI 옵션을 확인하지 못했습니다. CLI 설치를 확인하세요.")) : resolve(stdout)));
         return { models: claudeModelCatalog(help), accountLabel: claudeAccounts.list().find(a => a.id === accountId)?.label || "Claude", capabilitiesSource: "cli-help" };
       }
@@ -1175,40 +1189,13 @@ const sessionProviders = {
   },
   async submitPty(id, message, options = {}) {
     const agentId = asString(id).trim();
-    capacityRetry.cancel(agentId);
-    const pending = (await currentQuestion(agentId))?.question;
-    if (questionResponder.isBusy(agentId) || (pending && !pending.async)) return false;
     const value = asString(message);
-    const syncedAgent = (monitorService?.state?.agents || [])
-      .find((agent) => agent.id === agentId);
-    if (["starting", "recovering"].includes(asString(syncedAgent?.status).toLowerCase())) {
-      return false;
-    }
+    const syncedAgent = (monitorService?.state?.agents || []).find(agent => agent.id === agentId);
+    if (["starting", "recovering"].includes(asString(syncedAgent?.status).toLowerCase())) return false;
     const entry = ptys.get(agentId);
-    const ptyProcess = entry?.process;
-    if (!ptyProcess || !value.trim() || value.length > 8 * 1024) return false;
+    if (!entry?.process || !value.trim() || value.length > 8 * 1024) return false;
     if (options.steering && (entry.aiToolId !== 'codex' || entry.ssh)) return false;
-    const resetting = !entry.ssh && entry.aiToolId === 'codex' && /^\/(?:clear|new)(?:\s|$)/.test(value.trim());
-    if (resetting && !deliveryComposerReady(entry)) return false;
-    const previousSessionId = agentSessionIds.get(agentId) || accountBindings.get(agentId)?.sessionId;
-    const isCurrent = () => ptys.get(agentId) === entry && entry.process === ptyProcess
-      && (!options.sessionId || !agentSessionIds.get(agentId) || agentSessionIds.get(agentId) === options.sessionId);
-    if (!isCurrent()) return false;
-    return submitPtyMessage({
-      ptyProcess,
-      message: value,
-      waitForOutputQuiet: options.steering !== true,
-      ...(resetting ? { confirm: async () => {
-        const sessionId = await confirmCodexConversationReset({ entry, previousSessionId, isCurrent,
-          sessionId: () => agentSessionIds.get(agentId) });
-        if (!isCurrent()) throw new Error('Terminal changed; submission outcome unknown.');
-        agentTranscripts.delete(agentId); agentTranscriptTool.delete(agentId); transcriptMissUntil.delete(agentId);
-        publishAgentHookEvent('agent:hook-event', { id: agentId, event: 'session-start',
-          hook_event_name: 'RemoteConversationReset', session_id: sessionId, cwd: entry.cwd, received_at: Date.now() });
-        return true;
-      } } : {}),
-      isCurrent,
-    });
+    return submitChatMessage({ id: agentId, message: value, sessionId: options.sessionId, steering: options.steering });
   },
   terminalSnapshot: (id, afterSequence) => terminalSessions.snapshotSince(id, afterSequence),
   subscribeTerminal: (id, listener) => terminalSessions.subscribeData(id, listener),
@@ -1217,6 +1204,7 @@ const sessionProviders = {
     return entry?.process ? { cols: entry.process.cols, rows: entry.process.rows } : null;
   },
   chatProvider: (id, options) => chatBlocksForAgent(id, null, options),
+  chatDetails: (id, options) => conversationStoreManager.readBlockDetails({ agentId: id, ...options }),
   chatImages: (id, sequence) => conversationStoreManager.readImages({ agentId: id, sequence }),
   modelDefaults: {
     async read(provider) { return { ...sessionModelDefaults.get(provider), ...await defaultModelCatalog({ provider, accountId: 'default' }) }; },
@@ -1240,7 +1228,7 @@ const sessionProviders = {
     if (ptys.has(id)) throw new Error('세션 종료를 확인하지 못했습니다. 작업창을 확인하세요.');
     return true;
   },
-  restartSession: (id) => remoteSessionActivationBroker.activate(asString(id)),
+  restartSession: (id, options) => remoteSessionActivationBroker.activate(asString(id), options),
   createSession: (payload) => remoteSessionCreateBroker.create(payload),
   renameSession: (payload) => {
     sendEventToAll("remote:rename-session", payload);
@@ -3205,19 +3193,6 @@ function requestGracefulClose(action = "quit") {
   return closeCoordinator?.request(action) ?? false;
 }
 
-function findExecutableOnPath(name) {
-  if (process.platform !== "win32") return name;
-  const found = spawnSync("where.exe", [name], {
-    encoding: "utf8",
-    windowsHide: true,
-  });
-  if (found.status !== 0) return null;
-  return found.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line && !line.toLowerCase().includes("\\windowsapps\\")) ?? null;
-}
-
 // Check whether each agent CLI is installed/resolvable on the app's PATH, so
 // Settings can show availability and the new-session picker can hide missing
 // ones. Uses the same PATH the app spawns with.
@@ -3617,18 +3592,29 @@ function conversationMetadataForAgent(agentId) {
   };
 }
 
-async function storedChatBlocks({ id, sessionId, tool, beforeSequence, limit }) {
+async function storedChatBlocks({ id, sessionId, tool, beforeSequence, afterSequence, conversationId, turnLimit, limit }) {
   if (!sessionId || (tool !== "codex" && tool !== "claude")) return null;
   return conversationStoreManager.listBlocks({
     agentId: id,
     sessionId,
     provider: tool,
     beforeSequence,
+    afterSequence, conversationId, turnLimit,
     limit,
   });
 }
 
 async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
+  const id = asString(agentId).trim();
+  const entry = ptys.get(id);
+  const result = await readAgentChatBlocks(agentId, sessionIdArg, options);
+  const approval = ptys.get(id) === entry ? commandApprovals.read(id, result.sessionId) : null;
+  if (approval && approval.sessionId === result.sessionId) result.pendingQuestion = approval.question;
+  else if (result.pendingQuestion?.toolName === 'command-approval') result.pendingQuestion = null;
+  return result;
+}
+
+async function readAgentChatBlocks(agentId, sessionIdArg, options = {}) {
   const id = asString(agentId).trim();
   // Prefer the live PTY, but fall back to the synced catalog so idle/restored
   // sessions (no live PTY, no fresh hook) still resolve their tool + session.
@@ -3660,7 +3646,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
         id,
         sessionId,
         tool: declaredTool,
-        beforeSequence: options.beforeSequence,
+        ...options,
         limit: options.limit,
       });
       if (stored?.conversationId) {
@@ -3687,7 +3673,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
       id,
       sessionId,
       tool: declaredTool,
-      beforeSequence: options.beforeSequence,
+      ...options,
       limit: options.limit,
     });
     if (stored?.conversationId) {
@@ -3716,8 +3702,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
     const progress = await conversationStoreManager.sourceProgress(ingestInput);
     const remainingBytes = Math.max(0, transcriptStat.size - progress.lastOffset);
     if (
-      progress.conversationId &&
-      remainingBytes > MAX_FOREGROUND_CONVERSATION_INGEST_BYTES
+      remainingBytes > (options.turnLimit ? 256 * 1024 : MAX_FOREGROUND_CONVERSATION_INGEST_BYTES)
     ) {
       // A multi-GB provider transcript must never block opening Chat. Keep the
       // recent direct tail visible while the durable store catches up in the
@@ -3725,10 +3710,18 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
       void conversationStoreManager.ingestTranscript(ingestInput).catch((error) => {
         console.warn("[electron] background conversation ingest failed", error?.message || error);
       });
+      const page = options.afterSequence || options.beforeSequence
+        ? await storedChatBlocks({ id, sessionId, tool, ...options }) : null;
       return {
-        ...result,
+        ...(page?.blocks?.length || page?.pageMode === 'delta' ? page : { ...result,
+          blocks: options.turnLimit ? compactChatBlocks(selectChatTurns(result.blocks, options.turnLimit).blocks) : result.blocks,
+          pageMode: 'tail', hasOlder: false }),
         indexing: true,
         conversationId: progress.conversationId,
+        lifecycle: result.lifecycle,
+        lifecycleAt: result.lifecycleAt,
+        activeTool: result.activeTool,
+        pendingQuestion: result.pendingQuestion,
         tool,
         sessionId,
       };
@@ -3740,7 +3733,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
       id,
       sessionId,
       tool,
-      beforeSequence: options.beforeSequence,
+      ...options,
       limit: options.limit,
     });
     if (stored?.conversationId) {
@@ -3759,7 +3752,8 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
   } catch (error) {
     console.warn("[electron] conversation store read failed", error?.message || error);
   }
-  return { ...result, tool, sessionId };
+  return { ...result, blocks: options.turnLimit ? compactChatBlocks(selectChatTurns(result.blocks, options.turnLimit).blocks) : result.blocks,
+    pageMode: 'tail', hasOlder: false, tool, sessionId };
 }
 
 function resolveDocPath(folder, requested) {
@@ -4963,10 +4957,7 @@ async function readStorageSnapshot() {
   }
 }
 
-const terminalHandlers = createTerminalHandlers({
-  terminalSessions,
-  spawnPty,
-  submitChatMessage: createChatMessageSubmitter({
+const submitChatMessage = createChatMessageSubmitter({
     terminalSessions, isClosing: () => forceClosing, questionResponder, currentQuestion,
     getSessionId: id => agentSessionIds.get(id) || accountBindings.get(id)?.sessionId,
     composerReady: deliveryComposerReady,
@@ -4979,7 +4970,12 @@ const terminalHandlers = createTerminalHandlers({
       publishAgentHookEvent('agent:hook-event', { id, event: 'session-start',
         hook_event_name: 'ChatConversationReset', session_id: nextId, cwd: entry.cwd, received_at: Date.now() });
     },
-  }),
+});
+
+const terminalHandlers = createTerminalHandlers({
+  terminalSessions,
+  spawnPty,
+  submitChatMessage,
   confirmClose: (webContentsId) =>
     closeCoordinator?.confirm(webContentsId) ?? false,
 });
@@ -5515,10 +5511,13 @@ async function invokeCommand(event, command, rawArgs) {
     case "chat_blocks":
       return chatBlocksForAgent(args.id, args.sessionId, {
         beforeSequence: args.beforeSequence,
+        afterSequence: args.afterSequence, conversationId: args.conversationId, turnLimit: args.turnLimit,
         limit: args.limit,
       });
     case "read_chat_images":
       return conversationStoreManager.readImages({ agentId: asString(args.id), sequence: args.sequence });
+    case 'chat_block_details':
+      return conversationStoreManager.readBlockDetails({ agentId: args.id, sessionId: args.sessionId, conversationId: args.conversationId, sequences: args.sequences });
     case "conversation_record_user_message": {
       const metadata = conversationMetadataForAgent(args.id);
       const sessionId =
@@ -5934,12 +5933,15 @@ async function invokeCommand(event, command, rawArgs) {
     }
     case "restart_session_model": {
       const id = asString(args.id);
-      if (event.sender.id !== coordinatorWebContentsId || !claimAgentForWindow(id, event.sender.id)) throw new Error("다른 작업창에서 사용 중인 세션입니다.");
+      if (args.interrupt != null && typeof args.interrupt !== "boolean") throw new Error("Invalid restart option.");
+      const restartAllowed = () => args.interrupt === true || sessionModels.canRestart(id);
+      if ((args.interrupt !== true && event.sender.id !== coordinatorWebContentsId)
+        || !claimAgentForWindow(id, event.sender.id)) throw new Error("다른 작업창에서 사용 중인 세션입니다.");
       const agent = sessionModels.agent(id), live = ptys.get(id);
-      if (!sessionModels.canRestart(id)) throw new Error("작업이 끝난 뒤 재시작하세요.");
+      if (!restartAllowed()) throw new Error("작업이 끝난 뒤 재시작하세요.");
       const sessionId = agentSessionIds.get(id) || agent.lastSessionId || null;
       if (args.expectedSessionId && args.expectedSessionId !== sessionId) throw new Error("고정된 대화와 현재 세션이 다릅니다. 세션 고정을 확인하세요.");
-      if (live && !sessionId) throw new Error("대화 ID를 아직 확인하지 못했습니다. 첫 대화 완료 후 재시작하세요.");
+      if (live && !sessionId && args.interrupt !== true) throw new Error("대화 ID를 아직 확인하지 못했습니다. 첫 대화 완료 후 재시작하세요.");
       if (sessionId) {
         const resolved = await sessionService.resolveExact({ aiToolId: agent.aiToolId, folder: agent.folder,
           agentId: id, preferredSessionId: sessionId,
@@ -5947,7 +5949,7 @@ async function invokeCommand(event, command, rawArgs) {
         if (resolved !== sessionId) throw new Error("기존 대화를 찾을 수 없어 재시작하지 않았습니다.");
       }
       const current = sessionModels.agent(id);
-      if (ptys.get(id) !== live || !sessionModels.canRestart(id)) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
+      if (ptys.get(id) !== live || !restartAllowed()) throw new Error("세션 상태가 바뀌었습니다. 다시 확인하세요.");
       if (current.aiToolId !== agent.aiToolId) throw new Error("세션의 도구가 바뀌었습니다. 다시 확인하세요.");
       if ((agentSessionIds.get(id) || current.lastSessionId || null) !== sessionId) throw new Error("현재 대화가 바뀌었습니다. 다시 확인하세요.");
       if (selectedAccountId(current) !== selectedAccountId(agent)
@@ -5955,7 +5957,7 @@ async function invokeCommand(event, command, rawArgs) {
       const poolResumeOwnerId = agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
       if (poolResumeOwnerId && !accountPool.eligible(accountPool.account(poolResumeOwnerId))) throw new Error("현재 분산 계정을 사용할 수 없습니다. 설정을 저장하고 계정 상태를 확인하세요.");
       await rememberSessionModel(id);
-      if (ptys.get(id) !== live || !sessionModels.canRestart(id)) throw new Error("세션 상태가 바뀌었습니다. 작업이 끝난 뒤 다시 시도하세요.");
+      if (ptys.get(id) !== live || !restartAllowed()) throw new Error("세션 상태가 바뀌었습니다. 작업이 끝난 뒤 다시 시도하세요.");
       const latest = sessionModels.agent(id);
       if ((agentSessionIds.get(id) || latest.lastSessionId || null) !== sessionId
         || latest.aiToolId !== current.aiToolId || selectedAccountId(latest) !== selectedAccountId(current)) throw new Error("현재 대화 또는 계정이 바뀌었습니다. 다시 확인하세요.");

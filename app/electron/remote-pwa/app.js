@@ -11,6 +11,7 @@ import { providerLogo, screenColor, searchText, reconcileChat } from './workspac
 import { filesForTurn, renderStoredImages } from './chat-files.js';
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
+import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, selectChatTurns, touchChatCache } from './chat-pagination.js';
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus } from "./session-state.js";
@@ -303,6 +304,7 @@ const composerRevisions = new Map();
 const sendingAgents = new Set();
 const pendingSubmissions = new Map();
 const uncertainSubmissions = new Set();
+const blockedSubmissions = new Set();
 const sessionQueues = new Map();
 const sessionLastSendAt = new Map();
 const sessionQueueErrors = new Map();
@@ -411,6 +413,17 @@ async function respondPrompt(agentId, prompt, option, key) {
     ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
     : [option.send, "\r"];
   try {
+    if (prompt.answerStyle === 'codex-approval') {
+      const agent = agentMap().get(agentId);
+      const data = chatAgent === agentId ? lastChatData : screenChatCache.get(agentId)?.data;
+      const pending = pendingQuestionFor(agent, data);
+      if (!pending?.id || promptKey(agent, promptFor(agent, data), data) !== key) throw new Error('Approval changed');
+      const result = await requestJson('/api/session/answer', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: agentId, sessionId: data?.sessionId || agent.hook?.session_id,
+          questionId: pending.id, approvalChoice: Number(option.send) - 1 }) }, 30000);
+      if (!result.response.ok) throw new Error('Approval unavailable');
+      state.sent = true; lastChatFetch = { id: null, at: 0 }; return;
+    }
     for (const input of keys) {
       const current = agentMap().get(agentId);
       if (!current || promptKey(current, promptFor(current)) !== key) return;
@@ -428,9 +441,10 @@ function promptCard(agent, prompt, data, openTerminal) {
   const state = promptResponses.get(agent.id)?.key === key ? promptResponses.get(agent.id) : null;
   const asyncQuestion = pendingQuestionFor(agent, data)?.async === true;
   const card = make("div", `chat-prompt ${prompt.kind}${asyncQuestion ? ' async-question' : ''}`);
+  card.classList.toggle('chat-prompt-command', prompt.answerStyle === 'codex-approval');
   card.classList.toggle('has-answer-state', !!(state?.sending || state?.sent || state?.error));
   card.setAttribute("role", "status");
-  card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : asyncQuestion ? '작업 중 질문' : "답변 대기 중")));
+  card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : prompt.kind === 'permission' ? '승인 필요' : asyncQuestion ? '작업 중 질문' : "답변 대기 중")));
   if (prompt.answerStyle === 'codex-form') {
     let draft = questionDrafts.get(agent.id);
     if (draft?.key !== key) { draft = { key, answers: prompt.questions.map(q => ({ id: q.id, optionIndex: q.options.length ? undefined : null, text: '' })) }; questionDrafts.set(agent.id, draft); }
@@ -448,11 +462,21 @@ function promptCard(agent, prompt, data, openTerminal) {
         } catch { responseState.error = true; }
         finally { responseState.sending = false; refreshPromptViews(agent.id); }
       } }));
-  } else card.appendChild(make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.")));
+  } else {
+    const details = make("div", "chat-prompt-text", prompt.text || t("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요."));
+    if (prompt.answerStyle === 'codex-approval') {
+      const scope = make('div', 'chat-prompt-approval-scope');
+      scope.appendChild(make('strong', '', t('반복 승인 범위')));
+      scope.appendChild(document.createTextNode('\n' + prompt.options[1].label));
+      details.appendChild(scope);
+    }
+    card.appendChild(details);
+  }
   card.appendChild(make("div", "chat-prompt-hint", prompt.kind === "authentication"
     ? t("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.")
     : state?.sent
     ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
+    : prompt.answerStyle === 'codex-approval' ? t('명령과 허용 범위를 검토한 뒤 아래에서 선택해 주세요.')
     : asyncQuestion ? t('작업은 계속 진행 중입니다. 답변을 선택해 보낼 수 있습니다.') : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
   if (state?.error) {
     const error = make("div", "chat-prompt-error", t("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요."));
@@ -460,8 +484,11 @@ function promptCard(agent, prompt, data, openTerminal) {
     card.appendChild(error);
   }
   const options = make("div", "chat-prompt-options");
-  for (const option of prompt.options) {
-    const button = make("button", "chat-prompt-option", option.label);
+  for (const [index, option] of prompt.options.entries()) {
+    const approval = prompt.answerStyle === 'codex-approval';
+    const button = make("button", "chat-prompt-option", approval
+      ? t(['이번만 허용', '이 접두어는 다시 묻지 않기', '거절'][index]) : option.label);
+    if (approval) button.title = option.label;
     button.type = "button";
     button.disabled = Boolean(state?.sending || state?.sent || state?.error);
     button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option, key); });
@@ -756,6 +783,7 @@ const sessionModelEditor = createSessionModelEditor({
   selectedId: () => selection.type === "session" ? selection.id : null,
   projectName, statusOf, showToast,
   rename: id => { selectSession(id); openRenameSessionEditor(); }, closeSession: closeRemoteSession,
+  restartSession: id => requestSessionActivation(id, { restart: true }),
   refresh: async () => { await fetchState(); },
 });
 
@@ -839,7 +867,9 @@ function renderNavigation() {
     row.querySelector('.status-dot').className = 'status-dot ' + status;
     row.querySelector('.session-copy strong').textContent = text(agent.name || agent.id);
     row.querySelector('.session-copy small').textContent = outputPreview(agent) || projectName(agent);
-    row.querySelector('.session-status').textContent = completedUnread.has(agent.id) ? '✓ ' + t('완료') : STATUS[status].label;
+    const statusLabel = row.querySelector('.session-status');
+    statusLabel.hidden = completedUnread.has(agent.id) || status === 'done';
+    statusLabel.textContent = statusLabel.hidden ? '' : STATUS[status].label;
   }
   ui.emptyState.hidden = agents.length !== 0;
   ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")
@@ -1240,7 +1270,9 @@ async function loadScreenChat(agentId, container, force = false) {
   if (!force && cached && Date.now() - cached.at < 3000) return;
   let pending = screenChatLoads.get(agentId);
   if (!pending) {
-    pending = fetch(`/api/chat?id=${encodeURIComponent(agentId)}`, { credentials: "same-origin" })
+    const query = new URLSearchParams({id:agentId,turns:String(CHAT_TURNS_PER_PAGE)});
+    if (cached?.data?.conversationId && cached.data.lastSequence) { query.set('conversation',cached.data.conversationId);query.set('after',String(cached.data.lastSequence)); }
+    pending = fetch(`/api/chat?${query}`, { credentials: "same-origin" })
       .then(async (response) => {
         const data = await response.json().catch(() => ({ blocks: [] }));
         return response.ok ? data : { blocks: [], error: true };
@@ -1249,8 +1281,13 @@ async function loadScreenChat(agentId, container, force = false) {
       .finally(() => screenChatLoads.delete(agentId));
     screenChatLoads.set(agentId, pending);
   }
-  const data = await pending;
-  screenChatCache.set(agentId, { at: Date.now(), data });
+  let data = await pending;
+  if (data.pageMode === 'delta' && data.conversationId === cached?.data?.conversationId) {
+    const blocks = selectChatTurns(mergeChatPages(cached.data.blocks || [],data.blocks || []),CHAT_TURNS_PER_PAGE).blocks;
+    const sequences = new Set(blocks.map(block => block.sequence));
+    data = {...data,blocks,artifacts:[...(cached.data.artifacts||[]),...(data.artifacts||[])].filter(file=>sequences.has(file.sourceSequence))};
+  }
+  touchChatCache(screenChatCache,agentId,{at:Date.now(),data});
   if (container.isConnected && container.dataset.screenChat === agentId) {
     renderScreenChat(container, data, agentMap().get(agentId));
   }
@@ -3481,6 +3518,7 @@ function conversationId(agent) { return agent?.hook?.session_id || agent?.lastSe
 async function sendInput(agentId, message, { quiet = false, requestId = submissionId(), steering = false, sessionId = conversationId(agentMap().get(agentId)) } = {}) {
   const text = message.trim();
   if (!agentId || !text) return false;
+  blockedSubmissions.delete(requestId);
   const previousConversation = { sessionId: chatHistoryStore.get(agentId)?.sessionId,
     rawKey: rawChatKeys.get(agentId) || '0' };
   try {
@@ -3495,9 +3533,11 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
           String(result.error || "").includes("submission outcome unknown"))) {
         uncertainSubmissions.add(requestId);
       }
+      if (result.outcome === 'not-sent' && result.reason === 'composer-not-ready') blockedSubmissions.add(requestId);
       throw new Error(result.error || `HTTP ${response.status}`);
     }
     uncertainSubmissions.delete(requestId);
+    blockedSubmissions.delete(requestId);
     if (/^\/clear(?:\s|$)/.test(text) || (agentMap().get(agentId)?.aiToolId === 'codex' && /^\/new(?:\s|$)/.test(text))) {
       clearRemoteChatHistory(agentId, previousConversation);
       if (!quiet) showToast(t('새 대화를 시작했습니다.'));
@@ -3505,7 +3545,9 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
     setTimeout(() => fetchState({ quiet: true }), 250);
     return true;
   } catch (error) {
-    if (!quiet) showToast(uncertainSubmissions.has(requestId)
+    if (!quiet) showToast(blockedSubmissions.has(requestId)
+      ? t('터미널 입력란이 비어 있지 않거나 준비되지 않았습니다. 기존 입력을 확인하세요. 새 메시지는 보내지 않았습니다.')
+      : uncertainSubmissions.has(requestId)
       ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
       : t("전송 실패: {0}", [error.message]));
     return false;
@@ -3831,6 +3873,7 @@ async function cancelSession(agentId) {
 const QUEUE_COOLDOWN_MS = 1200;
 const SESSION_ACTIVATION_TIMEOUT_MS = 30_000;
 const sessionActivationDeadlines = new Map();
+const sessionRestartRequests = new Set();
 let drainingQueues = false;
 
 function queueForAgent(agentId, { create = true } = {}) {
@@ -3893,12 +3936,14 @@ function renderComposerQueue() {
     ? t('대화가 변경되었습니다. 예약 내용을 확인하고 다시 보내세요.') : error === 'closed'
     ? t('세션을 닫아 예약 전송을 멈췄습니다.') : error === "outcome-unknown"
     ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
+    : error === 'composer-not-ready'
+      ? t('터미널 입력란이 비어 있지 않거나 준비되지 않았습니다. 기존 입력을 확인하세요. 새 메시지는 보내지 않았습니다.')
     : error === "activation-timeout"
       ? t("예약 대기열 {0} · 세션 시작이 지연되고 있습니다. 실행되면 자동 전송합니다.", [queue.length])
       : t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
   if (error) {
     const retry = make("button", "composer-queue-retry", error === "outcome-unknown"
-      ? t("대화 확인 후 다시 보내기") : error === "send-failed" ? t("전송 다시 확인") : t("세션 다시 활성화"));
+      ? t("대화 확인 후 다시 보내기") : ['send-failed', 'composer-not-ready'].includes(error) ? t("전송 다시 확인") : t("세션 다시 활성화"));
     retry.type = "button";
     retry.addEventListener("click", () => {
       if (error === 'conversation-changed') {
@@ -3911,10 +3956,15 @@ function renderComposerQueue() {
         queue[0].requestId = submissionId();
       }
       sessionQueueErrors.delete(agent.id);
-      if (error === "send-failed" || error === "outcome-unknown" || error === 'conversation-changed') void drainQueues();
+      if (['send-failed', 'outcome-unknown', 'conversation-changed', 'composer-not-ready'].includes(error)) void drainQueues();
       else void requestSessionActivation(agent.id, { queuedMessage: true });
     });
     head.append(" · ", retry);
+    if (['outcome-unknown', 'composer-not-ready'].includes(error)) {
+      const terminal = make('button', 'composer-queue-retry', t('터미널 확인'));
+      terminal.type = 'button'; terminal.addEventListener('click', () => setSessionViewMode('term'));
+      head.append(' · ', terminal);
+    }
   }
   el.appendChild(head);
   queue.forEach((message, index) => {
@@ -3925,6 +3975,7 @@ function renderComposerQueue() {
     cancel.title = t("예약 취소");
     cancel.addEventListener("click", () => {
       uncertainSubmissions.delete(message.requestId);
+      blockedSubmissions.delete(message.requestId);
       queue.splice(index, 1);
       if (!queue.length) {
         sessionQueues.delete(agent.id);
@@ -3945,7 +3996,7 @@ async function drainQueues() {
     for (const [agentId, queue] of sessionQueues) {
       if (!queue.length) { sessionQueues.delete(agentId); continue; }
       const agent = agentMap().get(agentId);
-      if (!agent || sendingAgents.has(agentId)) continue;
+      if (!agent || sendingAgents.has(agentId) || sessionRestartRequests.has(agentId)) continue;
       if (agentActivated(agent)) {
         sessionActivationDeadlines.delete(agentId);
         // A late startup can recover without user input. Failed/uncertain
@@ -3975,7 +4026,7 @@ async function drainQueues() {
       }
       const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId, sessionId: head.sessionId });
       if (!sent) {
-        sessionQueueErrors.set(agentId, uncertainSubmissions.has(head.requestId) ? "outcome-unknown" : "send-failed");
+        sessionQueueErrors.set(agentId, blockedSubmissions.has(head.requestId) ? 'composer-not-ready' : uncertainSubmissions.has(head.requestId) ? "outcome-unknown" : "send-failed");
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
@@ -3992,30 +4043,38 @@ async function drainQueues() {
   }
 }
 
-async function requestSessionActivation(agentId, { queuedMessage = false } = {}) {
+async function requestSessionActivation(agentId, { queuedMessage = false, restart = false } = {}) {
   if (!agentId) return false;
+  if (sessionRestartRequests.has(agentId)) return false;
   const existingDeadline = sessionActivationDeadlines.get(agentId);
-  if (existingDeadline && existingDeadline > Date.now()) return true;
+  if (existingDeadline && existingDeadline > Date.now() && !restart) return true;
+  if (restart) sessionRestartRequests.add(agentId);
   try {
     const response = await fetch("/api/session/restart", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: agentId }),
+      body: JSON.stringify({ id: agentId, ...(restart ? { restart: true } : {}) }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (restart && result.restarted !== true) throw new Error(t("호스트의 재시작 결과를 확인하지 못했습니다. 앱을 업데이트한 뒤 다시 시도하세요."));
     sessionActivationDeadlines.set(agentId, Date.now() + SESSION_ACTIVATION_TIMEOUT_MS);
-    sessionQueueErrors.delete(agentId);
+    // Restart is not permission to resend a failed or uncertain submission.
+    // Keep those queues paused until the user chooses their explicit retry.
+    if (!restart || ['closed', 'activation-timeout'].includes(sessionQueueErrors.get(agentId))) sessionQueueErrors.delete(agentId);
     if (selectedAgent()?.id === agentId) renderComposerQueue();
-    showToast(queuedMessage
+    showToast(restart ? t("세션을 다시 시작했습니다.") : queuedMessage
       ? t("세션 활성화 중 — 준비되면 메시지를 자동 전송합니다.")
       : t("세션을 활성화하고 있습니다."));
-    setTimeout(() => fetchState({ quiet: true }), 500);
+    if (restart) await fetchState({ quiet: true });
+    else setTimeout(() => fetchState({ quiet: true }), 500);
     return true;
   } catch (error) {
-    showToast(t("세션 활성화 실패: {0}", [error.message]));
+    showToast(t(restart ? "재시작 실패: {0}" : "세션 활성화 실패: {0}", [error.message]));
     return false;
+  } finally {
+    if (restart) sessionRestartRequests.delete(agentId);
   }
 }
 
@@ -4130,8 +4189,9 @@ function appendConversationTurn(container, fragment, range, blocks, agent, data)
   if (previous?.dataset.chatSignature === signature) turn = make('div', '');
   else if (range.user) { turn = make('div', 'chat-turn user'); const message = renderChatUser(run.filter(block => block.kind === 'text').map(block => block.text || '').join('\n'), agent, run[0]);
     run.slice(1).filter(block => block.kind === 'image').forEach(block => message.append(renderStoredImages(block, agent))); turn.append(message); }
-  else turn = renderAssistantTurn(run, agent, data?.artifacts || []);
+  else turn = renderAssistantTurn(run, agent, data?.artifacts || [], data || {});
   turn.dataset.chatKey = key; turn.dataset.chatSignature = signature; fragment.append(turn);
+  if (run[0]?.sequence) turn.dataset.chatSequence = String(run[0].sequence);
 }
 // ---- Live terminals (xterm) ----
 // Each visible pane gets its own xterm mirroring the desktop terminal: raw PTY
@@ -4843,6 +4903,7 @@ let sessionViewMode = ["chat", "term", "browser"].includes(storedSessionViewMode
   : "chat";
 if (initialUrl.searchParams.get('view') === 'chat') sessionViewMode = 'chat';
 let chatRequestSeq = 0;
+let chatOlderRequestSeq = 0;
 
 const CHAT_PAGE = 10;
 let chatVisible = CHAT_PAGE;
@@ -4850,11 +4911,34 @@ let lastChatData = null;
 let chatHiddenCount = 0;
 let chatAutoLoading = false;
 let chatOlderLoading = false;
+let chatOlderError = false;
 // This is a rendering cache only. Durable history lives in Electron's
 // conversation store and older pages are fetched by sequence cursor.
 const chatHistoryStore = new Map();
 const rawChatKeys = new Map();
 const pendingChatClears = new Map();
+
+function elToBottom() { ui.chatView.scrollTop = ui.chatView.scrollHeight; updateChatJump(); }
+function updateChatJump() {
+  const button = document.getElementById('chatJumpLatest');
+  if (!button || !ui.chatView) return;
+  button.hidden = sessionViewMode !== 'chat' || selection.type !== 'session'
+    || (!lastChatData?.newerWindow && ui.chatView.scrollHeight - ui.chatView.scrollTop - ui.chatView.clientHeight < 160);
+}
+document.getElementById('chatJumpLatest').addEventListener('click', () => {
+  if (lastChatData?.newerWindow) void fetchChat(chatAgent, { latest: true }); else elToBottom();
+});
+async function loadEarlierChat() {
+  if (chatOlderLoading || !chatAgent) return;
+  const agent = chatAgent, el = ui.chatView, height = el.scrollHeight;
+  const sessionId = lastChatData?.sessionId, conversationId = lastChatData?.conversationId;
+  const node = [...el.querySelectorAll('[data-chat-sequence]')].find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top);
+  const anchor = node ? { sequence: node.dataset.chatSequence, offset: node.getBoundingClientRect().top - el.getBoundingClientRect().top } : null;
+  await fetchChat(agent, { beforeSequence: lastChatData?.firstSequence, prepend: true });
+  if (chatAgent !== agent || lastChatData?.sessionId !== sessionId || lastChatData?.conversationId !== conversationId) return;
+  const current = anchor && [...el.querySelectorAll('[data-chat-sequence]')].find(node => node.dataset.chatSequence === anchor.sequence);
+  el.scrollTop += current ? current.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset : el.scrollHeight - height;
+}
 
 function clearRemoteChatHistory(agentId, previousConversation) {
   pendingChatClears.set(agentId, previousConversation);
@@ -4863,6 +4947,8 @@ function clearRemoteChatHistory(agentId, previousConversation) {
     lastChatData = { blocks: [], missing: true };
     lastChatKey = "";
     chatRequestSeq++; // Discard a transcript fetch that started before reset.
+    chatOlderRequestSeq++;
+    chatOlderLoading = false; chatOlderError = false;
     lastChatFetch = { id: null, at: 0 };
     renderChat(lastChatData);
   }
@@ -4876,7 +4962,8 @@ function bindChatAutoLoad() {
   if (!el || el.dataset.autoload === "1") return;
   el.dataset.autoload = "1";
   el.addEventListener("scroll", () => {
-    if (chatAutoLoading || el.scrollTop >= 80) return;
+    updateChatJump();
+    if (chatAutoLoading || chatOlderError || el.scrollTop >= 160) return;
     chatAutoLoading = true;
     const prevHeight = el.scrollHeight;
     if (chatHiddenCount > 0) {
@@ -4887,11 +4974,7 @@ function bindChatAutoLoad() {
       return;
     }
     if (lastChatData?.hasOlder && chatAgent) {
-      void fetchChat(chatAgent, {
-        beforeSequence: lastChatData.firstSequence,
-        prepend: true,
-      }).finally(() => {
-        el.scrollTop += el.scrollHeight - prevHeight;
+      void loadEarlierChat().finally(() => {
         chatAutoLoading = false;
       });
       return;
@@ -4971,7 +5054,7 @@ function renderChat(data) {
     }
     // Build DOM only for the most recent `chatVisible` turns so a long session
     // paints fast; the button reveals older turns on demand.
-    const hidden = Math.max(0, ranges.length - chatVisible);
+    const hidden = data?.pageMode && data.pageMode !== 'tail' ? 0 : Math.max(0, ranges.length - chatVisible);
     chatHiddenCount = hidden; // drives scroll-to-top auto-load
     if (hidden > 0) {
       const more = make("button", "chat-more", t("▲ 이전 대화 더 보기 ({0})", [hidden]));
@@ -4987,15 +5070,13 @@ function renderChat(data) {
       const more = make(
         "button",
         "chat-more",
-        chatOlderLoading ? t("이전 대화 불러오는 중…") : t("▲ 저장소에서 이전 대화 불러오기"),
+        chatOlderLoading ? t("이전 대화 불러오는 중…") : chatOlderError ? t('이전 대화를 불러오지 못했습니다 · 다시 시도') : t("▲ 저장소에서 이전 대화 불러오기"),
       );
       more.type = "button";
       more.disabled = chatOlderLoading;
       more.addEventListener("click", async () => {
         if (chatOlderLoading || !chatAgent) return;
-        const prevHeight = el.scrollHeight;
-        await fetchChat(chatAgent, { beforeSequence: data.firstSequence, prepend: true });
-        el.scrollTop += el.scrollHeight - prevHeight;
+        await loadEarlierChat();
       });
       frag.appendChild(more);
     }
@@ -5027,14 +5108,17 @@ function renderChat(data) {
   updateWorking();
   restoreChatScroll(chatScroll);
   renderWaitingPrompt(selectedAgent(), data);
+  updateChatJump();
 }
 
 let lastChatKey = "";
 let lastChatFetch = { id: null, at: 0 };
 let chatAgent = null;
-async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {}) {
+async function fetchChat(agentId, { beforeSequence = null, prepend = false, latest = false } = {}) {
   if (!agentId || !nativePageActive) return;
   if (!prepend && agentId !== chatAgent) {
+    latest ||= chatHistoryStore.get(agentId)?.data?.newerWindow === true;
+    chatOlderRequestSeq++; chatOlderLoading = false; chatOlderError = false;
     chatAgent = agentId;
     chatVisible = CHAT_PAGE; // reset pagination when switching sessions
     lastChatKey = "";
@@ -5042,22 +5126,29 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
     if (lastChatData) renderChat(lastChatData);
   }
   if (prepend && chatOlderLoading) return;
-  const seq = ++chatRequestSeq;
-  if (prepend) chatOlderLoading = true;
+  const seq = prepend ? ++chatOlderRequestSeq : ++chatRequestSeq;
+  const requestSession = lastChatData?.sessionId;
+  const beforeData = chatHistoryStore.get(agentId)?.data;
+  if (prepend) { chatOlderLoading = true; chatOlderError = false; }
   try {
-    const query = new URLSearchParams({ id: agentId, limit: "400" });
+    const query = new URLSearchParams({ id: agentId, limit: '400', turns: String(CHAT_TURNS_PER_PAGE) });
+    if (beforeData?.conversationId) query.set('conversation', beforeData.conversationId);
+    if (!prepend && !latest && beforeData?.lastSequence && beforeData?.conversationId)
+      query.set('after', String(beforeData.lastSequence));
     if (Number.isSafeInteger(Number(beforeSequence)) && Number(beforeSequence) > 0) {
       query.set("before", String(beforeSequence));
     }
     const response = await fetch(`/api/chat?${query}`, { credentials: "same-origin" });
     let data = await response.json().catch(() => ({ blocks: [] }));
     if (!response.ok) data = { blocks: [], error: true };
-    if (seq !== chatRequestSeq) return; // a newer request superseded this one
+    if (chatAgent !== agentId || seq !== (prepend ? chatOlderRequestSeq : chatRequestSeq)
+      || (prepend && requestSession !== lastChatData?.sessionId)) return;
     const cached = chatHistoryStore.get(agentId);
     if (data?.error && cached?.data) {
       // An HTTP failure is transient just like a network exception: keep the
       // last conversation visible instead of replacing it with an error card.
       lastChatData = cached.data;
+      if (prepend) chatOlderError = true;
       return;
     }
     const incoming = Array.isArray(data?.blocks) ? data.blocks : [];
@@ -5069,19 +5160,27 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
       pendingChatClears.delete(agentId);
     }
     rawChatKeys.set(agentId, incomingKey);
-    const sessionChanged = Boolean(
-      data?.sessionId && cached?.sessionId && data.sessionId !== cached.sessionId
-    );
+    const sessionChanged = Boolean((data?.sessionId && cached?.sessionId && data.sessionId !== cached.sessionId)
+      || (data.conversationId && cached?.data?.conversationId && data.conversationId !== cached.data.conversationId));
+    if (prepend && sessionChanged) { chatOlderError = true; return; }
     if (sessionChanged) chatHistoryStore.delete(agentId);
-    const previous = sessionChanged ? [] : (cached?.data?.blocks || []);
-    const blocks = data?.unsupported || data?.error
+    const persistent = incoming.some(block => block.sequence != null) && cached?.data?.blocks?.some(block => block.sequence == null);
+    const reset = sessionChanged || latest || persistent;
+    const previous = reset ? [] : (cached?.data?.blocks || []);
+    const merged = data?.unsupported || data?.error
       ? incoming
       : mergeChatPages(previous, incoming, { prepend });
+    const keepOlder = prepend || cached?.data?.newerWindow || !captureChatScroll()?.bottom;
+    const window = selectChatTurns(merged, CHAT_CACHED_TURNS, keepOlder ? 'older' : 'latest');
+    const blocks = window.blocks;
     if (!data?.unsupported && !data?.error && blocks.length) {
       const added = Math.max(0, blocks.length - previous.length);
-      if (prepend) chatVisible += added;
-      const artifacts = [...new Map([...(sessionChanged ? [] : cached?.data?.artifacts || []), ...(data.artifacts || [])]
-        .map(file => [`${file.sourceSequence}:${searchText(file.path)}:${file.usage}`, file])).values()];
+      if (prepend) chatVisible = Math.min(CHAT_CACHED_TURNS * 2, chatVisible + CHAT_PAGE);
+      if (reset) chatVisible = CHAT_PAGE;
+      const sequences = new Set(blocks.map(block => block.sequence));
+      const incomingSequences = new Set(incoming.map(block => block.sequence));
+      const artifacts = [...new Map([...(reset ? [] : cached?.data?.artifacts || []).filter(file => !incomingSequences.has(file.sourceSequence)), ...(data.artifacts || [])]
+        .map(file => [`${file.sourceSequence}:${searchText(file.path)}:${file.usage}`, file])).values()].filter(file => sequences.has(file.sourceSequence));
       data = prepend
         ? {
             ...cached?.data,
@@ -5089,25 +5188,36 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false } = {
             blocks, artifacts,
             missing: false,
             lifecycle: cached?.data?.lifecycle ?? data.lifecycle,
+            lifecycleAt: cached?.data?.lifecycleAt, activeTool: cached?.data?.activeTool,
+            pendingQuestion: cached?.data && Object.hasOwn(cached.data, 'pendingQuestion') ? cached.data.pendingQuestion : data.pendingQuestion,
           }
         : { ...data, blocks, artifacts, missing: false };
-      chatHistoryStore.set(agentId, { sessionId: data.sessionId || cached?.sessionId, data });
+      data.firstSequence = blocks[0]?.sequence ?? data.firstSequence;
+      data.hasOlder = prepend || reset || !cached?.data ? data.hasOlder : cached.data.hasOlder;
+      if (window.trimmed && !keepOlder) data.hasOlder = true;
+      data.newerWindow = reset ? false : cached?.data?.newerWindow || (window.trimmed && keepOlder);
+      data.lastSequence = prepend ? cached?.data?.lastSequence : data.lastSequence ?? cached?.data?.lastSequence;
+      data.contentKey = incoming.length || reset ? JSON.stringify([blocks, artifacts]) : cached?.data?.contentKey;
+      touchChatCache(chatHistoryStore, agentId, { sessionId: data.sessionId || cached?.sessionId, data });
     } else if (data?.missing && previous.length) {
       data = { ...cached.data, lifecycle: data.lifecycle ?? cached.data.lifecycle, pendingQuestion: data.pendingQuestion ?? null };
     }
     if (!data?.error && !data?.unsupported && data?.sessionId && !blocks.length) {
-      chatHistoryStore.set(agentId, { sessionId: data.sessionId, data });
+      touchChatCache(chatHistoryStore, agentId, { sessionId: data.sessionId, data });
     }
     const last = blocks[blocks.length - 1];
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
-    const key = `${JSON.stringify([blocks, data?.artifacts])}|${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
+    const key = `${data.contentKey || JSON.stringify([blocks, data?.artifacts])}|${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
     if (key === lastChatKey) { updateWorking(); return; }
     lastChatKey = key;
     renderChat(data);
+    if (latest) elToBottom();
+    if (data.hasNewer) setTimeout(() => { if (chatAgent === agentId) void fetchChat(agentId); }, 250);
   } catch {
     // Keep the last rendered conversation on a transient error.
+    if (prepend && chatAgent === agentId) chatOlderError = true;
   } finally {
-    if (prepend) {
+    if (prepend && chatAgent === agentId && seq === chatOlderRequestSeq) {
       chatOlderLoading = false;
       if (lastChatData) renderChat(lastChatData);
     }

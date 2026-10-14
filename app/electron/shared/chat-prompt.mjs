@@ -35,6 +35,18 @@ export function questionDetails(raw) {
 
 export function parseChatPrompt(status, question, assistantMessage, provider) {
   if (!["waiting", "blocked", "attention", "question"].includes(status)) return null;
+  if (provider === 'codex' && typeof question === 'string' && question.length <= 32768) {
+    try {
+      const approval = JSON.parse(question)?.approval;
+      if (approval?.type === 'codex-command' && typeof approval.text === 'string'
+        && approval.text.startsWith('Would you like to run the following command?') && approval.text.length <= 16384
+        && Array.isArray(approval.options) && approval.options.length === 3
+        && approval.options.every((option, i) => option?.send === String(i + 1)
+          && typeof option.label === 'string' && option.label.length > 0 && option.label.length <= 8192)) {
+        return { kind: 'permission', answerStyle: 'codex-approval', text: approval.text, options: approval.options };
+      }
+    } catch { /* Existing question and terminal fallback parsing still applies. */ }
+  }
   const details = questionDetails(question);
   if (details.questions.length) {
     const first = details.questions[0];

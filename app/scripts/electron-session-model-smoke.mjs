@@ -8,8 +8,8 @@ import { SessionModelService } from "../electron/services/session-model-service.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-model-ui-"));
 app.setPath("userData", path.join(root, "profile"));
 app.disableHardwareAcceleration();
-const windows = [], updates = [];
-let web, exitCode = 0;
+const windows = [], updates = [], restarts = [];
+let web, exitCode = 0, restartOutcome = true;
 app.on("window-all-closed", () => {});
 const assert = (value, message) => { if (!value) throw new Error(message); };
 async function waitFor(win, expression) {
@@ -34,7 +34,8 @@ app.whenReady().then(async () => {
         current: { model: agent.aiToolId === "claude" ? "opus" : "fixture-a", effort: "low" }, currentSource: "last-turn" }),
       update: async payload => { updates.push(payload); agents.find(agent => agent.id === payload.id).modelSettings = payload.settings; return { id: payload.id, restarted: payload.restart }; },
     });
-    web = new RemoteDashboardService({ baseDir: path.join(root, "web"), sessionModels });
+    web = new RemoteDashboardService({ baseDir: path.join(root, "web"), sessionModels,
+      restartSession: async (id, options) => { restarts.push({ id, options }); return { id, active: true, restarted: restartOutcome }; } });
     web.config.server_port = 0; web.syncAgents(agents);
     web.syncView({ language: "ko", projects: [{ id: "p", name: "Model project", folder: root }], agents });
     const status = await web.start();
@@ -84,6 +85,24 @@ app.whenReady().then(async () => {
       await waitFor(win, "!document.querySelector('#sessionModelSave').disabled");
       await win.webContents.executeJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
       assert(await win.webContents.executeJavaScript("document.querySelector('#sessionModelOverlay').hidden"), "Escape did not close the model editor");
+      // Explicit context-menu Restart targets the clicked session without
+      // changing the selected Codex session or its model configuration.
+      await win.webContents.executeJavaScript(`(() => {
+        const row = document.querySelector('.session-row[data-agent-id="claude-session"]');
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles:true,cancelable:true,clientX:100,clientY:200 }));
+        document.querySelector('[data-session-action="restart"]').click();
+      })()`);
+      await waitFor(win, "document.querySelector('.toast').textContent.includes('다시 시작')");
+      assert(restarts.at(-1)?.id === "claude-session" && restarts.at(-1)?.options?.restart === true, "Restart did not target the right-clicked session");
+      assert(await win.webContents.executeJavaScript("document.querySelector('#detailName').textContent.includes('Codex fixture')"), "Restart switched the selected session");
+      restartOutcome = false;
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await win.webContents.executeJavaScript(`(() => {
+        document.querySelector('.session-row[data-agent-id="claude-session"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles:true,cancelable:true,clientX:100,clientY:200 }));
+        document.querySelector('[data-session-action="restart"]').click();
+      })()`);
+      await waitFor(win, "document.querySelector('.toast').textContent.includes('재시작 결과를 확인하지')");
+      restartOutcome = true;
       assert(errors.length === 0, errors.join("\n"));
       console.log(`Session model UI passed: ${width}px`);
     }

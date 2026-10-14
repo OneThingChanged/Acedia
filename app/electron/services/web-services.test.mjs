@@ -18,6 +18,25 @@ afterEach(async () => {
 });
 
 describe("Electron dashboard server", () => {
+  it.each(["remote", "dashboard"])("distinguishes explicit Restart from activation on %s", async surface => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-restart-api-")); roots.push(root);
+    const calls = [];
+    const restartSession = async (...args) => { calls.push(args); return { id: args[0], active: true, restarted: args[1]?.restart === true }; };
+    const service = surface === "remote" ? new RemoteDashboardService({ baseDir: root, restartSession })
+      : new LocalDashboardService({ title: "Restart", defaultPort: 0, baseDir: root, configName: "restart.json", providers: { restartSession } });
+    if (surface === "remote") service.config.server_port = 0;
+    services.push(service); const status = await service.start();
+    const request = body => fetch(`${status.url}/api/session/restart`, { method: "POST",
+      headers: { "content-type": "application/json", origin: status.url }, body: JSON.stringify(body) });
+    expect((await request({ id: "clicked" })).status).toBe(200);
+    const restarted = await request({ id: "clicked", restart: true });
+    expect(restarted.status).toBe(200);
+    await expect(restarted.json()).resolves.toMatchObject({ id: "clicked", restarted: true });
+    expect(calls).toEqual([["clicked"], ["clicked", { restart: true }]]);
+    expect((await request({ id: "clicked", restart: "true" })).status).toBe(400);
+    expect(calls).toHaveLength(2);
+  });
+
   it("serves synchronized state on a loopback-only random port", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-web-"));
     roots.push(root);
@@ -399,7 +418,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v94');
+    expect(workerBody).toContain('multiagent-remote-v99');
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
     for (const name of ["dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "attachments.js", "session-model.js", "session-state.js"]) {

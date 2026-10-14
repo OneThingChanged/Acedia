@@ -10,7 +10,8 @@ sources:
   - resource: ../app/electron/services/native-notifications.mjs
   - resource: ../app/electron/services/native-notifications.test.mjs
   - resource: ../app/scripts/electron-notifications-smoke.mjs
-  - resource: ../app/src/components/CompletionBadge.tsx
+  - resource: ../app/src/components/Sidebar.tsx
+  - resource: ../app/src/components/Sidebar.css
   - resource: ../app/src/hooks/useAttentionState.ts
   - resource: ../app/scripts/electron-sidebar-workspace-smoke.mjs
   - resource: ../app/electron/services/terminal-session-service.mjs
@@ -39,10 +40,12 @@ sources:
 
 ## 완료 표시와 Windows 작업표시줄
 
-미확인 완료는 최근 대화·검색 결과·펼친 프로젝트·세션 선택 목록에서 **✓ 완료 / Done**
-배지로 표시한다. 최근 대화 행은 초록색 배경과 테두리를 사용하고 테두리만 3회 부드럽게
+미확인 완료는 최근 대화·검색 결과·펼친 프로젝트에서 행의 강조로 표시하며 **Done** 배지는
+표시하지 않는다. 최근 대화 행은 초록색 배경과 테두리를 사용하고 테두리만 3회 부드럽게
 깜박인 후 멈춘다. 동작 줄이기 설정에서는 깜박임을 생략한다. 스크린별 색상과 S 번호,
 작업 상태 점은 각각 유지하며 밝은 테마에서는 완료 표시의 초록색을 진하게 조정한다.
+오른쪽 S 번호·권한 생략 표시·메뉴·끄기 버튼은 마우스 호버 또는 키보드 초점에서 표시한다.
+숨겨질 때는 자리도 차지하지 않아 세션명이 가용 너비를 모두 사용한다.
 
 완료 표시는 세션을 선택하거나 알림 센터에서 읽음 처리할 때, 또는 새 작업을 시작할 때
 해제한다. 휴면 전환·PTY 종료만으로 해제하지 않으며 저장된 미확인 기록은 앱 재실행에도

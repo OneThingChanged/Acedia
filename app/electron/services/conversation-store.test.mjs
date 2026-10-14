@@ -5,6 +5,7 @@ import path from "node:path";
 import { ConversationStoreManager } from "./conversation-store.mjs";
 
 const cleanup = [];
+const lineTool = payload => JSON.stringify({type:'response_item',payload});
 
 async function tempRoot() {
   const root = await fsPromises.mkdtemp(path.join(os.tmpdir(), "multiagent-conversations-"));
@@ -32,6 +33,63 @@ afterEach(async () => {
 });
 
 describe("ConversationStoreManager", () => {
+  it('pages whole replies, transmits compact work, and polls only new records without repeating file checks', async () => {
+    const root = await tempRoot();
+    const manager = new ConversationStoreManager({configDir:path.join(root,'config'),defaultRoot:path.join(root,'store')});
+    const input = {agentId:'paged',sessionId:'one',provider:'codex',projectPath:root,transcriptPath:path.join(root,'session.jsonl')};
+    try {
+      await fsPromises.writeFile(path.join(root,'latest.md'),'guide');
+      const lines=[];
+      for(let i=0;i<30;i++) {
+        lines.push(codexLine('user','question '+i));
+        for(let j=0;j<12;j++) {
+          lines.push(lineTool({type:'function_call',call_id:`call-${i}-${j}`,name:'exec_command',arguments:JSON.stringify({cmd:'echo '+ 'x'.repeat(5000)})}));
+          lines.push(lineTool({type:'function_call_output',call_id:`call-${i}-${j}`,output:'result '+ 'x'.repeat(4000)}));
+        }
+        lines.push(codexLine('assistant','complete answer '+i+(i===29?' [guide](latest.md)':'')));
+      }
+      await fsPromises.writeFile(input.transcriptPath,lines.join('\n')+'\n'); await manager.ingestTranscript(input);
+      const legacy=await manager.listBlocks({...input,limit:400});
+      const page=await manager.listBlocks({...input,turnLimit:5});
+      expect(page.blocks[0].text).toBe('question 25'); expect(page.blocks.at(-1).text).toContain('complete answer 29');
+      expect(page.blocks).toHaveLength(130); expect(page.hasOlder).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(Buffer.byteLength(JSON.stringify(legacy))/5);
+      const older=await manager.listBlocks({...input,turnLimit:5,beforeSequence:page.firstSequence,conversationId:page.conversationId});
+      expect(older.blocks[0].text).toBe('question 20'); expect(older.blocks.at(-1).text).toBe('complete answer 24');
+      expect(older.artifacts).toEqual([]);
+      const sequences=page.blocks.filter(block=>block.deferred).slice(0,2).map(block=>block.sequence);
+      const details=await manager.readBlockDetails({...input,conversationId:page.conversationId,sequences});
+      expect(details.blocks[1].output).toContain('result');
+      expect((await manager.readBlockDetails({...input,agentId:'other',conversationId:page.conversationId,sequences})).blocks).toEqual([]);
+      const spy=vi.spyOn(fsPromises,'stat');
+      const poll=await manager.listBlocks({...input,turnLimit:5,afterSequence:page.lastSequence,conversationId:page.conversationId});
+      expect(poll).toMatchObject({pageMode:'delta',blocks:[],artifacts:[],lastSequence:page.lastSequence});
+      expect(spy).not.toHaveBeenCalled(); spy.mockRestore();
+      await fsPromises.appendFile(input.transcriptPath,codexLine('user','new question')+'\n'+codexLine('assistant','new answer')+'\n');
+      await manager.ingestTranscript(input);
+      const delta=await manager.listBlocks({...input,turnLimit:5,afterSequence:page.lastSequence,conversationId:page.conversationId});
+      expect(delta.blocks.map(block=>block.text)).toEqual(['new question','new answer']);
+      const reset=await manager.listBlocks({...input,turnLimit:5,afterSequence:delta.lastSequence,conversationId:'old-conversation'});
+      expect(reset.pageMode).toBe('initial'); expect(reset.blocks.at(-1).text).toBe('new answer');
+    } finally { vi.restoreAllMocks(); manager.close(); }
+  });
+
+  it('does not split a text message from attached image blocks at a page boundary', async () => {
+    const root=await tempRoot(), manager=new ConversationStoreManager({configDir:path.join(root,'config'),defaultRoot:path.join(root,'store')});
+    const input={agentId:'pictures',sessionId:'one',provider:'codex',transcriptPath:path.join(root,'session.jsonl')};
+    try {
+      const lines=[]; for(let i=0;i<8;i++){
+        lines.push(JSON.stringify({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'image question '+i},
+          {type:'input_image',image_url:'data:image/png;base64,YQ=='},{type:'input_image',image_url:'data:image/png;base64,Yg=='}]}}));
+        lines.push(codexLine('assistant','image answer '+i));
+      }
+      await fsPromises.writeFile(input.transcriptPath,lines.join('\n')+'\n'); await manager.ingestTranscript(input);
+      const page=await manager.listBlocks({...input,turnLimit:5});
+      expect(page.blocks[0].text).toContain('image question 3'); expect(page.blocks.at(-1).text).toBe('image answer 7');
+      const older=await manager.listBlocks({...input,turnLimit:5,beforeSequence:page.firstSequence});
+      expect(older.blocks[0].text).toContain('image question 0'); expect(older.blocks.at(-1).text).toBe('image answer 2'); expect(older.hasOlder).toBe(false);
+    } finally { manager.close(); }
+  });
   it("deduplicates asynchronous file checks and invalidates a cached miss after a write", async () => {
     const root = await tempRoot();
     const manager = new ConversationStoreManager({ configDir:path.join(root,"config"), defaultRoot:path.join(root,"store") });

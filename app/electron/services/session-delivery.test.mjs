@@ -121,6 +121,8 @@ it('accepts an empty composer/gray placeholder and rejects existing drafts, queu
   await screen('› \x1b[90mAsk Codex to do anything\x1b[0m\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(true);
   await screen('› \x1b[2mAsk Codex to do anything\x1b[0m\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(true);
   await screen('› existing draft\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(false);
+  expect(deliveryComposerReady(entry, { allowWorking: true })).toBe(false);
   await screen('› \x1b[2;1HQueued follow-up inputs\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(false);
   await screen('› \x1b[2;1Hesc to interrupt\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(false);
+  expect(deliveryComposerReady(entry, { allowWorking: true })).toBe(true);
 });

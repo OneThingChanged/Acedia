@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -20,6 +20,15 @@ sources:
   - id: session-create-broker
     resource: ../app/electron/services/remote-session-create-broker.mjs
     title: "Acknowledged Remote session creation broker"
+  - id: session-activation-broker
+    resource: ../app/electron/services/remote-session-activation-broker.mjs
+    title: "Acknowledged Remote activation and explicit Restart"
+  - id: session-context-menu
+    resource: ../app/electron/remote-pwa/model-editor.js
+    title: "Session context-menu target and actions"
+  - id: session-model-ui-smoke
+    resource: ../app/scripts/electron-session-model-smoke.mjs
+    title: "Remote model controls and context-menu Restart UI verification"
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
@@ -89,6 +98,15 @@ sources:
   - id: question-ui-smoke
     resource: ../app/scripts/electron-chat-question-smoke.mjs
     title: "Desktop and Remote question visibility smoke"
+  - id: command-approvals
+    resource: ../app/electron/services/command-approval.mjs
+    title: "Live Codex command approval identity and verified native selection"
+  - id: approval-ui-smoke
+    resource: ../app/scripts/electron-chat-approval-smoke.mjs
+    title: "Desktop, Remote and Dashboard approval choices and changed-command checks"
+  - id: approval-cli-smoke
+    resource: ../app/scripts/codex-approval-cli-smoke.mjs
+    title: "Isolated real Codex command approval allow and deny verification"
   - id: remote-ui-smoke
     resource: ../app/scripts/electron-remote-pwa-smoke.mjs
     title: "Desktop and mobile Remote PWA runtime smoke"
@@ -104,6 +122,9 @@ sources:
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Desktop browser ownership and Remote frame provider"
+  - id: conversation-store
+    resource: ../app/electron/services/conversation-store.mjs
+    title: "Session-bound history paging and deferred work details"
   - id: codex-turn-completion
     resource: ../app/electron/services/codex-turn-completion.mjs
     title: "Codex transcript completion fallback for missed hooks"
@@ -191,7 +212,7 @@ WebView는 같은 `remote-pwa`를 사용한다. 새 웹 화면과 API는 변경�
 | 이미지·파일 | 사용자 이미지 블록을 말풍선에 표시하고, 답변별 수정 파일·증감·diff를 보여준다. 첫 3개 이후에는 검색 가능한 모든 파일 창을 사용한다. 코드·텍스트 링크, 기존 확대·이동 뷰어와 PNG 복사를 지원한다. |
 | 대화 갱신 | 단일 채팅과 Screen의 변경 없는 대화 DOM을 유지한다. 변경된 대화에서도 이미지와 접힘 상태를 유지한다. 이미지 읽기를 중복하지 않고 캐시에 용량 제한을 둔다. 이전 페이지의 파일 정보도 병합한다. |
 | Working·큐 | 단일 채팅의 Working과 큐를 본문 스크롤 밖에 순서대로 둔다. 로컬 Codex는 Tab으로 작업 중 추가 입력/완료 후 예약을 선택한다. 비동기 질문 중 작업은 계속 표시하고, 응답이 필요한 blocking 질문에는 큐로 보류한다. 대화 ID가 바뀌거나 세션을 닫으면 예약 전송을 멈춘다. |
-| 사이드바 | 프로젝트 접기·복원, Codex/Claude 로고, Screen과 같은 고정 색상·배지, 호버/키보드 포커스 시 닫기 버튼. 터치에서는 버튼을 표시한다. 우클릭으로 이름·모델 변경과 종료를 제공한다. Windows 경로 구분자를 통일해 세션·프로젝트를 검색하며 세션 없는 프로젝트도 결과에 나온다. |
+| 사이드바 | 프로젝트 접기·복원, Codex/Claude 로고, Screen과 같은 고정 색상. Screen 배지·닫기 버튼은 호버/키보드 포커스에서만 표시하며 숨긴 영역의 너비도 반환해 세션명을 길게 보여준다. 터치에서는 버튼을 표시한다. Done 표시는 제거하고 미확인 완료의 초록색 강조를 유지한다. 우클릭으로 이름·모델 변경과 종료를 제공한다. Windows 경로 구분자를 통일해 세션·프로젝트를 검색하며 세션 없는 프로젝트도 결과에 나온다. |
 | 완료·생성 옵션 | 완료를 읽을 때까지 강조하고 새로고침 후에도 유지한다. 지원하는 브라우저의 앱 배지에 질문·미확인 완료를 반영한다. 생성이 성공한 경우에만 마지막 agent와 agent별 Dangerous 선택을 해당 브라우저에 저장한다. |
 
 완료 후에도 Working으로 남는 상태 충돌은 `resolveSessionWorkStatus`로 호스트와 웹에서
@@ -492,6 +513,35 @@ Chat component and Remote client at 1024px and 390px using an isolated profile,
 including fallback visibility, scrolling, terminal navigation, stale-state
 clearing and failed answer writes. It does not call a live model.[^chat-transcript][^question-ui-smoke]
 
+Current source also renders local Codex **command execution approvals** in
+Desktop Chat, Remote and Dashboard. The **Approval needed / 승인 필요** card
+keeps the native environment, reason, complete command and recurring approval
+scope visible, with **Allow once / 이번만 허용**, **Don't ask again for this
+prefix / 이 접두어는 다시 묻지 않기**, **Deny / 거절**, and a terminal fallback.
+Only a complete recognized live selector receives these actions; unsupported
+layouts and SSH remain terminal actions. Choices are never selected automatically.
+Long details scroll while the concise action buttons remain visible.[^command-approvals][^approval-ui-smoke]
+
+The existing `/api/session/answer` route carries the agent, conversation and
+current approval ID plus `approvalChoice` (zero-based). The host verifies the
+same process, conversation, command and choices before every arrow and Enter;
+it confirms the selected row and observes the dialog close. Concurrent requests
+share the question lock. Repeated confirmed requests do not write keys again,
+and an uncertain partial response requires terminal review. These approval IDs
+describe the current viewport and are not saved as historical conversation
+questions.[^command-approvals]
+
+`npm --prefix app run electron:chat-approval-smoke` checks the real desktop
+Chat component and Remote/Dashboard at 1024px and 390px with fixture sessions,
+including full scope display, pinned controls, stale command rejection and no
+raw approval input from clients. With `ACEDIA_CODEX_BINARY` set,
+`npm --prefix app run electron:codex-approval-cli-smoke` checks the installed
+Codex TUI against a local mock model transport and isolated profile. Codex
+**0.162.1** passed allow-once command execution and denial; denial cancels the
+turn rather than requesting another model response. No real user session or
+credentials are involved. Current PWA source cache is **v98**; command approvals
+and context-menu Restart are not yet in the public EXE.[^approval-ui-smoke][^approval-cli-smoke]
+
 From 1.8.1.17, desktop chat and the Remote composer use Enter to send (or queue
 while working) and Ctrl+Enter to insert a newline at the selection. Cmd+Enter is
 also accepted for newline. Plain Enter/Tab accepts a visible autocomplete item;
@@ -562,6 +612,25 @@ Runtime availability is checked separately from a Done hook, so stale completion
 metadata cannot authorize input to a session that is still starting. Failed or
 uncertain submissions remain paused for explicit retry.[^web-services][^remote-client][^web-tests][^pty-submit]
 
+Development source on 2026-10-13 adds **Restart** to the Remote/Dashboard session
+context menu, using the right-clicked row's ID without changing the selected
+conversation. The HTTP request includes `restart: true`; requests without that
+flag retain their existing activation behavior and leave an active CLI running.
+Explicit Restart stops and recreates the target through the desktop lifecycle,
+retaining its known conversation, model/effort/Fast and routed account. The host
+acknowledges only after a replacement runtime exists; an unchanged old runtime
+cannot establish success. Startup, duplicate and other-window ownership failures
+surface as errors. The browser holds queue draining during the request, retains
+drafts and queue entries, and leaves failed/uncertain submissions paused for
+explicit retry. PC/mobile UI checks at 1024/390px verify the clicked target and
+selection preservation; both Remote and Dashboard HTTP tests distinguish Restart
+from activation and reject invalid flags. An older host reporting an active
+session without a confirmed restart produces an error rather than success;
+the 1024/390px UI fixture verifies that case too. UI host calls are fixtures, and this
+does not constitute a live user's CLI restart test. The source web cache is now
+**v98**; this feature is not yet included in the public EXE.
+[^session-context-menu][^session-activation-broker][^session-model-ui-smoke]
+
 `npm run electron:remote-queue-smoke` checks this behavior through the actual
 Remote and Dashboard pages at desktop and phone widths, using isolated profiles,
 ephemeral loopback ports and mock sessions. It covers a turn longer than the
@@ -572,8 +641,11 @@ at phone and landscape widths. The correction is included in EXE 1.8.1.38;
 [release verification](release-1-8-1-38.md) and installation on the user's
 desktop are separate checks.[^remote-queue-smoke]
 
-Only one composer submission may write a given PTY at a time. If the terminal
-changes or output does not settle after text was written, the request is marked
+Only one composer submission may write a given PTY at a time. Single-line input
+sends one Enter after the 500ms Windows paste-burst delay; idle clock/footer
+repaints do not postpone it. Bracketed multiline pastes still wait for their
+visible render and, outside steering, settled output. If the terminal
+changes or a multiline paste does not settle after text was written, the request is marked
 uncertain and its request ID is retained: the backend does not resend the image
 paths or blindly retry Enter. HTTP success means the Enter write completed, not
 that a model response has finished. Codex 0.153.4's
@@ -604,7 +676,28 @@ request ID retain their previous submission behavior.[^remote-submissions]
 When the backend cannot determine whether a submission reached the PTY, the
 composer and queued-message UI keep the message and request ID, show an
 uncertain-outcome warning, and require explicit confirmation before a new
-request ID can be used. This avoids an automatic duplicate send. The Remote
+request ID can be used. This avoids an automatic duplicate send. Desktop,
+Dashboard and Remote share the same host Chat submission coordinator. Before
+typing into local Codex, it checks the live composer for existing draft text
+and readiness, including on an explicit retry. A working turn can accept an
+explicit steering request only with an empty native composer. A pre-paste
+rejection returns `outcome: "not-sent"` and `reason: "composer-not-ready"`;
+its request ID can be retried after review because nothing was typed. The queue
+preserves the message, explains the rejection and offers **Check terminal**
+and explicit retry, without appending another copy to the existing input.
+An unknown post-paste outcome retains the existing replay protection.
+
+2026-10-14 source validation covers 102 focused submission/PTY/API/Chat checks,
+and an isolated [native Codex HTTP smoke](../app/scripts/codex-chat-submit-smoke.mjs)
+using a temporary profile and fake loopback model. Continuous repaint events
+are simulated while the real native composer receives the single-line message
+once. A parked native draft rejects a new HTTP send without typing anything;
+after manually clearing it, explicit retry receives one matching user record.
+The Remote/Dashboard queue smoke also passes at 1280/375px, covering the blocked
+draft notice, terminal review, explicit retry, FIFO and paused unknown outcomes.
+These source changes have not been published.
+
+The Remote
 new-session dialog closes with Cancel or Esc; clicking outside leaves the
 draft and chosen account in place.[^remote-client]
 
@@ -618,6 +711,35 @@ Remote chat reads from the desktop conversation store with bounded sequence
 cursors. The browser keeps a rendering cache, but that cache is not the source
 of truth: reaching the top requests older stored pages, and an app/WebView
 reload can reconstruct the transcript from SQLite.[^electron-main][^remote-client]
+
+As of the 2026-10-14 source, Remote and Dashboard initially request the latest
+five complete user/assistant turns (`turns=5`). Scrolling near the top fetches
+five older turns with `before`; live polling uses `after` and the stored
+`conversation` identity. The two cursors remain independent so an arriving
+answer does not overwrite the older-page boundary. A visible-message anchor
+preserves the reader's position, failed older requests offer retry, and the
+fixed **Jump to latest** control returns to the current answer. The browser
+retains up to 120 user turns per conversation and eight recently used session
+histories; the host keeps the durable history. Screen chat panes request the
+same five-turn initial page and incremental updates.[^remote-client][^conversation-store]
+
+Work records in paged responses are compact labels and state; opening an
+individual item requests full output/diffs through authenticated
+`POST /api/chat/details`. Agent, provider-session, conversation and block IDs
+are checked together by the host. Closed work groups do not fetch details.
+Stored attachment bitmap reads wait until the message approaches the viewport,
+keeping the existing bounded image cache and loaded-image identity. Work,
+questions/approvals and queued messages remain outside history pagination.
+New optional page parameters preserve compatibility with older clients.
+[^web-services][^conversation-store][^remote-client]
+
+The isolated [pagination smoke](../app/scripts/electron-chat-pagination-smoke.mjs)
+passes desktop and both web services at 1024/390px. Its 200-turn fixture reduces
+the first chat response from 703,351 to 11,713 bytes (about 98%), verifies detail
+reads on expansion, incremental polling, scroll anchoring and retry, and tests
+a simultaneous older read/live update on desktop. This source is not yet
+published; public-network speed and installed-app update behavior were not
+measured by this fixture.
 
 The desktop canonicalizes Codex transcript paths before checking the selected
 account root, so a Windows junction and its physical target refer to the same
@@ -823,12 +945,17 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^web-services]: Dashboard and Remote server
 [^web-tests]: Remote authentication and endpoint tests
 [^session-create-broker]: Acknowledged Remote session creation broker
+[^session-activation-broker]: Acknowledged Remote activation and explicit Restart
+[^session-context-menu]: Session context-menu target and actions
+[^session-model-ui-smoke]: Remote model controls and context-menu Restart UI verification
 [^remote-client]: Remote PWA client
 [^remote-terminal-smoke]: Remote and Dashboard terminal footer and container-resize verification
 [^session-model-memory]: Current native model observation and per-session model memory
 [^session-model-memory-tests]: Native model repaint reconciliation and restart memory regression checks
 [^remote-attachments]: Shared image and ZIP attachment classification, limits and message paths
 [^remote-attachments-smoke]: Real Remote and Dashboard attachment selection, upload and submission
+[^remote-submissions]: Durable submission deduplication
+[^remote-requests]: Request deadlines and latest-response ordering
 [^session-filters]: Shared Remote session lifecycle filters and PTY projection
 [^session-filter-tests]: Desktop classification parity and runtime projection checks
 [^session-filter-smoke]: Remote and Dashboard session filter runtime verification
@@ -842,11 +969,15 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^chat-questions]: Shared question and permission card parsing
 [^chat-transcript]: Transcript decoding and pending native questions
 [^question-ui-smoke]: Desktop and Remote question visibility smoke
+[^command-approvals]: Live Codex command approval identity and verified native selection
+[^approval-ui-smoke]: Desktop, Remote and Dashboard approval choices and changed-command checks
+[^approval-cli-smoke]: Isolated real Codex command approval allow and deny verification
 [^remote-ui-smoke]: Desktop and mobile Remote PWA runtime smoke
 [^remote-queue-smoke]: Remote and Dashboard queue activation and completion smoke
 [^remote-language]: Remote display language and locale formatting
 [^remote-styles]: Remote typography and responsive layout
 [^electron-main]: Desktop browser ownership and Remote frame provider
+[^conversation-store]: Session-bound history paging and deferred work details
 [^codex-turn-completion]: Codex transcript completion fallback for missed hooks
 [^pty-submit]: PTY message formatting and ordered submission
 [^device-monitor]: Android foreground-monitor token service

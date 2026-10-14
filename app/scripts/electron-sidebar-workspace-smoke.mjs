@@ -45,7 +45,7 @@ async function exerciseCompletionAttention() {
   const check = (ok, message) => { if (!ok) throw Error(message); };
   const calls = command => window.layoutCalls.filter(call => call.command === command).length;
   const row = id => document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"]');
-  const badge = id => row(id)?.querySelector('.agent-completion-badge');
+  const unread = id => row(id)?.classList.contains('agent-completion-unread');
   let time = Date.now();
   const hook = (id, event) => window.sidebarFixtureEmit('agent:hook-event', { id, event, session_id: 'session-'+id, received_at: ++time });
   window.sidebarFixtureOwned = ['ux', 'image', 'routing', 'files', 'shader'];
@@ -54,21 +54,21 @@ async function exerciseCompletionAttention() {
   const nativeBefore = calls('show_native_notification'), attentionBefore = calls('fixture_taskbar_attention');
   hook('image', 'working'); hook('image', 'done'); hook('image', 'done'); await wait();
   check(calls('show_native_notification') === nativeBefore + 1 && calls('fixture_taskbar_attention') === attentionBefore + 1, 'Burst hooks missed or duplicated completion notification');
-  check(badge('image')?.textContent === '완료' && badge('image').getAttribute('aria-label') === '읽지 않은 작업 완료', 'Visible completion badge missing');
+  check(unread('image') && row('image').getAttribute('aria-label').includes('읽지 않은 작업 완료') && !row('image').querySelector('.agent-completion-badge'), 'Unread completion highlight missing or Done badge remains');
   check(getComputedStyle(row('image'), '::after').borderTopWidth === '1px', 'Completion outline missing');
   check(getComputedStyle(row('image'), '::after').animationIterationCount === '3', 'Completion animation must stop after three pulses');
   check(getComputedStyle(row('image')).backgroundColor !== getComputedStyle(row('routing')).backgroundColor, 'Completed conversation has no background emphasis');
   check(row('image').style.getPropertyValue('--screen-color') && row('image').querySelector('.agent-screen-badge'), 'Completion overwrote screen identity');
   window.sidebarFixtureEmit('agent:idle-suspended', { id: 'image', sessionId: 'session-image' }); await wait();
-  check(badge('image'), 'Idle suspension erased unread completion');
-  check(document.querySelector('[data-sidebar-project-id="acedia"] [data-sidebar-agent-id="image"] .agent-completion-badge'), 'Nested project lost completion badge');
+  check(unread('image'), 'Idle suspension erased unread completion');
+  check(document.querySelector('[data-sidebar-project-id="acedia"] [data-sidebar-agent-id="image"]').classList.contains('agent-completion-unread'), 'Nested project lost completion highlight');
   row('image').scrollIntoView({ block: 'center' });
   // Leave this marker intact for dark/light screenshot capture by the host.
   window.sidebarFixtureFocused = true;
   const focusedNative = calls('show_native_notification'), focusedAttention = calls('fixture_taskbar_attention');
   hook('routing', 'working'); hook('routing', 'done'); await wait();
   check(calls('show_native_notification') === focusedNative + 1 && calls('fixture_taskbar_attention') === focusedAttention, 'Focused alerts ignored the saved policy or flashed the active window');
-  hook('routing', 'working'); await wait(); check(!badge('routing'), 'New work retained old completion badge');
+  hook('routing', 'working'); await wait(); check(!unread('routing'), 'New work retained old completion highlight');
   window.sidebarFixtureFocused = false;
   localStorage.setItem('multiagent.notificationSound.v1', JSON.stringify({ mode: 'off', osNotification: false }));
   const offNative = calls('show_native_notification'), offAttention = calls('fixture_taskbar_attention');
@@ -77,16 +77,16 @@ async function exerciseCompletionAttention() {
   window.sidebarFixturePolicyAllowed = false;
   const mutedNative = calls('show_native_notification'), mutedAttention = calls('fixture_taskbar_attention');
   hook('routing', 'working'); hook('routing', 'done'); await wait();
-  check(badge('routing') && calls('show_native_notification') === mutedNative && calls('fixture_taskbar_attention') === mutedAttention, 'Muted completion lost its marker or notified anyway');
+  check(unread('routing') && calls('show_native_notification') === mutedNative && calls('fixture_taskbar_attention') === mutedAttention, 'Muted completion lost its marker or notified anyway');
   window.sidebarFixtureOwned = []; await wait(1250);
   window.sidebarFixturePolicyAllowed = true;
   hook('routing', 'working'); hook('routing', 'done'); await wait();
   check(calls('show_native_notification') === mutedNative && calls('fixture_taskbar_attention') === mutedAttention, 'Non-owning workspace delivered a duplicate notification');
   window.sidebarFixtureEmit('pty:exit', { id: 'routing' }); await wait();
-  check(badge('routing'), 'PTY exit erased unread completion');
+  check(unread('routing'), 'PTY exit erased unread completion');
   const completedRow = row('routing');
   completedRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await wait();
-  check(!badge('routing') && badge('image'), 'Acknowledging one completion also cleared another');
+  check(!unread('routing') && unread('image'), 'Acknowledging one completion also cleared another');
   localStorage.setItem('multiagent.notificationSound.v1', JSON.stringify({ mode: 'off', osNotification: true }));
   window.sidebarFixtureNativeFailure = true;
   document.querySelector('.app-topbar button[title="설정"]').click(); await wait();
@@ -98,7 +98,7 @@ async function exerciseCompletionAttention() {
   check(document.querySelector('.app-settings-screen').textContent.includes('Windows 알림을 전송했습니다.'), 'Notification test did not confirm successful delivery');
   document.querySelector('.app-settings-back').click(); await wait();
   row('image').scrollIntoView({ block: 'center' });
-  return 'SIDEBAR_COMPLETION_ALERTS_OK persistent/read/new-work badges, burst dedupe, focused policy, independent taskbar, mute/ownership, native test failure';
+  return 'SIDEBAR_COMPLETION_ALERTS_OK persistent/read/new-work highlights without Done, burst dedupe, focused policy, independent taskbar, mute/ownership, native test failure';
 }
 
 async function exercise() {
@@ -411,6 +411,32 @@ if (process.versions.electron) {
     await win.loadFile(path.join(directory, 'index.html'), { query: { 'two-screens': '1' } });
     console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-screen-identity-dark.png'), (await win.webContents.capturePage()).toPNG());
+    for (const [surface, selector] of [
+      ['recent', '.sidebar-recents [data-sidebar-agent-id="ux"]'],
+      ['project', '[data-sidebar-project-id="acedia"] [data-sidebar-agent-id="ux"]'],
+    ]) {
+      await win.webContents.executeJavaScript(`document.activeElement?.blur();document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`);
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 650, y: 150 });
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const geometry = () => win.webContents.executeJavaScript(`(() => {
+        const row=document.querySelector(${JSON.stringify(selector)}), controls=row.querySelector('.sidebar-session-trailing'), r=row.getBoundingClientRect();
+        return { display:getComputedStyle(controls).display, controls:controls.getBoundingClientRect().width,
+          title:row.querySelector('.agent-name').getBoundingClientRect().width, x:r.left+50,y:r.top+r.height/2 };
+      })()`);
+      const resting = await geometry();
+      if (resting.display !== 'none' || resting.controls !== 0) throw Error('Resting row still reserves controls: ' + surface);
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(resting.x), y: Math.round(resting.y) });
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const hover = await geometry();
+      if (hover.display !== 'flex' || hover.controls <= 0 || hover.title >= resting.title - 20) throw Error('Hover did not reveal controls with narrower title: ' + surface);
+      await fs.writeFile(path.join(directory, `sidebar-${surface}-hover.png`), (await win.webContents.capturePage()).toPNG());
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 650, y: 150 });
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const left = await geometry();
+      if (left.display !== 'none' || Math.abs(left.title - resting.title) > 1) throw Error('Mouse leave failed to return title width: ' + surface);
+      await fs.writeFile(path.join(directory, `sidebar-${surface}-resting.png`), (await win.webContents.capturePage()).toPNG());
+      console.log(`SIDEBAR_${surface.toUpperCase()}_HOVER_TITLE_WIDTH_OK resting=${resting.title} hover=${hover.title} returned=${left.title}`);
+    }
     await win.webContents.executeJavaScript("document.querySelector('.app').classList.add('app-theme-light')");
     console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-screen-identity-light.png'), (await win.webContents.capturePage()).toPNG());
@@ -427,8 +453,8 @@ if (process.versions.electron) {
       if (!document.querySelector('.app').classList.contains('app-theme-light')) throw Error('Completion light theme not applied');
       const row = document.querySelector('.sidebar-recents [data-sidebar-agent-id="image"]');
       row.scrollIntoView({block:'center'}); await wait();
-      if (!row.querySelector('.agent-completion-badge') || getComputedStyle(row).getPropertyValue('--completion-color').trim() !== '#167a38') throw Error('Light completion marker missing');
-      return 'SIDEBAR_COMPLETION_LIGHT_OK actual settings theme, persistent badge';
+      if (!row.classList.contains('agent-completion-unread') || row.querySelector('.agent-completion-badge') || getComputedStyle(row).getPropertyValue('--completion-color').trim() !== '#167a38') throw Error('Light completion highlight missing or Done badge remains');
+      return 'SIDEBAR_COMPLETION_LIGHT_OK actual settings theme, persistent highlight';
     })()`));
     await fs.writeFile(path.join(directory, 'sidebar-completion-light.png'), (await win.webContents.capturePage()).toPNG());
     await win.webContents.executeJavaScript("localStorage.clear()");

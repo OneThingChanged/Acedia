@@ -1,6 +1,6 @@
 import { sendJson } from './remote-http.mjs';
 
-const routes = new Set(['/api/chat/images', '/api/session/defaults', '/api/session/close']);
+const routes = new Set(['/api/chat/images', '/api/chat/details', '/api/session/defaults', '/api/session/close']);
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sessionId = value => {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\x00-\x1f]/.test(value)) throw fail('Invalid session id');
@@ -18,7 +18,7 @@ export async function serveRemoteWorkspaceApi(request, response, url, { provider
   try {
     const mutation = request.method === 'POST';
     if (!['GET', 'POST'].includes(request.method) || (url.pathname === '/api/chat/images' && mutation)
-      || (url.pathname === '/api/session/close' && !mutation)) throw fail('Method not allowed', 405);
+      || (['/api/session/close', '/api/chat/details'].includes(url.pathname) && !mutation)) throw fail('Method not allowed', 405);
     if (mutation && !allowed()) throw fail('Cross-origin request blocked', 403);
     if (mutation && !String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw fail('application/json required', 415);
     const body = mutation ? await readJson(request, 16 * 1024) : {};
@@ -35,7 +35,13 @@ export async function serveRemoteWorkspaceApi(request, response, url, { provider
       const state = snapshot();
       const agents = [...(state.agents || []), ...(state.view?.agents || [])];
       if (!agents.some(agent => agent.id === id)) throw fail('Session not found', 404);
-      if (mutation) {
+      if (url.pathname === '/api/chat/details') {
+        const conversation = sessionId(body.conversationId), providerSession = sessionId(body.sessionId);
+        if (!Array.isArray(body.sequences) || body.sequences.length < 1 || body.sequences.length > 20
+          || body.sequences.some(sequence => !Number.isSafeInteger(sequence) || sequence < 1)) throw fail('Invalid block selection');
+        if (!providers.chatDetails) throw fail('Chat details unavailable', 501);
+        sendJson(response, 200, await providers.chatDetails(id, { sessionId: providerSession, conversationId: conversation, sequences: body.sequences }));
+      } else if (mutation) {
         if (!providers.closeSession) throw fail('Session close unavailable', 501);
         if (await providers.closeSession(id) === false) throw fail('Session could not be closed', 409);
         sendJson(response, 200, { ok: true });

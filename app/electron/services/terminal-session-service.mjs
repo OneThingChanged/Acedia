@@ -71,6 +71,9 @@ export class TerminalSessionService {
     }
 
     this.sessions.set(id, entry);
+    entry.filter.setOutputSink?.(data => {
+      if (this.sessions.get(id) === entry) this.#publish(entry, data);
+    });
     this.#notifySessionsChanged("spawn");
     entry.process.onData((data) => {
       if (this.sessions.get(id) !== entry) return;

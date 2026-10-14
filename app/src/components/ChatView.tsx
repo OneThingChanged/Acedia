@@ -32,6 +32,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { QuestionForm } from './QuestionForm';
 import type { ChatAnswer } from '../../electron/shared/chat-prompt.mjs';
 import { questionDetails } from '../../electron/shared/chat-prompt.mjs';
+import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, selectChatTurns } from '../../electron/shared/chat-pagination.mjs';
 
 // Follow-ups can steer the current turn or wait for completion. Queued sends
 // drain once ready, with a cooldown for the lag before "working" registers.
@@ -80,7 +81,7 @@ type Status = "loading" | "unsupported" | "empty" | "ready";
 // Render only the most recent N turns so a long transcript paints fast;
 // older turns are revealed on demand.
 const CHAT_PAGE = 10;
-const CHAT_DB_PAGE = 400;
+const CHAT_DB_PAGE = 400; // Delta backlog cap; initial/older pages use whole turns.
 
 const UserMessage = memo(function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, onReuse, imageOnly = false }: {
   text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: (path: string) => void; onReuse?: (message: string) => void;
@@ -89,6 +90,7 @@ const UserMessage = memo(function UserMessage({ text: message, agentId, sequence
   const { rest, images } = splitChatImagePaths(message);
   const [nativeImages, setNativeImages] = useState<ChatImageSource[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
+  const imageRoot = useRef<HTMLDivElement>(null);
   const hasPaths = images.length > 0;
   useEffect(() => {
     let cancelled = false;
@@ -96,15 +98,18 @@ const UserMessage = memo(function UserMessage({ text: message, agentId, sequence
     setLoadingImages(false);
     if (hasPaths || !agentId || !sequence) return;
     setLoadingImages(true);
-    void invoke<ChatImageSource[]>("read_chat_images", { id: agentId, sequence }).then(result => {
+    const load = () => { void invoke<ChatImageSource[]>("read_chat_images", { id: agentId, sequence }).then(result => {
       if (!cancelled && Array.isArray(result)) setNativeImages(result);
-    }).catch(() => {}).finally(() => { if (!cancelled) setLoadingImages(false); });
-    return () => { cancelled = true; };
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoadingImages(false); }); };
+    const observer = typeof IntersectionObserver !== 'undefined' && imageRoot.current
+      ? new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { observer!.disconnect(); load(); } }, { rootMargin: '240px' }) : null;
+    if (observer) observer.observe(imageRoot.current!); else load();
+    return () => { cancelled = true; observer?.disconnect(); };
   }, [agentId, sequence, hasPaths]);
   const visibleText = nativeImages.length ? rest.replace(/\[Image\s+#?\d+\]/gi, "").trim() : rest;
   return (
     <>
-    <div className="chat-user">
+    <div className="chat-user" ref={imageRoot}>
       {visibleText && <div className="chat-user-text">{visibleText}</div>}
       <div className="chat-user-images">
       {images.map((p, i) => (
@@ -144,13 +149,39 @@ function workLabel(name: string, text: (ko: string, en: string) => string): stri
   return text("도구 실행", "Using tools");
 }
 
-function ToolDetails({ tool }: { tool: ToolPair }) {
+type ToolOwner = { agentId?: string; sessionId?: string; conversationId?: string };
+const toolDetailCache = new Map<string, Promise<ChatBlock[]>>();
+function ToolDetails({ tool, owner }: { tool: ToolPair; owner?: ToolOwner }) {
   const { text } = useAppLanguage();
   const [open, setOpen] = useState(false);
+  const [details, setDetails] = useState<ChatBlock[] | null>(null);
+  const [error, setError] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const detailKey = JSON.stringify([owner, tool.deferredSequences]);
+  useEffect(() => {
+    if (!open || !tool.deferredSequences?.length) return;
+    let cancelled = false; setError(false);
+    let pending = toolDetailCache.get(detailKey);
+    if (!pending) {
+      pending = invoke('chat_block_details', { id: owner?.agentId || '', sessionId: owner?.sessionId || '',
+        conversationId: owner?.conversationId || '', sequences: tool.deferredSequences }).then(result => {
+          if (!result.blocks?.length) throw Error('Details unavailable'); return result.blocks;
+        });
+      toolDetailCache.set(detailKey, pending);
+      if (toolDetailCache.size > 80) toolDetailCache.delete(toolDetailCache.keys().next().value!);
+      void pending.catch(() => toolDetailCache.delete(detailKey));
+    }
+    void pending.then(blocks => { if (!cancelled) setDetails(blocks); }).catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
+  }, [open, detailKey, retry]);
+  const call = details?.find(block => block.kind === 'tool-call'), result = details?.find(block => block.kind === 'tool-result');
+  const display = details ? { ...tool, diff: call?.diff || result?.diff, output: result?.output, isError: result?.isError } : tool;
   const state = tool.isError ? "error" : tool.completed ? "done" : "pending";
   return <details className="chat-tool" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
     <summary><span className={`chat-tool-state ${state}`} aria-label={state} /><span className="chat-tool-label"><span className="chat-tool-k">$</span> {toolLabel(tool)}</span></summary>
-    {open && <>{tool.diff && <ChatDiff diff={tool.diff} />}{(tool.output !== undefined || !tool.diff) && <pre className={tool.isError ? "err" : ""}>{tool.output ?? text("(출력 없음)", "(no output)")}</pre>}</>}
+    {open && (tool.preparing ? <div className="chat-tool-loading">{text('작업 내역을 준비하고 있습니다…', 'Preparing work details…')}</div> : tool.deferredSequences?.length && !details
+      ? <div className="chat-tool-loading">{error ? <button type="button" onClick={() => setRetry(value => value + 1)}>{text('상세 내역 불러오기 실패 · 다시 시도', 'Could not load details · Retry')}</button> : text('상세 내역 불러오는 중…', 'Loading details…')}</div>
+      : <>{display.diff && <ChatDiff diff={display.diff} />}{(display.output !== undefined || !display.diff) && <pre className={display.isError ? "err" : ""}>{display.output ?? text("(출력 없음)", "(no output)")}</pre>}</>)}
   </details>;
 }
 
@@ -162,6 +193,8 @@ type ToolPair = {
   output?: string;
   isError?: boolean;
   completed?: boolean;
+  deferredSequences?: number[];
+  preparing?: boolean;
 };
 
 type AssistantSegment =
@@ -182,14 +215,16 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
 
   run.forEach((block, index) => {
     if (block.kind === "tool-call") {
-      const tool = { name: block.name, input: block.input, summary: block.summary, diff: block.diff };
+      const tool: ToolPair = { name: block.name, input: block.input, summary: block.summary, diff: block.diff,
+        deferredSequences: block.deferred && block.sequence ? [block.sequence] : undefined, preparing: !!block.deferred && !block.sequence };
       toolsForCurrentPosition().push(tool);
       awaitingResults.push(tool);
     } else if (block.kind === "tool-result") {
       const pending = awaitingResults.shift();
       if (pending) {
         pending.output = block.output;
-        pending.completed = true;
+        pending.completed = true; pending.preparing ||= !!block.deferred && !block.sequence;
+        if (block.deferred && block.sequence) (pending.deferredSequences ||= []).push(block.sequence);
         pending.isError = block.isError;
         if (!pending.diff && block.diff) pending.diff = block.diff;
       } else {
@@ -199,6 +234,7 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
           output: block.output,
           isError: block.isError,
           diff: block.diff,
+          deferredSequences: block.deferred && block.sequence ? [block.sequence] : undefined, preparing: !!block.deferred && !block.sequence,
         });
       }
     } else {
@@ -211,7 +247,7 @@ export function groupAssistantBlocks(run: ChatBlock[]): AssistantSegment[] {
   return segments.filter((segment) => segment.kind !== "tools" || segment.tools.length > 0);
 }
 
-function ToolGroup({ tools }: { tools: ToolPair[] }) {
+function ToolGroup({ tools, owner }: { tools: ToolPair[]; owner?: ToolOwner }) {
   const { text } = useAppLanguage();
   const [open, setOpen] = useState(false);
   const failed = tools.filter((tool) => tool.isError).length;
@@ -228,7 +264,7 @@ function ToolGroup({ tools }: { tools: ToolPair[] }) {
               : text("진행 중", "In progress")}
         </span>
       </summary>
-      {open && <div className="chat-tools">{tools.map((tool, index) => <ToolDetails key={index} tool={tool} />)}</div>}
+      {open && <div className="chat-tools">{tools.map((tool, index) => <ToolDetails key={index} tool={tool} owner={owner} />)}</div>}
     </details>
   );
 }
@@ -241,19 +277,19 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-const AssistantTurn = memo(function AssistantTurn({ run, files, tool, onOpenPath, onQuote, folder }: { run: ChatBlock[]; files: ConversationArtifact[]; tool?: string; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
+const AssistantTurn = memo(function AssistantTurn({ run, files, tool, owner, onOpenPath, onQuote, folder }: { run: ChatBlock[]; files: ConversationArtifact[]; tool?: string; owner?: ToolOwner; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
   const root = useRef<HTMLDivElement>(null);
   return (
-    <div className="chat-turn assistant" ref={root}>
+    <div className="chat-turn assistant" ref={root} data-chat-sequence={run[0]?.sequence}>
       <div className="chat-role">
         <span className="chat-av" aria-hidden="true"><img src="app-icon.png" alt="" /></span> {assistantLabel(tool)}<span className="chat-role-meta">· Acedia</span>
       </div>
       {segments.map((segment, index) => {
         if (segment.kind === "tools") {
-          return <ToolGroup key={`tools-${index}`} tools={segment.tools} />;
+          return <ToolGroup key={`tools-${index}`} tools={segment.tools} owner={owner} />;
         }
         const { block, sourceIndex } = segment;
         if (block.kind === "reasoning") {
@@ -340,7 +376,17 @@ export function ChatView({
   const blocksRef = useRef<ChatBlock[]>([]);
   const [status, setStatus] = useState<Status>("loading");
   const [hasOlder, setHasOlder] = useState(false);
+  const [pagedHistory, setPagedHistory] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  const historyEpochRef = useRef(0);
+  const newestCursorRef = useRef<number | undefined>(undefined);
+  const conversationIdRef = useRef<string | undefined>(undefined);
+  const [conversationMeta, setConversationMeta] = useState<ToolOwner>({ agentId, sessionId });
+  const reloadLatestRef = useRef(false);
+  const newerWindowRef = useRef(false);
+  const anchorRef = useRef<{ sequence: string; offset: number } | null>(null);
+  const [historyError, setHistoryError] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [artifacts, setArtifacts] = useState<ConversationArtifact[]>([]);
   const [tool, setTool] = useState<string | undefined>(undefined);
@@ -394,13 +440,20 @@ export function ChatView({
   // conversation yet), the view stays empty instead of flashing the old messages
   // back. Released once the transcript signature changes.
   const clearedSigRef = useRef<string | null>(null);
+  const clearedConversationRef = useRef<{ id?: string; session?: string; sequence?: number } | null>(null);
 
   useEffect(() => {
     keyRef.current = "";
     blocksRef.current = [];
+    historyEpochRef.current++;
+    loadingOlderRef.current = false; newestCursorRef.current = undefined; conversationIdRef.current = undefined;
+    reloadLatestRef.current = false; newerWindowRef.current = false; anchorRef.current = null; anchorHeightRef.current = null;
+    setHistoryError(false);
+    setConversationMeta({ agentId, sessionId });
     setStatus("loading");
     setBlocks([]);
     setHasOlder(false);
+    setPagedHistory(false);
     setLoadingOlder(false);
     setIndexing(false);
     setArtifacts([]);
@@ -418,6 +471,7 @@ export function ChatView({
     firstLoadRef.current = true;
     followBottomRef.current = true;
     clearedSigRef.current = null;
+    clearedConversationRef.current = null;
   }, [agentId, sessionId, storeKey]);
 
   useEffect(() => {
@@ -433,8 +487,15 @@ export function ChatView({
           id: agentId,
           sessionId,
           limit: CHAT_DB_PAGE,
+          turnLimit: CHAT_TURNS_PER_PAGE,
+          ...(newestCursorRef.current && conversationIdRef.current && !reloadLatestRef.current
+            ? { afterSequence: newestCursorRef.current, conversationId: conversationIdRef.current } : {}),
         });
         if (cancelled) return;
+        const cleared = clearedConversationRef.current;
+        if (cleared?.id && result.conversationId === cleared.id && result.sessionId === cleared.session
+          && (result.lastSequence ?? (result.blocks?.[result.blocks.length - 1]?.sequence || 0)) <= (cleared.sequence || 0)) return;
+        if (cleared?.id && (result.conversationId !== cleared.id || result.sessionId !== cleared.session)) clearedConversationRef.current = null;
         if (result.unsupported) {
           setPendingQuestion(null);
           setStatus("unsupported");
@@ -444,12 +505,31 @@ export function ChatView({
         const switchingToPersistentHistory =
           incoming.some((block) => block.sequence != null) &&
           blocksRef.current.some((block) => block.sequence == null);
-        const next = switchingToPersistentHistory
+        const reset = reloadLatestRef.current || Boolean(result.conversationId && conversationIdRef.current && result.conversationId !== conversationIdRef.current);
+        const merged = reset || switchingToPersistentHistory
           ? incoming
           : mergeChatHistory(blocksRef.current, incoming);
-        setHasOlder(result.hasOlder === true);
+        const window = selectChatTurns(merged, CHAT_CACHED_TURNS, followBottomRef.current ? 'latest' : 'older');
+        const next = window.blocks;
+        if (window.trimmed && !followBottomRef.current) newerWindowRef.current = true;
+        if (result.pageMode !== 'delta' && (reset || !newestCursorRef.current)) setHasOlder(result.hasOlder === true);
+        if (window.trimmed && followBottomRef.current) setHasOlder(true);
+        if (reset) { setVisible(CHAT_PAGE); newerWindowRef.current = false; firstLoadRef.current = true; }
+        reloadLatestRef.current = false;
+        if (result.pageMode !== 'tail' && result.conversationId) {
+          setConversationMeta(previous => previous.conversationId === result.conversationId && previous.sessionId === result.sessionId
+            ? previous : { agentId, sessionId: result.sessionId || sessionId, conversationId: result.conversationId! });
+          conversationIdRef.current = result.conversationId;
+          newestCursorRef.current = result.lastSequence ?? incoming[incoming.length - 1]?.sequence ?? newestCursorRef.current;
+        }
+        if (result.hasNewer) refreshAgain = true;
         setIndexing(result.indexing === true);
-        if (result.artifacts) setArtifacts(previous => mergeChatFiles(previous, result.artifacts!, incoming));
+        setPagedHistory(Boolean(result.pageMode && result.pageMode !== 'tail'));
+        if (result.artifacts) setArtifacts(previous => {
+          const files = mergeChatFiles(reset ? [] : previous, result.artifacts!, incoming);
+          const sequences = new Set(next.map(block => block.sequence));
+          return window.trimmed ? files.filter(file => sequences.has(file.sourceSequence)) : files;
+        });
         if (result.tool) setTool(result.tool);
         setLifecycle(result.lifecycle);
         setLifecycleAt(result.lifecycleAt);
@@ -562,14 +642,21 @@ export function ChatView({
     return ranges;
   }, [blocks]);
 
-  const hidden = Math.max(0, ranges.length - visible);
+  // A server page already contains complete turns. Keep every loaded turn in
+  // place while reading older history, including when new answers arrive.
+  const hidden = pagedHistory ? 0 : Math.max(0, ranges.length - visible);
   const historyAvailable = hidden > 0 || hasOlder;
 
   const loadOlder = async () => {
-    if (loadingOlder) return;
+    if (loadingOlderRef.current) return;
+    const epoch = historyEpochRef.current;
+    setHistoryError(false);
     followBottomRef.current = false;
     const el = scrollRef.current;
     anchorHeightRef.current = el ? el.scrollHeight : null;
+    const anchor = el && [...el.querySelectorAll<HTMLElement>('[data-chat-sequence]')]
+      .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top);
+    anchorRef.current = anchor ? { sequence: anchor.dataset.chatSequence!, offset: anchor.getBoundingClientRect().top - el!.getBoundingClientRect().top } : null;
     if (hidden > 0) {
       setVisible((v) => v + CHAT_PAGE * 2);
       return;
@@ -580,15 +667,20 @@ export function ChatView({
       setHasOlder(false);
       return;
     }
-    setLoadingOlder(true);
+    loadingOlderRef.current = true; setLoadingOlder(true);
     try {
       const result: ChatBlocksResult = await invoke("chat_blocks", {
         id: agentId,
         sessionId,
         beforeSequence,
         limit: CHAT_DB_PAGE,
+        turnLimit: CHAT_TURNS_PER_PAGE,
+        conversationId: conversationIdRef.current,
       });
-      if (currentStoreKey.current !== storeKey) return;
+      if (currentStoreKey.current !== storeKey || historyEpochRef.current !== epoch) return;
+      if (result.pageMode === 'initial' && result.conversationId !== conversationIdRef.current) {
+        reloadLatestRef.current = true; fetchRef.current(); return;
+      }
       const known = new Set(
         blocksRef.current.map((block) => block.sequence).filter((value) => value != null)
       );
@@ -596,19 +688,24 @@ export function ChatView({
         (block) => block.sequence == null || !known.has(block.sequence)
       );
       if (older.length > 0) {
-        const next = older.concat(blocksRef.current);
+        const window = selectChatTurns(older.concat(blocksRef.current), CHAT_CACHED_TURNS, 'older');
+        const next = window.blocks;
+        if (window.trimmed) { newerWindowRef.current = true; setShowJumpToLatest(true); }
         blocksRef.current = next;
         setBlocks(next);
-        setVisible((value) => value + CHAT_PAGE * 2);
+        setVisible((value) => Math.min(CHAT_CACHED_TURNS * 2, value + CHAT_PAGE));
       } else {
         anchorHeightRef.current = null;
       }
       setHasOlder(result.hasOlder === true);
-      if (result.artifacts) setArtifacts(previous => mergeChatFiles(previous, result.artifacts!, result.blocks ?? []));
+      if (result.artifacts) setArtifacts(previous => {
+        const sequences = new Set(blocksRef.current.map(block => block.sequence));
+        return mergeChatFiles(previous, result.artifacts!, result.blocks ?? []).filter(file => sequences.has(file.sourceSequence));
+      });
     } catch {
-      if (currentStoreKey.current === storeKey) anchorHeightRef.current = null;
+      if (currentStoreKey.current === storeKey && historyEpochRef.current === epoch) { anchorHeightRef.current = null; anchorRef.current = null; setHistoryError(true); }
     } finally {
-      if (currentStoreKey.current === storeKey) setLoadingOlder(false);
+      if (currentStoreKey.current === storeKey && historyEpochRef.current === epoch) { loadingOlderRef.current = false; setLoadingOlder(false); }
     }
   };
 
@@ -620,13 +717,17 @@ export function ChatView({
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     followBottomRef.current = distanceFromBottom < 80;
-    setShowJumpToLatest(distanceFromBottom > 160);
-    if (status === "ready" && historyAvailable && el.scrollTop < 80 && anchorHeightRef.current === null) {
+    setShowJumpToLatest(newerWindowRef.current || distanceFromBottom > 160);
+    if (status === "ready" && historyAvailable && !historyError && el.scrollTop < 160 && anchorHeightRef.current === null) {
       void loadOlder();
     }
   };
 
   const jumpToLatest = () => {
+    if (newerWindowRef.current) {
+      reloadLatestRef.current = true; newestCursorRef.current = undefined; firstLoadRef.current = true;
+      followBottomRef.current = true; fetchRef.current(); return;
+    }
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
@@ -638,8 +739,12 @@ export function ChatView({
   // the added height so the previously-visible messages stay put (no jump).
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && anchorHeightRef.current !== null) {
-      el.scrollTop += el.scrollHeight - anchorHeightRef.current;
+    if (el && anchorHeightRef.current !== null && !loadingOlderRef.current) {
+      const node = anchorRef.current && [...el.querySelectorAll<HTMLElement>('[data-chat-sequence]')]
+        .find(node => node.dataset.chatSequence === anchorRef.current!.sequence);
+      el.scrollTop += node ? node.getBoundingClientRect().top - el.getBoundingClientRect().top - anchorRef.current!.offset
+        : el.scrollHeight - anchorHeightRef.current;
+      anchorRef.current = null;
       anchorHeightRef.current = null;
     }
   }, [visible, blocks]);
@@ -678,13 +783,13 @@ export function ChatView({
 
   const visibleTurns: ReactNode[] = useMemo(() => ranges.slice(hidden).map((range) =>
     range.user ? (
-      <div key={`u-${blockRenderKey(blocks[range.start])}`} className="chat-turn user">
+      <div key={`u-${blockRenderKey(blocks[range.start])}`} className="chat-turn user" data-chat-sequence={blocks[range.start].sequence}>
         <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
       </div>
     ) : (
-      <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} files={chatFilesForTurn(artifacts, blocks.slice(range.start, range.end))} tool={provider || tool} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
+      <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} files={chatFilesForTurn(artifacts, blocks.slice(range.start, range.end))} tool={provider || tool} owner={conversationMeta} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
     )
-  ), [ranges, hidden, blocks, agentId, folder, stableOpenPath, reuseMessage, artifacts, provider, tool, quoteMessage]);
+  ), [ranges, hidden, blocks, agentId, folder, stableOpenPath, reuseMessage, artifacts, provider, tool, conversationMeta, quoteMessage]);
 
   // Combine current transcript work with fresh hooks. Completion timestamps
   // end stale work without concealing a turn that started after that completion.
@@ -746,7 +851,12 @@ export function ChatView({
       ? [...Array(Math.max(0, Number(option.send) - 1)).fill("\x1b[B"), "\r"]
       : [option.send, "\r"];
     try {
-      if (startupPrompt) {
+      if (prompt.answerStyle === 'codex-approval') {
+        if (!nativeQuestion?.id || !sessionId) throw new Error('Command approval identity unavailable');
+        await invoke('answer_question', { id: agentId, sessionId, questionId: nativeQuestion.id,
+          approvalChoice: Number(option.send) - 1 });
+        lastDispatchRef.current = Date.now();
+      } else if (startupPrompt) {
         await answerTerminalStartupPrompt(startupPrompt, Number(option.send) - 1,
           () => promptSigRef.current === promptSig ? parseTerminalStartupPrompt(readTerminalScreen!(), "codex") : null,
           key => invoke("write_pty", { id: agentId, data: key }),
@@ -816,8 +926,12 @@ export function ChatView({
         if (value.trim() === "/clear") {
           // Suppress pre-clear history only after the CLI accepts the reset.
           clearedSigRef.current = keyRef.current || "empty";
+          clearedConversationRef.current = { id: conversationIdRef.current, session: conversationMeta.sessionId, sequence: newestCursorRef.current };
+          historyEpochRef.current++; loadingOlderRef.current = false; anchorRef.current = null; anchorHeightRef.current = null;
+          setLoadingOlder(false); setHasOlder(false); setArtifacts([]);
           keyRef.current = "";
           blocksRef.current = [];
+          newestCursorRef.current = undefined; conversationIdRef.current = undefined; reloadLatestRef.current = false; newerWindowRef.current = false;
           setBlocks([]);
           setPending([]);
           setVisible(CHAT_PAGE);
@@ -920,6 +1034,7 @@ export function ChatView({
           <button type="button" className="chat-more" onClick={loadOlder} disabled={loadingOlder}>
             {loadingOlder
               ? text("이전 대화를 불러오는 중…", "Loading earlier conversation…")
+              : historyError ? text('이전 대화를 불러오지 못했습니다 · 다시 시도', 'Could not load earlier conversation · Retry')
               : hidden > 0
                 ? text(`▲ 이전 대화 더 보기 (${hidden})`, `▲ Show earlier conversation (${hidden})`)
                 : text("▲ 저장된 이전 대화 더 보기", "▲ Show saved earlier conversation")}
@@ -943,19 +1058,22 @@ export function ChatView({
         </button>
       )}
       {prompt && (
-        <div className={`chat-prompt ${prompt.kind}${startupPrompt ? " chat-prompt-startup" : ""}`} role="status" aria-live="polite">
-          <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
+        <div className={`chat-prompt ${prompt.kind}${startupPrompt ? " chat-prompt-startup" : ""}${prompt.answerStyle === 'codex-approval' ? ' chat-prompt-command' : ''}`} role="status" aria-live="polite">
+          <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : prompt.kind === 'permission' ? text('승인 필요', 'Approval needed') : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
           {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
             {prompt.kind === "permission" || prompt.kind === "authentication" ? "🔒 " : "❓ "}
             {prompt.text || text("에이전트가 질문 또는 승인을 기다리고 있습니다. 터미널에서 내용을 확인하고 답변해 주세요.", "The agent is waiting for a question or approval. Open the terminal to review and answer it.")}
+            {prompt.answerStyle === 'codex-approval' && <div className="chat-prompt-approval-scope">
+              <strong>{text('반복 승인 범위', 'Recurring approval scope')}</strong>{'\n'}{prompt.options[1].label}
+            </div>}
           </div>}
           <div className="chat-prompt-hint">{prompt.kind === "authentication"
             ? text("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.", "Run /login in this session's terminal and sign in through the browser. Then resend your request.")
             : answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
-            : startupPrompt && prompt.options.length ? text("내용을 확인한 뒤 아래에서 선택해 주세요. 선택한 답변만 터미널에 전달합니다.", "Review the details and choose below. Your selected answer will be sent to the terminal.")
+            : (startupPrompt || prompt.answerStyle === 'codex-approval') && prompt.options.length ? text("내용을 확인한 뒤 아래에서 선택해 주세요. 선택한 답변만 터미널에 전달합니다.", "Review the details and choose below. Your selected answer will be sent to the terminal.")
             : nativeQuestion?.async ? text('작업은 계속 진행됩니다. 보내기를 누르면 Codex 질문에 답합니다.', 'Work continues. Send your answers to the queued Codex question.')
             : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
             : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
@@ -966,10 +1084,13 @@ export function ChatView({
                 key={i}
                 type="button"
                 className="chat-prompt-option"
+                title={prompt.answerStyle === 'codex-approval' ? option.label : undefined}
                 disabled={respondingPromptSig === promptSig || answeredPromptSig === promptSig || Boolean(promptError)}
                 onClick={() => { void respondPrompt(option); }}
               >
-                {option.label}
+                {prompt.answerStyle === 'codex-approval'
+                  ? [text('이번만 허용', 'Allow once'), text('이 접두어는 다시 묻지 않기', "Don't ask again for this prefix"), text('거절', 'Deny')][i]
+                  : option.label}
               </button>
             ))}
             <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{prompt.kind === "authentication" ? text("로그인할 터미널 열기", "Open terminal to sign in") : text("터미널에서 답변", "Answer in terminal")}</button>

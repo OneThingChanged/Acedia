@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parseChatTranscript } from "./chat-transcript.mjs";
 import { transcriptImages } from "./chat-images.mjs";
 import { conversationFileAssociations } from "./chat-files.mjs";
+import { compactChatBlocks } from '../shared/chat-pagination.mjs';
 
 const STORE_VERSION = 1;
 const CONFIG_VERSION = 1;
@@ -181,6 +182,8 @@ export class ConversationStore {
       );
       CREATE INDEX IF NOT EXISTS idx_conversation_blocks_page
         ON conversation_blocks(conversation_id, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_conversation_blocks_turn
+        ON conversation_blocks(conversation_id, role, kind, id DESC);
       CREATE INDEX IF NOT EXISTS idx_conversation_blocks_pending
         ON conversation_blocks(conversation_id, origin, confirmed, content_key, id);
       CREATE TABLE IF NOT EXISTS conversation_sources (
@@ -440,6 +443,9 @@ export class ConversationStore {
           database.exec("ROLLBACK");
           throw error;
         }
+        // A large cold import is asynchronous and yields between transactions
+        // so the latest-page response, input and native browser can run.
+        await new Promise(resolve => setImmediate(resolve));
       }
     } finally {
       await handle.close().catch(() => {});
@@ -447,7 +453,7 @@ export class ConversationStore {
     return { conversationId, inserted };
   }
 
-  async listBlocks({ agentId, sessionId, provider, beforeSequence = null, limit = 400 }) {
+  async listBlocks({ agentId, sessionId, provider, beforeSequence = null, afterSequence = null, conversationId: expectedId = null, turnLimit = null, limit = 400 }) {
     const conversation = this.db().prepare(`SELECT id,project_path projectPath FROM conversations
       WHERE agent_id=? AND provider=? AND provider_session_id=?`).get(
       String(agentId || "").trim(),
@@ -459,7 +465,24 @@ export class ConversationStore {
     }
     const safeLimit = Math.min(MAX_BLOCKS_PER_PAGE, Math.max(1, Number(limit) || 400));
     const before = Number(beforeSequence);
-    const rows = Number.isSafeInteger(before) && before > 0
+    const after = Number(afterSequence);
+    const pagedTurns = Number.isInteger(turnLimit) && turnLimit > 0;
+    const delta = Number.isSafeInteger(after) && after > 0 && expectedId === conversation.id;
+    const older = !delta && Number.isSafeInteger(before) && before > 0 && (!expectedId || expectedId === conversation.id);
+    let rows;
+    if (delta) {
+      rows = this.db().prepare(`SELECT id,payload_json payload FROM conversation_blocks
+        WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT ?`).all(conversation.id, after, safeLimit);
+    } else if (pagedTurns) {
+      const anchors = this.db().prepare(`SELECT b.id FROM conversation_blocks b
+        WHERE b.conversation_id=? AND b.id<? AND b.role='user' AND b.kind IN ('text','image')
+        AND (b.kind='text' OR COALESCE((SELECT p.role FROM conversation_blocks p
+          WHERE p.conversation_id=b.conversation_id AND p.id<b.id ORDER BY p.id DESC LIMIT 1),'')<>'user')
+        ORDER BY b.id DESC LIMIT ?`).all(conversation.id, older ? before : Number.MAX_SAFE_INTEGER, Math.min(20, turnLimit));
+      const start = anchors.at(-1)?.id ?? 0;
+      rows = this.db().prepare(`SELECT id,payload_json payload FROM conversation_blocks
+        WHERE conversation_id=? AND id>=? AND id<? ORDER BY id ASC`).all(conversation.id, start, older ? before : Number.MAX_SAFE_INTEGER);
+    } else rows = older
       ? this.db().prepare(`SELECT id,payload_json payload FROM conversation_blocks
           WHERE conversation_id=? AND id<? ORDER BY id DESC LIMIT ?`).all(
           conversation.id, before, safeLimit,
@@ -468,14 +491,15 @@ export class ConversationStore {
           WHERE conversation_id=? ORDER BY id DESC LIMIT ?`).all(
           conversation.id, safeLimit,
         );
-    rows.reverse();
+    if (!delta && !pagedTurns) rows.reverse();
     const blocks = rows.map((row) => ({ ...JSON.parse(row.payload), sequence: Number(row.id) }));
     const firstSequence = blocks[0]?.sequence ?? null;
     const hasOlder = firstSequence != null && Boolean(this.db().prepare(`SELECT 1 found
       FROM conversation_blocks WHERE conversation_id=? AND id<? LIMIT 1`).get(
       conversation.id, firstSequence,
     ));
-    const total = Number(this.db().prepare(`SELECT COUNT(*) count FROM conversation_blocks
+    // New paged clients do not need a full-history COUNT on every live poll.
+    const total = pagedTurns || delta ? undefined : Number(this.db().prepare(`SELECT COUNT(*) count FROM conversation_blocks
       WHERE conversation_id=?`).get(conversation.id)?.count) || 0;
     // A page can start at a tool result. Include bounded preceding context for
     // pairing, but only return associations belonging to this page's blocks.
@@ -525,12 +549,30 @@ export class ConversationStore {
     for (const file of artifacts) insertArtifact.run(conversation.id, file.sourceSequence, file.kind, file.path, file.size, file.modifiedAt, nowSeconds());
     return {
       conversationId: String(conversation.id),
-      blocks,
+      blocks: pagedTurns ? compactChatBlocks(blocks) : blocks,
       artifacts,
       hasOlder,
       firstSequence,
+      lastSequence: blocks.at(-1)?.sequence ?? (delta ? after : null),
+      pageMode: delta ? 'delta' : older ? 'older' : 'initial',
+      hasNewer: delta && blocks.length === safeLimit && Boolean(this.db().prepare(`SELECT 1 FROM conversation_blocks
+        WHERE conversation_id=? AND id>? LIMIT 1`).get(conversation.id, blocks.at(-1).sequence)),
       total,
     };
+  }
+
+  readBlockDetails({ agentId, sessionId, conversationId, sequences }) {
+    if (!Array.isArray(sequences) || sequences.length < 1 || sequences.length > 20
+      || sequences.some(id => !Number.isSafeInteger(id) || id < 1)) throw new TypeError('Invalid block selection');
+    const rows = this.db().prepare(`SELECT b.id,b.payload_json payload FROM conversation_blocks b
+      JOIN conversations c ON c.id=b.conversation_id WHERE c.agent_id=? AND c.provider_session_id=? AND c.id=?
+      AND b.id IN (${sequences.map(() => '?').join(',')}) ORDER BY b.id ASC`)
+      .all(agentId, sessionId, conversationId, ...sequences);
+    return { blocks: rows.map(row => {
+      const block = JSON.parse(row.payload);
+      return { sequence: Number(row.id), role: block.role, kind: block.kind, name: block.name,
+        summary: block.summary, output: block.output, diff: block.diff, isError: block.isError };
+    }) };
   }
 
   async readImages({ agentId, sequence }) {
@@ -697,6 +739,11 @@ export class ConversationStoreManager {
   async readImages(input) {
     await this.migration.catch(() => {});
     return this.store?.readImages(input) ?? [];
+  }
+
+  async readBlockDetails(input) {
+    await this.migration.catch(() => {});
+    return this.store?.readBlockDetails(input) ?? { blocks: [] };
   }
 
   async setRoot(requestedPath) {

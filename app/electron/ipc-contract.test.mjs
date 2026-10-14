@@ -6,6 +6,20 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('validates independent history cursors and identity-bound work details', () => {
+    const page = { id: 'a', conversationId: 'c', afterSequence: 10, turnLimit: 5 };
+    expect(contract.assertInvokeRequest('chat_blocks', page)).toEqual(page);
+    for (const patch of [{ beforeSequence: 4 }, { afterSequence: 0 }, { afterSequence: 1.5 },
+      { turnLimit: 21 }, { turnLimit: '5' }, { conversationId: '' }]) {
+      expect(() => contract.assertInvokeRequest('chat_blocks', { ...page, ...patch })).toThrow();
+    }
+    const details = { id: 'a', sessionId: 's', conversationId: 'c', sequences: [10, 11] };
+    expect(contract.assertInvokeRequest('chat_block_details', details)).toEqual(details);
+    for (const patch of [{ id: '' }, { sessionId: null }, { conversationId: '' },
+      { sequences: [] }, { sequences: [0] }, { sequences: ['10'] }, { sequences: Array(21).fill(1) }]) {
+      expect(() => contract.assertInvokeRequest('chat_block_details', { ...details, ...patch })).toThrow();
+    }
+  });
   it("bounds app model defaults to supported providers, account identities and valid settings", () => {
     const args = { provider: "codex", accountId: "default", settings: { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "fast" }, revision: 0 };
     expect(contract.assertInvokeRequest("set_model_defaults", args)).toEqual(args);
