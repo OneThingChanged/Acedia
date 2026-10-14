@@ -695,7 +695,7 @@ once. A parked native draft rejects a new HTTP send without typing anything;
 after manually clearing it, explicit retry receives one matching user record.
 The Remote/Dashboard queue smoke also passes at 1280/375px, covering the blocked
 draft notice, terminal review, explicit retry, FIFO and paused unknown outcomes.
-These source changes have not been published.
+These changes are published in [EXE 1.8.1.82](release-1-8-1-82.md).
 
 The Remote
 new-session dialog closes with Cancel or Esc; clicking outside leaves the
@@ -774,8 +774,9 @@ The fixture sent no input to the host. Captures were visually checked, and
 11 existing touch/mobile-layout checks passed. Evidence is retained in
 `output/remote-terminal-bottom-baseline.log`,
 `output/remote-terminal-bottom-fixed.log` and `output/remote-terminal-smoke/`.
-The web cache is v95 in this source change; it is not yet included in the
-published 1.8.1.80 host.[^remote-terminal-smoke]
+The original source change used web cache v95; it is included in the
+published [1.8.1.82 host](release-1-8-1-82.md), whose cache is v99.
+[^remote-terminal-smoke]
 
 On 2026-10-13, read-only inspection of the reported ProjectWitch session
 found `gpt-6.1-sol` / `xhigh` / Fast in the actual terminal and Sol / xhigh

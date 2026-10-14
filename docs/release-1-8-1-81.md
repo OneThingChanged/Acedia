@@ -3,7 +3,7 @@ type: Release
 title: Acedia 1.8.1.81
 description: "Remote 터미널 마지막 줄 잘림과 오래된 Luna 모델 표시 수정."
 status: internal
-last_updated: 2026-10-13
+last_updated: 2026-10-15
 ---
 
 # Acedia 1.8.1.81
@@ -38,6 +38,7 @@ last_updated: 2026-10-13
 소스 버전은 **1.8.1.81**, npm 호환 버전은 **1.8.1**이다. Android 소스 versionName도
 1.8.1.81로 맞췄으며 이번 작업에서 새 APK를 만들지 않아 versionCode는 21을 유지했다.
 
-이번 요청 범위는 문서 정리와 Git 커밋·푸시다. 설치 파일 빌드, GitHub Release 게시,
-Microsoft Store 제출과 사용 중인 앱 업데이트는 실행하지 않았다. 현재 공개 EXE는
-[1.8.1.80](release-1-8-1-80.md)이며 위 수정은 다음 설치본 배포 시 포함된다.
+1.8.1.81 작업 범위는 문서 정리와 Git 커밋·푸시였다. 당시 설치 파일 빌드와 GitHub
+Release 게시는 실행하지 않았고 공개 EXE는 [1.8.1.80](release-1-8-1-80.md)이었다.
+위 수정은 2026-10-15 공개한 [EXE 1.8.1.82](release-1-8-1-82.md)에 포함했다.
+1.8.1.81 전용 설치 파일은 게시하지 않았다.

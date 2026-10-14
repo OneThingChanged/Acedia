@@ -310,7 +310,7 @@ checks target identity, settings/history, duplicate clicks, failed preparation,
 ownership and sleeping sessions. Host calls in that UI fixture are mocked, so
 it does not interrupt a user's real CLI. Evidence is in
 `output/session-context-restart-smoke.log` and `output/session-restart-smoke/`.
-The feature is implemented in source and has not yet been published.
+The feature is published in [EXE 1.8.1.82](release-1-8-1-82.md).
 [^session-restart-smoke][^app-shell]
 
 Focused model, launcher, IPC, HTTP, activation-broker, menu and window-ownership
@@ -582,7 +582,8 @@ to **11,713 bytes** (five complete turns with compact work records), about 98%
 less. The [pagination smoke](../app/scripts/electron-chat-pagination-smoke.mjs)
 checks desktop plus Remote/Dashboard at 1024/390px, lazy details, delta polling,
 scroll anchoring, concurrent live updates and retry. These are fixture results,
-not a public-tunnel latency measurement. Publication remains pending.
+not a public-tunnel latency measurement. The change is published in
+[EXE 1.8.1.82](release-1-8-1-82.md).
 
 Desktop Chat centers the conversation and composer in a shared 760px reading
 column with a proportional UI font; code and tool output retain a monospace
@@ -770,7 +771,7 @@ layouts, all three desktop decisions, exact request identity, changed-command
 rejection and verified native arrow delivery. The installed Codex **0.162.1**
 fixture also passed allow-once execution of a harmless marker and denial that
 cancels the turn, using only a local mock model and fresh profile. These changes
-are source-only until the next EXE release.[^approval-ui-smoke][^approval-cli-smoke]
+are published in [EXE 1.8.1.82](release-1-8-1-82.md).[^approval-ui-smoke][^approval-cli-smoke]
 
 The rounded composer has session project/connection context, file attachment,
 provider label, queue/send and an interrupt button while work is active. The

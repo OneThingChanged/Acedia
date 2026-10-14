@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.82
 description: "Qwen 터미널 갱신 안정화, Claude 공통 자동 감지, 채팅 단계별 로딩·전송과 사이드바 개선."
-status: internal
+status: stable
 last_updated: 2026-10-15
 ---
 
@@ -41,7 +41,13 @@ Standard EXE 업데이트다. 기존 서명 APK **1.8.1.39/code 21**을 재사�
 - 실제 Electron 화면에서 중첩 갱신 도중의 빈 화면이 노출되지 않는 것을 확인했다. 격리된 Qwen 0.25.1의 초안·커서 출력 68조각을 31묶음으로 전달했고 최종 화면·대화 내용이 동일했다. 모델 요청은 0건이다.
 - 생성 창·프로젝트 보드·세션 사용량·native PTY를 실제 Electron에서 검증했다. PC·모바일 창에서의 기존 채팅 페이지·승인·질문·큐·재시작 검사도 통과했다.
 
-고정 소스 빌드, packaged 실행·종료 검사와 공개 다운로드 검증 결과를 아래 배포 기록에 추가한다.
+- 고정 커밋에서 Standard EXE를 빌드했다. 패키지 실행·Dashboard·종료·트레이·보안 검사가 통과했고, 패키지의 런타임·렌더러 파일 308개가 소스와 일치했다.
+- 설치 파일의 네 자리 FileVersion, 세 자리 ProductVersion, 크기·SHA-256과 같은 빌드의 업데이트 manifest를 검증했다. Authenticode 상태는 `NotSigned`다.
+- 공개 GitHub에서 1.8.1.80과 1.8.1.81 기준으로 1.8.1.82 감지를 확인했다. 업데이터로 전체 EXE를 내려받아 3개 공개 자산의 크기·해시·URL과 소스 태그를 다시 검증했다.
+- 관련 문서 5개의 상대 경로 190개를 확인했다. 기존 실제 작업 세션에 메시지를 보내거나 재시작하지 않았으며 설치 프로그램도 실행하지 않았다.
+
+packaged 검사 중 기존 node-pty 종료 보조 프로세스의 `AttachConsole failed`와 숨김 창의 GPU 진단이 출력됐다.
+각 필수 성공 marker와 종료 코드 0을 확인했다. 실제 사용자 프로필의 설치·업데이트 테스트와 외부망 지연 측정은 별도다.
 
 앞선 격리 검증에서는 200-turn 채팅 fixture의 초기 응답이 703,351바이트에서 11,713바이트로 줄었고,
 PC·모바일 Remote/Dashboard의 페이지 로딩·상세 요청·스크롤 유지·재시도를 확인했다. 실제 외부망 속도 측정은 아니다.
@@ -52,5 +58,20 @@ PC·모바일 Remote/Dashboard의 페이지 로딩·상세 요청·스크롤 유
 
 ## 배포 기록
 
-검증 중이다. 소스 버전은 **1.8.1.82**, npm 호환 버전은 **1.8.1**이고 Android 소스 버전도 1.8.1.82다.
-APK versionCode는 새 APK를 만들지 않아 21을 유지한다. 공개 게시 여부와 설치 여부는 별도로 기록한다.
+- 공개 게시: **2026-10-15 02:01:37 KST**. [GitHub Release v1.8.1.82](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.82).
+- 고정 소스·태그: `b809c6e211ee20d981f7839f643e34950490ced1`.
+- 공개 다운로드 검증 완료: **2026-10-15 02:02:34 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.82**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. SHA-256: `f04502319e96f1cf3e2fb1a949ec6ae81dcefad4443877f31ca36c8c15190957`.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.82-x64.exe | 151381435 | `66b25a89a0ee4d3df0667fdc8b24ff4e1c83b973c40d410b368ffbb5385e2b59` |
+| Acedia-Setup-1.8.1.82-x64.exe.blockmap | 159474 | `c2d97e176a874d4767d9ffff5427d943bb79e758247e6c119d8cf894b48b6614` |
+| latest-exe.json | 256 | `40d075bf1d97a66e81cedd17295f0ac3ebe60c0516aca7bf001e236759705b4e` |
+
+검증 증빙: `output/exe-release-1.8.1.82/local-verification.json`,
+`output/exe-82-packaged-smoke.log`, `output/exe-82-packaged-lifecycle-smoke.log`,
+`output/qwen-terminal-smoke.log`, `.build-tools/public-verified-1.8.1.82.json`.
+공개 게시 완료와 사용자의 설치 여부는 별개다. 설정 **Check → Update** 또는 앱 재실행 시
+업데이트 안내로 적용한다. 업데이트 뒤 기존 Qwen 세션을 Restart하면 새 실행 설정도 적용된다.

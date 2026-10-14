@@ -48,7 +48,8 @@ including the npm `.cmd` fallback and separate account configuration directories
 
 Source validation passed 61 launch/environment/account/login/model-help tests and discovered and
 executed the installed WinGet Claude Code 2.1.292 with an intentionally stale
-parent PATH. Publication remains pending. Before updating the app, specifying
+parent PATH. The change is published in [EXE 1.8.1.82](release-1-8-1-82.md).
+Before updating the app, specifying
 the installed `claude.exe` in the session's advanced executable setting avoids
 the stale PATH without interrupting other sessions.
 
