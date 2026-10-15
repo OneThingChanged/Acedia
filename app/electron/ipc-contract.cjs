@@ -326,6 +326,10 @@ function assertInvokeRequest(command, rawArgs) {
       for (const answer of args.answers) {
         if (!answer || typeof answer.id !== "string" || !answer.id || answer.id.length > 200) throw new TypeError("Invalid answer identity");
         if (answer.optionIndex !== null) assertNonNegativeInteger(answer.optionIndex, "answer choice", 1000);
+        if (answer.optionIndices != null) {
+          if (answer.optionIndex !== null || !Array.isArray(answer.optionIndices) || answer.optionIndices.length > 12 || new Set(answer.optionIndices).size !== answer.optionIndices.length) throw new TypeError('Invalid multiple answer choices');
+          for(const index of answer.optionIndices) assertNonNegativeInteger(index,'answer choice',11);
+        }
         if (answer.text != null && (typeof answer.text !== "string" || answer.text.length > 2000 || /[\x00-\x1f\x7f]/.test(answer.text))) throw new TypeError("Invalid answer text");
       }
       break;

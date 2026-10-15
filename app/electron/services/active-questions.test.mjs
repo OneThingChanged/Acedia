@@ -10,6 +10,21 @@ import { CommandApprovalResponder } from './command-approval.mjs';
 const line = payload => JSON.stringify({ type: 'response_item', payload }) + '\n';
 const call = { type: 'function_call', call_id: 'q1', name: 'functions.request_user_input', arguments: '{"questions":[{"id":"color","question":"Which?","options":[{"label":"Blue"}]}]}' };
 describe('active question tail monitor', () => {
+  it('retains a live Claude form when its earlier user prompt is flushed after the assistant call', async () => {
+    const root=await fs.mkdtemp(path.join(os.tmpdir(),'acedia-active-question-'));
+    const transcriptPath=path.join(root,'claude-session.jsonl');
+    const ask={type:'assistant',timestamp:'2026-10-15T02:49:04.309Z',message:{stop_reason:'tool_use',content:[{type:'tool_use',id:'call-claude',name:'AskUserQuestion',input:{questions:[{question:'Which?',options:[{label:'One'},{label:'Both'}]}]}}]}};
+    const prompt={type:'user',timestamp:'2026-10-15T02:49:04.226Z',message:{role:'user',content:'Review first.'}};
+    try{
+      await fs.writeFile(transcriptPath,[ask,prompt].map(value=>JSON.stringify(value)+'\n').join(''));
+      const monitor=new ActiveQuestions(),args={id:'fixture',tool:'claude',root,transcriptPath,sessionId:'claude-session'};
+      expect((await monitor.read(args)).question?.id).toBe('call-claude');
+      await fs.appendFile(transcriptPath,JSON.stringify({type:'user',timestamp:'2026-10-15T02:49:05.000Z',message:{content:[{type:'tool_result',tool_use_id:'call-claude',content:'One'}]}})+'\n');
+      expect((await monitor.read(args)).question).toBeNull();
+      await fs.appendFile(transcriptPath,JSON.stringify({...ask,timestamp:'2026-10-15T02:49:06.000Z'})+'\n'+JSON.stringify({...prompt,timestamp:'2026-10-15T02:49:07.000Z'})+'\n');
+      expect((await monitor.read(args)).question).toBeNull();
+    }finally{await fs.rm(root,{recursive:true});}
+  });
   it('keeps working async questions visible through the live host guard with either CLI shortcut', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-active-question-'));
     const transcriptPath = path.join(root, 'session-one.jsonl');

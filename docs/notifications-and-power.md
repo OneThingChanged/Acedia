@@ -17,10 +17,12 @@ sources:
   - resource: ../app/electron/services/terminal-session-service.mjs
   - resource: ../app/electron/services/session-notifications.mjs
   - resource: ../app/electron/services/active-questions.mjs
+  - resource: ../app/electron/services/qwen-chat.mjs
   - resource: ../app/electron/services/codex-capacity-retry.mjs
   - resource: ../app/src/components/CapacityRetryNotice.tsx
   - resource: ../app/scripts/codex-capacity-retry-smoke.mjs
   - resource: ../app/electron/services/question-responder.mjs
+  - resource: ../app/electron/services/claude-question-responder.mjs
   - resource: ../app/src/App.tsx
 ---
 
@@ -104,7 +106,8 @@ CSS 클래스를 기대하던 UI 단언 1개는 새 배지의 표시·접근성 
 
 ## Question 답변 대기
 
-Codex의 동기 `request_user_input`과 Claude 질문을 Cyan의 `Question · 답변 대기`로 표시한다.
+Codex의 동기 `request_user_input`, Claude 질문과 Qwen의 `ask_user_question`을 Cyan의
+`Question · 답변 대기`로 표시한다.
 탭, 사이드바, Chat, Dashboard/Remote 세션 및 상태별 보드에 적용한다. 질문을 기다리는 동안
 작업 스피너를 멈추고 새 메시지는 대기열에 넣는다. 답변 후 CLI가 질문을 처리하면 상태를 해제한다.
 비동기 `request_user_input_async`는 실행을 멈추지 않으므로 대기 상태로 분류하지 않는다.
@@ -117,11 +120,20 @@ Codex의 동기 `request_user_input`과 Claude 질문을 Cyan의 `Question · �
 1.5초 간격으로 확인한다. 파일이 바뀐 경우 최대 256 KiB의 끝부분을 비동기로 읽고,
 질문 call ID와 해당 결과를 추적한다. 휴면 기록 전체를 읽거나 카탈로그를 다시 스캔하지 않는다.
 
-Codex의 식별 가능한 선택형 질문은 Chat에서 선택지와 설명을 보고 답할 수 있다.
+Codex와 로컬 Claude `AskUserQuestion`의 식별 가능한 선택형 질문은 Chat에서 선택지와 설명을 보고 답할 수 있다.
 여러 질문과 ‘직접 입력’(CLI 메모란에 맞춘 단일행)을 지원하며, 모든 답을 고른 뒤 ‘답변 보내기’를 눌러야 전송한다.
+Claude의 복수 선택 질문은 체크박스를 사용하며 직접 입력 답변도 함께 보낼 수 있다.
+Desktop, Dashboard와 Remote에 동일하게 적용하며, [1.8.1.83 EXE](release-1-8-1-83.md)에 포함한다.
 Electron의 공통 처리기가 세션·질문 ID와 실제 xterm 화면을 확인하여 원래 CLI 폼에 입력한다.
 다른 창·기기의 중복 답변, 바뀐 질문, 일부만 전송된 답변의 재전송을 차단한다.
 식별할 수 없는 폼, SSH 질문, 지원하지 않는 CLI 화면에서는 ‘터미널에서 답변’을 사용한다.
+
+2026-10-15 소스의 Qwen 질문은 선택지·설명을 표시하고 대응하는 도구 결과나 요청 취소가
+확인되면 대기를 해제한다. Qwen의 네이티브 답변 자동 입력은 아직 제공하지 않아
+‘터미널에서 답변’을 사용한다. 관리 훅을 Node helper로 바꿔 세션 시작·작업 이벤트를
+복구했으며, 답변 완료 후 백그라운드 메모리 추출 요청이 Working을 다시 켜지 않도록 한다.
+호스트 업데이트 후 기존 Qwen 세션을 Restart해야 새 훅이 적용된다.
+[Qwen 검증 기록](remote-service.md#qwen-chat-2026-10-15-source)을 참고한다.
 
 새 질문은 한 번만 알린다. 알림을 클릭하면 해당 세션의 Chat을 연다. 같은 질문을
 훅과 transcript에서 모두 발견하거나 화면을 다시 연결해도 중복 팝업을 만들지 않는다.

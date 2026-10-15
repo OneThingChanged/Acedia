@@ -117,10 +117,10 @@ export const AI_TOOLS: AiTool[] = [
 ];
 
 // The chat (conversation) view is only wired for CLIs that write a decodable
-// JSONL transcript. Others (qwen, cline, none, …) are terminal-only — hide the
+// JSONL transcript. Others (cline, none, …) are terminal-only — hide the
 // chat toggle entirely for them.
 export function toolSupportsChat(aiToolId: string | null | undefined): boolean {
-  return aiToolId === "codex" || aiToolId === "claude";
+  return aiToolId === "codex" || aiToolId === "claude" || aiToolId === 'qwen';
 }
 
 export function toolForId(id: string): AiTool {

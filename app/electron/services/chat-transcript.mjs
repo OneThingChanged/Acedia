@@ -15,6 +15,7 @@ import { isNoiseUserText } from "./chat-noise.mjs";
 import { isQuestionTool } from "../shared/chat-prompt.mjs";
 import { transcriptImages } from "./chat-images.mjs";
 import { changesFromToolCall } from "./chat-file-changes.mjs";
+import { normalizeQwenRecord, qwenLifecycle } from './qwen-chat.mjs';
 
 const MAX_TOOL_OUTPUT = 4000;
 const MAX_TEXT = 20000;
@@ -170,6 +171,7 @@ function decodeCodexLine(obj, out) {
 //           assistant awaiting tools (stop_reason "tool_use") or a trailing
 //           user turn = working.
 export function deriveTurnLifecycle(text, tool) {
+  if (tool === 'qwen') return deriveTurnLifecycleDetails(text, tool).lifecycle || 'idle';
   const lines = String(text ?? "").split(/\r?\n/);
   if (tool === "codex") {
     let state = "idle";
@@ -221,7 +223,10 @@ export function deriveTurnLifecycleDetails(text, tool) {
     try { record = JSON.parse(line); } catch { continue; }
     const timestamp = Date.parse(record?.timestamp);
     let next;
-    if (tool === "codex") {
+    if (tool === 'qwen') {
+      const state = qwenLifecycle(record);
+      if (state) { next = state.lifecycle; activeTool = state.activeTool; }
+    } else if (tool === "codex") {
       const part = record?.payload;
       if (part?.type === "task_started") next = "working";
       else if (["task_complete", "turn_aborted"].includes(part?.type)) next = "idle";
@@ -259,9 +264,21 @@ export function derivePendingQuestions(text, tool, previous = []) {
     if (!pending.has(id)) pending.set(id, { id, toolName: name, question: typeof input === "string" ? input : JSON.stringify(input ?? {}), ...(async ? { async: true } : {}) });
   };
   const clearSynchronous = () => { for (const [id, q] of pending) if (!q.async) pending.delete(id); };
-  for (const line of String(text ?? "").split(/\r?\n/)) {
-    let obj;
-    try { obj = JSON.parse(line); } catch { continue; }
+  let records = String(text ?? '').split(/\r?\n/).flatMap(line => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+  if (tool === 'qwen') records = records.map(normalizeQwenRecord);
+  if (tool === 'claude' || tool === 'qwen') {
+    records = records.filter(record => ['assistant','user'].includes(record?.type)
+      || (tool === 'qwen' && record?.type === 'system' && qwenLifecycle(record)?.lifecycle === 'idle'));
+    // Claude 2.1 can flush the streamed assistant call before its earlier user
+    // prompt. File append order must not make that old prompt dismiss the form.
+    if (records.every(record => Number.isFinite(Date.parse(record.timestamp)))) {
+      records.sort((left,right) => Date.parse(left.timestamp)-Date.parse(right.timestamp));
+    }
+  }
+  for (const obj of records) {
+    if (tool === 'qwen' && obj.type === 'system') { pending.clear(); continue; }
     if (tool === "codex") {
       const p = obj?.payload;
       if (!p) continue;
@@ -289,7 +306,7 @@ export function derivePendingQuestions(text, tool, previous = []) {
         if (!pending.get(p.call_id)?.async) pending.delete(p.call_id);
         else { try { if (JSON.parse(p.output)?.accepted === false) pending.delete(p.call_id); } catch { /* accepted async output is not an answer */ } }
       }
-    } else if (tool === "claude") {
+    } else if (tool === "claude" || tool === 'qwen') {
       const content = obj.message?.content;
       if (obj.type === "user" && typeof content === "string" && !isNoiseUserText(content)) pending.clear();
       for (const part of Array.isArray(content) ? content : []) {
@@ -319,7 +336,8 @@ export function parseChatTranscript(text, tool) {
     } catch {
       continue;
     }
-    if (tool === "claude") decodeClaudeLine(obj, out);
+    if (tool === 'qwen') { const record = normalizeQwenRecord(obj); if (record) decodeClaudeLine(record, out); }
+    else if (tool === "claude") decodeClaudeLine(obj, out);
     else if (tool === "codex") decodeCodexLine(obj, out);
   }
   return out;

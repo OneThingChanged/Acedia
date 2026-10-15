@@ -198,7 +198,8 @@ function insertAfterSyncStart(frame, insertion) {
  * Keep an xterm shadow of the exact data sent to the renderer. Before a clear,
  * advance the viewport into scrollback. For synchronized repaint frames, use a
  * second shadow as a probe and preserve only rows that the repaint shifted off
- * the top. Claude and plain shells use PassThroughTerminalFilter instead.
+ * the top. Claude tracks its viewport without rewriting output; plain shells
+ * use PassThroughTerminalFilter.
  */
 export class CodexScrollbackFilter {
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
@@ -451,6 +452,17 @@ export class PassThroughTerminalFilter {
   resize() {}
 
   dispose() {}
+}
+
+/** Track Claude's live native form without applying Codex scrollback rewrites. */
+export class TrackedTerminalFilter extends PassThroughTerminalFilter {
+  constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
+    super(); this.shadow = createShadowTerminal(cols, rows); this.disposed = false;
+  }
+  push(chunk) { const data = super.push(chunk); if (!this.disposed) writeShadowSync(this.shadow, data); return data; }
+  resize(cols, rows) { if (!this.disposed) this.shadow.resize(cols, rows); }
+  viewportText() { return this.disposed ? '' : captureViewport(this.shadow).rows.map(row => row.text).join('\n'); }
+  dispose() { if (!this.disposed) { this.disposed = true; this.shadow.dispose(); } }
 }
 
 export class SequencedTerminalBuffer {

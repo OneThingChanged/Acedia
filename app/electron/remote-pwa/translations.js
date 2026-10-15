@@ -1,6 +1,14 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['영상 파일을 찾을 수 없습니다. 파일 경로를 확인하세요.', 'Video file not found. Check the file path.'],
+  ['영상 파일에 접근할 수 없습니다. 로그인 상태와 접근 권한을 확인하세요.', 'Cannot access the video file. Check your sign-in and file permissions.'],
+  ['지원하지 않는 영상 형식입니다. MP4 또는 WebM 파일을 사용하세요.', 'Unsupported video format. Use an MP4 or WebM file.'],
+  ['영상을 불러오지 못했습니다 (HTTP {0}).', 'Could not load the video (HTTP {0}).'],
+  ['영상을 불러오는 중 네트워크 연결이 끊겼습니다. 다시 시도해 주세요.', 'The network connection was interrupted while loading the video. Please retry.'],
+  ['이 영상의 형식이나 코덱을 재생할 수 없습니다. 다운로드해서 확인해 주세요.', 'Cannot play this video format or codec. Download the file to check it.'],
+  ['영상을 재생하지 못했습니다. 다운로드해서 확인해 주세요.', 'Could not play the video. Download the file to check it.'],
+  ['영상에 연결하지 못했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.', 'Could not connect to the video. Check your network connection and retry.'],
   ['터미널 입력란이 비어 있지 않거나 준비되지 않았습니다. 기존 입력을 확인하세요. 새 메시지는 보내지 않았습니다.', 'The terminal input is not empty or ready. Check the existing input; no new message was sent.'],
   ['터미널 확인', 'Check terminal'],
   ['상세 내역 불러오는 중…', 'Loading work details…'],

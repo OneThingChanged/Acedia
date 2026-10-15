@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -79,6 +79,12 @@ sources:
   - id: chat-delivery-smoke
     resource: ../app/scripts/electron-chat-delivery-smoke.mjs
     title: "Chat steering, completion reservations and keyboard delivery selection"
+  - id: claude-question-responder
+    resource: ../app/electron/services/claude-question-responder.mjs
+    title: "Guarded native Claude structured question answers"
+  - id: claude-question-cli-smoke
+    resource: ../app/scripts/claude-question-cli-smoke.mjs
+    title: "Installed Claude question, custom answer and checkbox verification"
   - id: codex-steering-cli-smoke
     resource: ../app/scripts/codex-steering-cli-smoke.mjs
     title: "Isolated installed Codex current-turn steering verification"
@@ -178,6 +184,9 @@ sources:
   - id: conversation-store
     resource: ../app/electron/services/conversation-store.mjs
     title: "Per-session conversation store"
+  - id: qwen-chat
+    resource: ../app/electron/services/qwen-chat.mjs
+    title: "Qwen native transcript and lifecycle adapter"
   - id: electron-main
     resource: ../app/electron/main.mjs
     title: "Chat transcript paging and background ingestion"
@@ -464,6 +473,18 @@ Qwen 0.25.1 draft and cursor movement without sending a model request. The teste
 68 PTY chunks became 31 output segments, with the same final terminal content.
 Existing Qwen processes acquire the launch setting after session Restart; the
 release publication is tracked in [1.8.1.82](release-1-8-1-82.md).
+
+The 2026-10-15 source also enables local Qwen Chat. Its native message parts,
+reasoning, tool calls/results and images feed the shared paged conversation
+store; ordinary messages use the existing host submission path. Session identity
+comes from the exact Qwen ID or the same agent's verified SessionStart note,
+without choosing another conversation in the project. Managed hooks use the Node
+helper, and background memory extraction no longer leaves completed chat in
+Working. Existing Qwen processes need Restart after the host update to load the
+new hooks. Structured Qwen questions retain the terminal answer action.
+See [Qwen Remote chat](remote-service.md#qwen-chat-2026-10-15-source) for root
+configuration, scope and native CLI/browser validation. The release status is
+tracked in [1.8.1.83](release-1-8-1-83.md).[^qwen-chat]
 
 The Terminal settings panel controls font, size, line height, cursor, scrollback,
 selection copying and right-click pasting for local and SSH terminal views.
@@ -842,6 +863,28 @@ questions, first Chat attach, wrapped terminal rows and switching views without
 restarting the PTY. Existing structured and asynchronous questions are also
 checked on desktop and Remote.[^chat-question-smoke]
 
+The 2026-10-15 source extends this pinned question form to local Claude
+`AskUserQuestion`: all questions appear together with radio choices, multiple
+checkboxes where allowed, and a custom-answer field. **Send answers** submits
+the completed form; **View terminal** is optional. The host verifies the
+process, conversation, call ID, current question and selection before delivery,
+then confirms each native movement and the final review. A changed form or
+uncertain partial answer stops delivery and is never replayed automatically.
+The Claude terminal stream remains byte-for-byte unchanged; a shadow xterm
+tracks its current viewport for these checks. Timestamped Claude transcript
+records are ordered by event time so a late-flushed earlier user prompt cannot
+clear a live question.[^claude-question-responder][^chat-transcript]
+
+Claude **2.1.292** passed actual native three-question, checkbox/custom-answer
+and immediate single-question submission cases, followed by resumed work.
+The test uses an isolated profile and loopback mock API without a live model.
+Desktop Chat, Remote and Dashboard UI checks passed wide/narrow layouts,
+failed submissions, exact answer identity and duplicate clicks. All **1,411
+tests in 193 files** passed after rechecking three files with the required
+tools on PATH and lower concurrency; the TypeScript/Vite build passed.
+This feature is included in [1.8.1.83](release-1-8-1-83.md).
+[^claude-question-cli-smoke][^chat-question-smoke]
+
 The same smoke also verifies readable columns at 420/800/1280px, dark/light
 themes, copy contents and failure feedback, file attachment, newline bindings,
 queue/stop behavior, authentication guards and draft preservation across view
@@ -1100,6 +1143,8 @@ The domain invariants behind these interactions are documented in
 [^chat-copy]: Chat clipboard actions and feedback
 [^terminal-startup-prompt]: Live Codex startup questions and verified selection
 [^chat-question-smoke]: Desktop, native terminal startup and Remote question verification
+[^claude-question-responder]: Claude native form, answer and final review verification
+[^claude-question-cli-smoke]: Isolated actual Claude CLI AskUserQuestion and resume smoke
 [^command-approvals]: Live Codex command approval recognition and guarded answers
 [^approval-ui-smoke]: Chat, Remote and Dashboard approval choices and stale-command verification
 [^approval-cli-smoke]: Isolated installed Codex allow-once and denial verification
@@ -1117,5 +1162,6 @@ The domain invariants behind these interactions are documented in
 [^session-storage-ui]: Session JSONL storage catalog UI
 [^session-storage-service]: Session JSONL metadata catalog
 [^conversation-store]: Per-session conversation store
+[^qwen-chat]: Qwen native transcript and lifecycle adapter
 [^electron-main]: Chat transcript paging and background ingestion
 [^chat-submission]: Host chat submission and conversation reset coordination

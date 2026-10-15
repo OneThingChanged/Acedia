@@ -5,6 +5,28 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { HookService, hookInternals } from "./hook-service.mjs";
 
+it('uses the Qwen Node helper for exact session identity and snake-case questions without changing user hooks', async () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'acedia-qwen-hook-')),events=[];
+  const service=new HookService({baseDir:root,sessionService:{noteHook:async()=>{}},sendEvent:(_name,payload)=>events.push(payload)});
+  try {
+    await service.start();
+    const preserved={security:{auth:{selectedType:'fixture'}},hooks:{SessionStart:[{hooks:[{type:'command',command:'user-owned-hook'}]}]}};
+    const merged=JSON.parse(hookInternals.mergeQwen(JSON.stringify(preserved),service.nodeHelperPath));
+    expect(merged.security).toEqual(preserved.security);expect(merged.hooks.SessionStart[0]).toEqual(preserved.hooks.SessionStart[0]);
+    const managed=merged.hooks.SessionStart.find(item=>item.__source==='multiagent').hooks[0];
+    expect(managed.command).toContain('notify.mjs');expect(managed.command).not.toContain('powershell -NoProfile');
+    const env={...process.env,MULTIAGENT_AGENT_ID:'qwen',MULTIAGENT_PORT:String(service.port),MULTIAGENT_TOKEN:service.token};
+    const tool_input={questions:[{question:'어느 작업?',options:[{label:'A'},{label:'B'}]}]};
+    await runHelper(process.execPath,[service.nodeHelperPath,'tool-start','PreToolUse'],{session_id:'qwen-session',tool_name:'ask_user_question',tool_input},env);
+    expect(events[0]).toMatchObject({id:'qwen',event:'waiting',session_id:'qwen-session',tool_name:'ask_user_question'});
+    expect(JSON.parse(events[0].interactive_question)).toEqual(tool_input);
+  } finally {
+    await service.stop();
+    if(path.dirname(root)!==path.resolve(os.tmpdir())||!path.basename(root).startsWith('acedia-qwen-hook-'))throw Error('Invalid hook fixture');
+    fs.rmSync(root,{recursive:true});
+  }
+});
+
 async function runHelper(binary, args, input, env) {
   const child = spawn(binary, args, { env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   let output = "";

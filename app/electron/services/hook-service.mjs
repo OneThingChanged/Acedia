@@ -234,7 +234,7 @@ const hookEventName=process.argv[3]||input.hook_event_name||"";
 const toolName=input.tool_name?String(input.tool_name):"";
 const compact=(value,max)=>{if(value==null)return "";const text=typeof value==="string"?value:JSON.stringify(value);return text.slice(0,max)};
 const toolInput=compact(input.tool_input,4000);
-const questionTool=/(^|[.:/])(askuserquestion|request_user_input)$/i.test(toolName);
+const questionTool=/(^|[.:/])(askuserquestion|ask_user_question|request_user_input)$/i.test(toolName);
 if(questionTool&&(event==="tool-start"||hookEventName.toLowerCase()==="pretooluse"))event="waiting";
 const payload={id:process.env.MULTIAGENT_AGENT_ID||"",event,token:process.env.MULTIAGENT_TOKEN||""};
 if(input.session_id)payload.session_id=String(input.session_id);
@@ -353,7 +353,17 @@ function mergeClaudeMcp(existing, command, scriptPath) {
 }
 
 function mergeQwen(existing, helperPath) {
-  return mergeJsonSettingsHooks(existing, helperPath, QWEN_EVENTS);
+  const settings = JSON.parse(mergeJsonSettingsHooks(existing, helperPath, QWEN_EVENTS));
+  const quote = value => process.platform === 'win32' ? "'" + value.replaceAll("'", "''") + "'"
+    : "'" + value.replaceAll("'", "'\\''") + "'";
+  for (const [name, event] of QWEN_EVENTS) {
+    const entry = settings.hooks[name].find(item => item.__source === HOOK_MARKER);
+    // Qwen launches command hooks through a shell already. A second Windows
+    // PowerShell invocation failed before notify.ps1 could report the session.
+    entry.hooks = [{ type:'command', shell:process.platform === 'win32' ? 'powershell' : 'bash',
+      command:`node ${quote(helperPath)} ${event} ${name}` }];
+  }
+  return JSON.stringify(settings, null, 2) + '\n';
 }
 
 function removeManagedCodexBlock(existing) {
@@ -468,6 +478,7 @@ export class HookService {
   }) {
     this.baseDir = baseDir;
     this.helperPath = path.join(baseDir, "notify.ps1");
+    this.nodeHelperPath = path.join(baseDir, 'notify.mjs');
     this.infoPath = path.join(baseDir, "hook-info.json");
     this.sendEvent = sendEvent;
     this.sessionService = sessionService;
@@ -505,6 +516,7 @@ export class HookService {
   async writeRuntimeFiles() {
     await fsPromises.mkdir(this.baseDir, { recursive: true });
     await atomicWrite(this.helperPath, HELPER_SCRIPT);
+    await atomicWrite(this.nodeHelperPath, NODE_HELPER_SCRIPT);
     await atomicWrite(this.infoPath, JSON.stringify({
       port: this.port,
       token: this.token,
@@ -786,7 +798,7 @@ export class HookService {
     } else if (aiToolId === "qwen") {
       updates.push({
         target: path.join(root, ".qwen", "settings.json"),
-        merge: before => mergeQwen(before, this.helperPath),
+        merge: before => mergeQwen(before, this.nodeHelperPath),
       });
     }
     return this.#mergeSettings(updates, { root, aiToolId });

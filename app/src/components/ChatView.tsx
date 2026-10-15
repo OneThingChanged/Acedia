@@ -1024,7 +1024,7 @@ export function ChatView({
     <div className="chat-view chat-view-modern">
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {status === "unsupported" && (
-          <div className="chat-empty">{text("대화 보기를 지원하지 않는 세션입니다 (codex/claude).", "This session does not support conversation view (codex/claude).")}</div>
+          <div className="chat-empty">{text("대화 보기를 지원하지 않는 세션입니다.", "This session does not support conversation view.")}</div>
         )}
         {status === "loading" && <div className="chat-empty">{text("대화를 불러오는 중…", "Loading conversation…")}</div>}
         {status === "empty" && !pending.length && (
@@ -1060,7 +1060,7 @@ export function ChatView({
       {prompt && (
         <div className={`chat-prompt ${prompt.kind}${startupPrompt ? " chat-prompt-startup" : ""}${prompt.answerStyle === 'codex-approval' ? ' chat-prompt-command' : ''}`} role="status" aria-live="polite">
           <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : prompt.kind === 'permission' ? text('승인 필요', 'Approval needed') : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
-          {prompt.answerStyle === 'codex-form' && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
+          {['codex-form','claude-form'].includes(prompt.answerStyle) && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
             {prompt.kind === "permission" || prompt.kind === "authentication" ? "🔒 " : "❓ "}
@@ -1075,7 +1075,7 @@ export function ChatView({
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
             : (startupPrompt || prompt.answerStyle === 'codex-approval') && prompt.options.length ? text("내용을 확인한 뒤 아래에서 선택해 주세요. 선택한 답변만 터미널에 전달합니다.", "Review the details and choose below. Your selected answer will be sent to the terminal.")
             : nativeQuestion?.async ? text('작업은 계속 진행됩니다. 보내기를 누르면 Codex 질문에 답합니다.', 'Work continues. Send your answers to the queued Codex question.')
-            : prompt.answerStyle === 'codex-form' ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
+            : ['codex-form','claude-form'].includes(prompt.answerStyle) ? text('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.', 'Choose your answers and send them to continue.')
             : text("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.", "Waiting for your answer. Respond in the terminal to continue.")}</div>
           {promptError && <div className="chat-prompt-error" role="alert">{promptError}</div>}
           <div className="chat-prompt-options">
@@ -1093,7 +1093,7 @@ export function ChatView({
                   : option.label}
               </button>
             ))}
-            <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{prompt.kind === "authentication" ? text("로그인할 터미널 열기", "Open terminal to sign in") : text("터미널에서 답변", "Answer in terminal")}</button>
+            <button type="button" className="chat-prompt-option" onClick={onOpenTerminal}>{prompt.kind === "authentication" ? text("로그인할 터미널 열기", "Open terminal to sign in") : ['codex-form','claude-form'].includes(prompt.answerStyle) ? text('터미널 보기','View terminal') : text("터미널에서 답변", "Answer in terminal")}</button>
           </div>
         </div>
       )}

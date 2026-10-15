@@ -1,5 +1,6 @@
 import { questionDetails } from '../shared/chat-prompt.mjs';
 import { stripVTControlCharacters } from 'node:util';
+import { respondClaudeQuestion } from './claude-question-responder.mjs';
 export function queuedCodexQuestionKey(raw) {
   const screen = stripVTControlCharacters(String(raw || ''));
   if (!/\b[1-9]\d*\s+questions?\b/i.test(screen)) return null;
@@ -31,7 +32,7 @@ export function validateQuestionAnswers(question, answers) {
     || !Array.isArray(answers) || answers.length !== questions.length) throw new TypeError('Invalid question answers');
   return questions.map((q, i) => {
     const a = answers[i];
-    if (a?.id !== q.id || (a.optionIndex !== null && (!Number.isInteger(a.optionIndex) || a.optionIndex < 0 || a.optionIndex >= q.options.length))) throw new TypeError('Question choices changed');
+    if (a?.id !== q.id || a.optionIndices != null || (a.optionIndex !== null && (!Number.isInteger(a.optionIndex) || a.optionIndex < 0 || a.optionIndex >= q.options.length))) throw new TypeError('Question choices changed');
     const text = a.text ?? '';
     // Codex's native notes field is single-line. A newline can submit that form.
     if (typeof text !== 'string' || text.length > 2000 || /[\x00-\x1f\x7f]/.test(text) || (a.optionIndex === null && !text.trim())) throw new TypeError('Invalid answer text');
@@ -64,18 +65,27 @@ export class QuestionResponder {
     let wrote = false;
     try {
       const entry = this.entry(id);
-      if (!entry?.process || entry.aiToolId !== 'codex') throw new Error('Native question form unavailable');
+      if (!entry?.process || entry.ssh || !['codex','claude'].includes(entry.aiToolId)) throw new Error('Native question form unavailable');
       const initial = await this.current(id);
       const matches = result => result?.sessionId === request.sessionId && result.question?.id === request.questionId;
       if (!matches(initial)) throw new Error('This question has already changed or been answered');
+      const current = async (allowAnswered = false) => {
+        const result = await this.current(id);
+        if (this.entry(id) !== entry) throw new Error('The active question changed');
+        if (allowAnswered && result?.sessionId === request.sessionId && !result.question) return false;
+        if (!matches(result) || result.question.question !== initial.question.question) throw new Error('The active question changed');
+        return true;
+      };
+      const write = async data => { await current(); wrote = true; entry.process.write(data); await this.wait(120); };
+      if (entry.aiToolId === 'claude') {
+        await respondClaudeQuestion({ raw:initial.question.question, answers:request.answers, current,
+          snapshot:() => this.snapshot(id), write, wait:this.wait });
+        this.submitted.set(key,'sent'); return {status:'sent'};
+      }
       const details = questionDetails(initial.question.question);
       const remaining = details.questions.filter((_, i) => !(initial.question.answeredIndices || []).includes(i));
       const rawRemaining = JSON.stringify({ questions: remaining.map(q => ({ id: q.id, question: q.text, options: q.options, multiSelect: q.multiSelect })) });
       const answers = validateQuestionAnswers(rawRemaining, request.answers);
-      const current = async () => {
-        const result = await this.current(id);
-        if (this.entry(id) !== entry || !matches(result) || result.question.question !== initial.question.question) throw new Error('The active question changed');
-      };
       const frameFor = (i, selected) => {
         const f = codexQuestionFrame(this.snapshot(id));
         return f && f.index === i + 1 && f.total === answers.length && f.unanswered === answers.length - i
@@ -90,7 +100,6 @@ export class QuestionResponder {
         }
         throw new Error('Native question form changed. Check the terminal.');
       };
-      const write = async data => { await current(); wrote = true; entry.process.write(data); await this.wait(120); };
       if (initial.question.async && !codexQuestionFrame(this.snapshot(id))) {
         const key = queuedCodexQuestionKey(this.snapshot(id));
         if (!key) throw new Error('Queued question unavailable. Check the terminal.');

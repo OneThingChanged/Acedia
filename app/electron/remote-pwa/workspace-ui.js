@@ -4,8 +4,12 @@ const claudePath = 'M52.4285 162.873L98.7844 136.879L99.5485 134.602L98.7844 133
 export const searchText = value => String(value || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 const colors = ['#58a6ff', '#bc8cff', '#39d0d8', '#f0883e', '#7ee787', '#f778ba'];
 export const screenColor = number => colors[Math.max(0, Number(number || 1) - 1) % colors.length];
+export const providerLabel = tool => ({codex:'Codex',claude:'Claude',qwen:'Qwen',agy:'Antigravity',cline:'Cline'})[tool] || tool || 'Agent';
 export function providerLogo(tool) {
-  if (!['codex', 'claude'].includes(tool)) return make('span', 'provider-logo', '◇');
+  if (!['codex', 'claude'].includes(tool)) {
+    const icon = make('span', 'provider-logo', '◇');
+    icon.setAttribute('role','img'); icon.setAttribute('aria-label',providerLabel(tool)); return icon;
+  }
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', tool === 'codex' ? '0 0 24 24' : '0 0 248 248');
   svg.setAttribute('class', 'provider-logo'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', tool === 'codex' ? 'Codex' : 'Claude');

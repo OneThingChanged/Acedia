@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.82",
+  "multiAgentReleaseVersion": "1.8.1.83",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -14,6 +14,8 @@
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:terminal-settings-smoke": "node scripts/electron-terminal-settings-smoke.mjs",
     "electron:qwen-terminal-smoke": "node scripts/electron-qwen-terminal-smoke.mjs",
+    "electron:qwen-chat-smoke": "node node_modules/electron/cli.js scripts/electron-qwen-chat-smoke.mjs",
+    "qwen:chat-smoke": "node scripts/qwen-chat-cli-smoke.mjs",
     "electron:new-session-smoke": "node scripts/electron-new-session-smoke.mjs",
     "electron:terminal-links-smoke": "node scripts/electron-terminal-links-smoke.mjs",
     "electron:advanced-launch-smoke": "node scripts/electron-advanced-launch-smoke.mjs",
@@ -161,9 +163,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.82-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.83-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.82",
+      "uninstallDisplayName": "Acedia 1.8.1.83",
       "include": "electron/installer.nsh"
     },
     "publish": [

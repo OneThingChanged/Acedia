@@ -6,7 +6,16 @@ import {
   PassThroughTerminalFilter,
   SequencedTerminalBuffer,
   SynchronizedTerminalFilter,
+  TrackedTerminalFilter,
 } from "./terminal-stream.mjs";
+
+it('tracks the current Claude viewport while preserving clears, links and all output bytes', () => {
+  const filter=new TrackedTerminalFilter(4,40), data='old history\r\n\x1b[2J\x1b[H☐ Scope\r\nPick?\r\n❯ 1. Blue';
+  expect(filter.push(data)).toBe(data);expect(filter.viewportText()).toContain('☐ Scope\nPick?\n❯ 1. Blue');
+  expect(filter.push('\x1b[2J\x1b[Hnew form')).toBe('\x1b[2J\x1b[Hnew form');expect(filter.viewportText()).not.toContain('old history');
+  filter.resize(60,6);expect(filter.shadow.cols).toBe(60);expect(filter.shadow.rows).toBe(6);
+  filter.dispose();filter.dispose();expect(filter.viewportText()).toBe('');
+});
 
 it('delivers a fragmented nested Qwen repaint atomically and retains OSC links, colors and cursor controls', () => {
   const filter = new SynchronizedTerminalFilter();

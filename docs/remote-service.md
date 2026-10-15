@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -32,6 +32,12 @@ sources:
   - id: remote-client
     resource: ../app/electron/remote-pwa/app.js
     title: "Remote PWA client"
+  - id: video-preview
+    resource: ../app/electron/remote-pwa/video-preview.js
+    title: "Video access checks, playback errors and cancellation"
+  - id: video-ui-smoke
+    resource: ../app/scripts/electron-remote-video-smoke.mjs
+    title: "Remote and Dashboard MP4/WebM playback and file resolution verification"
   - id: remote-terminal-smoke
     resource: ../app/scripts/electron-remote-terminal-smoke.mjs
     title: "Remote and Dashboard terminal footer and container-resize verification"
@@ -95,9 +101,24 @@ sources:
   - id: chat-transcript
     resource: ../app/electron/services/chat-transcript.mjs
     title: "Transcript decoding and pending native questions"
+  - id: qwen-chat
+    resource: ../app/electron/services/qwen-chat.mjs
+    title: "Qwen transcript, lifecycle and exact session identity adapter"
+  - id: qwen-chat-cli-smoke
+    resource: ../app/scripts/qwen-chat-cli-smoke.mjs
+    title: "Installed Qwen CLI transcript and managed hook verification"
+  - id: qwen-chat-ui-smoke
+    resource: ../app/scripts/electron-qwen-chat-smoke.mjs
+    title: "Remote and Dashboard Qwen chat on desktop and mobile layouts"
   - id: question-ui-smoke
     resource: ../app/scripts/electron-chat-question-smoke.mjs
-    title: "Desktop and Remote question visibility smoke"
+    title: "Desktop, Remote and Dashboard question and answer verification"
+  - id: claude-question-responder
+    resource: ../app/electron/services/claude-question-responder.mjs
+    title: "Verified Claude native radio, checkbox and custom answers"
+  - id: claude-question-cli-smoke
+    resource: ../app/scripts/claude-question-cli-smoke.mjs
+    title: "Isolated installed Claude AskUserQuestion answer and resume verification"
   - id: command-approvals
     resource: ../app/electron/services/command-approval.mjs
     title: "Live Codex command approval identity and verified native selection"
@@ -312,6 +333,19 @@ Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 
 다운로드가 있다. Markdown은 원본 `.md`/`.markdown`, HTML은 원본 HTML 파일
 한 개로 저장하며 JSON·이미지·MP4/WebM도 같은 동작을 사용한다.
 
+2026-10-15 소스부터 ZIP도 채팅 Markdown 링크·인라인 코드·일반 경로와 관련 파일
+카드에서 누르면 바로 다운로드한다. 결과 폴더 목록과 Markdown 문서의 상대 ZIP 링크도
+같은 다운로드 처리기를 사용한다. Windows 전체 경로, `file://` 링크, 한글·공백 파일명과
+대문자 `.ZIP`을 지원한다. ZIP은 텍스트 미리보기로 읽거나 서버에서 압축을 풀지 않는다.
+기존 `HEAD` 확인 뒤 원본을 스트리밍하며, 없는 파일은 다운로드를 시작하지 않고 안내한다.
+인증·소유자·프로젝트 경계와 기존 실행 파일 형식 제한은 유지한다. PWA 캐시는 **v100**이다.
+
+이 수정 전에는 ZIP이 링크 인식·클릭 분기·다운로드 허용 목록에서 모두 누락됐다.
+회귀 검사 59개와 [실제 브라우저 검사](../app/scripts/electron-remote-zip-smoke.mjs)에서
+Remote·Dashboard 각각 1280px/390px의 채팅·관련 파일·폴더·문서 링크 다운로드 24건을
+확인했다. UTF-8 파일명과 원본 ZIP 바이트를 검증했으며 실제 사용 중인 서버에는 연결하지
+않았다. [1.8.1.83 EXE](release-1-8-1-83.md)에 포함하며, 해당 호스트 설치 후 제공된다.
+
 `GET /api/docs/download`는 기존 `projectId`, `path`, 선택적 `agentId`로 파일을
 해석한다. 프로젝트·세션 상대 경로와 등록된 프로젝트/Unreal 작업공간의 전체 경로를
 지원한다. Remote 인증·승인 뒤 실행하며 일반 접속자의 프로젝트 밖 경로, 외부로 향한 링크, SSH와
@@ -475,6 +509,46 @@ These changes are included in EXE 1.8.1.38 with cache v81; release verification
 is recorded in [the release notes](release-1-8-1-38.md), and user installation
 remains separate.[^session-filter-smoke][^remote-ui-smoke]
 
+## Qwen chat (2026-10-15 source)
+
+Local Qwen sessions now support Chat in Remote and Dashboard, using the same
+transcript adapter as desktop Chat. User and assistant messages, reasoning,
+parallel tool calls and their matching results, related files and image messages
+use the existing chat surface. Recent history loads first; earlier messages,
+image bytes and work details load on demand. Ordinary messages use the existing
+host submission coordinator and target the selected Qwen session. The assistant
+label displays **Qwen**.[^qwen-chat][^chat-render]
+
+Qwen's native `message.parts` JSONL records are adapted individually, preserving
+the conversation store's original byte offsets and incremental ingestion.
+Transcript roots use `QWEN_RUNTIME_DIR`, then `QWEN_HOME`, then `~/.qwen`, with
+`projects` appended. Association requires the exact provider session ID or that
+agent's persisted SessionStart hook note, matching the project folder and a
+transcript inside the configured Qwen roots. No newest-file guess or Codex
+transcript fallback is used. This does not add Qwen automatic session resume.
+[^qwen-chat][^conversation-store]
+
+Managed Qwen hooks now invoke the shared Node helper directly inside Qwen's
+configured shell. The previous nested PowerShell invocation could fail before
+sending SessionStart or work events. Unrelated project settings and user hooks
+are preserved. After installing the host update, restart an existing Qwen
+session so it reads the new managed hooks. A final assistant response ends the
+displayed work state; background auto-memory request telemetry cannot turn it
+back into Working. Qwen `ask_user_question` calls are detected and shown, but
+native structured answers still use **Answer in terminal**. Qwen model/effort
+editing is not added by this change.[^qwen-chat][^chat-transcript]
+
+Installed Qwen **0.25.1** passed an isolated native CLI check against a loopback
+mock API: SessionStart identity, native transcript ingestion and final idle state
+passed, including a background memory request. Remote and Dashboard each passed
+**1100px and 390px** browser checks for messages, images, file previews, parallel
+tool results, earlier-history loading, message submission and Terminal switching.
+The TypeScript/Vite build and the release **1,424-test / 195-file** suite passed,
+including the added managed-hook regression. Real user sessions and external
+model APIs were not used for these
+checks. This source shares cache **v100** with the ZIP, Claude answer and video
+fixes in [1.8.1.83](release-1-8-1-83.md).[^qwen-chat-cli-smoke][^qwen-chat-ui-smoke]
+
 ## Session and content surface
 
 Desktop Chat, Dashboard and Remote show an **Answer needed / 답변 대기 중**
@@ -490,7 +564,8 @@ transcript tail when their hook omitted the question. Tool call IDs identify
 answers, so an unrelated tool result cannot clear the question. New turns,
 completion and cancellation clear pending questions. All question text, choices
 and descriptions remain visible; identified Codex structured forms support
-guarded answers from Chat. Other native forms remain terminal actions. Existing single-choice Claude and explicit
+guarded answers from Chat. Claude `AskUserQuestion` forms also support grouped
+answers, radio choices, checkboxes and custom text, as described below. Explicit
 numbered menus keep their buttons. Failed writes stop the remaining key sequence
 and leave the terminal action available. Scheduled messages pause while an
 answer is needed. Codex `request_user_input_async` questions now appear while
@@ -512,6 +587,31 @@ send another alert.
 Chat component and Remote client at 1024px and 390px using an isolated profile,
 including fallback visibility, scrolling, terminal navigation, stale-state
 clearing and failed answer writes. It does not call a live model.[^chat-transcript][^question-ui-smoke]
+
+The 2026-10-15 source adds local Claude structured answers to Desktop Chat,
+Remote and Dashboard. Choose an answer for each question, optionally select
+multiple checkboxes or enter a custom answer, then press **Send answers / 답변
+보내기**. The existing authenticated `/api/session/answer` route carries the
+conversation and question call ID; checkbox fields use zero-based
+`optionIndices`. No account or session setup is required. The host checks the
+live Claude viewport and selected rows after each movement and compares the
+final review with the requested answers. Changed forms and uncertain partial
+delivery stop without automatic replay; **View terminal / 터미널 보기** remains
+available. SSH and unrecognized layouts retain the terminal fallback.
+Claude transcript records are processed in timestamp order when available,
+because a streamed tool call can be flushed before its preceding user prompt.
+This prevents that older prompt from dismissing the current question.
+[^claude-question-responder][^chat-transcript]
+
+Installed Claude **2.1.292** passed three native cases: a three-question form
+with Korean custom text, checkbox choices with a custom answer, and a single
+question that submits immediately. The fixture uses an isolated profile and a
+loopback mock API. Desktop and Remote/Dashboard UI checks passed narrow and
+wide layouts, request identity, failed submissions and duplicate-click guards.
+The TypeScript/Vite build and all **1,411 tests in 193 files** passed; three
+files required a corrected tool PATH and lower test concurrency. These changes
+and cache **v100** are included in [1.8.1.83](release-1-8-1-83.md).
+[^claude-question-cli-smoke][^question-ui-smoke]
 
 Current source also renders local Codex **command execution approvals** in
 Desktop Chat, Remote and Dashboard. The **Approval needed / 승인 필요** card
@@ -938,9 +1038,36 @@ This does not extend the separate local website hosting proxy.
 
 Verification: focused HTTP/link tests cover a 30MB file, range and suffix requests,
 invalid ranges and path traversal. `app/scripts/electron-remote-video-smoke.mjs`
-uses FFmpeg to generate a WebM fixture and checks real Electron chat playback,
-preview cleanup, Documents listing and seeking at mobile width. Actual Android
+generates H.264 MP4 and WebM fixtures, or accepts a supplied MP4 through
+`ACEDIA_VIDEO_FIXTURE`. It checks chat playback, preview cleanup, Documents
+playback and seeking on Remote and Dashboard. Actual Android
 WebView/device codec coverage and deployed tunnel playback remain unverified.
+
+2026-10-15 source fixes filename-only links such as `clip.mp4` in an assistant
+answer. Previously, a video saved under an Unreal workspace's `Saved/...`
+directory was requested from the plugin session directory and returned 404.
+The generic player error made this look like a codec problem. A supplied
+1280×720 H.264/yuv420p MP4 reproduced the missing filename request; its complete
+path returned a valid 206 range response and played in the isolated browser.
+
+Assistant turns now resolve filename-only links against their own existing
+file associations. A unique recorded path is used while the displayed name
+stays unchanged. Explicit relative/full paths, ambiguous names and names without
+evidence remain unchanged; no filesystem scan or cross-session search is added.
+This applies to supported file links, including videos and ZIPs. Existing API
+authentication and filesystem boundaries still authorize the resolved path.
+Chat and Documents verify access with HEAD before assigning a video source,
+and distinguish missing files, access denial, HTTP errors, network interruption
+and decoder/format errors. Closing or replacing a preview cancels the pending
+check and prevents stale media loads.[^chat-markup][^video-preview]
+
+Validation passed **76 tests in 10 files** and four actual browser cases
+(Remote/Dashboard, 1100px/390px) using an isolated copy of the supplied MP4.
+Each browser case checks filename resolution, playback/seeking, 404 feedback,
+invalid-video feedback, closing during a delayed check and Documents WebM.
+Original media and user sessions were unchanged. These changes share the
+**v100** cache with the ZIP and Claude answer fixes in [1.8.1.83](release-1-8-1-83.md).
+[^video-ui-smoke]
 
 
 [^web-services]: Dashboard and Remote server
@@ -950,6 +1077,8 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^session-context-menu]: Session context-menu target and actions
 [^session-model-ui-smoke]: Remote model controls and context-menu Restart UI verification
 [^remote-client]: Remote PWA client
+[^video-preview]: Video HTTP access checks, media error classification and cancellation
+[^video-ui-smoke]: Isolated Remote and Dashboard video playback and failure verification
 [^remote-terminal-smoke]: Remote and Dashboard terminal footer and container-resize verification
 [^session-model-memory]: Current native model observation and per-session model memory
 [^session-model-memory-tests]: Native model repaint reconciliation and restart memory regression checks
@@ -969,7 +1098,12 @@ WebView/device codec coverage and deployed tunnel playback remain unverified.
 [^chat-history]: Chat page merging and sequence ordering
 [^chat-questions]: Shared question and permission card parsing
 [^chat-transcript]: Transcript decoding and pending native questions
+[^qwen-chat]: Qwen native records, lifecycle and session ownership
+[^qwen-chat-cli-smoke]: Isolated installed Qwen CLI with managed hooks and a loopback model API
+[^qwen-chat-ui-smoke]: Remote and Dashboard Qwen chat verification at 1100px and 390px
 [^question-ui-smoke]: Desktop and Remote question visibility smoke
+[^claude-question-responder]: Claude form identity, native selection and final review verification
+[^claude-question-cli-smoke]: Actual Claude CLI with an isolated profile and local mock API
 [^command-approvals]: Live Codex command approval identity and verified native selection
 [^approval-ui-smoke]: Desktop, Remote and Dashboard approval choices and changed-command checks
 [^approval-cli-smoke]: Isolated real Codex command approval allow and deny verification

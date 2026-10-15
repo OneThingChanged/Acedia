@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v99";
+const CACHE_NAME = "multiagent-remote-v100";
 const STATIC_ASSETS = [
   "/pwa/chat-files.js",
   "/pwa/model-editor.js",
@@ -18,6 +18,7 @@ const STATIC_ASSETS = [
   "/pwa/chat-markup.js",
   "/pwa/image-zoom.js",
   "/pwa/chat-render.js",
+  "/pwa/video-preview.js",
   "/pwa/chat-history.js",
   "/pwa/chat-pagination.js",
   "/pwa/chat-prompt.js",

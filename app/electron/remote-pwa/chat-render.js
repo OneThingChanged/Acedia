@@ -1,7 +1,7 @@
 import { t } from "./i18n.js";
 import { make } from "./dom.js";
 import { inlineMd, mdToHtml } from "./chat-markup.js";
-import { providerLogo } from './workspace-ui.js';
+import { providerLogo, providerLabel } from './workspace-ui.js';
 import { renderFiles, filesForTurn, renderStoredImages } from './chat-files.js';
 
 function renderChatUser(text, agent, block) {
@@ -36,23 +36,25 @@ function renderDiff(diff) {
 }
 
 function renderAssistantTurn(run, agent = null, artifacts = [], owner = {}) {
+  const turnFiles = filesForTurn(artifacts, run);
   const turn = make("div", "chat-turn");
   const role = make("div", "chat-role");
-  role.append(providerLogo(agent?.aiToolId), document.createTextNode(agent?.aiToolId === 'claude' ? 'Claude' : 'Codex'));
+  role.append(providerLogo(agent?.aiToolId), document.createTextNode(providerLabel(agent?.aiToolId)));
   turn.appendChild(role);
 
   const tools = [];
-  let pendingCall = null;
+  const pendingCalls = [];
   const bodyNodes = [];
   for (const block of run) {
     if (block.kind === "tool-call") {
-      pendingCall = { name: block.name, input: block.input, summary: block.summary, diff: block.diff || null, output: null, isError: false, deferredSequences: block.deferred ? [block.sequence] : [] };
-      tools.push(pendingCall);
+      const call = { callId:block.callId, name: block.name, input: block.input, summary: block.summary, diff: block.diff || null, output: null, isError: false, deferredSequences: block.deferred ? [block.sequence] : [] };
+      pendingCalls.push(call); tools.push(call);
     } else if (block.kind === "tool-result") {
-      if (pendingCall && pendingCall.output === null) {
+      const index = block.callId ? pendingCalls.findIndex(call => call.callId === block.callId) : pendingCalls.findIndex(call => !call.callId);
+      const pendingCall = index >= 0 ? pendingCalls.splice(index,1)[0] : null;
+      if (pendingCall) {
         pendingCall.output = block.output; pendingCall.isError = block.isError; if (block.deferred) pendingCall.deferredSequences.push(block.sequence);
         if (!pendingCall.diff && block.diff) pendingCall.diff = block.diff;
-        pendingCall = null;
       } else {
         tools.push({ name: "result", input: null, output: block.output, isError: block.isError, diff: block.diff || null, deferredSequences: block.deferred ? [block.sequence] : [] });
       }
@@ -66,7 +68,7 @@ function renderAssistantTurn(run, agent = null, artifacts = [], owner = {}) {
       bodyNodes.push(d);
     } else if (block.kind === "text") {
       const md = make("div", "chat-md");
-      md.innerHTML = mdToHtml(block.text, agent);
+      md.innerHTML = mdToHtml(block.text, agent, turnFiles);
       bodyNodes.push(md);
     } else if (block.kind === "image") {
       bodyNodes.push(make("div", "chat-md", t("🖼 이미지")));
@@ -113,7 +115,7 @@ function renderAssistantTurn(run, agent = null, artifacts = [], owner = {}) {
     turn.appendChild(group);
   }
   for (const node of bodyNodes) turn.appendChild(node);
-  const files = renderFiles(filesForTurn(artifacts, run), agent); if (files) turn.append(files);
+  const files = renderFiles(turnFiles, agent); if (files) turn.append(files);
   return turn;
 }
 

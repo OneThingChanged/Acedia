@@ -73,6 +73,8 @@ describe("Electron IPC contract", () => {
   it("accepts native question answers and rejects missing identity or terminal controls", () => {
     const args = { id: "session", sessionId: "cli-session", questionId: "call-1", answers: [{ id: "q1", optionIndex: 1, text: "선택" }] };
     expect(contract.assertInvokeRequest("answer_question", args)).toEqual(args);
+    expect(contract.assertInvokeRequest('answer_question',{...args,answers:[{id:'claude-0',optionIndex:null,optionIndices:[0,2],text:'기타'}]})).toBeTruthy();
+    for(const optionIndices of [[0,0],[-1],[12],['0']]) expect(()=>contract.assertInvokeRequest('answer_question',{...args,answers:[{id:'claude-0',optionIndex:null,optionIndices}]})).toThrow();
     expect(() => contract.assertInvokeRequest("answer_question", { ...args, questionId: "" })).toThrow();
     expect(() => contract.assertInvokeRequest("answer_question", { ...args, answers: [{ id: "q1", optionIndex: null, text: "first\nsecond" }] })).toThrow();
   });

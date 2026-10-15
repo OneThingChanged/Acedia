@@ -44,7 +44,7 @@ export class ActiveQuestions {
     for (const id of this.cache.keys()) if (!live.has(id)) this.cache.delete(id);
   }
   async read({ id, tool, root, transcriptPath, sessionId, startedAt = 0 }) {
-    if (!['codex', 'claude'].includes(tool) || !sessionId || !transcriptPath || !root
+    if (!['codex', 'claude', 'qwen'].includes(tool) || !sessionId || !transcriptPath || !root
       || !transcriptPath.toLowerCase().includes(sessionId.toLowerCase()) || !isTranscriptInsideRoot(root, transcriptPath)) return null;
     if (this.pending.has(id)) { await this.pending.get(id); return this.read({ id, tool, root, transcriptPath, sessionId, startedAt }); }
     const operation = this.#read({ id, tool, transcriptPath, sessionId, startedAt });

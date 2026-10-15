@@ -605,8 +605,8 @@ export class ConversationStore {
       const parsed = parseChatTranscript(text, row.provider);
       const sourceBlock = parsed[row.blockIndex];
       if (!sourceBlock || sourceBlock.role !== stored.role || sourceBlock.kind !== stored.kind || sourceBlock.text !== stored.text) return [];
-      if (row.provider === "claude" && sourceBlock.kind !== "image") return [];
-      const imageIndex = row.provider === "claude"
+      if (['claude','qwen'].includes(row.provider) && sourceBlock.kind !== "image") return [];
+      const imageIndex = ['claude','qwen'].includes(row.provider)
         ? parsed.slice(0, row.blockIndex).filter(block => block.kind === "image").length : row.blockIndex;
       return transcriptImages(JSON.parse(text), row.provider, imageIndex);
     } catch { return []; }

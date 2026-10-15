@@ -11,7 +11,7 @@ import { codexRemoteTuiArgs } from "./account-pool-session.mjs";
 import { guiTerminalEnvironment } from "./dev-terminal-environment.mjs";
 import { refreshWindowsPath } from './executable-path.mjs';
 import { buildInteractiveSshArgs, findWindowsExecutable } from "./ssh-service.mjs";
-import { CodexScrollbackFilter, PassThroughTerminalFilter, SynchronizedTerminalFilter } from "./terminal-stream.mjs";
+import { CodexScrollbackFilter, PassThroughTerminalFilter, SynchronizedTerminalFilter, TrackedTerminalFilter } from "./terminal-stream.mjs";
 import { terminateWindowsProcessTree } from "./process-tree.mjs";
 
 const HOOK_TOOLS = new Set(["codex", "claude", "qwen"]);
@@ -212,7 +212,8 @@ export function createTerminalLauncher({
     const outputFilter =
       aiToolId === "codex"
         ? new CodexScrollbackFilter(ptyRows, ptyCols)
-        : aiToolId === 'qwen' ? new SynchronizedTerminalFilter() : new PassThroughTerminalFilter();
+        : aiToolId === 'qwen' ? new SynchronizedTerminalFilter()
+          : aiToolId === 'claude' && !ssh ? new TrackedTerminalFilter(ptyRows, ptyCols) : new PassThroughTerminalFilter();
     let processHandle;
     const agyLaunchId = !ssh && aiToolId === "agy" ? randomUUID() : "";
     try {

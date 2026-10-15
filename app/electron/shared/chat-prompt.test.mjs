@@ -11,7 +11,7 @@ describe("chat questions", () => {
     const message = "Login expired · Please run /login";
     expect(parseChatPrompt("waiting", `What does '${message}' mean?`, null, "claude").kind).toBe("question");
     expect(parseChatPrompt("waiting", message, null, "codex").kind).toBe("question");
-    expect(parseChatPrompt("waiting", JSON.stringify({ questions: [{ question: message, options: ["A", "B"] }] }), null, "claude").answerStyle).toBe("arrow");
+    expect(parseChatPrompt("waiting", JSON.stringify({ questions: [{ question: message, options: ["A", "B"] }] }), null, "claude").answerStyle).toBe("claude-form");
   });
   it.each(["waiting", "blocked", "attention", "question"])("shows a fallback for %s without details", status => {
     expect(parseChatPrompt(status, null, null, "codex")).toMatchObject({ text: "", answerStyle: "terminal", options: [] });
@@ -32,11 +32,12 @@ describe("chat questions", () => {
     expect(prompt.text).toContain("Codex — 코딩");
     expect(prompt.text).toContain("어느 프로젝트인가요?");
   });
-  it("preserves a single-choice Claude selector but uses the terminal for multi-select", () => {
+  it("provides stable Claude fields for single-choice, multi-question and multi-select forms", () => {
     const questions = [{ question: "Pick", options: ["A", "B"] }];
-    expect(parseChatPrompt("waiting", JSON.stringify({ questions }), null, "claude")).toMatchObject({ answerStyle: "arrow", options: [{ label: "A", send: "1" }, { label: "B", send: "2" }] });
+    expect(parseChatPrompt("waiting", JSON.stringify({ questions }), null, "claude")).toMatchObject({ answerStyle: "claude-form", options: [],questions:[{id:'claude-0'}] });
     questions[0].multiSelect = true;
-    expect(parseChatPrompt("waiting", JSON.stringify({ questions }), null, "claude").answerStyle).toBe("terminal");
+    questions.push({question:'Period?',options:['Week','Month']},{question:'Backend?',options:['One','Both']});
+    expect(parseChatPrompt("waiting", JSON.stringify({ questions }), null, "claude")).toMatchObject({answerStyle:'claude-form',questions:[{id:'claude-0',multiSelect:true},{id:'claude-1'},{id:'claude-2'}]});
   });
   it("renders malformed or clipped structured data as a fallback rather than raw JSON", () => {
     expect(questionDetails('{"questions":[{"question":"unfinished')).toEqual({ text: "", questions: [] });

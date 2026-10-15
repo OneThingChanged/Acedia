@@ -1,3 +1,5 @@
+import { normalizeQwenRecord } from './qwen-chat.mjs';
+
 const MAX_IMAGE_URL = Math.ceil(25 * 1024 * 1024 * 4 / 3) + 128;
 
 function imageSource(part) {
@@ -16,6 +18,7 @@ function imageSource(part) {
 
 // Image bitmaps are requested separately instead of copied through every poll.
 export function transcriptImages(record, provider, blockIndex) {
+  if (provider === 'qwen') { record = normalizeQwenRecord(record); provider = 'claude'; }
   if (provider === "codex") {
     const message = record?.type === "response_item" ? record.payload : null;
     if (message?.type !== "message" || message.role !== "user" || blockIndex !== 0) return [];

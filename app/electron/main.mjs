@@ -95,6 +95,7 @@ import { resolveTerminalPath } from "./services/terminal-path-service.mjs";
 import { sanitizeTerminalOutput } from "./services/terminal-sanitize.mjs";
 import { parseChatTranscript, deriveTurnLifecycleDetails, derivePendingQuestion } from "./services/chat-transcript.mjs";
 import { normalizeTranscriptPath, isTranscriptInsideRoot } from "./services/transcript-path.mjs";
+import { ownedQwenTranscript } from './services/qwen-chat.mjs';
 import { CodexTurnCompletion } from "./services/codex-turn-completion.mjs";
 import {
   LocalDashboardService,
@@ -513,7 +514,8 @@ async function currentQuestion(id) {
   const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
   const approval = commandApprovals.read(id, sessionId);
   if (approval) return approval;
-  const root = accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
+  const root = entry.aiToolId === 'qwen' ? sessionService.transcriptRoots('qwen')[0]
+    : accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
   const result = await activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
     transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt });
   if (ptys.get(id) !== entry) return null;
@@ -673,7 +675,8 @@ function publishAgentHookEvent(eventName, payload) {
           : transcriptPath.replace(/\\/g, "/").toLowerCase().includes("/.codex/sessions/")
             ? "codex"
             : null);
-      if (provider === "codex" || provider === "claude") {
+      if (['codex','claude','qwen'].includes(provider)) {
+        agentTranscriptTool.set(payload.id, provider);
         void conversationStoreManager.ingestTranscript({
           agentId: payload.id,
           sessionId: payload.session_id,
@@ -3553,7 +3556,7 @@ function findTranscriptBySessionId(root, tool, sessionId) {
       if (entry.isDirectory()) { stack.push(full); continue; }
       const name = entry.name.toLowerCase();
       if (!name.endsWith(".jsonl")) continue;
-      if (tool === "claude" ? name === `${sid}.jsonl` : name.includes(sid)) return full;
+      if (['claude','qwen'].includes(tool) ? name === `${sid}.jsonl` : name.includes(sid)) return full;
     }
   }
   return null;
@@ -3568,7 +3571,8 @@ function findTranscriptBySessionId(root, tool, sessionId) {
 function resolveChatTranscriptBySession(preferredTool, sessionId, binding = null) {
   if (!sessionId) return null;
   const other = preferredTool === "codex" ? "claude" : "codex";
-  const tools = binding ? [binding.toolId] : preferredTool ? [preferredTool, other] : ["claude", "codex"];
+  const tools = binding ? [binding.toolId] : preferredTool === 'qwen' ? ['qwen']
+    : preferredTool ? [preferredTool, other] : ["claude", "codex"];
   for (const tool of tools) {
     const roots = binding ? [accountTranscriptRoot(tool, binding.accountId)] : sessionService.transcriptRoots(tool);
     for (const root of roots) {
@@ -3593,7 +3597,7 @@ function conversationMetadataForAgent(agentId) {
 }
 
 async function storedChatBlocks({ id, sessionId, tool, beforeSequence, afterSequence, conversationId, turnLimit, limit }) {
-  if (!sessionId || (tool !== "codex" && tool !== "claude")) return null;
+  if (!sessionId || !['codex','claude','qwen'].includes(tool)) return null;
   return conversationStoreManager.listBlocks({
     agentId: id,
     sessionId,
@@ -3621,6 +3625,15 @@ async function readAgentChatBlocks(agentId, sessionIdArg, options = {}) {
   const metadata = conversationMetadataForAgent(id);
   const catalogAgent = metadata.catalogAgent;
   const declaredTool = metadata.provider;
+  if (declaredTool === 'qwen' && (!agentTranscripts.has(id) || !agentSessionIds.has(id))) {
+    const owned = ownedQwenTranscript(sessionService.notes.get(id), {
+      roots: sessionService.transcriptRoots('qwen'), folder: metadata.projectPath,
+      sessionId: asString(sessionIdArg).trim() || agentSessionIds.get(id) || catalogAgent?.lastSessionId,
+    });
+    if (owned) {
+      agentTranscripts.set(id, owned.path); agentSessionIds.set(id, owned.sessionId); agentTranscriptTool.set(id, 'qwen');
+    }
+  }
   // A just-switched account overrides stale renderer/catalog snapshots until
   // its own hook or scoped startup lookup reports the selected conversation.
   const binding = accountBindings.get(id) || (!catalogAgent?.sshHostId && accountsForTool(declaredTool)
@@ -3666,7 +3679,7 @@ async function readAgentChatBlocks(agentId, sessionIdArg, options = {}) {
     }
   }
   if (!transcriptPath) {
-    if (declaredTool !== "codex" && declaredTool !== "claude") {
+    if (!['codex','claude','qwen'].includes(declaredTool)) {
       return { blocks: [], truncated: false, missing: true, unsupported: true, sessionId };
     }
     const stored = await storedChatBlocks({
@@ -5527,7 +5540,7 @@ async function invokeCommand(event, command, rawArgs) {
         null;
       if (
         !sessionId ||
-        (metadata.provider !== "codex" && metadata.provider !== "claude")
+        !['codex','claude','qwen'].includes(metadata.provider)
       ) {
         return null;
       }

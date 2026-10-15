@@ -8,7 +8,11 @@ const services = [];
 const roots = [];
 afterEach(async () => {
   await Promise.all(services.splice(0).map(service => service.stop()));
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) {
+    expect(path.dirname(root)).toBe(path.resolve(os.tmpdir()));
+    expect(path.basename(root)).toMatch(/^acedia-document-download-/);
+    fs.rmSync(root, { recursive: true });
+  }
 });
 
 async function fixture(channel = "remote") {
@@ -47,6 +51,29 @@ async function fixture(channel = "remote") {
 }
 
 describe("Remote original document downloads", () => {
+  it.each(['remote', 'local'])('downloads ZIP links and folder entries without treating the binary as text on %s', async channel => {
+    const { project, outside, url, download } = await fixture(channel);
+    const name = '연동 묶음 (공개키).ZIP', source = Buffer.from([0x50,0x4b,3,4,0,0,0,0,255,128,0,0]);
+    fs.writeFileSync(path.join(project, 'docs', name), source);
+    fs.writeFileSync(path.join(outside, 'owner-result.zip'), source);
+    const folder = await fetch(`${url}/api/files/folder?${new URLSearchParams({ projectId:'p1', path:'docs' })}`).then(response => response.json());
+    expect(folder.entries.find(file => file.name === name)).toMatchObject({ kind:'archive' });
+    for (const [requested, extra] of [[`docs/${name}`, {}], [name, {agentId:'a1'}], [path.join(project,'docs',name), {}], [path.join(outside,'owner-result.zip'), {}]]) {
+      const head = await download(requested, {method:'HEAD'}, extra);
+      expect(head.status, requested).toBe(200);expect(await head.text()).toBe('');
+      expect(head.headers.get('content-length')).toBe(String(source.length));
+      expect(head.headers.get('content-disposition')).toMatch(/^attachment;/);
+      const response = await download(requested, undefined, extra);
+      expect(response.status, requested).toBe(200);
+      expect(response.headers.get('content-type')).toBe('application/octet-stream');
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(source);
+    }
+    expect((await download('../outside/owner-result.zip')).status).toBe(403);
+    if (channel === 'remote') for (const method of ['GET', 'HEAD']) {
+      expect((await download('docs/'+name, {method,headers:{'cf-connecting-ip':'203.0.113.10'}})).status).toBe(401);
+    }
+    expect((await fetch(`${url}/api/docs/read?${new URLSearchParams({projectId:'p1',path:'docs/'+name})}`)).status).toBe(415);
+  });
   it.each(["remote", "local"])("downloads original bytes with UTF-8 filenames and body-free HEAD on %s", async channel => {
     const { download, source, name } = await fixture(channel);
     const response = await download(`docs/${name}`);

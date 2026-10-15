@@ -2,11 +2,35 @@ import * as links from "./chat-markup.js";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { filesForTurn } from './chat-files.js';
 
 const appScript = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.url)), "utf8");
 
 describe("Remote chat file links", () => {
   const agent = { id: "agent-1", projectId: "project-1" };
+
+  it('resolves filename-only results from the same answer to their recorded full path', () => {
+    const file = { path:'G:/Unreal/Saved/ToonStyleClaude/video/ToonStylePlus_WithCharacter.mp4', sourceSequence:2 };
+    const turn = [{sequence:2,kind:'tool-result'}, {sequence:3,kind:'text'}];
+    const files = filesForTurn([file, {path:'G:/Other/ToonStylePlus_WithCharacter.mp4',sourceSequence:1}],turn);
+    for (const text of ['`ToonStylePlus_WithCharacter.mp4`','[영상](ToonStylePlus_WithCharacter.mp4)','ToonStylePlus_WithCharacter.mp4']) {
+      const html = links.inlineMd(text,agent,files);
+      expect(html).toContain(`data-chat-file-path="${file.path}"`);
+      expect(html).toContain('data-chat-file-kind="video"');
+      expect(html).toContain('ToonStylePlus_WithCharacter.mp4');
+    }
+    expect(links.mdToHtml('**영상**\n- `ToonStylePlus_WithCharacter.mp4`',agent,files)).toContain(`data-chat-file-path="${file.path}"`);
+    expect(links.inlineMd('`ToonStylePlus_WithCharacter.mp4`',agent,filesForTurn([file],[{sequence:4}]))).toContain('data-chat-file-path="ToonStylePlus_WithCharacter.mp4"');
+  });
+
+  it('keeps explicit paths and ambiguous, missing or deleted filename references unchanged', () => {
+    const files=[{path:'G:/A/demo.mp4'},{path:'G:/B/demo.mp4'}];
+    for(const path of ['demo.mp4','./demo.mp4','videos/demo.mp4','G:/Exact/demo.mp4','missing.mp4'])expect(links.resolveChatFileReference(path,files)).toBe(path);
+    expect(links.resolveChatFileReference('demo.mp4',[{path:'G:/A/demo.mp4',change:{operation:'delete'}}])).toBe('demo.mp4');
+    expect(links.resolveChatFileReference('demo.mp4',[{path:'G:/A/demo.mp4'},{path:'g:\\a\\demo.mp4'}])).toMatch(/^[gG]:/);
+    expect(links.resolveChatFileReference('DEMO.MP4',[{path:'G:/A/demo.mp4'}])).toBe('G:/A/demo.mp4');
+    expect(links.resolveChatFileReference('demo.mp4',[{path:'https://example.com/demo.mp4'}])).toBe('demo.mp4');
+  });
 
   it("links plain, code-formatted, and Markdown-linked project files", () => {
     const html = links.inlineMd([
@@ -40,6 +64,25 @@ describe("Remote chat file links", () => {
     expect(links.inlineMd("(K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json)", agent))
       .toContain('data-chat-file-path="K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json"');
     expect(links.chatFileKind("K:/Project/UProject1/Saved/EndfieldWuling/placement-report.json")).toBe("text");
+  });
+
+  it('links ZIP results in Markdown, code spans, bare paths and encoded file URLs as archives', () => {
+    const archive = 'D:/AI/AXWiki/data-dev/webcanvas-integration-review/webcanvas-artax-live-handoff.zip';
+    for (const message of [archive, `\`${archive}\``, `[연동 묶음](${archive})`, `(${archive}).`]) {
+      const html = links.inlineMd(message, agent);
+      expect(html).toContain(`data-chat-file-path="${archive}"`);
+      expect(html).toContain('data-chat-file-kind="archive"');
+      expect(html.match(/class="chat-file-link/g)).toHaveLength(1);
+    }
+    expect(links.inlineMd('[공개키 묶음](file:///C:/Users/test/Downloads/webcanvas%20공개키.ZIP)', agent))
+      .toContain('data-chat-file-path="C:/Users/test/Downloads/webcanvas 공개키.ZIP"');
+    expect(links.inlineMd('`exports/결과.zip`', agent)).toContain('data-chat-file-kind="archive"');
+    const windows = 'C:\\Users\\mgr_neo_svr\\Downloads\\webcanvas-artax-public-20261014.zip';
+    expect(links.inlineMd(windows, agent)).toContain(`data-chat-file-path="${windows}"`);
+    expect(links.inlineMd('/G:/Project/exports/result.zip', agent)).toContain('data-chat-file-path="G:/Project/exports/result.zip"');
+    expect(links.inlineMd('https://example.com/result.zip', agent)).toContain('href="https://example.com/result.zip"');
+    expect(links.chatFileKind('exports/result.zip.exe')).toBeNull();
+    expect(links.inlineMd('exports/result.zip.exe', agent)).not.toContain('data-chat-file-path');
   });
 
   it('opens complete code extensions and file URLs without truncating a path', () => {

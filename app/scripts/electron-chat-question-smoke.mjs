@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { RemoteDashboardService } from "../electron/services/web-services.mjs";
+import { RemoteDashboardService, LocalDashboardService } from "../electron/services/web-services.mjs";
 import { startupTrust, startupHooks } from "./fixtures/codex-startup-screens.mjs";
 
 const require = createRequire(import.meta.url);
@@ -15,6 +15,11 @@ const questions = JSON.stringify({ questions: [
   { id: 'project', question: "어느 프로젝트에서 진행할까요?", options: [{ label: "현재 프로젝트" }, { label: "새 프로젝트" }] },
 ] });
 const singleQuestion = JSON.stringify({ questions: [{ question: "선택해 주세요", options: [{ label: "A" }, { label: "B" }] }] });
+const claudeQuestions=JSON.stringify({questions:[
+  {header:'Scope',question:'어느 범위로 구현할까요?',options:[{label:'A+B+C (권장)',description:'기간 필터와 묶음 접기'},{label:'A+B',description:'최근 항목과 기간만'}]},
+  {header:'Period',question:'기간 기본값은?',options:[{label:'7일'},{label:'30일'},{label:'3일'}]},
+  {header:'Backend',question:'함께 적용할 곳은?',multiSelect:true,options:[{label:'ComfyUI'},{label:'React UI'}]},
+]});
 const blocks = [
   { sequence: 1, role: "user", kind: "text", text: "Question visibility fixture" },
   { sequence: 2, role: "assistant", kind: "text", text: "스크롤을 확인하는 대화 기록입니다.\n\n".repeat(80) },
@@ -48,7 +53,7 @@ async function exerciseDesktop(win, directory) {
   await patch({ state: { agentStatus: "working" } });
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   await patch({ chat: { ...baseChat, pendingQuestion: { id: "native-1", toolName: "functions.request_user_input", question: questions } } });
-  await waitFor(win, "document.querySelector('.question-form') && !document.querySelector('.question-form input').disabled");
+  await waitFor(win, "document.querySelector('.question-form') && !document.querySelector('.question-form fieldset').disabled");
   await win.webContents.executeJavaScript(`document.querySelectorAll('.question-form input')[1].click(); document.querySelectorAll('.question-form input')[5].click(); const input=document.querySelector('.question-form .question-text-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'직접 지정'); input.dispatchEvent(new Event('input',{bubbles:true}));`);
   await waitFor(win, "!document.querySelector('.question-submit').disabled");
   await win.webContents.executeJavaScript("document.querySelector('.question-submit').click()");
@@ -63,7 +68,7 @@ async function exerciseDesktop(win, directory) {
   await patch({ chat: { ...baseChat, lifecycle: 'working', pendingQuestion: { id: 'async-live', toolName: 'request_user_input_async', question: asyncQuestion, async: true } }, state: { agentStatus: 'working' } });
   await waitFor(win, "document.querySelector('.question-form')?.textContent.includes('어느 폴더') && !!document.querySelector('.chat-work-status')");
   assert(await win.webContents.executeJavaScript("document.querySelectorAll('.chat-work-status').length===1 && !document.querySelector('.chat-thread .chat-thinking')"), 'Async question duplicated the ongoing work indicator');
-  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-heading').textContent.includes('작업 중 질문') && !document.querySelector('.question-form input').disabled"), 'Async question missing during ongoing work');
+  assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-heading').textContent.includes('작업 중 질문') && !document.querySelector('.question-form fieldset').disabled"), 'Async question missing during ongoing work');
   for (const width of [800, 420]) {
     win.setSize(width, 850);
     await new Promise(resolve => setTimeout(resolve, 180));
@@ -90,20 +95,40 @@ async function exerciseDesktop(win, directory) {
   await waitFor(win, "!document.querySelector('.chat-prompt')");
   await patch({ chat: { ...baseChat, unsupported: true }, state: { agentStatus: "waiting", question: null, questionToken: 3 } });
   await waitFor(win, "document.querySelector('.chat-prompt-text')?.textContent.includes('질문 또는 승인')");
-  await patch({ chat: baseChat, failWrites: true, state: { provider: "claude", question: singleQuestion, questionToken: 4 } });
-  await waitFor(win, "document.querySelectorAll('.chat-prompt-option').length===3");
-  await win.webContents.executeJavaScript("document.querySelectorAll('.chat-prompt-option')[1].click()");
+  const beforeClaudeWrites=await win.webContents.executeJavaScript('window.questionFixture.writes.length');
+  await patch({ chat: {...baseChat,pendingQuestion:{id:'claude-failed',toolName:'AskUserQuestion',question:singleQuestion}}, failWrites: true, state: { provider: "claude", question: singleQuestion, questionToken: 4 } });
+  await waitFor(win, "document.querySelector('.question-form legend')?.textContent==='선택해 주세요' && !document.querySelector('.question-form fieldset').disabled");
+  await win.webContents.executeJavaScript("document.querySelectorAll('.question-form input[type=radio]')[1].click()");
+  await waitFor(win,"!document.querySelector('.question-submit').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.question-submit').click()");
   await waitFor(win, "!!document.querySelector('.chat-prompt-error')");
-  assert(await win.webContents.executeJavaScript("window.questionFixture.writes.length===1 && !document.querySelectorAll('.chat-prompt-option')[2].disabled"), "Failed answer hid the question or continued writing keys");
-  await patch({ failWrites: false, state: { questionToken: 5 } });
-  await waitFor(win, "!document.querySelector('.chat-prompt-option').disabled");
-  await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-option').click()");
+  assert(await win.webContents.executeJavaScript(`window.questionFixture.writes.length===${beforeClaudeWrites} && ![...document.querySelectorAll('.chat-prompt-option')].at(-1).disabled`), "Failed answer hid the question or continued writing keys");
+  await patch({ failWrites: false, chat:{...baseChat,pendingQuestion:{id:'claude-next',toolName:'AskUserQuestion',question:singleQuestion}},state: { questionToken: 5 } });
+  await waitFor(win, "!document.querySelector('.question-form fieldset').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.question-form input[type=radio]').click()");
+  await waitFor(win,"!document.querySelector('.question-submit').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.question-submit').click()");
   await waitFor(win, "document.querySelector('.chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
-  await patch({ state: { questionToken: 6 } });
-  await waitFor(win, "!document.querySelector('.chat-prompt-option').disabled");
+  await patch({chat:{...baseChat,pendingQuestion:{id:'claude-view',toolName:'AskUserQuestion',question:singleQuestion}},state: { questionToken: 6 } });
+  await waitFor(win, "!document.querySelector('.question-form fieldset').disabled");
   await win.webContents.executeJavaScript("[...document.querySelectorAll('.chat-prompt-option')].at(-1).click()");
   assert(await win.webContents.executeJavaScript("window.questionTerminalOpened===true"), "Desktop terminal action failed");
-  await patch({ state: { provider: "claude", question: "Login expired · Please run /login", questionToken: 8 } });
+  await patch({chat:{...baseChat,pendingQuestion:{id:'claude-three',toolName:'AskUserQuestion',question:claudeQuestions}},state:{question:claudeQuestions,questionToken:7}});
+  await waitFor(win,"document.querySelectorAll('.question-form fieldset').length===3");
+  for(const width of [1280,420]){
+    win.setSize(width,850);await new Promise(resolve=>setTimeout(resolve,180));
+    assert(await win.webContents.executeJavaScript("(()=>{const c=document.querySelector('.chat-prompt').getBoundingClientRect(),s=document.querySelector('.question-submit').getBoundingClientRect();return c.bottom<=innerHeight&&s.bottom<=c.bottom&&document.querySelector('.question-form input[type=checkbox]')&&document.querySelector('.question-submit').disabled})()"),'Claude multi-question form or send control is hidden');
+    await fs.writeFile(path.resolve(appRoot,`../output/chat-claude-question-${width}.png`),(await win.webContents.capturePage()).toPNG());
+  }
+  const beforeClaudeAnswers=await win.webContents.executeJavaScript('window.questionFixture.answers.length');
+  await win.webContents.executeJavaScript("(()=>{const f=document.querySelectorAll('.question-form fieldset');f[0].querySelectorAll('input[type=radio]')[1].click();f[1].querySelectorAll('input[type=radio]')[3].click();f[2].querySelectorAll('input[type=checkbox]')[0].click();f[2].querySelectorAll('input[type=checkbox]')[1].click()})()");
+  await win.webContents.executeJavaScript("(()=>{const input=document.querySelector('.question-text-input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'최근 14일');input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+  await waitFor(win,"!document.querySelector('.question-submit').disabled");
+  await win.webContents.executeJavaScript("document.querySelector('.question-submit').click();document.querySelector('.question-submit').click()");
+  await waitFor(win,`window.questionFixture.answers.length===${beforeClaudeAnswers+1}`);
+  assert(await win.webContents.executeJavaScript("(()=>{const a=window.questionFixture.answers.at(-1);return a.questionId==='claude-three'&&a.answers[0].id==='claude-0'&&a.answers[0].optionIndex===1&&a.answers[1].text==='최근 14일'&&JSON.stringify(a.answers[2].optionIndices)==='[0,1]'})()"),'Claude grouped answers lost selection, text, identity or checkbox choices');
+  win.setSize(1024,850);
+  await patch({chat:baseChat,state: { provider: "claude", question: "Login expired · Please run /login", questionToken: 8 } });
   await waitFor(win, "document.querySelector('.chat-prompt.authentication .chat-prompt-heading')?.textContent.includes('Claude 로그인 필요')");
   assert(await win.webContents.executeJavaScript("document.querySelector('.chat-prompt-hint').textContent.includes('/login') && document.querySelectorAll('.chat-prompt-option').length===1 && document.querySelector('.chat-prompt-option').textContent.includes('로그인할 터미널')"), 'Desktop login failure still presented as an answer');
   const authWrites = await win.webContents.executeJavaScript("window.questionFixture.writes.length");
@@ -145,17 +170,18 @@ async function exerciseDesktop(win, directory) {
   console.log("Desktop chat questions passed");
 }
 
-async function exerciseRemote(BrowserWindow, directory) {
+async function exerciseRemote(BrowserWindow, directory,channel='remote') {
   let chat = baseChat;
   const answers = [];
   let notifications = { enabled: true, revision: 0 };
-  const web = new RemoteDashboardService({ baseDir: path.join(directory, "remote"), chatProvider: async () => chat,
+  const providers = { chatProvider: async () => chat,
     answerQuestion: async (id, answer) => { answers.push(answer); return { status: 'sent' }; },
-    sessionNotifications: (id, change) => { if (change) notifications = { enabled: change.enabled, revision: notifications.revision + 1 }; agent.notifications = notifications; sync(); return notifications; } });
+    sessionNotifications: (id, change) => { if (change) notifications = { enabled: change.enabled, revision: notifications.revision + 1 }; agent.notifications = notifications; sync(); return notifications; } };
   const agent = { id: "fixture", name: "Question fixture", projectId: "p", aiToolId: "codex", status: "waiting", notifications, hook: { event: "waiting", received_at: 1 } };
-  const sync = () => web.syncAgents([{ ...agent, hook: { ...agent.hook } }]);
-  web.config.server_port = 0;
-  web.syncView({ language: "ko", projects: [{ id: "p", name: "Question project", folder: directory }], agents: [{ id: "fixture", projectId: "p", aiToolId: "codex" }] });
+  const view={ language: "ko", projects: [{ id: "p", name: "Question project", folder: directory }], agents: [{ id: "fixture", projectId: "p", aiToolId: "codex" }] };
+  const web=channel==='remote'?new RemoteDashboardService({baseDir:path.join(directory,channel),...providers}):new LocalDashboardService({baseDir:path.join(directory,channel),title:'Questions',defaultPort:0,configName:'dashboard.json',providers});
+  const sync = () => channel==='remote'?web.syncAgents([{ ...agent, hook: { ...agent.hook } }]):web.sync({view,agents:[{...agent,hook:{...agent.hook}}]});
+  if(channel==='remote'){web.config.server_port=0;web.syncView(view);}else{web.config.enabled=true;web.config.serverPort=0;}
   sync();
   const status = await web.start();
   try {
@@ -202,25 +228,28 @@ async function exerciseRemote(BrowserWindow, directory) {
         await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         chat = { ...baseChat, unsupported: true }; agent.status = "waiting"; agent.hook = { event: "waiting", received_at: 4 }; sync();
         await waitFor(win, "!document.querySelector('#chatPrompt').hidden && document.querySelector('#chatView').textContent.includes('지원하지 않습니다')");
-        chat = baseChat; agent.aiToolId = "claude"; agent.hook = { event: "waiting", received_at: 5, interactive_question: singleQuestion }; sync();
-        await waitFor(win, "document.querySelectorAll('#chatPrompt button').length===3");
-        await win.webContents.executeJavaScript(`window.questionInputWrites=[];window.originalQuestionFetch=window.fetch;window.fetch=(url,options)=>url==='/api/input'?(window.questionInputWrites.push(JSON.parse(options.body).data),Promise.resolve(new Response('{"error":"fixture failure"}',{status:500,headers:{'content-type':'application/json'}}))):window.originalQuestionFetch(url,options);document.querySelectorAll('#chatPrompt button')[1].click()`);
+        chat={...baseChat,pendingQuestion:{id:'claude-failed',toolName:'AskUserQuestion',question:singleQuestion}};agent.aiToolId='claude';agent.hook={event:'waiting',received_at:5,interactive_question:singleQuestion};sync();
+        await waitFor(win,"document.querySelector('#chatPrompt .question-form input[type=radio]')&&!document.querySelector('#chatPrompt fieldset').disabled");
+        await win.webContents.executeJavaScript(`window.questionInputWrites=[];window.originalQuestionFetch=window.fetch;window.fetch=(url,options)=>url==='/api/session/answer'?(window.questionInputWrites.push(JSON.parse(options.body)),Promise.resolve(new Response('{"error":"fixture failure"}',{status:500,headers:{'content-type':'application/json'}}))):window.originalQuestionFetch(url,options);document.querySelectorAll('#chatPrompt input[type=radio]')[1].click();document.querySelector('#chatPrompt .question-submit').click()`);
         await waitFor(win, "!!document.querySelector('#chatPrompt .chat-prompt-error')");
         assert(await win.webContents.executeJavaScript("window.questionInputWrites.length===1 && ![...document.querySelectorAll('#chatPrompt button')].at(-1).disabled"), "Remote answer failure hid the question or continued writes");
-        await win.webContents.executeJavaScript("window.fetch=(url,options)=>url==='/api/input'?Promise.resolve(new Response('{\"ok\":true}',{status:200,headers:{'content-type':'application/json'}})):window.originalQuestionFetch(url,options);void 0");
+        await win.webContents.executeJavaScript("window.fetch=window.originalQuestionFetch;void 0");
+        chat={...baseChat,pendingQuestion:{id:'claude-three',toolName:'AskUserQuestion',question:claudeQuestions}};
         agent.hook = { ...agent.hook, received_at: 6 }; sync();
-        await waitFor(win, "!document.querySelector('#chatPrompt button').disabled");
-        await win.webContents.executeJavaScript("document.querySelector('#chatPrompt button').click()");
+        await waitFor(win, "document.querySelectorAll('#chatPrompt fieldset').length===3&&!document.querySelector('#chatPrompt fieldset').disabled");
+        await win.webContents.executeJavaScript("(()=>{const f=document.querySelectorAll('#chatPrompt fieldset');f[0].querySelectorAll('input[type=radio]')[1].click();f[1].querySelector('input[type=radio]').click();f[2].querySelectorAll('input[type=checkbox]')[0].click();f[2].querySelectorAll('input[type=checkbox]')[1].click();document.querySelector('#chatPrompt .question-submit').click()})()");
         await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt-hint')?.textContent.includes('답변을 보냈습니다')");
+        assert(answers.at(-1).questionId==='claude-three'&&answers.at(-1).answers[0].id==='claude-0'&&JSON.stringify(answers.at(-1).answers[2].optionIndices)==='[0,1]','Remote Claude multiple answers were not grouped');
         agent.hook = { ...agent.hook, received_at: 7 }; sync();
-        await waitFor(win, "!document.querySelector('#chatPrompt button').disabled");
+        await waitFor(win, "!document.querySelector('#chatPrompt').hidden");
+        chat=baseChat;
         agent.hook = { event: "waiting", received_at: 8, interactive_question: "Login expired · Please run /login" }; sync();
         await waitFor(win, "document.querySelector('#chatPrompt .chat-prompt.authentication .chat-prompt-heading')?.textContent.includes('Claude 로그인 필요')");
         assert(await win.webContents.executeJavaScript("document.querySelector('#chatPrompt .chat-prompt-hint').textContent.includes('/login') && document.querySelectorAll('#chatPrompt button').length===1 && document.querySelector('#chatPrompt button').textContent.includes('로그인할 터미널')"), 'Remote login failure still presented as an answer');
         agent.status = 'running'; agent.hook = { event: 'done', received_at: 9 }; sync();
         await waitFor(win, "document.querySelector('#chatPrompt').hidden");
         assert(errors.length === 0, errors.join("\n"));
-        console.log(`Remote chat questions passed: ${width}px`);
+        console.log(`${channel} chat questions passed: ${width}px`);
       } finally { win.destroy(); }
     }
   } finally { await web.stop(); }
@@ -488,8 +517,15 @@ if (process.versions.electron) {
       desktop.destroy();
       await exerciseStartupPane(BrowserWindow, directory);
       await exerciseRemote(BrowserWindow, directory);
+      await exerciseRemote(BrowserWindow, directory,'dashboard');
       app.exit(0);
-    } catch (error) { console.error(error); app.exit(1); }
+    } catch (error) {
+      if (!desktop.isDestroyed()) {
+        await fs.writeFile(path.resolve(appRoot,'../output/chat-question-failure.png'),(await desktop.webContents.capturePage()).toPNG());
+        console.error(await desktop.webContents.executeJavaScript("JSON.stringify({text:document.querySelector('.chat-prompt')?.textContent,fields:[...document.querySelectorAll('.question-form fieldset')].map(f=>({disabled:f.disabled,inputs:[...f.querySelectorAll('input')].map(i=>({type:i.type,name:i.name,checked:i.checked,value:i.value}))}))})"));
+      }
+      console.error(error); app.exit(1);
+    }
   });
 } else {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-question-smoke-"));

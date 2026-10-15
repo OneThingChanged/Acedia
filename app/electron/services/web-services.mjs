@@ -126,6 +126,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-markup.js", { file: "chat-markup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/image-zoom.js", { file: "image-zoom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-render.js", { file: "chat-render.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/video-preview.js", { file: "video-preview.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-history.js", { file: "chat-history.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-prompt.js", { file: "../shared/chat-prompt.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-pagination.js", { file: "../shared/chat-pagination.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],

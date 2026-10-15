@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { qwenTranscriptRoots } from './qwen-chat.mjs';
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const MAX_META_BYTES = 512 * 1024;
@@ -279,6 +280,7 @@ export class SessionService {
   transcriptRoots(aiToolId) {
     if (aiToolId === "codex") return this.codexRoots?.() ?? [path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "sessions")];
     if (aiToolId === "claude") return this.claudeRoots?.() ?? [path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects")];
+    if (aiToolId === 'qwen') return this.qwenRoots?.() ?? qwenTranscriptRoots();
     return [];
   }
 

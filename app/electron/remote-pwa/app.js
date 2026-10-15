@@ -10,6 +10,7 @@ import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, lo
 import { providerLogo, screenColor, searchText, reconcileChat } from './workspace-ui.js';
 import { filesForTurn, renderStoredImages } from './chat-files.js';
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
+import { loadVideoPreview, cancelVideoPreview } from './video-preview.js';
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, selectChatTurns, touchChatCache } from './chat-pagination.js';
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
@@ -445,7 +446,7 @@ function promptCard(agent, prompt, data, openTerminal) {
   card.classList.toggle('has-answer-state', !!(state?.sending || state?.sent || state?.error));
   card.setAttribute("role", "status");
   card.appendChild(make("strong", "chat-prompt-heading", t(prompt.kind === "authentication" ? "Claude 로그인 필요" : prompt.kind === 'permission' ? '승인 필요' : asyncQuestion ? '작업 중 질문' : "답변 대기 중")));
-  if (prompt.answerStyle === 'codex-form') {
+  if (['codex-form','claude-form'].includes(prompt.answerStyle)) {
     let draft = questionDrafts.get(agent.id);
     if (draft?.key !== key) { draft = { key, answers: prompt.questions.map(q => ({ id: q.id, optionIndex: q.options.length ? undefined : null, text: '' })) }; questionDrafts.set(agent.id, draft); }
     card.appendChild(questionForm(prompt.questions, { disabled: !pendingQuestionFor(agent, data)?.id || !!(state?.sending || state?.sent || state?.error), answers: draft.answers,
@@ -477,7 +478,7 @@ function promptCard(agent, prompt, data, openTerminal) {
     : state?.sent
     ? t("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.")
     : prompt.answerStyle === 'codex-approval' ? t('명령과 허용 범위를 검토한 뒤 아래에서 선택해 주세요.')
-    : asyncQuestion ? t('작업은 계속 진행 중입니다. 답변을 선택해 보낼 수 있습니다.') : prompt.answerStyle === 'codex-form' ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
+    : asyncQuestion ? t('작업은 계속 진행 중입니다. 답변을 선택해 보낼 수 있습니다.') : ['codex-form','claude-form'].includes(prompt.answerStyle) ? t('답변을 선택한 뒤 보내기를 누르면 작업이 이어집니다.') : t("답변을 기다리는 상태입니다. 터미널에서 질문에 답하면 작업이 이어집니다.")));
   if (state?.error) {
     const error = make("div", "chat-prompt-error", t("답변을 보내지 못했습니다. 터미널에서 질문을 확인해 주세요."));
     error.setAttribute("role", "alert");
@@ -494,7 +495,7 @@ function promptCard(agent, prompt, data, openTerminal) {
     button.addEventListener("click", () => { void respondPrompt(agent.id, prompt, option, key); });
     options.appendChild(button);
   }
-  const terminal = make("button", "chat-prompt-option", t(prompt.kind === "authentication" ? "로그인할 터미널 열기" : "터미널에서 답변"));
+  const terminal = make("button", "chat-prompt-option", t(prompt.kind === "authentication" ? "로그인할 터미널 열기" : ['codex-form','claude-form'].includes(prompt.answerStyle) ? '터미널 보기' : "터미널에서 답변"));
   terminal.type = "button";
   terminal.addEventListener("click", openTerminal);
   options.appendChild(terminal);
@@ -1931,7 +1932,7 @@ function renderDocumentPreview() {
     : "";
   if (documentContent?.kind !== "video" || documentContentKey !== key) {
     if (ui.documentMarkdown.querySelector("video")) delete ui.documentMarkdown.dataset.renderKey;
-    ui.documentMarkdown.querySelectorAll("video").forEach(video => { video.pause(); video.removeAttribute("src"); video.load(); video.remove(); });
+    ui.documentMarkdown.querySelectorAll("video").forEach(video => { cancelVideoPreview(video); video.pause(); video.removeAttribute("src"); video.load(); video.remove(); });
   }
   ui.documentMarkdown.hidden = true;
   ui.documentHtmlLaunch.hidden = true;
@@ -1972,9 +1973,14 @@ function renderDocumentPreview() {
       ui.documentMarkdown.dataset.renderKey = key;
       const video = make("video", "remote-video");
       video.controls = true; video.playsInline = true; video.preload = "metadata";
-      video.src = `/api/files/video?${remoteFileQuery(selection.id, relativePath, "")}`;
       ui.documentMarkdown.replaceChildren(video);
+      void loadVideoPreview(video, `/api/files/video?${remoteFileQuery(selection.id, relativePath, "")}`, {
+        isCurrent: () => video.isConnected && ui.documentMarkdown.dataset.renderKey === key,
+        onError: message => { video.dataset.previewError = message; video.hidden = true; ui.documentMessage.textContent = message; ui.documentMessage.hidden = false; },
+      });
     }
+    const error = ui.documentMarkdown.querySelector('video')?.dataset.previewError;
+    if (error) { ui.documentMessage.textContent = error; ui.documentMessage.hidden = false; }
   } else if (documentContent.kind === "html") {
     ui.documentHtmlLaunch.hidden = false;
   } else {
@@ -2180,6 +2186,7 @@ function resetFilePreviewContent() {
   ui.filePreviewOpen.hidden = true;
   ui.filePreviewOpen.removeAttribute("href");
   ui.filePreviewMessage.setAttribute("aria-busy", "false");
+  cancelVideoPreview(ui.filePreviewVideo);
   ui.filePreviewVideo.pause();
   ui.filePreviewVideo.removeAttribute("src");
   ui.filePreviewVideo.load();
@@ -2293,6 +2300,10 @@ async function openChatFolder(agentId, projectId, rawPath, trail = []) {
 }
 
 async function openChatFilePreview(agentId, projectId, rawPath, kind) {
+  if (kind === 'archive') {
+    await downloadRemoteFile({ agentId, projectId, path: cleanChatFilePath(rawPath) });
+    return;
+  }
   if (kind === "folder") {
     await openChatFolder(agentId, projectId, rawPath);
     return;
@@ -2319,14 +2330,11 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
   try {
     const query = remoteFileQuery(projectId, path, agentId);
     if (kind === "video") {
-      ui.filePreviewVideo.src = `/api/files/video?${query}`;
-      ui.filePreviewVideo.hidden = false;
-      ui.filePreviewMessage.hidden = true;
-      ui.filePreviewVideo.onerror = () => {
-        if (requestId !== filePreviewRequest) return;
-        ui.filePreviewMessage.textContent = t("영상을 재생할 수 없습니다. 파일 접근 권한과 브라우저 코덱 지원을 확인하세요.");
-        ui.filePreviewMessage.hidden = false;
-      };
+      const ready = await loadVideoPreview(ui.filePreviewVideo, `/api/files/video?${query}`, {
+        isCurrent: () => requestId === filePreviewRequest,
+        onError: message => { ui.filePreviewVideo.hidden = true; ui.filePreviewMessage.textContent = message; ui.filePreviewMessage.hidden = false; },
+      });
+      if (ready && requestId === filePreviewRequest) { ui.filePreviewVideo.hidden = false; ui.filePreviewMessage.hidden = true; }
       return;
     }
     if (kind === "markdown" || kind === "text") {
@@ -5007,7 +5015,7 @@ function renderChat(data) {
   const blocks = Array.isArray(data?.blocks) ? data.blocks : [];
   const frag = document.createDocumentFragment();
   if (data?.unsupported) {
-    frag.appendChild(make("div", "chat-empty", t("이 세션은 대화 보기를 지원하지 않습니다 (codex/claude).")));
+    frag.appendChild(make("div", "chat-empty", t("이 세션은 대화 보기를 지원하지 않습니다.")));
   } else if (data?.error) {
     const error = make("div", "chat-error");
     error.append(
@@ -5841,7 +5849,7 @@ ui.documentMarkdown.addEventListener("click", (event) => {
     }
   }
   const resolved = parts.join("/");
-  if (targetKind === "image") {
+  if (["image", "archive"].includes(targetKind)) {
     void openChatFilePreview("", selection.id, resolved, targetKind);
     return;
   }

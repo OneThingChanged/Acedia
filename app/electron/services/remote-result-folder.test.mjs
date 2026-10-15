@@ -12,6 +12,7 @@ it('lets only the authenticated owner browse external export folders and preview
   await fs.mkdir(path.join(results, 'Viessa'));
   await fs.writeFile(path.join(results, 'preview.png'), Buffer.from([137, 80, 78, 71]));
   await fs.writeFile(path.join(results, 'export.fbx'), 'FBX');
+  await fs.writeFile(path.join(results, 'archive.zip'), Buffer.from([80,75,3,4,0,255]));
   const service = new RemoteDashboardService({ baseDir: path.join(root, 'service') });
   service.config.server_port = 0; service.config.owner = 'owner';
   service.access.approved = ['guest'];
@@ -23,9 +24,15 @@ it('lets only the authenticated owner browse external export folders and preview
     const response = await fetch(`${url}/api/files/folder?${query(results)}`, { headers: headers('owner') });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ path: results, entries: [
-      { name: 'Viessa', kind: 'folder' }, { name: 'export.fbx', kind: null }, { name: 'preview.png', kind: 'image' },
+      { name: 'Viessa', kind: 'folder' }, { name: 'archive.zip', kind: 'archive' }, { name: 'export.fbx', kind: null }, { name: 'preview.png', kind: 'image' },
     ] });
     expect((await fetch(`${url}/api/files/image?${query(path.join(results, 'preview.png'))}`, { headers: headers('owner') })).status).toBe(200);
+    for (const method of ['GET','HEAD']) {
+      const zip = `${url}/api/docs/download?${query(path.join(results,'archive.zip'))}`;
+      expect((await fetch(zip,{method,headers:headers('owner')})).status).toBe(200);
+      expect((await fetch(zip,{method,headers:headers('guest')})).status).toBe(403);
+      expect((await fetch(zip,{method,headers:{'cf-connecting-ip':'203.0.113.12'}})).status).toBe(401);
+    }
     expect((await fetch(`${url}/api/files/folder?${query(results)}`, { headers: headers('guest') })).status).toBe(403);
     expect((await fetch(`${url}/api/files/image?${query(path.join(results, 'preview.png'))}`, { headers: headers('guest') })).status).toBe(403);
     expect((await fetch(`${url}/api/files/folder?${query(results)}`, { headers: { 'cf-connecting-ip': '203.0.113.12' } })).status).toBe(401);
