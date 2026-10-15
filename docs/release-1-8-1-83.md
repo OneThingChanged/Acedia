@@ -33,6 +33,9 @@ Standard EXE 업데이트다. 기존 서명 APK **1.8.1.39/code 21**을 재사�
 - 실제 설치된 Claude **2.1.292**와 로컬 모의 API에서 세 질문과 한국어 직접 입력, 복수 선택과 직접 입력, 단일 질문 즉시 제출 후 작업 재개를 확인했다. 데스크톱·Remote·Dashboard의 질문 UI도 검증했다.
 - ZIP 회귀 검사 59개와 실제 브라우저 다운로드 24건을 검증했다. Remote·Dashboard의 PC·모바일 화면에서 원본 바이트와 UTF-8 파일명을 확인했다.
 - 동영상·파일 링크 검사 76개와 Remote·Dashboard PC·모바일 4개 사례를 검증했다. 격리된 MP4 복사본의 재생·탐색, 없는 파일, 잘못된 영상, 접근 확인 중 닫기와 Documents WebM을 확인했다.
+- 고정 소스 커밋에서 Standard EXE를 생성했다. 네이티브 PTY, 패키지 실행·Git·Dashboard와 종료·트레이·보안 검사가 통과했다. 패키지의 런타임·렌더러 파일 **314개**가 소스와 일치했다.
+- 설치 파일의 네 자리 FileVersion **1.8.1.83**, 세 자리 ProductVersion **1.8.1**, 같은 빌드의 manifest·크기·SHA-256을 확인했다. Authenticode 상태는 `NotSigned`다.
+- 공개 GitHub에서 **1.8.1.81·1.8.1.82 → 1.8.1.83** 업데이트 감지를 확인했다. 실제 업데이터로 EXE를 전부 내려받고 공개 자산 세 개의 크기·해시·다운로드 URL과 소스 태그를 다시 검증했다.
 
 사용 중인 실제 세션에 메시지를 보내거나 재시작하지 않았다. 외부 모델 API는 호출하지 않았으며 Android 실기기·외부망 동영상 재생은 별도 검증 대상이다.
 
@@ -40,4 +43,27 @@ Standard EXE 업데이트다. 기존 서명 APK **1.8.1.39/code 21**을 재사�
 
 ## 배포 기록
 
-소스 버전과 문서를 1.8.1.83으로 고정했다. 커밋·푸시 후 EXE 패키지 검증, 공개 게시와 다운로드 검증 결과를 이 문서에 추가한다. 사용자 PC의 설치 완료와 공개 게시 완료는 별개다.
+- 공개 게시: **2026-10-15 21:41:21 KST**. [GitHub Release v1.8.1.83](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.83).
+- 고정 소스·태그: `1cc981e60f700df08b1b404746f7db59a4086cc7`.
+- 공개 다운로드 검증 완료: **2026-10-15 21:42:00 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.83**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. SHA-256: `f04502319e96f1cf3e2fb1a949ec6ae81dcefad4443877f31ca36c8c15190957`.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.83-x64.exe | 151392941 | `0352c87aabb98930e1b7c5781ba966b573dc753a95928310e2dc14f6e92b170d` |
+| Acedia-Setup-1.8.1.83-x64.exe.blockmap | 159454 | `a45361f0956d00e4ae9d50e9027c365eb697c15bcd649b934bb1e579a68faf33` |
+| latest-exe.json | 256 | `761da1db4efb2cb22a3fc2cd75242a1021a9cd0b027d191ae3b688597d2537d4` |
+
+검증 증빙: `output/exe-83-tests.log`, `output/exe-83-build.log`,
+`output/exe-83-pty-smoke.log`, `output/exe-83-packaged-smoke.log`,
+`output/exe-83-packaged-lifecycle-smoke.log`,
+`output/exe-release-1.8.1.83/local-verification.json`,
+`.build-tools/public-verified-1.8.1.83.json`.
+
+패키지 검사 중 기존 node-pty 종료 보조 프로세스의 `AttachConsole failed`가 출력됐지만
+필수 bridge·Git·Dashboard 성공 marker와 종료 코드 0을 확인했다.
+
+설정 **Check → Update** 또는 앱 재실행 시 업데이트 안내로 적용한다. 업데이트 후 기존
+Qwen 세션을 Restart하면 새 관리 훅을 읽는다. 공개 게시·다운로드 검증 완료와 사용자 PC의
+설치 완료는 별개이며, 이 배포 작업에서 설치 프로그램을 실행하지 않았다.
