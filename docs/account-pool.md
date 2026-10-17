@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 계정 분산
 description: 기존 Dashboard에서 전용 계정을 등록하고 로컬 Codex 세션을 계정별로 배분하는 자체 기능.
 status: stable
-last_updated: 2026-10-11
+last_updated: 2026-10-18
 sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
@@ -230,6 +230,24 @@ Codex 도구 요청도 고정된 계정의 Codex backend 아래로 전달한다.
 이미지 결과·검색 결과·MCP 호출, 동일 계정 인증 갱신, 계정 제외 후 실제 TUI의 동일 대화
 resume과 이전 메시지 보존을 검사한다. 실제 상용 이미지 생성이나 외부 Apps 계정 연결을
 검증한 것은 아니며, 로컬 fixture 인증서를 시스템 신뢰 저장소에 설치하지 않는다.
+
+## Codex 0.163 재개 작업 경로 (EXE 1.8.1.84)
+
+계정 라우팅의 native remote TUI에는 실제 실행 작업 폴더를 `--cd`로 전달한다.
+Codex 0.163.0에서 `tui.resume_cwd="current"`로 이전 대화를 재개할 때 이 옵션이 없으면
+`requires --cd when using a remote workspace` 오류로 종료된다. 로컬 PTY와 app-server의
+현재 폴더만 설정하는 것으로는 remote TUI에 재개 작업 경로가 전달되지 않는다.
+
+공통 실행 처리기는 신규·재개 라우팅 세션에 작업 폴더를 전달하고, 사용자가 명시한
+`--cd`·`-C`는 중복하거나 덮어쓰지 않는다. 기존 대화 ID와 계정·모델·권한 RPC 처리는
+유지한다. 직접 로그인·SSH와 다른 CLI에는 이 보정을 추가하지 않는다.
+
+설치된 Codex **0.163.0**과 격리된 로컬 모의 API에서 같은 오류를 재현한 뒤,
+수정 후 기존 대화 재개·이전 메시지 유지·작업 완료를 확인했다. 관련 회귀 검사
+**118개/4개 파일**과 TypeScript 검사도 통과했다. 실제 사용자 대화 파일과 세션 설정은
+수정하지 않았다. [1.8.1.84 EXE](release-1-8-1-84.md)에 포함하며, 호스트 업데이트 후 해당
+세션의 Restart가 필요하다. 검증 기록은 `output/codex-remote-cwd-native-baseline.log`,
+`output/codex-remote-cwd-native-fixed.log`, `output/codex-remote-cwd-regressions.log`다.
 
 ## 캐시 연결과 스트림 집계 (EXE 1.8.1.59)
 

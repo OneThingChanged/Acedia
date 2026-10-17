@@ -57,7 +57,10 @@ void app.whenReady().then(() => {
     useConpty: true,
   });
   let output = "";
+  let finished = false;
   const timeout = setTimeout(() => {
+    if (finished) return;
+    finished = true;
     console.error("[electron-smoke] PTY timed out");
     try {
       terminal.kill();
@@ -66,8 +69,10 @@ void app.whenReady().then(() => {
   }, 8000);
 
   terminal.onData((data) => {
+    if (finished) return;
     output += data;
     if (!output.includes(marker)) return;
+    finished = true;
     clearTimeout(timeout);
     console.log(`[electron-smoke] ${marker}`);
     try {

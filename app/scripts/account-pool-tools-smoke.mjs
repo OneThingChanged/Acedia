@@ -72,7 +72,7 @@ const env = { ...process.env, CODEX_HOME: home, CODEX_CA_CERTIFICATE: certFile, 
 for (const name of Object.keys(env)) if (/^(OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN|OPENAI_BASE_URL|RUST_LOG)$/i.test(name)) delete env[name];
 const catalog = JSON.parse(spawnSync(binary, ['debug', 'models', '--bundled'], { env, cwd: root, encoding: 'utf8', windowsHide: true }).stdout);
 const configArgs = Object.entries({ model: 'gpt-6-astra', chatgpt_base_url: base, web_search: 'live', 'features.apps': true, 'features.plugins': false, 'features.hooks': false,
-  'features.daemon_auto_start': false, 'analytics.enabled': false,
+  'features.daemon_auto_start': false, 'analytics.enabled': false, 'tui.resume_cwd': 'current',
 }).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`]);
 configArgs.push('--profile', 'fixture');
 function stream(body, item, usedPercent) {
@@ -165,7 +165,7 @@ async function connect(launch) {
 async function tui(launch, resumeId) {
   const responseCount = responses.length;
   const terminal = pty.spawn(binary, codexRemoteTuiArgs([...(resumeId ? ['resume', resumeId] : []), ...launch.args, ...configArgs,
-    '--no-alt-screen', '--model', 'gpt-6-astra', '--sandbox', 'danger-full-access', '--ask-for-approval', 'never', 'TUI fixture; use localhost tools.']),
+    '--no-alt-screen', '--model', 'gpt-6-astra', '--sandbox', 'danger-full-access', '--ask-for-approval', 'never', 'TUI fixture; use localhost tools.'], root),
   { env: { ...env, ...launch.env, TERM: 'xterm-256color' }, cwd: root, cols: 140, rows: 40, useConpty: true });
   let output = '', exited = false;
   try {

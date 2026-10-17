@@ -27,13 +27,17 @@ export function codexThreadOverrides(args = []) {
   }
   return result;
 }
-export function codexRemoteTuiArgs(args = []) {
-  if (!args.includes('resume')) return args;
-  return args.filter((arg, index) => {
+export function codexRemoteTuiArgs(args = [], cwd = null) {
+  const result = args.includes('resume') ? args.filter((arg, index) => {
     if (permissionValues.has(args[index - 1])) return false;
     const flag = arg.split('=')[0];
     return !permissionValues.has(flag) && !['--dangerously-bypass-approvals-and-sandbox', '--yolo', '--approve-for-me'].includes(flag);
-  });
+  }) : [...args];
+  // The remote TUI cannot infer its workspace from the local process cwd.
+  // Codex 0.163 requires --cd when resume_cwd is current; preserve explicit
+  // launch overrides and pass our effective workspace otherwise.
+  if (cwd && !args.some(arg => /^(?:--cd(?:=|$)|-C)/.test(arg))) result.push('--cd', cwd);
+  return result;
 }
 
 // Only startup configuration belongs on app-server. TUI-only options (sandbox,

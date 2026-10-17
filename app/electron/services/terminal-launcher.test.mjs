@@ -176,6 +176,21 @@ describe("terminal launch lifecycle", () => {
     expect(accountPoolLaunch.mock.calls[0][3].configArgs).toEqual(['resume', 'saved-id', '-c', 'mcp_servers.multiagent_browser.enabled=true', '-c', 'developer_instructions="worker config"']);
     f.sessions.close('session-a'); expect(release).toHaveBeenCalledOnce();
   });
+  it('passes the effective cwd to a resumed native remote TUI without changing its conversation or permissions', async () => {
+    const f = fixture(); vi.useFakeTimers();
+    const accountPoolLaunch = vi.fn(async () => ({ native: true, env: { ACEDIA_CODEX_REMOTE_TOKEN: 'fixture' },
+      args: ['--remote', 'ws://127.0.0.1:12345'] }));
+    const launch = createTerminalLauncher({ ...f.dependencies, accountPoolLaunch });
+    await launch({ ...f.args, initCommand: 'codex resume owned-thread --yolo -c \'tui.resume_cwd="current"\'' });
+    await vi.advanceTimersByTimeAsync(600);
+    const command = f.processes[0].write.mock.calls[0][0];
+    expect(command).toContain("'--cd' '" + f.args.cwd + "'");
+    expect(command).toContain('owned-thread');
+    expect(command).toContain('tui.resume_cwd="current"');
+    expect(command).not.toContain('--yolo');
+    expect(accountPoolLaunch.mock.calls[0][3]).toMatchObject({ cwd: f.args.cwd,
+      configArgs: ['resume', 'owned-thread', '--yolo', '-c', 'tui.resume_cwd="current"'] });
+  });
   it.each(["codex", "claude"])("passes session model/effort to the resumed %s CLI without changing its account", async aiToolId => {
     vi.useFakeTimers();
     const f = fixture();

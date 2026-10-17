@@ -191,4 +191,16 @@ describe('native routed Codex sessions', () => {
     await f.rpc.call('thread/resume', { threadId: 'saved-id', sandbox: 'danger-full-access' });
     expect(f.seen.at(-1).params).toMatchObject({ threadId: 'saved-id', model: 'model-new', sandbox: 'workspace-write', approvalPolicy: 'on-request' });
   });
+  it.each([[], ['resume', 'owned-thread', '-c', 'tui.resume_cwd="current"']].map(args => ({ args })))('gives the remote TUI an explicit working directory for $args', ({ args }) => {
+    const cwd = 'G:/work/project with spaces';
+    expect(codexRemoteTuiArgs(args, cwd)).toEqual([...args, '--cd', cwd]);
+    expect(args).not.toContain('--cd');
+  });
+  it.each([
+    ['--cd', 'G:/explicit project'], ['--cd=G:/explicit project'],
+    ['-C', 'G:/explicit project'], ['-CG:/explicit project'],
+  ].map(args => ({ args })))('preserves an explicit working-directory override $args', ({ args }) => {
+    const input = ['resume', 'owned-thread', ...args];
+    expect(codexRemoteTuiArgs(input, 'G:/fallback')).toEqual(input);
+  });
 });
