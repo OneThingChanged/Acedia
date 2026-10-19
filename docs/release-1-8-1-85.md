@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.85
 description: "독립 Codex 세션 작업 분담, 모델 자동 정책, 작업 흐름과 사이드바 계층 및 Nogari 시작 설정 수정."
-status: verified
+status: stable
 last_updated: 2026-10-20
 ---
 
@@ -39,7 +39,21 @@ Restart Codex sessions after updating to load the new task tools. Idle-A automat
 - 생성된 패키지의 실행·내장 Git·브라우저 bridge·Dashboard와 종료·트레이·보안 검사 통과: `output/exe-85-packaged-smoke.log`, `output/exe-85-packaged-lifecycle-smoke.log`.
 - 설치 파일 FileVersion **1.8.1.85**, ProductVersion **1.8.1**, 크기와 SHA-256이 같은 빌드의 manifest와 일치한다. Authenticode는 **NotSigned**다. 기존 node-pty 종료 보조 프로세스의 `AttachConsole failed` 진단 뒤에도 필수 성공 marker와 종료 코드 0을 확인했다. Vite의 500KB 이상 번들 경고는 남아 있다.
 - 기존 서명 APK **1.8.1.39/code 21**, arm64-v8a, 패키지 ID와 프로젝트 릴리스 인증서를 재검증했다. APK SHA-256: `f04502319e96f1cf3e2fb1a949ec6ae81dcefad4443877f31ca36c8c15190957`.
+- 새 작업 엔진·파일 관찰·Remote 작업 화면 자산을 포함해 패키지의 런타임·렌더러 **320개 파일**이 고정 빌드 소스와 일치했다. `output/exe-release-1.8.1.85/local-verification.json`.
+- 공개 GitHub에서 **1.8.1.84·1.8.1.83 → 1.8.1.85** 감지를 확인했다. 실제 업데이터로 EXE 전체를 다운로드하고 자산 세 개의 크기·SHA-256·URL·태그와 소스 커밋을 확인했다. `output/exe-85-public-verify.log`, `.build-tools/public-verified-1.8.1.85.json`.
 
 ## 배포 기록
 
-빌드·검증 진행 중. 공개 게시와 실제 사용자 PC 설치 완료를 구분한다.
+- 공개 게시: **2026-10-20 00:41:51 KST**. [GitHub Release v1.8.1.85](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.85).
+- 고정 소스·태그: `c32f70089027568063510896d131191b7669b472`.
+- 공개 다운로드 검증 완료: **2026-10-20 00:42:51 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.85**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. 새 APK·Company·Microsoft Store 배포는 실행하지 않았다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.85-x64.exe | 151425086 | `e5791c6b22931ff920d04c1a36e6af6e3c5ded4aae4a4c8b616e6ba04c5861df` |
+| Acedia-Setup-1.8.1.85-x64.exe.blockmap | 159620 | `3795b8fda12bbc787008a584c478a239240849bfbfd907db66c1577f8b4e7279` |
+| latest-exe.json | 256 | `6680d5a0ef408f6b3a3c57c25eca4d82be2e8bc5b50ee22bede5daca8a12ac79` |
+
+설정의 **Check → Update** 또는 다음 앱 실행의 업데이트 안내로 적용한 뒤 Codex 세션을 **Restart**한다. 이 배포에서 설치 프로그램과 실제 사용자 세션에 대한 시험 요청은 실행하지 않았다. 공개 게시·다운로드 검증 완료와 사용자 PC의 설치 완료는 별개다.
