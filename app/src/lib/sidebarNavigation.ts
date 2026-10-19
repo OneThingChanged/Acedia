@@ -4,6 +4,30 @@ import { collectAgentIdsInOrder } from "./layout";
 import { isAgentRuntimeActive } from "./agentActivity";
 import { isStandbySession } from "./sessionStandby";
 import { matchesSessionSearch, normalizeSessionSearch } from "./sessionSearch";
+import { repairSessionHierarchy } from './sessionHierarchy';
+
+// Managed background children follow their creator while manual sessions keep
+// their recent ordering. Searching remains flat so hidden children stay findable.
+export function sidebarSessionFamilies(visible: Agent[], all: Agent[]) {
+  const catalog = repairSessionHierarchy(all), byId = new Map(catalog.map(a => [a.id, a]));
+  const included = new Map(visible.map(a => [a.id, byId.get(a.id) || a]));
+  for (const agent of visible) {
+    let current = byId.get(agent.id);
+    while (current?.sessionHierarchy?.createdById && current.sessionHierarchy.createdById === current.sessionHierarchy.parentId) {
+      const parent = byId.get(current.sessionHierarchy.parentId);
+      if (!parent || parent.sidebarArchived || parent.projectId !== agent.projectId || included.has(parent.id)) break;
+      included.set(parent.id, parent); current = parent;
+    }
+  }
+  const children = new Map<string, Agent[]>(), roots: Agent[] = [];
+  for (const agent of included.values()) {
+    const hierarchy = agent.sessionHierarchy;
+    if (hierarchy?.createdById && hierarchy.createdById === hierarchy.parentId && included.has(hierarchy.parentId)) {
+      const rows = children.get(hierarchy.parentId) || []; rows.push(agent); children.set(hierarchy.parentId, rows);
+    } else roots.push(agent);
+  }
+  return { roots, children };
+}
 
 export type SidebarFilter = "all" | "active" | "sleeping";
 export type SidebarDateGroup = "pinned" | "today" | "yesterday" | "week" | "older";

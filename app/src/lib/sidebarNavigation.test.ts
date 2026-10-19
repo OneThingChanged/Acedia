@@ -2,11 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
 import { loadStoredAgents, normalizeStoredGroups } from "./persistence";
 import type { Agent, Group, Project } from "../types";
+import { sidebarSessionFamilies } from './sidebarNavigation';
 
 const projects: Project[] = [{ id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 }, { id: "ssh", name: "Server", folder: "", sshHostId: "server", remoteFolder: "/work/remote", createdAt: 1 }];
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: "C:/Acedia", aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
 
 describe("sidebar navigation", () => {
+  it('groups background children below their creator, retains filtered parent context and leaves manual children searchable', () => {
+    const parent = agent('A'), child = agent('worker', { sessionHierarchy: { parentId: 'A', createdById: 'A' } }), manual = agent('manual', { sessionHierarchy: { parentId: 'A' } });
+    const all = [child, manual, parent], family = sidebarSessionFamilies(all, all);
+    expect(family.roots.map(a => a.id)).toEqual(['manual', 'A']); expect(family.children.get('A')?.map(a => a.id)).toEqual(['worker']);
+    expect(sidebarSessionFamilies([child], all).roots.map(a => a.id)).toEqual(['A']);
+    const archived = { ...parent, sidebarArchived: true };
+    expect(sidebarSessionFamilies([child], [child, archived]).roots.map(a => a.id)).toEqual(['worker']);
+    expect(all[0].sessionHierarchy?.parentId).toBe('A');
+  });
   afterEach(() => vi.unstubAllGlobals());
   it("sorts by user visits, pins before recent entries, and never uses runtime progress to reorder", () => {
     const input = [agent("created", { createdAt: 200 }), agent("visited", { lastOpenedAt: 300 }), agent("pinned", { sidebarPinned: true }), agent("busy", { activity: { receivedAt: 9999, stateStartedAt: 9999, workStatus: "working", source: "hook" } })];

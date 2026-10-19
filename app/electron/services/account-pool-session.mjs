@@ -125,13 +125,20 @@ export class AccountPoolSession extends EventEmitter {
       this.child = this.spawnProcess(command.file, command.args, { env, cwd: this.cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       const address = await new Promise((resolve, reject) => {
         let tail = '';
-        const timer = setTimeout(() => finish(failure('Codex 세션 서버를 시작하지 못했습니다. Codex CLI를 업데이트한 뒤 다시 시작하세요.')), this.startTimeout);
+        let settled = false;
+        const timer = setTimeout(() => finish(failure('Codex 세션 서버의 시작 응답을 기다리는 시간이 초과됐습니다. 실행 경로와 설정을 확인하세요.')), this.startTimeout);
         const finish = (error, value) => {
+          if (settled) return;
+          settled = true;
           clearTimeout(timer); this.child.off('error', failed); this.child.off('exit', failed);
           this.child.stdout.off('data', read); this.child.stderr.off('data', read);
           error ? reject(error) : resolve(value);
         };
-        const failed = () => finish(failure('Codex 세션 서버를 시작하지 못했습니다. Codex CLI 0.160.0 이상이 필요합니다.'));
+        const failed = error => finish(failure(error?.code === 'ENOENT'
+          ? 'Codex 실행 파일을 찾을 수 없습니다. 실행 경로를 확인하세요.'
+          : /TOML|duplicate key|already defined|invalid transport|mcp_servers|error loading config/i.test(tail)
+            ? 'Codex 설정을 읽지 못했습니다. config.toml의 중복 항목·TOML 문법·MCP 설정을 확인하세요.'
+            : 'Codex 세션 서버가 시작 중 종료됐습니다. 실행 경로와 설정을 확인하세요.'));
         const read = chunk => {
           // Startup logs never leave this parser. They may contain private paths.
           tail = (tail + chunk).slice(-8192);

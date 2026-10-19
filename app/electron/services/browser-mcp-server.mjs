@@ -26,6 +26,38 @@ const targetSchema = {
 
 const tools = [
   {
+    name: 'acedia_task_plan',
+    description: 'When the user chooses Acedia task delegation, act as A: plan, assign, monitor and review; independent Codex sessions perform research, edits and checks. Submit one plan with scoped tasks, dependencies and acceptance criteria. Host selects configured task models and launches dedicated background sessions without changing focus. Do not perform worker edits yourself. After planning use acedia_task_wait/get, review submitted results, retry failed tasks at most once, then finish with a final summary only after all required tasks passed. For a small request use a single worker. Worker sessions must not delegate again. Existing user sessions are never assigned.',
+    inputSchema: { type: 'object', properties: {
+      requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' }, title: { type: 'string', maxLength: 200 }, request: { type: 'string', maxLength: 6000 }, concurrency: { type: 'integer', minimum: 1, maximum: 4, default: 2 },
+      tasks: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', properties: {
+        id: { type: 'string' }, title: { type: 'string' }, role: { type: 'string' }, goal: { type: 'string' }, acceptance: { type: 'string' },
+        dependsOn: { type: 'array', items: { type: 'string' } }, writeScopes: { type: 'array', items: { type: 'string' }, description: 'Exact relative files or directories; empty for read-only work. Host serializes overlapping scopes; this is not a CLI sandbox.' }, required: { type: 'boolean', default: true },
+        assessment: { type: 'object', properties: { complexity: { enum: ['low', 'normal', 'high'] }, risk: { enum: ['low', 'normal', 'high'] }, context: { enum: ['small', 'normal', 'large'] }, tools: { type: 'boolean' } }, additionalProperties: false },
+        modelOverride: { type: 'object', properties: { model: { type: 'string' }, effort: { type: 'string' }, serviceTier: { enum: ['default', 'fast'] } }, required: ['model'], additionalProperties: false },
+      }, required: ['id', 'title', 'goal', 'acceptance', 'dependsOn', 'writeScopes'], additionalProperties: false } },
+    }, required: ['requestKey', 'title', 'request', 'tasks'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  ...['list', 'get', 'wait'].map(action => ({
+    name: `acedia_task_${action}`,
+    description: action === 'wait' ? 'Wait up to 10 seconds without typing into A or a worker. Pass the last revision; returns durable results/questions or times out. Inspect and review submitted results, keep waiting only while tasks are active. This never replays deliveries.' : action === 'get' ? 'Read a run, dependencies, current attempts, exact conversationId/turnId, requested and observed models, questions, results and validation. Old turn completion is never task completion.' : 'List runs visible to this A or worker session. Pages contain 20 summaries; get details separately.',
+    inputSchema: { type: 'object', properties: action === 'list' ? { offset: { type: 'integer', minimum: 0 } } : { runId: { type: 'string' }, revision: { type: 'integer', minimum: 0 }, ...(action === 'wait' ? { waitMs: { type: 'integer', minimum: 0, maximum: 10000, default: 10000 } } : {}) }, required: action === 'list' ? [] : action === 'wait' ? ['runId', 'revision'] : ['runId'], additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  })),
+  {
+    name: 'acedia_task_result',
+    description: 'Submit the assigned worker result for its exact run/task/attempt/conversation/turn. Read acedia_task_get first. Include actual validation evidence; host checks delivery start and observed runtime model, then A reviews it. A cannot submit a worker result. This is a result submission, not task completion.',
+    inputSchema: { type: 'object', properties: { runId: { type: 'string' }, taskId: { type: 'string' }, attemptId: { type: 'string' }, conversationId: { type: 'string' }, turnId: { type: 'string' }, result: { type: 'object', properties: { summary: { type: 'string' }, changedFiles: { type: 'array', items: { type: 'string' } }, checks: { type: 'array', items: { type: 'object', properties: { command: { type: 'string' }, passed: { type: 'boolean' }, output: { type: 'string' } }, required: ['command', 'passed', 'output'], additionalProperties: false } }, artifacts: { type: 'array', items: { type: 'string' } }, issues: { type: 'string' } }, required: ['summary', 'changedFiles', 'checks'], additionalProperties: false } }, required: ['runId', 'taskId', 'attemptId', 'conversationId', 'turnId', 'result'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'acedia_task_control',
+    description: 'A controls its own run: review a submitted attempt with accept/note; retry failed work once with optional next model; pause/resume new assignments; cancel and verify worker stops; reconcile uncertain state without resending; finish with summary after every required task is validated. For questions/approvals use the user UI; do not approve on the user behalf. Pausing does not interrupt an active CLI.',
+    inputSchema: { type: 'object', properties: { action: { enum: ['review', 'retry', 'pause', 'resume', 'cancel', 'reconcile', 'finish'] }, runId: { type: 'string' }, taskId: { type: 'string' }, attemptId: { type: 'string' }, accept: { type: 'boolean' }, note: { type: 'string' }, summary: { type: 'string' }, modelOverride: { type: 'object', properties: { model: { type: 'string' }, effort: { type: 'string' }, serviceTier: { enum: ['default', 'fast'] } }, required: ['model'], additionalProperties: false } }, required: ['action', 'runId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
     name: 'acedia_projects',
     description: 'List registered Acedia projects, sessions, active status, current conversationId/state/reason and available AI tools on this host PC. Use session IDs and the current conversationId for acedia_session_send.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -223,6 +255,18 @@ async function callBrowser(action, body = {}, method = "POST") {
 
 async function callTool(name, args) {
   const body = args && typeof args === "object" ? { ...args } : {};
+  if (name.startsWith('acedia_task_')) {
+    if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
+    const action = name === 'acedia_task_control' ? body.action : name.slice('acedia_task_'.length);
+    if (name === 'acedia_task_control') delete body.action;
+    const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/tasks`, {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
+      body: JSON.stringify({ action, body }), signal: AbortSignal.timeout(60_000),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Acedia task request failed (${response.status})`);
+    return result;
+  }
   if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';

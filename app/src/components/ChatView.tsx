@@ -3,6 +3,8 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatIcon } from "./ChatIcon";
 import { ChatModelPicker } from "./ChatModelPicker";
+import { TaskFlowButton } from './TaskFlow';
+import { taskDelegationRequest } from '../../electron/remote-pwa/task-flow.js';
 import { ChatImage } from "./ChatImage";
 import { ChatFiles } from "./ChatFiles";
 import { ChatDiff } from "./ChatDiff";
@@ -1193,6 +1195,7 @@ function ChatComposer({
   const { text: localize } = useAppLanguage();
   const modelChanging = useChatSessionModelChanging(agentId);
   const [text, setText] = useState(() => draftStore.get(storageKey) ?? "");
+  const [taskMode, setTaskMode] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>(
     () => attachStore.get(storageKey) ?? []
   );
@@ -1314,7 +1317,7 @@ function ChatComposer({
     const request = [text.trim(), ...texts, ...paths].filter(Boolean).join("\n").trim();
     if (!request) return;
     const value = context?.mode === "quote" ? `${context.value.split(/\r?\n/).map(line => `> ${line}`).join("\n")}\n\n${request}` : request;
-    onSend(value, effectiveSendMode);
+    onSend(taskMode && tool === 'codex' && !value.startsWith('/') ? taskDelegationRequest(value) : value, effectiveSendMode);
     updateText("");
     updateAttachments(() => []);
     setContext(null); composerContextStore.delete(storageKey);
@@ -1553,6 +1556,7 @@ function ChatComposer({
         />
       </div>
       <div className="chat-composer-toolbar">
+        {tool === 'codex' && modelEditingSupported && <><button type="button" className="chat-task-control" aria-pressed={taskMode} onClick={() => setTaskMode(value => !value)} title="A가 계획하고 독립된 하위 세션이 실행합니다">작업 분담 {taskMode ? '켜짐' : '꺼짐'}</button><TaskFlowButton ownerId={agentId}/></>}
         <button type="button" className="chat-composer-attach" title={localize("파일 또는 이미지 첨부", "Attach files or images")} aria-label={localize("파일 또는 이미지 첨부", "Attach files or images")} disabled={attaching} onClick={() => { void attachFiles(); }}><ChatIcon name="plus" /></button>
         {modelEditingSupported && (tool === "codex" || tool === "claude")
           ? <ChatModelPicker agentId={agentId} provider={tool} active={active} busy={modelBusy} sessionId={sessionId} settingsKey={modelSettingsKey} />

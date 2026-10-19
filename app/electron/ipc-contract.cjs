@@ -10,6 +10,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "session_notifications_get", "session_notifications_set", "answer_question",
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
+  "task_orchestration",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "codex_accounts_switch",
@@ -291,6 +292,10 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "get_session_model":
       assertId(args);
+      break;
+    case "task_orchestration":
+      if (typeof args.action !== 'string' || !['list', 'get', 'navigation', 'catalog', 'policy', 'policy-save', 'plan', 'pause', 'resume', 'cancel', 'retry', 'override', 'review', 'answer', 'reconcile', 'finish'].includes(args.action)
+        || !args.body || typeof args.body !== 'object' || Array.isArray(args.body) || JSON.stringify(args.body).length > 65536) throw new TypeError('Invalid task orchestration request');
       break;
     case "set_session_model":
       assertId(args);

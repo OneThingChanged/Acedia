@@ -21,7 +21,7 @@ export class RemoteSessionCreateBroker {
   }
 
   create(payload) {
-    const id = this.idFactory();
+    const id = payload.id || this.idFactory();
     const requestId = this.idFactory();
 
     return new Promise((resolve, reject) => {

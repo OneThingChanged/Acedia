@@ -8,6 +8,7 @@ import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { canParentSession, layoutSessionHierarchy, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings } from "../lib/sessionHierarchy";
 import "./SessionOrganization.css";
 import { ProjectBoard, type ProjectBoardChange } from "./ProjectBoard";
+import { TaskFlow } from './TaskFlow';
 
 type Props = {
   agents: Agent[];
@@ -58,6 +59,7 @@ export function SessionOrganization(props: Props) {
   const rootRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scope, setScope] = useState("all");
+  const [taskView, setTaskView] = useState(false);
   const [activeOnly, setActiveOnly] = useState(true);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -91,14 +93,15 @@ export function SessionOrganization(props: Props) {
     else setInspectorCollapsed((current) => !current);
   }
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  if (taskView) return <section className="terminal-area task-flow-host"><button className="task-flow-return" onClick={() => setTaskView(false)}>← 세션 조직도</button><TaskFlow onOpenSession={props.onOpenSession}/></section>;
 
-  if (scope === "all") return <ProjectBoard projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
+  if (scope === "all") return <ProjectBoard onTaskFlow={() => setTaskView(true)} projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
     const agent = catalog.find(item => item.id === id);
     return agent ? <HierarchyInspector key={id} agent={agent} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={close}/> : null;
   }}/>;
 
   return <section ref={rootRef} className={`terminal-area session-organization${inspectorCollapsed ? " org-inspector-collapsed" : ""}${mobileInspector ? " org-inspector-shown" : ""}`} aria-label={text("세션 조직도", "Session organization")}>
-    <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1><NetworkIcon/>{text("세션 조직도", "Session organization")}</h1><p>{text("작업을 묶고, 필요한 설정을 이어받습니다.", "Group work and inherit the settings you need.")}</p></div><div className="org-header-actions">
+    <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1><NetworkIcon/>{text("세션 조직도", "Session organization")}</h1><p>{text("작업을 묶고, 필요한 설정을 이어받습니다.", "Group work and inherit the settings you need.")}</p></div><div className="org-header-actions"><button onClick={() => setTaskView(true)}>작업 흐름</button>
       <select aria-label={text("조직도 프로젝트", "Organization project")} value={scope} onChange={(event) => { setScope(event.target.value); setQuery(""); }}><option value="all">{text("전체 프로젝트", "All projects")}</option>{props.projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <button className="btn-primary" disabled={!selected} onClick={() => selected && props.onCreateChild(selected.id)}>＋ {text("자식 세션", "Child session")}</button><button className="org-icon-button" aria-label={text("세션 정보 패널 전환", "Toggle session inspector")} onClick={toggleInspector}>▥</button>
     </div></header>

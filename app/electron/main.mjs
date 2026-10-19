@@ -73,6 +73,8 @@ import { confirmCodexConversationReset } from './services/codex-conversation-res
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
+import { TaskOrchestration } from "./services/task-orchestration.mjs";
+import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
 import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
@@ -561,6 +563,7 @@ async function pollActiveQuestions() {
     activeQuestions.prune(ptys.keys());
     capacityRetry.prune(ptys.keys());
     sessionDeliveries.poll();
+    await taskOrchestration.tick();
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
@@ -1001,9 +1004,10 @@ function deliveryContext(id) {
     state: state?.state, reason: state?.reason };
 }
 const sessionDeliveries = new SessionDeliveries({
+  freshRead: freshTaskSession,
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
-  ready: target => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
-    && ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason) && deliveryComposerReady(target.entry),
+  ready: (target, { freshSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
+    && (freshSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
   submit: (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
     return submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
@@ -1161,6 +1165,62 @@ const sessionModels = new SessionModelService({
     }
   },
 });
+const taskOrchestration = new TaskOrchestration({
+  audit: taskFileSnapshot,
+  file: path.join(app.getPath('userData'), 'task-orchestration.json'),
+  catalog: () => monitorService?.state || {},
+  runtime: id => ptys.get(id),
+  createSession: payload => workspaceManagement.createTaskSession(payload),
+  delivery: sessionDeliveries, read: readTaskSession,
+  models: id => sessionModels.read(id),
+  launchedModel: id => {
+    const entry = ptys.get(id), native = entry?.runtimeModelSettings || nativeCodexModel(entry);
+    // The native footer can omit Standard. In that case confirm the explicit
+    // launch configuration now; the result still requires actual turn evidence.
+    return native && !Object.hasOwn(native, 'serviceTier') && entry.modelSettings?.serviceTier === 'default'
+      ? { ...native, serviceTier: 'default' } : native;
+  },
+  actualModel: async (id, since) => {
+    const entry = ptys.get(id);
+    if (!entry || entry.aiToolId !== 'codex' || entry.ssh) return null;
+    const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
+    const candidate = agentTranscripts.get(id) || resolveChatTranscriptBySession('codex', sessionId, { toolId: 'codex', accountId: selectedAccountId(entry) })?.path;
+    const root = accountTranscriptRoot('codex', selectedAccountId(entry));
+    if (!candidate || !root || !sessionId || !isTranscriptInsideRoot(root, candidate) || !candidate.toLowerCase().includes(sessionId.toLowerCase())) return null;
+    const observed = await lastTurnModel(candidate, 'codex', since);
+    if (!observed) return null;
+    const native = normalizeSessionModel(entry.runtimeModelSettings);
+    return !Object.hasOwn(observed, 'serviceTier') && native && Object.hasOwn(native, 'serviceTier') && native.model === observed.model && native.effort === observed.effort
+      ? { ...observed, serviceTier: native.serviceTier } : observed;
+  },
+  answer: (id, request) => questionResponder.answer(id, request),
+  stop: id => sessionProviders.closeSession(id),
+  defaults: () => sessionModelDefaults.get('codex').settings,
+});
+workspaceManagement.tasks = taskOrchestration;
+async function readTaskSession(id) {
+  const result = await currentQuestion(id);
+  if (!result) return freshTaskSession(id);
+  if (result.turn || !result.question) return result;
+  // The native command approval reader owns the live question but omits the
+  // transcript turn. Bind both before exposing it in the task inspector.
+  const entry = ptys.get(id);
+  if (!entry || entry.aiToolId !== 'codex') return result;
+  const transcript = await activeQuestions.read({ id, tool: 'codex', root: accountTranscriptRoot('codex', selectedAccountId(entry)),
+    transcriptPath: agentTranscripts.get(id), sessionId: result.sessionId, startedAt: entry.startedAt });
+  return ptys.get(id) === entry && transcript?.sessionId === result.sessionId ? { ...transcript, ...result } : result;
+}
+function freshTaskSession(id) {
+  const worker = taskOrchestration.worker(id), attempt = worker?.task.attempts.at(-1);
+  const entry = ptys.get(id), hook = monitorHooks.get(id);
+  const agent = entry && sessionModelAgent(id), conversationId = agent && miraControlProviderSessionId(agent);
+  const freshIdentity = !conversationId && !entry?.resumeContext && !agent?.lastSessionId;
+  const startedIdentity = conversationId && hook?.event === 'session-start' && hook.session_id === conversationId && Number.isFinite(hook.lastTs) && hook.lastTs >= entry?.startedAt;
+  if (attempt?.sessionId !== id || !attempt.creationAcknowledged || attempt.turnId || worker.task.state !== 'dispatching'
+    || !entry || !(freshIdentity || startedIdentity)
+    || !deliveryComposerReady(entry) || !(entry.runtimeModelSettings || nativeCodexModel(entry))) return null;
+  return { sessionId: conversationId || null, turn: null, question: null, lifecycle: 'idle' };
+}
 function modelInputReady(entry) {
   return codexModelInputReady(entry, { blocked: forceClosing || questionResponder.isBusy(entry?.id) || capacityRetry.isActive(entry?.id) });
 }
@@ -1168,6 +1228,7 @@ function modelInputReady(entry) {
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  tasks: request => taskOrchestration.handle({ ...request, operator: true }),
   answerQuestion: (id, request) => questionResponder.answer(id, request),
   sessionNotifications: sessionNotificationPreference,
   notificationAllowed: (id, kind) => allowNotification(notificationSettings.get(), kind === 'done' ? 'completion' : kind, false, sessionNotifications.get(id).enabled),
@@ -5035,6 +5096,11 @@ async function invokeCommand(event, command, rawArgs) {
     return result;
   }
   switch (command) {
+    case 'task_orchestration': {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (!runtime?.workspace_window) throw new Error('작업창에서 작업 분담을 확인하세요.');
+      return taskOrchestration.handle({ action: args.action, body: args.body, operator: true });
+    }
     case 'session_deliveries_get':
       return sessionDeliveries.list(args.id);
     case 'capacity_retry_get':
@@ -6191,6 +6257,7 @@ app.on("before-quit", (event) => {
   if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
   capacityRetry.dispose();
   sessionDeliveries.dispose();
+  taskOrchestration.close();
   if (hookMaintenanceTimer) {
     clearInterval(hookMaintenanceTimer);
     hookMaintenanceTimer = null;

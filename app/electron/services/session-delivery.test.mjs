@@ -41,6 +41,16 @@ it('reports actual sent, received and identified new-turn stages; keeps the orig
   expect(f.service.list('target')[0].deliveryId).toBe(f.service.list('caller')[0].deliveryId);
   expect(fs.readFileSync(f.options.file, 'utf8')).not.toContain('UI 초안');
 });
+it('allows only the internal first-turn path with an empty composer and no previous turn', async () => {
+  const f = fixture();
+  f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: null, question: null });
+  await expect(f.send()).rejects.toThrow('busy');
+  expect(await f.service.handle({ action: 'send', agentId: 'caller', body: f.body, freshSession: true })).toMatchObject({ status: 'sent' });
+  const g = fixture();
+  g.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: { id: 'existing-turn' } });
+  await expect(g.service.handle({ action: 'send', agentId: 'caller', body: g.body, freshSession: true })).rejects.toThrow('busy');
+  await expect(g.send({ freshSession: true })).rejects.toMatchObject({ statusCode: 400 });
+});
 it('deduplicates concurrent retries and app restarts without sending again, rejecting changed request content', async () => {
   const f = fixture();
   const [first, retry] = await Promise.all([f.send(), f.send()]);
@@ -50,6 +60,30 @@ it('deduplicates concurrent retries and app restarts without sending again, reje
   expect(await restarted.handle({ action: 'send', agentId: 'caller', body: f.body })).toMatchObject({ status: 'unconfirmed', reason: 'app-restarted' });
   expect(f.options.submit).toHaveBeenCalledTimes(1);
   await expect(restarted.handle({ action: 'delivery', agentId: 'other', body: { requestKey: f.body.requestKey } })).rejects.toMatchObject({ statusCode: 404 });
+});
+it('recovers a receipt lost at shutdown by reading exact transcript evidence without resubmission', async () => {
+  const f = fixture(); await f.send(); f.acknowledge();
+  const records = JSON.parse(fs.readFileSync(f.options.file)); records[0].status = 'sent'; delete records[0].turnId;
+  fs.writeFileSync(f.options.file, JSON.stringify(records));
+  const restored = new SessionDeliveries(f.options);
+  const receipt = f.service.list('caller')[0], message = f.options.submit.mock.calls[0][2];
+  f.options.read.mockResolvedValue({ sessionId: 'conversation', deliveries: [{ deliveryId: receipt.deliveryId, messageHash: createHash('sha256').update(message.trim()).digest('hex'), receivedAt: 10100, turnId: 'new-turn', startedAt: 10050 }] });
+  await restored.reconcile('caller', f.body.requestKey);
+  expect(restored.list('caller')[0].status).toBe('started'); expect(f.options.submit).toHaveBeenCalledTimes(1);
+});
+it('binds the first conversation of a reserved new CLI only from its exact received envelope and started turn', async () => {
+  const f = fixture(); f.contexts.target.conversationId = null;
+  f.options.read.mockResolvedValue(null); f.service.freshRead = () => ({ sessionId: null, turn: null, question: null, lifecycle: 'idle' });
+  await expect(f.send({ expectedConversationId: null })).rejects.toThrow();
+  const receipt = await f.service.handle({ action: 'send', agentId: 'caller', freshSession: true, body: { ...f.body, expectedConversationId: null } });
+  expect(receipt.status).toBe('sent'); expect(receipt.conversationId).toBe(null);
+  const message = f.options.submit.mock.calls[0][2], hash = createHash('sha256').update(message.trim()).digest('hex');
+  const evidence = { deliveryId: receipt.deliveryId, messageHash: hash, receivedAt: 10100, turnId: 'first-turn', startedAt: 10050 };
+  f.service.observe('target', f.contexts.target.entry, { sessionId: 'new-conversation', deliveries: [{ ...evidence, messageHash: 'wrong' }] });
+  expect(f.service.list('caller')[0].conversationId).toBe(null);
+  f.service.observe('target', f.contexts.target.entry, { sessionId: 'new-conversation', deliveries: [evidence] });
+  expect(f.service.list('caller')[0]).toMatchObject({ status: 'started', conversationId: 'new-conversation', turnId: 'first-turn' });
+  expect(f.options.submit).toHaveBeenCalledTimes(1);
 });
 it('leaves timeout as unconfirmed, never replays text, and accepts a later exact receipt', async () => {
   const f = fixture(); await f.send();

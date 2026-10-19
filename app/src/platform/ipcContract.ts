@@ -6,6 +6,7 @@ export type RuntimeCommand =
   | "session_notifications_get" | "session_notifications_set" | "answer_question"
   | "capacity_retry_get" | "capacity_retry_cancel"
   | "session_deliveries_get"
+  | "task_orchestration"
   | "saved_commands_get" | "saved_commands_set" | "saved_command_resolve" | "project_startup_claim"
   | "browser_preferences_get" | "browser_preferences_set"
   | "browser_extensions_list" | "browser_extensions_change"

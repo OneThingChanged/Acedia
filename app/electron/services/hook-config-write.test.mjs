@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HookService } from "./hook-service.mjs";
+import { parse as parseToml } from 'smol-toml';
 
 const directories = [];
 function fixture() {
@@ -67,6 +68,34 @@ it("serializes overlapping writes to the same Codex home without losing hooks or
   expect(file).toContain("[[hooks.SessionStart]]");
   expect(file.match(/\[mcp_servers.multiagent_browser\]/g)).toHaveLength(1);
   expect(file).toContain("enabled = false");
+});
+
+it.each(['home', 'project'])('repairs markerless duplicate managed browser tables in a Codex %s', async kind => {
+  const { root, service } = fixture();
+  const folder = kind === 'home' ? root : path.join(root, '.codex');
+  fs.mkdirSync(folder, { recursive: true });
+  const file = path.join(folder, 'config.toml');
+  const browser = `[mcp_servers.multiagent_browser]\ncommand="node"\nargs=["-e", "import(require('node:url').pathToFileURL(process.env.MULTIAGENT_MCP_SCRIPT))"]\nenabled=false\n`;
+  const custom = '[mcp_servers.user_server]\ncommand="custom-server"\n';
+  const notes = `notes = '''\n${browser}\n[mcp_servers.fake]\ncommand="keep inside string"\n'''\n`;
+  fs.writeFileSync(file, notes + browser + custom + browser);
+  const setup = () => kind === 'home' ? service.setupCodexHome(root) : service.setupProject(root, 'codex');
+  await setup();
+  const after = fs.readFileSync(file, 'utf8'), config = parseToml(after);
+  expect(config.notes).toContain(browser.trim());
+  expect(config.mcp_servers.user_server.command).toBe('custom-server');
+  expect(config.mcp_servers.multiagent_browser.args[1]).toContain('MULTIAGENT_MCP_SCRIPT');
+  await expect(setup()).resolves.toBe(false);
+});
+
+it('preserves conflicting custom browser names and unrelated invalid TOML without writing', async () => {
+  const { root, service } = fixture();
+  const file = path.join(root, 'config.toml');
+  for (const before of ['[mcp_servers.multiagent_browser]\ncommand="user-server"\n', 'model = [unfinished']) {
+    fs.writeFileSync(file, before);
+    await expect(service.setupCodexHome(root)).rejects.toThrow('TOML');
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  }
 });
 
 it("preserves Codex approvals inserted before the managed MCP end comment across resumes", async () => {

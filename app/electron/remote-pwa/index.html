@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <link rel="stylesheet" href="/pwa/xterm.css">
   <link rel="stylesheet" href="/pwa/styles.css">
+  <link rel="stylesheet" href="/pwa/task-flow.css">
   <title>Acedia Remote</title>
   <script src="/pwa/xterm.js" defer></script>
   <script src="/pwa/terminal-touch.js" defer></script>
@@ -117,6 +118,7 @@
       <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="탐색 메뉴 닫기"></button>
 
       <section class="content-pane">
+        <section id="taskFlowView" hidden></section>
         <section class="monitor-view" id="monitorView" hidden>
           <div class="view-head">
             <div>

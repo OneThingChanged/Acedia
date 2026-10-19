@@ -132,6 +132,8 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-pagination.js", { file: "../shared/chat-pagination.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/question-form.js", { file: "question-form.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/hosting.js", { file: "hosting.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/task-flow.js", { file: "task-flow.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/task-flow.css", { file: "task-flow.css", type: "text/css; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-model.js", { file: "session-model.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/usage-sessions.js", { file: "usage-sessions.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -1114,8 +1116,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
-    Object.assign(this, { chatImages, chatDetails, modelDefaults, closeSession });
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    Object.assign(this, { chatImages, chatDetails, modelDefaults, tasks, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
     this.notificationAllowed = notificationAllowed ?? (() => true);

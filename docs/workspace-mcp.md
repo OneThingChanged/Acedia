@@ -31,6 +31,21 @@ MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없
 | `acedia_session_create` | 등록된 로컬 프로젝트에 추가 세션 생성 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
 | `acedia_session_delivery` | 같은 호출 세션이 보낸 요청의 상태 조회. 입력·재전송 없음 |
+| `acedia_task_plan` | A의 계획 검증·저장 후 전용 로컬 Codex 작업 세션 자동 배정 |
+| `acedia_task_list` / `acedia_task_get` | 실행 목록 페이지와 작업·시도·대화·턴·질문·검증 결과 조회 |
+| `acedia_task_wait` | revision이 바뀌거나 최대 10초가 될 때까지 비동기 대기. 터미널 입력 없음 |
+| `acedia_task_result` | 현재 담당 하위 세션이 정확한 시도·대화·턴의 구조화된 결과 제출 |
+| `acedia_task_control` | A의 실행 정지·재개·취소, 결과 검토, 제한된 재시도, 상태 대조와 최종 요약 |
+
+`acedia_task_*`는 2026-10-19 배포 전 소스에 추가됐다. 기존 조직도·생성 broker·전달 기록·모델 서비스를 사용한다. 일반 `session_create`의 실행 중 메모리 키와 달리 계획 키와 각 시도의 생성 ID·전달 키는 `task-orchestration.json`에 저장된다. 앱 재시작 후 미확인 작업을 자동으로 다시 생성·전송하지 않는다.
+
+작업 계획은 `requestKey`, `title`, `request`, `tasks`와 선택적인 `concurrency`(기본 2, 1~4)를 받는다. 각 작업은 `id`, `title`, `goal`, `acceptance`, `dependsOn`, `writeScopes`를 지정한다. `writeScopes: []`는 읽기 전용이며 프로젝트의 실제 실행 폴더를 기준으로 경로를 검증한다. 난도·위험·문맥·도구 요구의 `assessment`에 따라 설정된 세 등급의 모델을 고르고 사용자 `modelOverride`를 우선한다. 호스트는 순환·외부 의존 관계와 추가 위임을 거부한다.
+
+하위 결과는 `runId`, `taskId`, `attemptId`, `conversationId`, `turnId`, `result`에 연결한다. 결과에는 `summary`, `changedFiles`, `checks[{command, passed, output}]`와 선택적인 `artifacts`, `issues`가 들어간다. 실제 모델·턴을 확인하고 저장한 뒤 A의 `review`를 기다린다. 제출한 worker의 턴이 아직 진행 중이면 검토 완료를 거부해 파일 충돌 잠금을 유지한다. 필수 작업이 모두 완료돼야 `finish(summary)`가 성공한다. 질문·승인 답변은 사용자 화면 전용이다.
+
+전용 세션의 첫 대화 ID가 아직 없을 때의 내부 전달 경로는 새 세션·빈 입력창·실제 모델을 확인하고, 정확한 전달 해시와 새 턴 증거로만 대화 ID를 연결한다. 일반 `acedia_session_send`의 필수 대화 ID·초안/질문/작업 중 거부 규칙은 유지된다. 자세한 예외와 검사 결과는 [구현 기록](task-orchestration-handoff-2026-10-19.md)을 참고한다.
+
+데스크톱·Remote의 `get(view: "board")`는 카드별 digest인 `taskVersions`를 받아 변경된 카드만 반환한다. `detailTaskId`와 `detailVersion`으로 선택한 작업의 상세만 지연 조회하며 다른 작업의 긴 검사 출력은 보드 갱신에 포함하지 않는다. MCP의 일반 `get`은 A의 결과 검토에 필요한 구조화된 실행 정보를 반환한다. 두 경로 모두 전체 대화와 이미지를 복제하지 않는다.
 
 조회·생성 도구는 1.8.1.48부터 제공한다. 전달 도구는 1.8.1.56부터 제공하며,
 이 버전의 EXE 업데이트 후 호출하는 CLI를 다시 시작해야 도구 목록에 나타난다.

@@ -16,11 +16,13 @@ configuration that supports it.
 * [Project managed files](project-managed-files.md) - Acedia settings registry, Git/Perforce ignores, and read-only repair at local session startup.
 * [Workspace interactions](workspace-interactions.md) - Centered Quick Search, inline project/session search, Chat model/effort controls, fitted image previews, changed-file summaries and searchable file dialogs, conversation performance, navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
+* [멀티세션 작업 분담 구현 기록](task-orchestration-handoff-2026-10-19.md) - A의 계획·배정·결과 검토, 전용 Codex 세션, 모델 자동 선택, 재시작 복구와 데스크톱·Remote 검사 및 남은 범위. [첫 한국어 초안](mockups/task-orchestration.html), [프로젝트 보드 확장 시안](mockups/project-board-task-flow.html).
 * [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
 * [대화 UX HTML 초안 02](mockups/chat-workspace-v2.html) - 요청·답변 구분, 상단 Quick Search와 사이드바 프로젝트·세션 통합 검색. [기본 화면](mockups/chat-workspace-v2.png), [검색 화면](mockups/chat-workspace-v2-search.png), [관찰·앱 적용·검사](chat-ux-review-2026-10-08.md).
 
 ## Settings and review
 
+* [Acedia 1.8.1.85](release-1-8-1-85.md) - 로컬 Codex 작업 분담·모델 정책·작업 흐름·사이드바 하위 세션과 Nogari 설정 수정의 EXE 배포 기록.
 * [Acedia 1.8.1.81 source changes](release-1-8-1-81.md) - Remote 터미널 마지막 줄 잘림과 이전 Luna 모델 표시 수정; 소스 검증 완료, 설치 파일 빌드·공개 배포 전.
 * [Acedia 1.8.1.80 EXE release](release-1-8-1-80.md) - 앱 시작 시 업데이트 안내, 줄바꿈된 영상 링크와 내장 Git 설정 검사 보강; 안정 EXE 게시와 공개 다운로드 검증 완료.
 * [Acedia 1.8.1.79 EXE release](release-1-8-1-79.md) - Remote 웹 기능, 완료 상태 수정과 문서·HTML 작업자 분배 제거; 안정 EXE 게시와 공개 다운로드 검증 완료.

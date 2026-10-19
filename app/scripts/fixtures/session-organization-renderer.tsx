@@ -30,6 +30,7 @@ window.multiAgentElectron = {
     if (command === "get_agent_window_usage") return { in_use_agent_ids: [], owned_agent_ids: [] };
     if (command === "get_detached_agents") return {};
     if (command === "claim_agent_for_window") return { claimed: true };
+    if (command === "account_pool_choices") return { enabled: false, accounts: [] };
     if (command === "spawn_pty") return { reattached: false };
     if (command === "resolve_cli_session") return args?.preferredSessionId || null;
     if (command === "document_browser_list") return { browsers: [] };

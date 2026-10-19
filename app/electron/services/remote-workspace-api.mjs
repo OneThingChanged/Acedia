@@ -1,6 +1,6 @@
 import { sendJson } from './remote-http.mjs';
 
-const routes = new Set(['/api/chat/images', '/api/chat/details', '/api/session/defaults', '/api/session/close']);
+const routes = new Set(['/api/chat/images', '/api/chat/details', '/api/session/defaults', '/api/session/close', '/api/tasks']);
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sessionId = value => {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\x00-\x1f]/.test(value)) throw fail('Invalid session id');
@@ -23,6 +23,16 @@ export async function serveRemoteWorkspaceApi(request, response, url, { provider
     if (mutation && !String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw fail('application/json required', 415);
     const body = mutation ? await readJson(request, 16 * 1024) : {};
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('Invalid JSON object');
+    if (url.pathname === '/api/tasks') {
+      if (!providers.tasks) throw fail('작업 분담을 사용할 수 없습니다.', 503);
+      const action = mutation ? body.action : url.searchParams.get('runId') ? 'get' : 'list';
+      const options = mutation ? body.body : Object.fromEntries(url.searchParams);
+      if (options?.offset != null) options.offset = Number(options.offset);
+      if (options?.revision != null) options.revision = Number(options.revision);
+      if (['plan', 'policy-save'].includes(action) && !(snapshot().agents || []).some(a => a.id === options?.ownerId)) throw fail('Session not found', 404);
+      sendJson(response, 200, await providers.tasks({ action, body: options }));
+      return true;
+    }
     if (url.pathname === '/api/session/defaults') {
       const provider = mutation ? body.provider : url.searchParams.get('provider');
       if (!['codex', 'claude'].includes(provider)) throw fail('Unsupported model provider');

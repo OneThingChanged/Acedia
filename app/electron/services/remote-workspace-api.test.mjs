@@ -14,6 +14,27 @@ afterEach(async () => {
   }
 });
 describe.each(['remote', 'dashboard'])('%s workspace API', kind => {
+  it('shares task summaries and revisioned controls, enforcing origin, JSON size and session membership', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-api-')); roots.push(root);
+    const calls = [], providers = { tasks: async request => { calls.push(request); return { revision: 3, runs: [], request }; } };
+    const stateProvider = () => ({ agents: [{ id: 'a' }] });
+    const service = kind === 'remote' ? new RemoteDashboardService({ baseDir: root, stateProvider, ...providers })
+      : new LocalDashboardService({ baseDir: root, configName: 'tasks.json', title: 'Fixture', defaultPort: 0, stateProvider, providers });
+    if (kind === 'remote') service.config.server_port = 0;
+    services.push(service); const { url } = await service.start();
+    const post = (body, origin = url, type = 'application/json') => fetch(url + '/api/tasks', { method: 'POST', headers: { origin, 'content-type': type }, body: JSON.stringify(body) });
+    expect((await fetch(url + '/api/tasks?offset=20').then(r => r.json())).request).toEqual({ action: 'list', body: { offset: 20 } });
+    expect((await fetch(url + '/api/tasks?runId=r&revision=3').then(r => r.json())).request).toEqual({ action: 'get', body: { runId: 'r', revision: 3 } });
+    expect((await post({ action: 'pause', body: { runId: 'r' } }, 'https://attacker.invalid')).status).toBe(403);
+    expect((await post({ action: 'plan', body: { ownerId: 'foreign' } })).status).toBe(404);
+    expect((await post({ action: 'pause', body: { runId: 'r' } }, url, 'text/plain')).status).toBe(415);
+    expect((await post({ action: 'plan', body: { ownerId: 'a', request: 'x'.repeat(17000) } })).status).toBe(413);
+    expect((await post({ action: 'pause', body: { runId: 'r' } })).status).toBe(200);
+    expect((await fetch(url + '/pwa/task-flow.js')).status).toBe(200);
+    expect((await fetch(url + '/pwa/task-flow.css')).status).toBe(200);
+    expect(calls).toHaveLength(3);
+    if (kind === 'remote') expect((await fetch(url + '/api/tasks', { headers: { 'cf-connecting-ip': '203.0.113.4' } })).status).toBe(401);
+  });
   it('forwards paging cursors and fetches work details only for validated authenticated requests', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-api-')); roots.push(root);
     const pages = [], details = [];

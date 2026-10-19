@@ -26,9 +26,19 @@ export class WorkspaceManagement {
       availableTools: (catalog.availableTools || []).map(t => ({ id: t.id, label: t.label })),
     };
   }
+  async createTaskSession({ id, ownerId, projectId, folder, name, modelSettings }) {
+    const snapshot = this.snapshot();
+    const caller = (this.catalog().agents || []).find(a => a.id === ownerId);
+    if (!this.isActive(ownerId) || caller?.projectId !== projectId || caller.aiToolId !== 'codex'
+      || !snapshot.projects.some(p => p.id === projectId && p.local)
+      || !snapshot.availableTools.some(t => t.id === 'codex') || snapshot.sessions.some(s => s.id === id)) throw fail('전용 작업 세션을 생성할 수 없습니다.', 409);
+    return this.create({ id, projectId, name, aiToolId: 'codex', dangerous: false, workspaceManaged: true, modelSettings,
+      sessionHierarchy: { createdById: ownerId, parentId: ownerId, inheritFolder: false, folderOverride: folder, inheritInstructions: true, inheritModel: false } });
+  }
   handle({ action, body = {}, agentId }) {
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'task') return this.tasks ? this.tasks.handle({ action: body.action, body: body.body, agentId }) : Promise.reject(fail('Task orchestration unavailable', 503));
     if (['send', 'delivery'].includes(action)) return this.deliveries ? this.deliveries.handle({ action, agentId, body }) : Promise.reject(fail('Session delivery unavailable', 503));
     if (!['create-project', 'create-session'].includes(action)) return Promise.reject(fail('지원하지 않는 작업입니다.', 404));
     if (!body || typeof body !== 'object' || Array.isArray(body)) return Promise.reject(fail('JSON 객체가 필요합니다.'));

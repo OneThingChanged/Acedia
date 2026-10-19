@@ -3,6 +3,7 @@ import { createImageZoom } from './image-zoom.js';
 import { createSessionModelEditor } from './session-model.js';
 import { createAccountPoolView } from './account-pool.js';
 import { createSessionUsageView } from './usage-sessions.js';
+import { createTaskFlowView, taskDelegationRequest } from './task-flow.js';
 import { t, getLanguage, setLanguage, bindShellTranslations, monthLabel, bucketLabel } from "./i18n.js";
 import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
@@ -257,6 +258,7 @@ function loadSessionFilter(url) {
 }
 let activeFilter = loadSessionFilter(initialUrl);
 function selectionFromUrl(url) {
+  if (url.searchParams.get('tasks') === '1') return { type: 'tasks', id: null };
   if (url.searchParams.get("hosting") === "1") return { type: "hosting", id: null };
   if (url.searchParams.get("usage") === "1") return { type: "usage", id: null };
   if (url.searchParams.get("docs")) return { type: "documents", id: url.searchParams.get("docs") };
@@ -266,6 +268,20 @@ function selectionFromUrl(url) {
 }
 let selection = selectionFromUrl(initialUrl);
 const hosting = createHostingView(ui.hostingView);
+const taskFlow = createTaskFlowView(document.getElementById('taskFlowView'), {
+  api: async (action, body) => {
+    const { response, data } = await requestJson('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, body }) });
+    if (!response.ok) throw Error(data.error || '작업 요청 실패'); return data;
+  },
+  openSession: id => selectSession(id),
+});
+const taskButton = document.createElement('button'); taskButton.type = 'button'; taskButton.className = 'overview-button'; taskButton.textContent = '작업 흐름'; taskButton.id = 'taskFlowButton';
+ui.hostingButton.after(taskButton);
+taskButton.onclick = () => { selection = { type: 'tasks', id: null }; returnScreenId = null; updateUrl({ push: true }); renderNavigation(); renderSelection(); closeSidebar(); };
+const taskModes = new Set();
+const taskModeButton = document.createElement('button'); taskModeButton.type = 'button'; taskModeButton.className = 'small-button'; taskModeButton.textContent = '작업 분담 꺼짐';
+document.querySelector('.composer-settings').append(taskModeButton);
+taskModeButton.onclick = () => { if (selection.type !== 'session' || agentMap().get(selection.id)?.aiToolId !== 'codex') return; taskModes.has(selection.id) ? taskModes.delete(selection.id) : taskModes.add(selection.id); updateComposerSendState(); };
 const sessionUsageView = createSessionUsageView(document.querySelector('#sessionUsageView'), {
   isPageActive: () => nativePageActive,
   toast: message => showToast(message),
@@ -724,6 +740,8 @@ function updateUrl({ push = false } = {}) {
   url.searchParams.delete("file");
   url.searchParams.delete("usage");
   url.searchParams.delete("hosting");
+  url.searchParams.delete('tasks');
+  if (selection.type === 'tasks') url.searchParams.set('tasks', '1');
   if (selection.type === "hosting") url.searchParams.set("hosting", "1");
   if (selection.type === "session") url.searchParams.set("agent", selection.id);
   if (selection.type === "screen") url.searchParams.set("screen", selection.id);
@@ -3166,6 +3184,9 @@ async function loadUsage(refresh = false) {
 }
 
 function renderSelection() {
+  document.getElementById('taskFlowView').hidden = selection.type !== 'tasks';
+  taskButton.classList.toggle('selected', selection.type === 'tasks');
+  if (selection.type === 'tasks') taskFlow.enter(); else taskFlow.leave();
   syncFileDownloadButtons();
   hosting.translate();
   accountPoolView.translate();
@@ -3579,6 +3600,9 @@ function currentAttachments() {
 }
 
 function updateComposerSendState() {
+  taskModeButton.hidden = selection.type !== 'session' || agentMap().get(selection.id)?.aiToolId !== 'codex';
+  taskModeButton.textContent = taskModes.has(selection.id) ? '작업 분담 켜짐' : '작업 분담 꺼짐';
+  taskModeButton.setAttribute('aria-pressed', String(taskModes.has(selection.id)));
   updateWorking();
   const agent = selectedAgent();
   const attachments = currentAttachments();
@@ -4131,7 +4155,8 @@ async function sendSelectedMessage() {
   const attachments = currentAttachments();
   if (!agent || sendingAgents.has(agent.id) || attachments.some((attachment) => attachment.uploading)) return;
   acknowledgeCompletion(agent.id);
-  const outgoing = remoteAttachmentMessage(message, attachments);
+  const rawOutgoing = remoteAttachmentMessage(message, attachments);
+  const outgoing = rawOutgoing && taskModes.has(agent.id) && agent.aiToolId === 'codex' && !rawOutgoing.startsWith('/') ? taskDelegationRequest(rawOutgoing) : rawOutgoing;
   if (!outgoing) return;
   const snapshot = { revision: composerRevisions.get(agent.id) || 0, draft: ui.messageInput.value, attachments: attachments.slice() };
   const previous = pendingSubmissions.get(agent.id);

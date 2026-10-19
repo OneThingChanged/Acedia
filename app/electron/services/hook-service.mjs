@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import { checkProjectPath, makeWritable, projectManagementPlan } from "./project-managed-files.mjs";
 import { MIRACONTROL_API_VERSION } from "./miracontrol-integration.mjs";
 
@@ -419,6 +420,51 @@ function removeManagedCodexMcpBlock(existing) {
   return `${existing.slice(0, start)}${retained.trim() ? retained : ""}${existing.slice(end + CODEX_MCP_END.length)}`.trimEnd();
 }
 
+// Codex's TOML writer can move tables and discard our marker comments.
+// Recognize only our exact transport, including already duplicated copies.
+function removeOrphanedCodexMcp(existing) {
+  const sections = [], starts = [0];
+  let quote = "", depth = 0, offset = 0;
+  for (const line of existing.match(/[^\n]*\n|[^\n]+$/g) || []) {
+    if (!quote && !depth && /^[ \t]*\[\[?[^\r\n]+\]\]?[ \t]*(?:#.*)?\r?\n?$/.test(line)) {
+      if (offset) starts.push(offset);
+      offset += line.length; continue;
+    }
+    for (let i = 0; i < line.length; i++) {
+      if (quote) {
+        if (quote[0] === '"' && line[i] === '\\') { i++; continue; }
+        if (line.startsWith(quote, i)) { i += quote.length - 1; quote = ""; }
+      } else if (line[i] === '#') break;
+      else if (line[i] === '"' || line[i] === "'") {
+        quote = line.startsWith(line[i].repeat(3), i) ? line[i].repeat(3) : line[i];
+        i += quote.length - 1;
+      } else if (line[i] === '[') depth++;
+      else if (line[i] === ']') depth--;
+    }
+    if (quote.length === 1) quote = "";
+    offset += line.length;
+  }
+  starts.push(existing.length);
+  for (let i = 0; i < starts.length - 1; i++) {
+    const section = existing.slice(starts[i], starts[i + 1]);
+    let owned = false;
+    if (/^[ \t]*\[mcp_servers\.multiagent_browser\][ \t]*(?:#.*)?\r?\n/.test(section)) {
+      try {
+        const entry = parseToml(section).mcp_servers?.multiagent_browser;
+        owned = entry?.command === 'node' && JSON.stringify(entry.args) === JSON.stringify(BROWSER_MCP_NODE_ARGS);
+      } catch { /* Leave unrecognized or malformed user content intact. */ }
+    }
+    if (!owned) sections.push(section);
+  }
+  return sections.join('').trimEnd();
+}
+
+function validateCodexConfig(value) {
+  try { parseToml(value); }
+  catch { throw new Error('Codex 설정에 중복 항목 또는 TOML 문법 오류가 있습니다. config.toml을 확인하세요.'); }
+  return value;
+}
+
 function codexMcpBlockLines() {
   return [
     CODEX_MCP_BEGIN,
@@ -435,14 +481,14 @@ function codexMcpBlockLines() {
 }
 
 function mergeCodexMcp(existing, mcpScriptPath = "") {
-  const cleaned = removeManagedCodexMcpBlock(existing);
+  const cleaned = removeOrphanedCodexMcp(removeManagedCodexMcpBlock(existing));
   if (!mcpScriptPath) return `${cleaned.trimEnd()}${cleaned.trim() ? "\n" : ""}`;
-  return `${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${codexMcpBlockLines().join("\n")}\n`;
+  return validateCodexConfig(`${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${codexMcpBlockLines().join("\n")}\n`);
 }
 
 function mergeCodex(existing, helperPath, mcpScriptPath = "") {
   let cleaned = removeLegacyManagedCodexEntries(removeManagedCodexBlock(existing));
-  cleaned = removeManagedCodexMcpBlock(cleaned);
+  cleaned = removeOrphanedCodexMcp(removeManagedCodexMcpBlock(cleaned));
   const lines = [CODEX_BEGIN];
   for (const [eventName, event] of CODEX_EVENTS) {
     lines.push(
@@ -459,7 +505,7 @@ function mergeCodex(existing, helperPath, mcpScriptPath = "") {
   if (mcpScriptPath) {
     lines.push("", ...codexMcpBlockLines());
   }
-  return `${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${lines.join("\n")}\n`;
+  return validateCodexConfig(`${cleaned.trimEnd()}${cleaned.trim() ? "\n\n" : ""}${lines.join("\n")}\n`);
 }
 
 export class HookService {
@@ -562,12 +608,13 @@ export class HookService {
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/send' ? 'send'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/delivery' ? 'delivery' : null;
+      const workspaceAction = request.method === 'POST' && url.pathname === '/integration/v1/workspace/tasks' ? 'task' : action;
       try {
-        if (!action) throw Object.assign(new Error('not found'), { statusCode: 404 });
+        if (!workspaceAction) throw Object.assign(new Error('not found'), { statusCode: 404 });
         if (!this.workspaceProvider) throw Object.assign(new Error('workspace unavailable'), { statusCode: 503 });
         if (request.method === 'POST' && !String(request.headers['content-type']).startsWith('application/json')) throw Object.assign(new Error('application/json required'), { statusCode: 415 });
         const body = request.method === 'POST' ? await readIntegrationJson(request) : {};
-        const result = await this.workspaceProvider({ action, body, agentId: String(request.headers['x-acedia-agent-id'] || '') });
+        const result = await this.workspaceProvider({ action: workspaceAction, body, agentId: String(request.headers['x-acedia-agent-id'] || '') });
         sendJson(response, 200, result);
       } catch (error) { sendJson(response, error.statusCode || error.status || 500, { ok: false, error: error.message }); }
       return;

@@ -249,6 +249,25 @@ Codex 0.163.0에서 `tui.resume_cwd="current"`로 이전 대화를 재개할 때
 세션의 Restart가 필요하다. 검증 기록은 `output/codex-remote-cwd-native-baseline.log`,
 `output/codex-remote-cwd-native-fixed.log`, `output/codex-remote-cwd-regressions.log`다.
 
+## 설정 중복 복구와 시작 오류 (2026-10-18 소스)
+
+Codex의 TOML 저장기가 주석을 제거하거나 테이블을 이동하면 Acedia 브라우저 MCP
+테이블이 관리 주석 밖에 남을 수 있다. 이전 병합은 그 항목을 남겨 둔 채 같은 테이블을
+추가해 `config.toml`이 중복 정의로 잘못되는 경우가 있었다. 새 병합은 명령과 인수가
+Acedia의 브라우저 전송과 정확히 일치하는 항목만 정리하고 한 번 생성한다. 사용자 MCP와
+여러 줄 문자열 속 예시는 보존한다. 충돌하는 사용자 정의나 다른 TOML 오류는 파일을
+쓰지 않고 중단하며, 프로젝트 설정의 모든 변경을 쓰기 전에 결과를 검증한다.
+
+세션 서버가 일찍 종료됐다는 이유만으로 CLI 0.160.0 미만이라고 안내하지 않는다.
+실행 파일 없음, TOML·MCP 설정 오류, 시작 시간 초과와 기타 조기 종료를 구분한다.
+원본 서버 출력과 인증값은 사용자 오류 메시지에 포함하지 않는다.
+
+실제 Nogari 프로젝트의 중복 설정을 사용자 로컬 `shared-v1/local/recovery/`에 백업한
+뒤 하나로 복구했고, 사용자 MCP·훅을 보존했다. 격리된 Codex 0.163.0으로 해당 작업
+폴더의 서버 시작을 확인했으며 모델 요청은 0건이다. 전체 **195개 파일·1,438개 테스트**와
+TypeScript 검사가 통과했다. 재발 방지와 오류 안내 수정은 현재 소스에 반영됐으며 배포 전이다.
+검증 기록은 `output/nogari-config-regressions.log`, `output/nogari-config-full-tests.log`다.
+
 ## 캐시 연결과 스트림 집계 (EXE 1.8.1.59)
 
 Codex가 보내는 `session-id`, `thread-id`, `x-client-request-id`를 상위 서버로

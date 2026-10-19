@@ -75,6 +75,24 @@ async function fixture(overrides = {}) {
 }
 
 describe('native routed Codex sessions', () => {
+  it.each([
+    { stderr: 'Error: invalid transport\nin mcp_servers.multiagent_browser private-token', expected: 'MCP 설정' },
+    { stderr: 'TOML duplicate key at private/config.toml', expected: 'TOML' },
+    { code: 'ENOENT', expected: '실행 파일' },
+    { stderr: 'fixture process crashed private-token', expected: '시작 중 종료' },
+  ])('reports startup failure without misdiagnosing every exit as an old CLI: $expected', async ({ stderr, code, expected }) => {
+    const started = fixture({ spawnProcess: () => {
+      const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), exitCode: 1 });
+      queueMicrotask(() => {
+        if (stderr) child.stderr.write(stderr);
+        if (code) child.emit('error', Object.assign(new Error('private-token'), { code }));
+        else child.emit('exit', 1);
+      });
+      return child;
+    } });
+    await expect(started).rejects.toThrow(expected);
+    await expect(started).rejects.not.toThrow(/private-token|0\.160\.0/);
+  });
   it('resumes image-rich history larger than 32 MiB and keeps the next turn connected', async () => {
     const image = 'data:image/png;base64,' + 'A'.repeat(34 * 1024 * 1024);
     const f = await fixture({ threadResumeResult: { thread: { id: 'large-history', turns: [{ items: [

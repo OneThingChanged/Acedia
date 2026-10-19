@@ -149,6 +149,14 @@
 .sidebar-question-label { color: var(--app-warning); margin-left: auto; }
 .sidebar-sleep-label { color: var(--app-accent); margin-left: auto; }
 .sidebar-ssh-label { font-size: 8px; opacity: .75; }
+.sidebar-session-task-meta { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: var(--app-soft-text); font-size: 9px; min-width: 0; }
+.sidebar-session-task-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sidebar-task-state { flex-shrink: 0; margin-left: auto; color: var(--app-accent); }
+.sidebar-recent-row[data-task-state=waiting_user] .sidebar-task-state, .sidebar-recent-row[data-task-state=waiting_approval] .sidebar-task-state, .sidebar-recent-row[data-task-state=failed] .sidebar-task-state, .sidebar-recent-row[data-task-state=reconcile_required] .sidebar-task-state { color: var(--app-warning); }
+.sidebar-recent-row[data-task-state=completed] .sidebar-task-state { color: var(--completion-color, #69ba88); }
+.sidebar-workspace .sidebar-family-toggle { width: auto; min-width: 28px; padding: 2px 4px; font-size: 9px; white-space: nowrap; }
+.sidebar-family-attention { color: var(--app-warning); }
+.sidebar-session-children { list-style: none; border-left: 1px solid var(--app-border); padding-left: 3px; }
 .sidebar-workspace .agent-screen-badge { padding: 1px 4px; border-color: var(--screen-ink); background: color-mix(in srgb, var(--screen-color) 10%, transparent); color: var(--screen-ink); font-size: 9px; }
 .sidebar-empty { padding: 18px 10px; font-size: 11px; text-align: center; color: var(--app-muted); }
 .sidebar-empty p { margin: 0; }

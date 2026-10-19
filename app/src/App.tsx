@@ -2917,7 +2917,7 @@ function App() {
   const createAgent = useCallback(
     async (
       payload: NewAgentPayload,
-      options: { projectId?: string; agentId?: string } = {}
+      options: { projectId?: string; agentId?: string; background?: boolean; modelSettings?: SessionModel } = {}
     ) => {
       const project = projectsRef.current.find(
         (candidate) => candidate.id === (options.projectId ?? activeProjectIdRef.current)
@@ -2939,6 +2939,7 @@ function App() {
           {
             id,
             sessionHierarchy: hierarchy,
+            modelSettings: options.modelSettings,
             projectId: project.id,
             name: payload.name.trim() || `Session ${agentsRef.current.length + 1}`,
             folder: hierarchy?.inheritFolder !== false && inherited ? inherited.folder : !project.sshHostId && hierarchy?.folderOverride ? hierarchy.folderOverride : project.folder,
@@ -2963,7 +2964,7 @@ function App() {
         ];
         agentsRef.current = next;
         setAgents(next);
-        applyGroupOp((s) => groupOps.addNewAgent(s, id, project.id));
+        if (!options.background) applyGroupOp((s) => groupOps.addNewAgent(s, id, project.id));
       };
       if (!isElectronRuntime()) {
         addAgent();
@@ -3002,6 +3003,11 @@ function App() {
     if (!result.created) throw new Error(result.error);
     setSettingsOpen(false); setPropertiesProjectId(null);
   }, [createAgent]);
+  useEffect(() => {
+    const openTask = (event: Event) => { const id = (event as CustomEvent<string>).detail; if (agentsRef.current.some(a => a.id === id)) requestSelectAgent(id); };
+    window.addEventListener('acedia:open-task-session', openTask);
+    return () => window.removeEventListener('acedia:open-task-session', openTask);
+  }, [requestSelectAgent]);
   useEffect(() => {
     const onProject = (event: Event) => {
       const projectId = (event as CustomEvent<string>).detail;
@@ -3857,6 +3863,7 @@ function App() {
       sessionHierarchy?: SessionHierarchy;
       project?: { name: string; folder: string };
       workspaceManaged?: boolean;
+      modelSettings?: SessionModel;
     }>("remote:create-session", (event) => {
       if (cancelled) return;
       const payload = event.payload;
@@ -3909,7 +3916,7 @@ function App() {
           codexPoolAccountId: payload.codexPoolAccountId,
           sessionHierarchy: payload.sessionHierarchy,
         },
-        { projectId: payload.projectId, agentId: payload.id }
+        { projectId: payload.projectId, agentId: payload.id, background: payload.workspaceManaged, modelSettings: payload.modelSettings }
       );
       void creation.then(async result => {
         if (!result.created) return complete({ ok: false, error: result.error, statusCode: 409 });

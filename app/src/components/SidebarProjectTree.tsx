@@ -170,6 +170,7 @@ export function SidebarProjectTree({
   navigationSearch = "",
   navigationFilter = "all",
   renderProjectSession,
+  renderProjectSessions,
   revealProject,
 }: {
   projects: Project[];
@@ -223,6 +224,7 @@ export function SidebarProjectTree({
   navigationSearch?: string;
   navigationFilter?: SessionFilter;
   renderProjectSession?: (agent: Agent) => ReactNode;
+  renderProjectSessions?: (agents: Agent[]) => ReactNode;
   revealProject?: { id: string };
 }) {
   const { text } = useAppLanguage();
@@ -948,7 +950,7 @@ export function SidebarProjectTree({
             {sections.map((section, idx) => (
               <Fragment key={`${project.id}-${section.groupId}`}>
                 {!navigationOnly && idx > 0 && <li className="group-separator" />}
-                {section.members.map((agent) =>
+                {navigationOnly && renderProjectSessions ? renderProjectSessions(section.members) : section.members.map((agent) =>
                   navigationOnly && renderProjectSession ? renderProjectSession(agent) : renderItem(
                     agent,
                     section.groupId,
