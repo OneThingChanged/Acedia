@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { useAppLanguage } from "../lib/appLanguage";
 import { invoke } from "../platform/runtime";
+import { copyImageToClipboard, revealImagePath } from "../lib/imageActions";
+import { ImageContextMenu } from "./ImageContextMenu";
 
 function fileName(path: string) {
   const parts = path.split(/[\\/]/);
@@ -12,11 +14,13 @@ export function ImageViewer({
   path,
   folder,
   dataUrl: suppliedDataUrl,
+  sourcePath,
   onClose,
 }: {
   path: string;
   folder: string | null;
   dataUrl?: string;
+  sourcePath?: string;
   onClose: () => void;
 }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -24,6 +28,8 @@ export function ImageViewer({
   const { text } = useAppLanguage();
   const [copyStatus, setCopyStatus] = useState("");
   const [copying, setCopying] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const localPath = suppliedDataUrl ? sourcePath : path;
   const [natural, setNatural] = useState({ width: 0, height: 0 });
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ zoom: 1, x: 0, y: 0 });
@@ -41,12 +47,8 @@ export function ImageViewer({
     setCopying(true); setCopyStatus("");
     try {
       const image = bodyRef.current?.querySelector('img');
-      if (!image?.naturalWidth) throw new Error('Image is not ready');
-      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('Could not create image canvas');
-      context.drawImage(image, 0, 0);
-      await invoke("clipboard_write_image", { dataUrl: canvas.toDataURL('image/png') });
+      if (!image) throw new Error('Image is not ready');
+      await copyImageToClipboard(image);
       setCopyStatus(text("이미지를 복사했습니다.", "Image copied."));
     }
     catch { setCopyStatus(text("이미지를 복사하지 못했습니다.", "Could not copy the image.")); }
@@ -60,6 +62,7 @@ export function ImageViewer({
     setDataUrl(null);
     setError(null);
     setCopyStatus(""); setNatural({ width: 0, height: 0 }); reset();
+    setMenu(null);
     if (suppliedDataUrl) { setDataUrl(suppliedDataUrl); return; }
     invoke<string>("read_image_data_url", { path, folder })
       .then((url) => {
@@ -83,14 +86,17 @@ export function ImageViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // xterm may still own keyboard focus behind the modal. Handle viewer
+      // shortcuts before the terminal, while letting an open image menu close first.
+      if (e.defaultPrevented || document.querySelector(".image-context-menu")) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
       else if (["+", "=", "-", "0"].includes(e.key)) {
-        e.preventDefault();
+        e.preventDefault(); e.stopPropagation();
         if (e.key === "0") reset(); else zoomBy(e.key === "-" ? 1 / 1.25 : 1.25);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose, fit]);
 
   useEffect(() => {
@@ -131,8 +137,11 @@ export function ImageViewer({
         {!suppliedDataUrl && <div className="image-viewer-path" title={path}>{path}</div>}
         {copyStatus && <div className="image-viewer-status" role="status">{copyStatus}</div>}
         <div className="image-viewer-body" ref={bodyRef}
+          title={localPath ? text("Ctrl+클릭: 탐색기에서 표시", "Ctrl+click: Show in Explorer") : undefined}
+          onClick={event => { if (localPath && (event.ctrlKey || event.metaKey)) void revealImagePath(localPath, folder).catch(() => setCopyStatus(text("파일 위치를 열지 못했습니다.", "Could not show the file location."))); }}
+          onContextMenu={event => { if (!dataUrl) return; event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY }); }}
           onDoubleClick={reset}
-          onPointerDown={event => { if (!dataUrl || event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, originX: view.x, originY: view.y }; }}
+          onPointerDown={event => { if (!dataUrl || event.button !== 0 || event.ctrlKey || event.metaKey) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, originX: view.x, originY: view.y }; }}
           onPointerMove={event => { const start = drag.current; if (start?.id === event.pointerId) setView(current => ({ ...current, x: start.originX + event.clientX - start.x, y: start.originY + event.clientY - start.y })); }}
           onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
           {error && <div className="image-viewer-error">{error}</div>}
@@ -144,6 +153,12 @@ export function ImageViewer({
             style={{ width: natural.width * fit || undefined, height: natural.height * fit || undefined, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }} />}
         </div>
       </div>
+      {menu && <ImageContextMenu {...menu} onClose={() => setMenu(null)} onCopy={async () => {
+        const image = bodyRef.current?.querySelector("img");
+        if (!image) throw new Error("Image is not ready");
+        await copyImageToClipboard(image);
+        setCopyStatus(text("이미지를 복사했습니다.", "Image copied."));
+      }} onReveal={localPath ? () => revealImagePath(localPath, folder) : undefined} />}
     </div>
   );
 }

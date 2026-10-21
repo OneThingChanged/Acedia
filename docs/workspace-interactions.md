@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-15
+last_updated: 2026-10-21
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -529,6 +529,16 @@ same routing. Encoded spaces, Unicode and filename characters are decoded once,
 including `file://localhost/` addresses. Images outside the project open in the
 image viewer, while documents and folders use their existing open actions.
 
+The 2026-10-21 source also separates multiple absolute file links on the same
+terminal line. The first drive path previously consumed the following labels
+and paths, preventing later links from being recognized independently. Quoted
+paths, enclosing punctuation and the next absolute root now bound each target,
+while spaces, balanced filename parentheses and UNC paths remain supported.
+Hover ranges and direct clicks share these bounds. Twenty absolute-path and
+wrapped-path checks pass; the real Electron terminal smoke clicks all three
+paths in a Korean-labeled line, with and without ANSI colors. The Chat image
+smoke also checks two links in one paragraph at 1280px and 640px.
+
 Desktop chat also turns inline-code file and folder paths into clickable links,
 including project-relative output paths. Markdown links with Windows drive paths
 use the same local open action; external HTTP links keep their normal browser action.
@@ -542,6 +552,29 @@ keys adjust zoom and Escape closes the viewer. The top-right copy icon copies th
 full image as PNG bitmap data, independent of the zoom or visible crop, and reports
 copy success or failure. Copy is disabled while loading and during a copy request.
 The viewer continues to hide native browser views while open.
+
+2026-10-21 source adds a shared image context menu to desktop Chat thumbnails,
+image file cards, the viewer and terminal image links. **Copy image** copies
+the original pixels as a PNG bitmap. Normal clicks open the viewer; Ctrl/Cmd-click
+on a local image reveals and selects its resolved file in File Explorer. The
+same modifier reaches plain paths, `file://` links and labeled OSC 8 links.
+Resolution uses the session's effective working folder. Data-only attachments
+still support preview and copy, and omit the file-location action.
+
+The menu offers viewer and file-location actions where applicable, stays within
+the viewport and appears above the image viewer. Escape closes the menu first;
+afterward Escape closes the viewer even when xterm retains keyboard focus.
+Right-click does not activate terminal links. Image menus take precedence over
+right-click paste on image paths; plain-terminal paste settings remain effective.
+Copy failures remain visible in
+the menu. No recurring image reads are added to rendering or status updates.
+
+The expanded `electron-image-viewer-smoke.mjs` verifies these interactions in
+real Electron at 1280px and 640px, including original 1600×1000 PNG dimensions,
+memory-only images and copy failure. Its clipboard and Explorer endpoints are
+fixtures. TypeScript, Vite, the existing Chat-files and terminal-links smokes,
+and 15 related path/delivery unit checks pass. EXE publication and public
+download verification are tracked in [1.8.1.86](release-1-8-1-86.md).
 
 For terminal image links that only show a basename (for example Codex's
 `Viewed image desktop-times.png`), the desktop checks up to 5,000 recent chat

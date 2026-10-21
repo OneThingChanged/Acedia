@@ -11,6 +11,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { buildHardWrappedPath } from "./terminalWrappedPath";
+import { absoluteTerminalPathSpans } from "./terminalAbsolutePaths";
 import type { DropZone, TerminalEntry } from "../types";
 import { loadAppTheme, type AppThemeId } from "./appTheme";
 import { DEFAULT_TERMINAL_SETTINGS, loadTerminalSettings, terminalSettingsOptions, updateTerminalSettings } from "./terminalSettings";
@@ -64,9 +65,6 @@ const MARKDOWN_PATH_RE =
 const IMAGE_PATH_RE =
   /(?:[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()\[\]{},;]+[\\/])*[^\s"'<>|:*?()\[\]{},;]+\.(?:png|jpe?g|gif|webp|bmp|svg|ico)/gi;
 
-const ABSOLUTE_PATH_RE =
-  /(?:[A-Za-z]:[\\/]|\\\\[^<>"|?*\r\n\\\/]+[\\/][^<>"|?*\r\n\\\/]+[\\/])[^<>"|?*\r\n]*/gi;
-
 const FILE_URL_RE = /\bfile:\/\/[^\s"'<>`|]+/gi;
 
 const PATH_PART = String.raw`[^\s"'<>|:*?()\[\]{},;\\\/]+`;
@@ -90,10 +88,10 @@ const URL_LINK_RE = new RegExp(
   `(https?|HTTPS?):[/]{2}[^\\s"'!*(){}|\\\\^<>\`${CJK_URL_STOP}]*[^\\s"':,.!?{}|\\\\^~\\[\\]\`()<>${CJK_URL_STOP}]`
 );
 
-export type MarkdownPathHandler = (agentId: string, path: string) => void;
-export type ImagePathHandler = (agentId: string, path: string) => void;
+export type MarkdownPathHandler = (agentId: string, path: string, external?: boolean) => void;
+export type ImagePathHandler = (agentId: string, path: string, reveal?: boolean) => void;
 export type FolderPathHandler = (agentId: string, path: string) => void;
-export type TerminalPathHandler = (agentId: string, path: string) => void;
+export type TerminalPathHandler = (agentId: string, path: string, reveal?: boolean) => void;
 type UrlHandler = (url: string) => void;
 
 type MarkdownPathMatch = {
@@ -418,10 +416,9 @@ function findFileUrlMatches(text: string): MarkdownPathMatch[] {
 
 function findAbsolutePathMatches(text: string): MarkdownPathMatch[] {
   const matches: MarkdownPathMatch[] = [];
-  ABSOLUTE_PATH_RE.lastIndex = 0;
-  for (const match of text.matchAll(ABSOLUTE_PATH_RE)) {
-    const raw = match[0];
-    const start = match.index ?? 0;
+  for (const match of absoluteTerminalPathSpans(text)) {
+    const raw = match.text;
+    const start = match.startIndex;
     if (startsInsideUrl(text, start)) continue;
     const cleaned = cleanTerminalPathCandidate(raw);
     if (!cleaned) continue;
@@ -888,6 +885,7 @@ function registerUrlLinkProvider(term: Terminal, onUrl: UrlHandler) {
             underline: true,
           },
           activate(event, url) {
+            if (event.button !== 0) return;
             event.preventDefault();
             onUrl(url);
           },
@@ -921,7 +919,7 @@ function registerMarkdownLinkProvider(
 
       const pushLink = (
         match: MarkdownPathMatch,
-        onActivate: (path: string) => void,
+        onActivate: (path: string, modified: boolean) => void,
         respectForeground = true
       ) => {
         if (respectForeground) match = boundPathMatchToForeground(term, logical, match);
@@ -939,8 +937,9 @@ function registerMarkdownLinkProvider(
             underline: true,
           },
           activate(event, path) {
+            if (event.button !== 0) return;
             event.preventDefault();
-            onActivate(path);
+            onActivate(path, event.ctrlKey || event.metaKey);
           },
         });
       };
@@ -949,12 +948,12 @@ function registerMarkdownLinkProvider(
         for (const match of findFileUrlMatches(text)) {
           if (occupied.some((existing) => rangeOverlaps(existing, match))) continue;
           occupied.push(match);
-          pushLink(match, (path) => onTerminalPath(id, path), false);
+          pushLink(match, (path, modified) => onTerminalPath(id, path, modified), false);
         }
         for (const match of findAbsolutePathMatches(text)) {
           if (occupied.some((existing) => rangeOverlaps(existing, match))) continue;
           occupied.push(match);
-          pushLink(match, (path) => onTerminalPath(id, path));
+          pushLink(match, (path, modified) => onTerminalPath(id, path, modified));
         }
       }
 
@@ -963,7 +962,7 @@ function registerMarkdownLinkProvider(
           continue;
         }
         occupied.push(match);
-        pushLink(match, (path) => onMarkdownPath(id, path));
+        pushLink(match, (path, modified) => onMarkdownPath(id, path, modified));
       }
 
       if (onImagePath) {
@@ -972,14 +971,14 @@ function registerMarkdownLinkProvider(
             continue;
           }
           occupied.push(match);
-          pushLink(match, (path) => onImagePath(id, path));
+          pushLink(match, (path, modified) => onImagePath(id, path, modified));
         }
       }
 
       if (onTerminalPath) {
         for (const match of findGeneralFilePathMatches(text, occupied)) {
           occupied.push(match);
-          pushLink(match, (path) => onTerminalPath(id, path));
+          pushLink(match, (path, modified) => onTerminalPath(id, path, modified));
         }
       }
 
@@ -1011,9 +1010,9 @@ export function createEntry(
   options: CreateEntryOptions = {}
 ): TerminalEntry {
   const isWindows = navigator.userAgent.includes("Windows");
-  const openLinkUri = (uri: string) => {
+  const openLinkUri = (uri: string, modified = false) => {
     const link = terminalLinkForUri(uri);
-    if (link?.kind === "terminal") onTerminalPath?.(id, link.text);
+    if (link?.kind === "terminal") onTerminalPath?.(id, link.text, modified);
     else if (link?.kind === "url") openTerminalUrl(link.text);
   };
   const term = new Terminal({
@@ -1027,7 +1026,7 @@ export function createEntry(
     // Route native OSC 8 links through the same file/HTTP distinction as the
     // capture-phase handler in PaneSlot, including file links with labels.
     linkHandler: {
-      activate: (_event, uri) => openLinkUri(uri),
+      activate: (event, uri) => { if (event.button === 0) openLinkUri(uri, event.ctrlKey || event.metaKey); },
       allowNonHttpProtocols: true,
     },
   });

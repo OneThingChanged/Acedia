@@ -5845,6 +5845,11 @@ body.files-resizing .files-resizer::after {
   z-index: 150;
 }
 
+.image-context-backdrop { position: fixed; inset: 0; z-index: 2600; }
+.ctx-menu.image-context-menu { z-index: 2601; min-width: min(240px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
+.image-context-menu .ctx-item { white-space: nowrap; }
+.image-context-error { max-width: 260px; padding: 8px 10px; color: var(--app-danger, #f87171); font-size: 12px; }
+
 .ctx-menu {
   position: fixed;
   z-index: 151;

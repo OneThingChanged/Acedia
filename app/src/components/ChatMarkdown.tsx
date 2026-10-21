@@ -6,6 +6,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatImage, ChatImageLinkContext } from "./ChatImage";
 import { chatPathMatches, isChatImagePath, isChatLocalPath, normalizeChatPath } from "../lib/chatPaths";
+import type { ImagePathOpener } from "../lib/imageActions";
 
 export { isChatLocalPath } from "../lib/chatPaths";
 
@@ -49,7 +50,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   </div>;
 }
 
-type MarkdownContext = { folder?: string; onOpenPath?: (path: string) => void };
+type MarkdownContext = { folder?: string; onOpenPath?: ImagePathOpener };
 const ChatMarkdownContext = createContext<MarkdownContext>({});
 // Component types must remain stable across polls, streamed text and hook
 // updates. Inline render functions remount images (and clear their loaded src)
@@ -61,7 +62,7 @@ const markdownComponents: Components = {
         const target = normalizeChatPath(href || "", true);
         const local = isChatLocalPath(target);
         const link = local && onOpenPath
-          ? <a href={href} className="chat-path-link" title={target} onClick={event => { event.preventDefault(); onOpenPath(target); }}>{children}</a>
+          ? <a href={href} className="chat-path-link" title={target} onClick={event => { event.preventDefault(); onOpenPath(target, isChatImagePath(target) && (event.ctrlKey || event.metaKey)); }}>{children}</a>
           : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
         const hasImage = node?.children.some(child => child.type === "element" && child.tagName === "img");
         return <span className={local && isChatImagePath(target) ? "chat-image-link" : undefined}>
@@ -80,7 +81,7 @@ const markdownComponents: Components = {
         const { folder, onOpenPath } = useContext(ChatMarkdownContext);
         const path = String(children).trim();
         return !className && !String(children).includes('\n') && isChatLocalPath(path) && onOpenPath
-          ? <span className={isChatImagePath(path) ? "chat-image-link" : undefined}><button type="button" className="chat-path-link chat-path-code" title={path} onClick={() => onOpenPath(normalizeChatPath(path))}><code>{children}</code></button>{isChatImagePath(path) && <ChatImage path={normalizeChatPath(path)} folder={folder} onOpenPath={onOpenPath} />}</span>
+          ? <span className={isChatImagePath(path) ? "chat-image-link" : undefined}><button type="button" className="chat-path-link chat-path-code" title={path} onClick={event => onOpenPath(normalizeChatPath(path), isChatImagePath(path) && (event.ctrlKey || event.metaKey))}><code>{children}</code></button>{isChatImagePath(path) && <ChatImage path={normalizeChatPath(path)} folder={folder} onOpenPath={onOpenPath} />}</span>
           : <code className={className}>{children}</code>;
       },
 };
@@ -90,7 +91,7 @@ function chatUrlTransform(url: string, key: string) {
   return isChatLocalPath(normalizeChatPath(url, true)) || (key === "src" && /^data:image\/(?:png|jpe?g|gif|webp|bmp|svg\+xml|x-icon|avif);base64,[a-z\d+/=]+$/i.test(url)) ? url : defaultUrlTransform(url);
 }
 
-export function ChatMarkdown({ children, onOpenPath, folder }: { children: string; folder?: string; onOpenPath?: (path: string) => void }) {
+export function ChatMarkdown({ children, onOpenPath, folder }: { children: string; folder?: string; onOpenPath?: ImagePathOpener }) {
   const context = useMemo(() => ({ folder, onOpenPath }), [folder, onOpenPath]);
   return <ChatMarkdownContext.Provider value={context}><ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}
     urlTransform={chatUrlTransform} components={markdownComponents}>{children}</ReactMarkdown></ChatMarkdownContext.Provider>;

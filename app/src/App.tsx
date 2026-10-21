@@ -3518,7 +3518,7 @@ function App() {
     [openDocTab, pushToast, text]
   );
 
-  const handleOpenImagePath = useCallback(async (agentId: string, path: string) => {
+  const handleOpenImagePath = useCallback(async (agentId: string, path: string, reveal = false) => {
     const agent = agentsRef.current.find((a) => a.id === agentId);
     const project = projectsRef.current.find(
       (candidate) => candidate.id === agent?.projectId
@@ -3540,8 +3540,9 @@ function App() {
         if (candidates.length > 1) throw new Error(text(`같은 이름의 이미지가 여러 경로에 있습니다. 전체 경로로 열어주세요: ${candidates.join(' · ')}`, `Multiple images have this name. Open a full path: ${candidates.join(' · ')}`));
         if (candidates.length === 1) target = candidates[0];
       }
-      const resolved = await invoke<TerminalPathResolution>('resolve_terminal_path', { folder: project.folder, path: target });
+      const resolved = await invoke<TerminalPathResolution>('resolve_terminal_path', { folder: resolveSessionSettings(agent, agentsRef.current, projectsRef.current).folder || project.folder, path: target });
       if (resolved.kind !== 'image') throw new Error(text('이미지 파일이 아닙니다.', 'This is not an image file.'));
+      if (reveal) { await invoke("reveal_local_path", { path: resolved.path }); return; }
       setImageViewer({ path: resolved.path, folder: null });
     } catch (error) {
       pushToast(agentId, agent.name, text(`이미지를 열 수 없습니다: ${String(error)}`, `Could not open the image: ${String(error)}`));
@@ -3566,7 +3567,7 @@ function App() {
   );
 
   const handleOpenTerminalPath = useCallback(
-    async (agentId: string, path: string) => {
+    async (agentId: string, path: string, reveal = false) => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       const project = projectsRef.current.find(
         (candidate) => candidate.id === agent?.projectId
@@ -3577,12 +3578,13 @@ function App() {
         const resolved = await invoke<TerminalPathResolution>(
           "resolve_terminal_path",
           {
-            folder: project.folder,
+            folder: resolveSessionSettings(agent, agentsRef.current, projectsRef.current).folder || project.folder,
             path,
           }
         );
 
         if (resolved.kind === "image") {
+          if (reveal) { await invoke("reveal_local_path", { path: resolved.path }); return; }
           setImageViewer({ path: resolved.path, folder: null });
           return;
         }

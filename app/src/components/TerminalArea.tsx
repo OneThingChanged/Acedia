@@ -148,9 +148,9 @@ export function TerminalArea({
     path: string,
     external?: boolean
   ) => void;
-  onOpenImagePath: (agentId: string, path: string) => void;
+  onOpenImagePath: (agentId: string, path: string, reveal?: boolean) => void;
   onOpenFolderPath: (agentId: string, path: string) => void;
-  onOpenTerminalPath: (agentId: string, path: string) => void;
+  onOpenTerminalPath: (agentId: string, path: string, reveal?: boolean) => void;
 }) {
   const { text } = useAppLanguage();
   const fallbackDocumentAgentId = firstSessionInLayout(

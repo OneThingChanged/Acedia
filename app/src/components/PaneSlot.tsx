@@ -57,6 +57,9 @@ import { ChatView } from "./ChatView";
 import { CapacityRetryNotice } from "./CapacityRetryNotice";
 import { SessionDeliveryNotice } from './SessionDeliveryNotice';
 import { TerminalContextMenu } from "./Menus";
+import { ImageContextMenu } from "./ImageContextMenu";
+import { copyImagePath } from "../lib/imageActions";
+import { isChatImagePath } from "../lib/chatPaths";
 import {
   clampTerminalFontSize,
   computeDropZone,
@@ -124,9 +127,9 @@ export type RenderCtx = {
     path: string,
     external?: boolean
   ) => void;
-  onOpenImagePath: (agentId: string, path: string) => void;
+  onOpenImagePath: (agentId: string, path: string, reveal?: boolean) => void;
   onOpenFolderPath: (agentId: string, path: string) => void;
-  onOpenTerminalPath: (agentId: string, path: string) => void;
+  onOpenTerminalPath: (agentId: string, path: string, reveal?: boolean) => void;
 };
 
 export function PaneSlot({
@@ -151,6 +154,7 @@ export function PaneSlot({
     y: number;
     hasSelection: boolean;
   } | null>(null);
+  const [imageMenu, setImageMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const active = pathEq(path, ctx.activePath);
   const activeTabId = activeAgentInLeaf(leaf);
   const activeBrowserTabId =
@@ -182,7 +186,7 @@ export function PaneSlot({
   const activeAgent = activeAgentId
     ? ctx.agents.find((a) => a.id === activeAgentId) ?? null
     : null;
-  useEffect(() => { setRecoveryOpen(false); setRecoveryError(""); }, [activeAgentId]);
+  useEffect(() => { setRecoveryOpen(false); setRecoveryError(""); setImageMenu(null); setTermMenu(null); }, [activeAgentId]);
   // Chat vs terminal view is a per-session preference held in App, so the
   // toggle, tab context menu, and re-opening a session all stay in sync.
   const chatMode = activeAgentId ? ctx.chatModeAgents.has(activeAgentId) : false;
@@ -470,8 +474,7 @@ export function PaneSlot({
       return findTerminalLinkAtMouseEvent(targetEntry.term, event);
     };
 
-    // external = Ctrl/Cmd held → open with the OS/web browser instead of the
-    // in-app doc tab (matches the HTML doc-tab Ctrl+click behavior).
+    // Ctrl/Cmd opens documents externally and reveals image files in Explorer.
     const openTerminalLink = (link: TerminalMouseLink, external: boolean) => {
       const targetEntry = termsRef.current.get(agentId);
       targetEntry?.term.clearSelection();
@@ -483,13 +486,13 @@ export function PaneSlot({
           ctx.onOpenMarkdownPath(agentId, link.text, external);
           break;
         case "image":
-          ctx.onOpenImagePath(agentId, link.text);
+          ctx.onOpenImagePath(agentId, link.text, external);
           break;
         case "folder":
           ctx.onOpenFolderPath(agentId, link.text);
           break;
         case "terminal":
-          ctx.onOpenTerminalPath(agentId, link.text);
+          ctx.onOpenTerminalPath(agentId, link.text, external);
           break;
       }
     };
@@ -654,12 +657,19 @@ export function PaneSlot({
   // Shift+drag (xterm forces local selection while a mouse-tracking TUI like
   // Claude is capturing plain drags); this menu just makes copy/paste
   // discoverable once something is selected.
-  const onTerminalContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+  const onTerminalContextMenu = (event: ReactMouseEvent<HTMLDivElement>, imageOnly = false) => {
     if (!activeAgentId) return;
     const entry = termsRef.current.get(activeAgentId);
     if (!entry) return;
-    // Let a right-click on a terminal link fall through to its own handler.
-    if (findTerminalLinkAtMouseEvent(entry.term, event.nativeEvent)) return;
+    const link = findTerminalLinkAtMouseEvent(entry.term, event.nativeEvent);
+    if (link && (link.kind === "image" || (link.kind === "terminal" && isChatImagePath(link.text)))) {
+      event.preventDefault(); event.stopPropagation(); setTermMenu(null);
+      setImageMenu({ x: event.clientX, y: event.clientY, path: link.text });
+      return;
+    }
+    // Intercept image links before xterm, but retain right-click-to-paste and
+    // the normal selection menu everywhere else.
+    if (imageOnly || link) return;
     event.preventDefault();
     event.stopPropagation();
     setTermMenu({
@@ -1114,6 +1124,7 @@ export function PaneSlot({
               : undefined
         }
         aria-hidden={chatMode && !!activeAgentId ? true : undefined}
+        onContextMenuCapture={event => onTerminalContextMenu(event, true)}
         onContextMenu={onTerminalContextMenu}
       />
       {activeAgent?.deferredStart && (
@@ -1193,7 +1204,7 @@ export function PaneSlot({
           activeTool={activeAgent?.activity?.workStatus === "working" ? activeAgent.activity.toolName : undefined}
           readTerminalScreen={readChatTerminalScreen}
           onOpenTerminal={() => { ctx.setActivePath(path); ctx.onToggleChat(activeAgentId); }}
-          onOpenPath={(filePath) => { void ctx.onOpenTerminalPath(activeAgentId, filePath); }}
+          onOpenPath={(filePath, reveal) => { void ctx.onOpenTerminalPath(activeAgentId, filePath, reveal); }}
         />
       )}
       </div>
@@ -1249,6 +1260,10 @@ export function PaneSlot({
           }}
         />
       )}
+      {imageMenu && activeAgent && <ImageContextMenu x={imageMenu.x} y={imageMenu.y} onClose={() => setImageMenu(null)}
+        onCopy={() => copyImagePath(imageMenu.path, resolveSessionSettings(activeAgent, ctx.agents, ctx.projects).folder)}
+        onOpen={() => ctx.onOpenImagePath(activeAgent.id, imageMenu.path)}
+        onReveal={() => ctx.onOpenImagePath(activeAgent.id, imageMenu.path, true)} />}
     </div>
   );
 }

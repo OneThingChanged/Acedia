@@ -6,6 +6,7 @@ import { ChatModelPicker } from "./ChatModelPicker";
 import { TaskFlowButton } from './TaskFlow';
 import { taskDelegationRequest } from '../../electron/remote-pwa/task-flow.js';
 import { ChatImage } from "./ChatImage";
+import type { ImagePathOpener } from "../lib/imageActions";
 import { ChatFiles } from "./ChatFiles";
 import { ChatDiff } from "./ChatDiff";
 import { chatFilesForTurn, mergeChatFiles, sameChatFiles } from "../lib/chatFiles";
@@ -86,7 +87,7 @@ const CHAT_PAGE = 10;
 const CHAT_DB_PAGE = 400; // Delta backlog cap; initial/older pages use whole turns.
 
 const UserMessage = memo(function UserMessage({ text: message, agentId, sequence, folder, onOpenPath, onReuse, imageOnly = false }: {
-  text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: (path: string) => void; onReuse?: (message: string) => void;
+  text: string; agentId?: string; sequence?: number; folder?: string; imageOnly?: boolean; onOpenPath?: ImagePathOpener; onReuse?: (message: string) => void;
 }) {
   const { text } = useAppLanguage();
   const { rest, images } = splitChatImagePaths(message);
@@ -279,7 +280,7 @@ function assistantLabel(tool?: string) {
   return "Assistant";
 }
 
-const AssistantTurn = memo(function AssistantTurn({ run, files, tool, owner, onOpenPath, onQuote, folder }: { run: ChatBlock[]; files: ConversationArtifact[]; tool?: string; owner?: ToolOwner; folder?: string; onOpenPath?: (path: string) => void; onQuote?: (message: string) => void }) {
+const AssistantTurn = memo(function AssistantTurn({ run, files, tool, owner, onOpenPath, onQuote, folder }: { run: ChatBlock[]; files: ConversationArtifact[]; tool?: string; owner?: ToolOwner; folder?: string; onOpenPath?: ImagePathOpener; onQuote?: (message: string) => void }) {
   const { text } = useAppLanguage();
   const segments = groupAssistantBlocks(run);
   const answer = run.filter(block => block.kind === "text").map(block => block.text || "").filter(Boolean).join("\n\n");
@@ -360,7 +361,7 @@ export function ChatView({
   questionToken?: number;
   readTerminalScreen?: () => string;
   onOpenTerminal: () => void;
-  onOpenPath?: (path: string) => void;
+  onOpenPath?: ImagePathOpener;
 }) {
   const { text } = useAppLanguage();
   const modelChanging = useChatSessionModelChanging(agentId);

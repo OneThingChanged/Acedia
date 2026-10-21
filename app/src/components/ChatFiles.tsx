@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
+import { ImageContextMenu } from "./ImageContextMenu";
+import { copyImagePath, type ImagePathOpener } from "../lib/imageActions";
+import { isChatImagePath } from "../lib/chatPaths";
 import { useAppLanguage } from "../lib/appLanguage";
 import { invoke } from "../platform/runtime";
 import type { ConversationArtifact } from "../platform/ipcContract";
@@ -36,30 +39,33 @@ function artifactBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function FileRow({ file, expanded, onOpen }: { file: ConversationArtifact; expanded?: boolean; onOpen: (file: ConversationArtifact) => void }) {
+function FileRow({ file, folder, expanded, onOpen }: { file: ConversationArtifact; folder?: string; expanded?: boolean; onOpen: (file: ConversationArtifact, reveal?: boolean) => void }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const name = file.path.split(/[\\/]/).pop() || file.path;
-  return <button type="button" className="chat-artifact" title={file.path} onClick={() => onOpen(file)}>
+  const image = isChatImagePath(file.path);
+  return <><button type="button" className="chat-artifact" title={file.path} onClick={event => onOpen(file, image && (event.ctrlKey || event.metaKey))}
+    onContextMenu={event => { if (!image) return; event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY }); }}>
     <span className="chat-artifact-icon" aria-hidden="true"><ChatIcon name="file" /></span>
     <span className="chat-artifact-copy"><span className="chat-artifact-name">{name}</span>
       {expanded && <span className="chat-file-path">{file.path}</span>}
       <span className="chat-artifact-caption">{file.kind.toUpperCase()} · {artifactBytes(file.size)}</span></span>
     <ChatIcon name="open" />
-  </button>;
+  </button>{menu && <ImageContextMenu {...menu} onClose={() => setMenu(null)} onCopy={() => copyImagePath(file.path, folder)} onOpen={() => onOpen(file)} onReveal={() => onOpen(file, true)} />}</>;
 }
 
-function FileGroups({ files, totalFiles = files, expanded, onOpen }: { files: ConversationArtifact[]; totalFiles?: ConversationArtifact[]; expanded?: boolean; onOpen: (file: ConversationArtifact) => void }) {
+function FileGroups({ files, totalFiles = files, folder, expanded, onOpen }: { files: ConversationArtifact[]; totalFiles?: ConversationArtifact[]; folder?: string; expanded?: boolean; onOpen: (file: ConversationArtifact, reveal?: boolean) => void }) {
   const { text } = useAppLanguage();
   return <>{(["output", "reference"] as const).map(usage => {
     const group = files.filter(file => (file.usage ?? "reference") === usage);
     const count = totalFiles.filter(file => (file.usage ?? "reference") === usage).length;
     return group.length > 0 && <section key={usage} className={`chat-file-group chat-files-${usage}`} aria-label={usage === "output" ? text("생성·수정 파일", "Created or modified files") : text("관련 파일", "Related files")}>
       <div className="chat-artifacts-heading">{usage === "output" ? text("생성·수정 파일", "Created or modified files") : text("관련 파일", "Related files")} · {count}</div>
-      <div className="chat-artifact-list">{group.map(file => <FileRow key={file.path} file={file} expanded={expanded} onOpen={onOpen} />)}</div>
+      <div className="chat-artifact-list">{group.map(file => <FileRow key={file.path} file={file} folder={folder} expanded={expanded} onOpen={onOpen} />)}</div>
     </section>;
   })}</>;
 }
 
-function FileDialog({ files, onOpen, onClose, error, changes, folder, selectedPath }: { files: ConversationArtifact[]; onOpen: (file: ConversationArtifact) => void; onClose: () => void; error: string; changes?: boolean; folder?: string; selectedPath?: string }) {
+function FileDialog({ files, onOpen, onClose, error, changes, folder, selectedPath }: { files: ConversationArtifact[]; onOpen: (file: ConversationArtifact, reveal?: boolean) => void; onClose: () => void; error: string; changes?: boolean; folder?: string; selectedPath?: string }) {
   const { text } = useAppLanguage();
   useNativeViewOcclusion();
   const id = useId();
@@ -87,13 +93,13 @@ function FileDialog({ files, onOpen, onClose, error, changes, folder, selectedPa
         <button type="button" className="chat-files-close" aria-label={text("닫기", "Close")} onClick={onClose}>×</button></header>
       <input ref={search} className="chat-files-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={text("파일명 또는 경로 검색", "Search filenames or paths")} aria-label={text("파일 검색", "Search files")} />
       <div className="chat-files-count" role="status">{query.trim() ? text(`검색 결과 ${filtered.length}개 · 전체 ${files.length}개`, `${filtered.length} matches · ${files.length} files total`) : text(`전체 ${files.length}개`, `${files.length} files total`)}</div>
-      <div className="chat-files-body">{changes ? filtered.map(file => <ChangedFile key={file.path} file={file} folder={folder} initiallyOpen={file.path === selectedPath} onOpen={onOpen} />) : <FileGroups files={filtered} expanded onOpen={onOpen} />}{!filtered.length && <p className="chat-files-empty">{text("검색 결과가 없습니다.", "No matching files.")}</p>}</div>
+      <div className="chat-files-body">{changes ? filtered.map(file => <ChangedFile key={file.path} file={file} folder={folder} initiallyOpen={file.path === selectedPath} onOpen={onOpen} />) : <FileGroups files={filtered} folder={folder} expanded onOpen={onOpen} />}{!filtered.length && <p className="chat-files-empty">{text("검색 결과가 없습니다.", "No matching files.")}</p>}</div>
       {error && <div className="chat-composer-error" role="alert">{error}</div>}
     </div>
   </div>;
 }
 
-export function ChatFiles({ files, folder, onOpenPath }: { files: ConversationArtifact[]; folder?: string; onOpenPath?: (path: string) => void }) {
+export function ChatFiles({ files, folder, onOpenPath }: { files: ConversationArtifact[]; folder?: string; onOpenPath?: ImagePathOpener }) {
   const { text } = useAppLanguage();
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -101,11 +107,11 @@ export function ChatFiles({ files, folder, onOpenPath }: { files: ConversationAr
   const [selectedPath, setSelectedPath] = useState<string>();
   const root = useRef<HTMLElement>(null);
   const close = useCallback(() => { setOpen(false); setChangesOpen(false); }, []);
-  const openFile = async (file: ConversationArtifact) => {
+  const openFile = async (file: ConversationArtifact, reveal = false) => {
     setError("");
     try {
-      if (onOpenPath) await onOpenPath(file.path);
-      else await invoke("open_local_path", { path: file.path });
+      if (onOpenPath) await onOpenPath(file.path, reveal);
+      else await invoke(reveal ? "reveal_local_path" : "open_local_path", { path: file.path });
       close();
     } catch { setError(text("파일을 열지 못했습니다. 경로를 확인해 주세요.", "Could not open the file. Check its path.")); }
   };
@@ -119,9 +125,9 @@ export function ChatFiles({ files, folder, onOpenPath }: { files: ConversationAr
       {changed.slice(0, INLINE_FILES).map(file => <button type="button" className="chat-change-row" key={file.path} title={file.path} onClick={() => showChanges(file.path)}><span>{displayPath(file.path, folder)}</span><ChangeStats file={file} /></button>)}
       {changed.length > INLINE_FILES && <button type="button" className="chat-changes-more" aria-haspopup="dialog" onClick={() => showChanges()}>{text(`${changed.length - INLINE_FILES}개 파일 더 보기`, `Show ${changed.length - INLINE_FILES} more files`)}<ChatIcon name="chevron" /></button>}
     </section>}
-    <FileGroups files={previews.slice(0, INLINE_FILES)} totalFiles={previews} onOpen={file => { void openFile(file); }} />
+    <FileGroups files={previews.slice(0, INLINE_FILES)} totalFiles={previews} folder={folder} onOpen={(file, reveal) => { void openFile(file, reveal); }} />
     {previews.length > INLINE_FILES && <button type="button" className="chat-files-more" aria-haspopup="dialog" onClick={() => { setError(""); setOpen(true); }}>{text(`파일 ${previews.length}개 전체 보기`, `View all ${previews.length} files`)}<span>+{previews.length - INLINE_FILES}</span></button>}
     {error && !open && <div className="chat-composer-error" role="alert">{error}</div>}
-    {(open || changesOpen) && createPortal(<FileDialog files={changesOpen ? changed : previews} changes={changesOpen} folder={folder} selectedPath={selectedPath} error={error} onClose={close} onOpen={file => { void openFile(file); }} />, root.current?.closest(".app") || document.body)}
+    {(open || changesOpen) && createPortal(<FileDialog files={changesOpen ? changed : previews} changes={changesOpen} folder={folder} selectedPath={selectedPath} error={error} onClose={close} onOpen={(file, reveal) => { void openFile(file, reveal); }} />, root.current?.closest(".app") || document.body)}
   </section>;
 }

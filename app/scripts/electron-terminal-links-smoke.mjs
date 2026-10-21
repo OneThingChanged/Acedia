@@ -73,6 +73,20 @@ try {
         win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
         win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point}); await wait();
       };
+      const multiplePaths = ['D:/Images/front.png', 'D:/Scenes/character.blend', 'D:/Images/comparison.jpg'];
+      const sameLine = '삼면도 (' + multiplePaths[0] + ') · Blender 파일 (' + multiplePaths[1] + ') · 비교 이미지 (' + multiplePaths[2] + ')';
+      for (const colored of [false, true]) {
+        const output = colored ? sameLine.replace(/D:[^ )]+/g, value => '\\x1b[32m' + value + '\\x1b[39m') : sameLine;
+        win.webContents.sendInputEvent({type:'mouseMove',x:1190,y:680}); await wait();
+        await win.webContents.executeJavaScript('window.seedRaw('+JSON.stringify(output)+')'); await wait();
+        for (const file of multiplePaths) {
+          const position = cell(width(sameLine.slice(0, sameLine.indexOf(file))) + 4);
+          assert.equal((await win.webContents.executeJavaScript('window.hit('+position.join(',')+')'))?.text, file, 'Each same-line path must have its own target: '+file+' colored='+colored);
+          await click(position);
+          assert.equal(await win.webContents.executeJavaScript('window.opened.at(-1)'), file);
+        }
+      }
+      console.log('TERMINAL_MULTIPLE_SAME_LINE_PATHS_OK');
       const video = 'Client/Saved/Recordings/AXRecorder/ee5cfe44b121416685f60d491bb25327/projectwitch-autoplay-1node_20261007_041800_981.mp4';
       const prefix = '영상 (';
       const cut = video.indexOf('1node_');

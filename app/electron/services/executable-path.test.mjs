@@ -35,7 +35,12 @@ describe('Windows executable discovery after installation', () => {
       const executable = path.join(root, 'claude.exe'), script = path.join(root, 'fixture.cjs');
       fs.copyFileSync(process.execPath, executable);
       fs.writeFileSync(script, 'process.stdout.write(JSON.stringify({args:process.argv.slice(2),profile:process.env.CLAUDE_CONFIG_DIR}));');
-      const env = refreshWindowsPath({ ...process.env, CLAUDE_CONFIG_DIR: 'isolated-profile' }, 'win32', () => ({ User: root }));
+      // An installed Claude on the runner's inherited PATH must not win over
+      // this newly installed fixture. Retain other environment values while
+      // giving discovery a controlled initial PATH and stored user addition.
+      const parent = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'));
+      parent.Path = path.join(process.env.SystemRoot || 'C:/Windows', 'System32');
+      const env = refreshWindowsPath({ ...parent, CLAUDE_CONFIG_DIR: 'isolated-profile' }, 'win32', () => ({ User: root }));
       const shell = path.join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
       const command = prepareLaunchCommand('claude', undefined, { shell, toolId: 'claude', env, extraArgs: [script, '--model', 'sonnet', 'one argument'] });
       expect(command).toContain(executable);

@@ -24,7 +24,7 @@ if (!process.versions.electron) {
     await fs.rm(directory, { recursive: true, maxRetries: 5, retryDelay: 100 });
   }
 } else {
-  const { app, BrowserWindow } = require('electron');
+  const { app, BrowserWindow, nativeImage } = require('electron');
   const directory = process.argv[2];
   app.setPath('userData', path.join(directory, 'profile'));
   app.disableHardwareAcceleration();
@@ -34,7 +34,8 @@ if (!process.versions.electron) {
       if (await win.webContents.executeJavaScript(expression)) return;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    throw new Error(expression);
+    const debug = await win.webContents.executeJavaScript("({text:document.body.innerText.slice(-1200),panes:[...document.querySelectorAll('.pane-slot,.pane-body,.term-host')].map(e=>({class:e.className,width:e.clientWidth,height:e.clientHeight})),clicks:window.imageFixture?.clicks?.slice(-5)})");
+    throw new Error(expression + '\n' + JSON.stringify(debug));
   }
   app.whenReady().then(async () => {
   try {
@@ -69,6 +70,97 @@ if (!process.versions.electron) {
       await win.webContents.executeJavaScript("document.querySelectorAll('.chat-path-link')[1].click()", true);
       await waitFor(win, "document.querySelector('.image-viewer-name')?.textContent==='preview.png'");
       assert(await win.webContents.executeJavaScript("window.imageFixture.opened.at(-1)==='K:/Exports/SummerSix-20261007/preview.png'"));
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      await waitFor(win, "!document.querySelector('.image-viewer')");
+      await win.webContents.executeJavaScript('window.imageFixture.failCopy=false;window.imageFixture.reveals=[];window.imageFixture.copies=[]');
+      const ctrlClick = selector => win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true}))`, true);
+      const contextMenu = selector => win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:innerWidth-2,clientY:innerHeight-2}))`, true);
+      const menuAction = index => win.webContents.executeJavaScript(`document.querySelectorAll('.image-context-menu button')[${index}].click()`, true);
+      for (const selector of ['.chat-path-code', '.chat-path-link:not(.chat-path-code)', '.chat-image-open', '.chat-artifact']) {
+        const count = await win.webContents.executeJavaScript('window.imageFixture.reveals.length');
+        await ctrlClick(selector);
+        await waitFor(win, `window.imageFixture.reveals.length===${count + 1}`);
+        assert(await win.webContents.executeJavaScript("!document.querySelector('.image-viewer')"), 'Ctrl+click must reveal without opening a viewer');
+      }
+      await contextMenu('.chat-image-open');
+      await waitFor(win, "document.querySelector('.image-context-menu')");
+      assert(await win.webContents.executeJavaScript("(()=>{const r=document.querySelector('.image-context-menu').getBoundingClientRect();return r.right<=innerWidth && r.bottom<=innerHeight && r.left>=0 && r.top>=0})()"), 'Image menu must fit near the viewport corner');
+      await menuAction(0);
+      await waitFor(win, "window.imageFixture.copies.length===1 && !document.querySelector('.image-context-menu')");
+      await win.webContents.executeJavaScript("document.querySelector('.chat-image-open').click()", true);
+      await waitFor(win, "document.querySelector('.image-viewer-body img')?.naturalWidth===1600");
+      await contextMenu('.image-viewer-body');
+      await waitFor(win, "document.querySelector('.image-context-menu')");
+      assert(await win.webContents.executeJavaScript("Number(getComputedStyle(document.querySelector('.image-context-menu')).zIndex) > Number(getComputedStyle(document.querySelector('.image-viewer-backdrop')).zIndex)"), 'Image context menu must be above the viewer');
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      await waitFor(win, "!document.querySelector('.image-context-menu') && document.querySelector('.image-viewer')");
+      await contextMenu('.image-viewer-body');
+      await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+      await fs.writeFile(path.join(appRoot, `../output/image-context-menu-${width}.png`), (await win.webContents.capturePage()).toPNG());
+      await menuAction(0);
+      await waitFor(win, "window.imageFixture.copies.length===2 && !document.querySelector('.image-context-menu')");
+      const reveals = await win.webContents.executeJavaScript('window.imageFixture.reveals.length');
+      await ctrlClick('.image-viewer-body');
+      await waitFor(win, `window.imageFixture.reveals.length===${reveals + 1}`);
+      assert(await win.webContents.executeJavaScript("document.querySelector('.image-viewer-body img').style.transform==='translate(0px, 0px) scale(1)'"), 'Ctrl+click must not pan the image');
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      await waitFor(win, "!document.querySelector('.image-viewer')");
+      await contextMenu('#data-only-image .chat-image-open');
+      await waitFor(win, "document.querySelector('.image-context-menu')");
+      assert.equal(await win.webContents.executeJavaScript("document.querySelectorAll('.image-context-menu button').length"), 2, 'Memory-only images must not offer a nonexistent file location');
+      await menuAction(0);
+      await waitFor(win, "window.imageFixture.copies.length===3 && !document.querySelector('.image-context-menu')");
+      await contextMenu('.chat-artifact');
+      await menuAction(0);
+      await waitFor(win, "window.imageFixture.copies.length===4 && !document.querySelector('.image-context-menu')");
+      assert.deepEqual(nativeImage.createFromDataURL(await win.webContents.executeJavaScript('window.imageFixture.copies.at(-1).dataUrl')).getSize(), { width: 1600, height: 1000 }, 'Copy must preserve original pixels rather than the preview size');
+      const beforeMenuReveal = await win.webContents.executeJavaScript('window.imageFixture.reveals.length');
+      await contextMenu('.chat-image-open');
+      await menuAction(2);
+      await waitFor(win, `window.imageFixture.reveals.length===${beforeMenuReveal + 1} && !document.querySelector('.image-context-menu')`);
+      await contextMenu('.chat-image-open');
+      await win.webContents.executeJavaScript('window.imageFixture.failCopy=true');
+      await menuAction(0);
+      await waitFor(win, "document.querySelector('.image-context-menu [role=alert]')");
+      assert.equal(await win.webContents.executeJavaScript('window.imageFixture.copies.length'), 4, 'A failed copy must not report success');
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      await waitFor(win, "!document.querySelector('.image-context-menu')");
+      await win.webContents.executeJavaScript("window.imageFixture.failCopy=false;window.imageFixture.mode('terminal')");
+      await waitFor(win, "window.imageFixture.terminalReady() && document.querySelector('.xterm-screen')");
+      const terminalClick = async (point, modifiers = [], button = 'left') => {
+        win.webContents.sendInputEvent({ type: 'mouseMove', ...point });
+        await new Promise(resolve => setTimeout(resolve, 80));
+        win.webContents.sendInputEvent({ type: 'mouseDown', button, clickCount: 1, modifiers, ...point });
+        win.webContents.sendInputEvent({ type: 'mouseUp', button, clickCount: 1, modifiers, ...point });
+      };
+      for (const output of ['output/preview.png', 'file:///C:/Images/raincoat%20kitten%23one.png', '\x1b]8;;file:///C:/Images/generated.png\x1b\\generated image\x1b]8;;\x1b\\']) {
+        await win.webContents.executeJavaScript(`window.imageFixture.seedTerminal(${JSON.stringify(output)})`);
+        const point = await win.webContents.executeJavaScript('window.imageFixture.terminalPoint(0,4)');
+        const before = await win.webContents.executeJavaScript('window.imageFixture.reveals.length');
+        await terminalClick(point, ['control']);
+        await waitFor(win, `window.imageFixture.reveals.length===${before + 1}`);
+        assert(await win.webContents.executeJavaScript("!document.querySelector('.image-viewer')"));
+        await terminalClick(point);
+        await waitFor(win, "document.querySelector('.image-viewer-body img')?.naturalWidth===1600");
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+        await waitFor(win, "!document.querySelector('.image-viewer')");
+        await terminalClick(point, [], 'right');
+        await waitFor(win, "document.querySelector('.image-context-menu')");
+        const copied = await win.webContents.executeJavaScript('window.imageFixture.copies.length');
+        await menuAction(0);
+        await waitFor(win, `window.imageFixture.copies.length===${copied + 1} && !document.querySelector('.image-context-menu')`);
+      }
+      await win.webContents.executeJavaScript("window.imageFixture.setTerminalPaste(true);window.imageFixture.seedTerminal('output/preview.png')");
+      await terminalClick(await win.webContents.executeJavaScript('window.imageFixture.terminalPoint(0,4)'), [], 'right');
+      await waitFor(win, "document.querySelector('.image-context-menu')");
+      assert.equal(await win.webContents.executeJavaScript('window.imageFixture.pasteReads'), 0, 'Image menu must not paste into the CLI');
+      win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});
+      await waitFor(win, "!document.querySelector('.image-context-menu')");
+      await terminalClick(await win.webContents.executeJavaScript('window.imageFixture.terminalPoint(2,4)'), [], 'right');
+      await waitFor(win, "window.imageFixture.pasteReads===1");
+      assert(await win.webContents.executeJavaScript("!document.querySelector('.image-context-menu') && !document.querySelector('.ctx-menu')"), 'Plain-terminal right-click paste must remain available');
+      await win.webContents.executeJavaScript('window.imageFixture.setTerminalPaste(false)');
+      console.log('IMAGE_CONTEXT_COPY_CTRL_REVEAL_CHAT_AND_TERMINAL_OK ' + width);
       win.destroy();
     }
     console.log('DESKTOP_CHAT_IMAGE_ZOOM_PAN_COPY_OK'); app.exit(0);

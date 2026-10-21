@@ -22,6 +22,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.86](release-1-8-1-86.md) - 이미지 우클릭 복사·Ctrl 클릭 파일 위치와 한 줄의 여러 링크 수정 및 EXE 배포 검증 기록.
 * [Acedia 1.8.1.85](release-1-8-1-85.md) - 로컬 Codex 작업 분담·모델 정책·작업 흐름·사이드바 하위 세션과 Nogari 설정 수정의 EXE 배포 기록.
 * [Acedia 1.8.1.81 source changes](release-1-8-1-81.md) - Remote 터미널 마지막 줄 잘림과 이전 Luna 모델 표시 수정; 소스 검증 완료, 설치 파일 빌드·공개 배포 전.
 * [Acedia 1.8.1.80 EXE release](release-1-8-1-80.md) - 앱 시작 시 업데이트 안내, 줄바꿈된 영상 링크와 내장 Git 설정 검사 보강; 안정 EXE 게시와 공개 다운로드 검증 완료.
