@@ -128,8 +128,8 @@ Electron 검사는 임시 프로필과 모의 CLI에서 OFFLINE·실행 중 세�
 
 ## 기존 세션 소속·작업 경로 변경
 
-2026-10-22 소스에 `acedia_sessions_relocate`와 인증된
-`POST /integration/v1/workspace/relocate-sessions`를 추가했다. 앱을 종료하거나 저장 파일을
+[Standard EXE 1.8.1.88](release-1-8-1-88.md)부터 `acedia_sessions_relocate`와 인증된
+`POST /integration/v1/workspace/relocate-sessions`를 제공한다. 앱을 종료하거나 저장 파일을
 직접 편집할 필요가 없다. 대상 세션만 비활성화하고 호출 세션은 실행 중으로 유지한다.
 `acedia_projects`가 각 세션의 등록 `folder`도 반환하므로 조회한 `projectId`, `folder`를
 각각 `expectedProjectId`, `expectedFolder`로 전달한다.
@@ -174,7 +174,7 @@ Codex·Claude와 Antigravity의 현재 대화는 기존 조회 폴더를 기억�
 검증은 `session-relocation.test.mjs`, `sessionRelocation.test.ts`, 모델 기억·spawn·IPC·HTTP·stdio MCP
 검사와 `npm run electron:workspace-mcp-smoke`로 수행한다. Electron 검사는 임시 RnDHub와
 모의 CLI에서 실행 중 거부, 두 세션의 등록·디스크 저장·설정·포커스 유지와 새 폴더에서의
-실제 CLI 시작을 확인하며 사용자 폴더·세션을 변경하지 않는다. 이 기능은 아직 배포 전 소스다.
+실제 CLI 시작을 확인하며 사용자 폴더·세션을 변경하지 않는다.
 
 2026-10-22 최종 소스 검증: 전체 **201개 파일·1,505개 검사**, TypeScript/Vite production
 build와 실제 Electron 검사를 통과했다. 종료된 세션의 이동 후 비활성 유지와 만료된 요청의

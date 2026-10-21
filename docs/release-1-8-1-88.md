@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.88
 description: "앱 종료 없이 기존 비활성 세션의 프로젝트 소속·작업 폴더를 변경하는 공개 로컬 API와 MCP."
-status: validating
+status: stable
 last_updated: 2026-10-22
 ---
 
@@ -25,7 +25,7 @@ Standard EXE 업데이트다. 기존 서명 APK **1.8.1.39/code 21**을 재사�
 - Add **`acedia_sessions_relocate` MCP** and authenticated **`POST /integration/v1/workspace/relocate-sessions`** to change the registered project and working folder of 1–20 existing inactive local sessions without closing the app. Include the registered session folder in `acedia_projects` results.
 - Require a registered destination project and an existing destination folder. This changes session registration; moving physical directories and changing project roots remain separate operations. The previous physical folder may already have been moved.
 - Validate the entire request and revalidate immediately before saving. Reject running, starting or recovering targets, SSH, sessions in another window, unfinished orchestration, hierarchy conflicts, unintended inherited folder changes and conflicting pinned conversations.
-- Preserve session identity, conversations, account, Dangerous mode, launch options, panes, focus and drafts. Keep relocated sessions inactive until explicitly reopened in the new working folder. Retain conversation lookup context and the session/account's remembered model, effort, Fast and pending selection.
+- Preserve session identity, conversations, account, Dangerous mode, launch options, panes, focus and drafts. Keep relocated sessions inactive until explicitly reopened in the new working folder. Retain conversation lookup context for Codex, Claude and Antigravity, and Codex/Claude model memory for the same session/account, including effort, Fast and pending selection.
 - Block concurrent starts and account switches during persistence. Report success only after verifying the saved registry. Treat timeouts and persistence failures as failures; retrying the same destination does not create duplicate sessions.
 
 Restart the calling CLI after updating to load the new MCP tool. This Standard EXE release reuses the signed Android **1.8.1.39/code 21** artifact.
@@ -37,7 +37,24 @@ Restart the calling CLI after updating to load the new MCP tool. This Standard E
 - 실제 Electron 임시 프로필·모의 CLI에서 실행 중 대상 거부, 두 세션의 등록·디스크 저장·설정·포커스·초안 보존, 비활성 유지와 명시적 재개 후 새 폴더의 네이티브 CLI 시작을 확인했다. 다른 실행 중 세션과 원래 디렉터리도 유지했다. `output/session-relocation-electron.log`.
 - TypeScript·Vite production build 통과: `output/session-relocation-build.log`.
 - 버전·APK 검증·runtime variant **3개 파일·15개 검사**와 네이티브 PTY 검사 통과: `output/exe-88-version-tests.log`, `output/exe-88-pty-smoke.log`.
+- 고정 소스의 TypeScript·Vite production build와 Standard NSIS 빌드 통과: `output/exe-88-build.log`. 기존 출력과 분리한 `app/electron-dist/exe-1.8.1.88`에 빌드했다. 기존 Vite 500KB 이상 번들 경고는 남아 있다.
+- 패키지의 실행·내장 Git·브라우저 bridge·Dashboard·PTY와 종료·트레이·보안 검사 통과: `output/exe-88-packaged-smoke.log`, `output/exe-88-packaged-lifecycle-smoke.log`. 임시 packaged 실행기의 외부 제한을 처음부터 45초로 설정했고 원래 검사 조건·제품 소스와 개별 PTY 8초 제한을 유지했다. 기존 node-pty 종료 보조 프로세스의 `AttachConsole failed` 진단 뒤에도 필수 성공 marker와 종료 코드 0을 확인했다.
+- 설치 파일 FileVersion **1.8.1.88**, ProductVersion **1.8.1**, 크기·SHA-256이 같은 빌드의 manifest와 일치한다. Authenticode는 **NotSigned**다. `output/exe-release-1.8.1.88/windows-verification.json`.
+- 새 세션 이동 서비스를 포함한 패키지 런타임·렌더러 **324개 파일**이 고정 빌드 소스와 일치했다. 기존 서명 APK **1.8.1.39/code 21**의 패키지·아키텍처·인증서·해시도 재검증했다. `output/exe-release-1.8.1.88/local-verification.json`.
+- 공개 GitHub에서 **1.8.1.87·1.8.1.86 → 1.8.1.88** 업데이트 감지를 확인했다. 실제 업데이터로 EXE 전체를 다운로드하고 공개 자산 세 개의 크기·SHA-256·URL·태그·소스 커밋과 최신 안정 릴리스를 확인했다. `output/exe-88-public-verify.log`, `.build-tools/public-verified-1.8.1.88.json`.
 
 ## 배포 기록
 
-EXE 빌드·패키지 검사·공개 게시·다운로드 검증 결과는 완료 후 이 문서에 기록한다.
+- 공개 게시: **2026-10-22 07:56:30 KST**. [GitHub Release v1.8.1.88](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.88).
+- 고정 소스·태그: `6a4876bbfb276ce2d5d3f81229026cfae8107045`.
+- 공개 다운로드 검증 완료: **2026-10-22 07:57:06 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.88**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. 새 APK·Company·Microsoft Store 배포는 실행하지 않았다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.88-x64.exe | 151433848 | `8d9dcb8cbe934473484d3d1b5a72426c6582b28141ae6cc949e58c16fb8511ca` |
+| Acedia-Setup-1.8.1.88-x64.exe.blockmap | 159232 | `10e4d4f91c79dae50bff4ad9131a40851efb0963543ab689ca6e32df17668997` |
+| latest-exe.json | 256 | `ac873fdbcd498f7b490caa8ab46060cb01ed58d090649bb7e21f97c5eb44b100` |
+
+설정의 **Check → Update** 또는 다음 앱 실행의 업데이트 안내로 적용하고, 새 MCP 도구를 사용할 호출 세션을 **Restart**한다. 이 배포에서는 설치 프로그램을 실행하거나 실제 사용자 폴더·세션 등록을 변경하지 않았다. 공개 게시와 사용자 PC의 설치 완료는 별개다.
