@@ -76,8 +76,8 @@ PC에 이미 있어야 하며, 폴더 자체를 새로 만들지는 않는다.
 
 ## 기존 세션 Dangerous 설정
 
-2026-10-22 소스에 `acedia_session_settings`와 인증된
-`POST /integration/v1/workspace/session-settings`를 추가했다. 업데이트 배포본을 적용한 뒤
+[Standard EXE 1.8.1.87](release-1-8-1-87.md)부터 `acedia_session_settings`와 인증된
+`POST /integration/v1/workspace/session-settings`를 제공한다. 업데이트 배포본을 적용한 뒤
 호출하는 CLI를 다시 시작해야 새 MCP 도구를 사용할 수 있다. UI 자동화나 Computer Use는 필요하지 않다.
 
 먼저 `acedia_projects`에서 정확한 Acedia 세션 `id`를 확인하고 설정을 조회한다.
