@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.86
 description: "채팅과 터미널 이미지 복사 메뉴, Ctrl 클릭 파일 위치 열기와 한 줄의 여러 링크 인식 수정."
-status: validating
+status: stable
 last_updated: 2026-10-21
 ---
 
@@ -33,8 +33,24 @@ This Standard EXE release reuses the signed Android **1.8.1.39/code 21** artifac
 - 채팅 파일 카드·150개 파일 팝업·검색·페이지 조회·이미지 유지 회귀 검사와 TypeScript·Vite 빌드를 통과했다.
 - 전체 검사에서 설치된 Claude가 모의 CLI보다 먼저 발견되는 기존 테스트의 환경 의존성을 확인했다. 해당 검사의 초기 PATH를 격리하며 실제 실행 파일 선택 제품 코드는 변경하지 않는다.
 - 전체 **198개 파일·1,478개 검사**와 네이티브 PTY 검사를 통과했다. `output/exe-86-tests.log`, `output/exe-86-pty-smoke.log`.
-- 패키지 실행·종료·Git·브라우저·Dashboard, 설치 파일 메타데이터와 공개 다운로드 검증은 배포 실행 결과를 기록한다.
+- TypeScript·Vite production build 후 기존 출력의 `app.asar` 잠금으로 패키징이 중단되어, 같은 소스를 별도 `app/electron-dist/exe-1.8.1.86`에 빌드했다. 실행 중인 사용자 앱을 종료하지 않았다. `output/exe-86-build-locked.log`, `output/exe-86-build.log`.
+- 생성된 패키지의 실행·내장 Git·브라우저 bridge·Dashboard와 종료·트레이·보안 검사를 통과했다. `output/exe-86-packaged-smoke.log`, `output/exe-86-packaged-lifecycle-smoke.log`.
+- 설치 파일 FileVersion **1.8.1.86**, ProductVersion **1.8.1**, 크기와 SHA-256이 같은 빌드의 manifest와 일치한다. Authenticode는 **NotSigned**다. 기존 node-pty 종료 보조 프로세스의 `AttachConsole failed` 진단 뒤에도 필수 성공 marker와 종료 코드 0을 확인했다. Vite의 500KB 이상 번들 경고는 남아 있다.
+- 패키지의 런타임·렌더러 **320개 파일**이 고정 빌드 소스와 일치하며 기존 서명 APK **1.8.1.39/code 21**의 패키지·아키텍처·인증서·해시를 재검증했다. `output/exe-release-1.8.1.86/local-verification.json`.
+- 공개 GitHub에서 **1.8.1.85·1.8.1.84 → 1.8.1.86** 감지를 확인했다. 실제 업데이터로 EXE 전체를 다운로드하고 공개 자산 세 개의 크기·SHA-256·URL·태그와 소스 커밋을 확인했다. `output/exe-86-public-verify.log`, `.build-tools/public-verified-1.8.1.86.json`.
 
 ## 배포 기록
 
-배포 검증 진행 중이다. 제품 버전과 Android 소스 versionName은 **1.8.1.86**, npm 호환 버전은 **1.8.1**이다. 새 APK와 Microsoft Store 및 Company 배포는 이 EXE 배포 범위에 포함하지 않는다.
+- 공개 게시: **2026-10-21 14:24:54 KST**. [GitHub Release v1.8.1.86](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.86).
+- 고정 소스·태그: `0b6f75a7c5e9a7b0ef65668c603bce61fc343aee`.
+- 공개 다운로드 검증 완료: **2026-10-21 14:25:31 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.86**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. 새 APK·Company·Microsoft Store 배포는 실행하지 않았다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.86-x64.exe | 151426509 | `e2a8fc8da590995e2192d8535698d227958db966eeb609824e022f74e37f55d0` |
+| Acedia-Setup-1.8.1.86-x64.exe.blockmap | 159577 | `4af3e81391b5055c5ffe98971fd31b9fa34b4c4a3a2bde25f00b79b3e63d6a3d` |
+| latest-exe.json | 256 | `57a40e45060471dc7aff72e6753def4b5d4e45f1e00da3119dbd4eb68249979c` |
+
+설정의 **Check → Update** 또는 다음 앱 실행의 업데이트 안내로 적용한다. 이 배포에서 설치 프로그램과 실제 사용자 세션에 대한 시험 요청은 실행하지 않았다. 공개 게시·다운로드 검증 완료와 사용자 PC의 설치 완료는 별개다.
