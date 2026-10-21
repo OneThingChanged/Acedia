@@ -129,6 +129,8 @@ const INVOKE_COMMANDS = Object.freeze([
   "complete_remote_session_activation",
   "complete_remote_session_model",
   "complete_session_launch_settings",
+  "validate_session_relocation",
+  "complete_session_relocation",
   "restart_session_model",
   "get_session_model",
   "get_model_defaults",
@@ -199,6 +201,7 @@ const DELIVERED_EVENTS = Object.freeze([
   "remote:deactivate-session",
   "remote:session-model",
   "remote:session-launch-settings",
+  "remote:relocate-sessions",
   "chat:changed",
   "app:close-requested",
   "app:close-cancelled",
@@ -416,10 +419,16 @@ function assertInvokeRequest(command, rawArgs) {
         throw new TypeError("Electron window agent id must be a non-empty string");
       }
       break;
+    case "validate_session_relocation":
+      for (const key of ["requestId", "id"]) {
+        if (typeof args[key] !== 'string' || !SESSION_STORAGE_ID_RE.test(args[key])) throw new TypeError(`Electron relocation ${key} must be a UUID`);
+      }
+      break;
     case "complete_remote_session_create":
     case "complete_remote_session_activation":
     case "complete_remote_session_model":
     case "complete_session_launch_settings":
+    case "complete_session_relocation":
       for (const key of ["requestId", "id"]) {
         if (
           typeof args[key] !== "string" ||

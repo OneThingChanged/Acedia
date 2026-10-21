@@ -3,7 +3,7 @@ type: Guide
 title: 프로젝트 관계 보드와 부모·자식 세션 조직도
 description: 프로젝트 사이의 부모·자식과 폴더 참조를 연결하고, 세션별 설정 상속과 자유로운 보드 배치를 관리한다.
 status: implemented
-last_updated: 2026-10-20
+last_updated: 2026-10-22
 sources:
   - resource: ../app/src/components/SessionOrganization.tsx
   - resource: ../app/src/components/ProjectBoard.tsx
@@ -97,6 +97,12 @@ Codex와 로컬 Claude 실행에는 참조 설명을 추가 지침으로 전달�
 덮어쓰는 되돌리기는 거부한다. 프로젝트 변경은 기존 공유 프로필 저장 흐름을 따른다.
 
 ## 조직과 실행의 구분
+
+2026-10-22 소스의 `acedia_sessions_relocate` MCP와 공개 로컬 API로 앱을 켠 채 기존
+OFFLINE 세션의 소속 프로젝트·작업 폴더를 변경할 수 있다. 여러 세션을 함께 검증·저장하며
+부모·자식 관계의 프로젝트 경계와 미지정 자식의 폴더 상속을 검사한다. 화면·포커스·대화와
+개별 설정을 보존하고, 명시적으로 다시 열 때 새 작업 폴더를 적용한다.
+[요청 형식·검증·적용 범위](workspace-mcp.md#기존-세션-소속작업-경로-변경)를 참고한다.
 
 `sessionHierarchy.parentId`는 사용자가 변경할 수 있는 조직상의 부모다.
 `createdById`는 생성 주체이며 부모를 옮길 때 바뀌지 않는다.

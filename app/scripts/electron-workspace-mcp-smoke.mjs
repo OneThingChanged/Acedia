@@ -32,7 +32,7 @@ if (process.versions.electron) {
     console.log('WORKSPACE_FIXTURE_COORDINATOR_READY');
     const invoke = (command, args = {}) => window.webContents.executeJavaScript(`window.multiAgentElectron.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`);
     const executable = path.join(root, 'fixture-cli.ps1');
-    fs.writeFileSync(executable, 'Write-Output "ACEDIA_WORKSPACE_FIXTURE_CLI"\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("launch-" + $env:MULTIAGENT_AGENT_ID + ".json")), (ConvertTo-Json -InputObject @($args) -Compress))\n[Console]::ReadLine() | Out-Null\n');
+    fs.writeFileSync(executable, 'Write-Output "ACEDIA_WORKSPACE_FIXTURE_CLI"\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("launch-" + $env:MULTIAGENT_AGENT_ID + ".json")), (ConvertTo-Json -InputObject @($args) -Compress))\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("cwd-" + $env:MULTIAGENT_AGENT_ID + ".txt")), $PWD.Path)\n[Console]::ReadLine() | Out-Null\n');
     await window.webContents.executeJavaScript(`localStorage.setItem('multiagent.agentDefaults.v1', ${JSON.stringify(JSON.stringify({ codex: { launchOptions: { executable }, dangerous: false } }))})`);
     await invoke('spawn_pty', { id: 'workspace-mcp-caller', aiToolId: 'none', cwd: root, cols: 80, rows: 24 });
     console.log('WORKSPACE_FIXTURE_CALLER_READY');
@@ -109,6 +109,47 @@ if (process.versions.electron) {
     assert.ok(fs.statSync(launchFile(first.sessionId)).mtimeMs > firstLaunch, 'Next CLI did not start');
     assert.ok(JSON.parse(fs.readFileSync(launchFile(first.sessionId), 'utf8')).includes('--dangerously-bypass-approvals-and-sandbox'), 'Next CLI did not receive saved Dangerous flag');
     console.log('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK');
+    const rndFolder = path.join(root, 'RnDHub'); fs.mkdirSync(rndFolder);
+    const rnd = await call('/projects', { folder: rndFolder, name: 'RnDHub' });
+    const moves = [first.sessionId, second.sessionId].map((sessionId, index) => {
+      const folder = path.join(rndFolder, `research-${index + 1}`); fs.mkdirSync(folder);
+      return { sessionId, projectId: rnd.projectId, folder, expectedProjectId: first.projectId, expectedFolder: projectFolder };
+    });
+    // Batch validation refuses a still-running target without changing either.
+    const refused = await fetch(base + '/relocate-sessions', { method: 'POST', headers, body: JSON.stringify({ moves }) });
+    assert.equal(refused.status, 409);
+    for (const id of [first.sessionId, second.sessionId]) await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`[data-sidebar-agent-id="${id}"] .sidebar-session-close`)}).click()`);
+    for (let i = 0; i < 100; i++) {
+      if ((await call('/projects')).sessions.filter(a => moves.some(m => m.sessionId === a.id)).every(a => !a.active)) break;
+      await wait(100);
+    }
+    await window.webContents.executeJavaScript(`document.getElementById('launch-settings-focus').focus()`);
+    const relocationUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),focus:document.activeElement?.id,draft:document.getElementById('launch-settings-focus')?.value,groups:JSON.parse(localStorage.getItem('multiagent.groups.v1')||'[]').map(({projectId,...rest})=>rest)})`);
+    const uiBeforeMove = await relocationUi();
+    const registrationsBefore = JSON.parse((await invoke('storage_snapshot_get')).values['multiagent.agents.v1']);
+    assert.equal((await call('/relocate-sessions', { moves })).saved, true);
+    assert.deepEqual(await relocationUi(), uiBeforeMove, 'Relocation changed pane selection, layout, focus or draft');
+    const registrations = JSON.parse((await invoke('storage_snapshot_get')).values['multiagent.agents.v1']);
+    const listed = await call('/projects');
+    for (const move of moves) {
+      const original = registrationsBefore.find(a => a.id === move.sessionId), saved = registrations.find(a => a.id === move.sessionId);
+      assert.equal(saved.projectId, rnd.projectId); assert.equal(saved.folder, fs.realpathSync(move.folder));
+      for (const key of ['id', 'name', 'aiToolId', 'lastSessionId', 'modelSettings', 'dangerous', 'codexAccountId', 'codexAccountSessions', 'launchOptions']) assert.deepEqual(saved[key], original[key], `Relocation changed ${key}`);
+      assert.equal(listed.sessions.find(a => a.id === move.sessionId).active, false);
+    }
+    assert.equal(listed.sessions.find(a => a.id === rnd.sessionId).active, true);
+    // Explicitly open the moved session and verify its native working folder.
+    const beforeMoveLaunch = fs.statSync(launchFile(first.sessionId)).mtimeMs;
+    await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`[data-sidebar-agent-id="${first.sessionId}"]`)}).dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }))`);
+    clicked = false;
+    for (let i = 0; i < 100 && fs.statSync(launchFile(first.sessionId)).mtimeMs === beforeMoveLaunch; i++) {
+      if (!clicked) clicked = await window.webContents.executeJavaScript(`{ const b=document.querySelector('.session-standby button'); if(b) b.click(); Boolean(b); }`);
+      await wait(100);
+    }
+    assert.equal(fs.readFileSync(path.join(root, `cwd-${first.sessionId}.txt`), 'utf8'), fs.realpathSync(moves[0].folder));
+    assert.ok(fs.existsSync(projectFolder), 'Registry relocation moved physical directories');
+    await invoke('kill_pty', { id: rnd.sessionId });
+    console.log('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK');
     for (const id of ['workspace-mcp-caller', first.sessionId, second.sessionId]) await invoke('kill_pty', { id });
     console.log('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK');
     clearTimeout(timeout); app.quit();
@@ -131,9 +172,11 @@ if (process.versions.electron) {
     assert.ok(output.includes('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_OFFLINE_ACTIVE_DURABLE_NO_FOCUS_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK'), output);
+    assert.ok(output.includes('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK'), output);
     console.log('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK');
     console.log('ACEDIA_SESSION_SETTINGS_OFFLINE_ACTIVE_DURABLE_NO_FOCUS_OK');
     console.log('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK');
+    console.log('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK');
   } finally {
     if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-workspace-mcp-smoke-')) throw new Error('Unexpected cleanup path');
     await fs.promises.rm(root, { recursive: true, maxRetries: 10, retryDelay: 200 });

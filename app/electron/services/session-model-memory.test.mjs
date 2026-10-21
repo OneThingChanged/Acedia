@@ -20,6 +20,27 @@ function fixture() {
 }
 
 describe("per-session native model memory", () => {
+  it('keeps remembered model, effort, Fast and pending choices across a registered-folder relocation', () => {
+    const f = fixture(), settings = { model: 'gpt-6.1-sol', effort: 'xhigh', serviceTier: 'fast' };
+    f.start(settings);
+    const folder = path.join(f.root, 'RnDHub');
+    f.memory.relocate([{ agent: f.args, folder }]);
+    expect(new SessionModelMemory(f.file).resolve({ ...f.args, cwd: folder }).settings).toEqual(settings);
+    expect(new SessionModelMemory(f.file).resolve({ ...f.args, cwd: folder, modelSettings: { model: 'new-project-default' } }).settings).toEqual(settings);
+    const next = { model: 'gpt-6-astra', effort: 'max' };
+    f.memory.stage({ ...f.args, cwd: folder }, next);
+    const nextFolder = path.join(f.root, 'RnDHub', 'research');
+    f.memory.relocate([{ agent: f.args, folder: nextFolder }]);
+    expect(new SessionModelMemory(f.file).resolve({ ...f.args, cwd: nextFolder }).settings).toMatchObject(next);
+    expect(f.memory.lastSettings({ ...f.args, codexAccountId: 'another-account' })).toBeUndefined();
+  });
+  it('restores in-memory model scopes if persisting relocation fails', () => {
+    const f = fixture(); f.start({ model: 'gpt-6.1-sol', effort: 'high' });
+    const original = f.memory.record(f.args);
+    const destination = path.join(f.root, 'directory-not-a-file'); fs.mkdirSync(destination); f.memory.file = destination;
+    expect(() => f.memory.relocate([{ agent: f.args, folder: path.join(f.root, 'new') }])).toThrow();
+    expect(f.memory.record(f.args)).toEqual(original);
+  });
   it("remembers a routed /model change with inline Fast before another turn and keeps it while the footer is hidden", () => {
     const f = fixture();
     let viewport = "";

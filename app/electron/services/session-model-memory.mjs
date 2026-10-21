@@ -190,4 +190,22 @@ export class SessionModelMemory {
     ticket.previous ? this.records.set(ticket.id, ticket.previous) : this.records.delete(ticket.id);
     this.#save();
   }
+  relocate(entries) {
+    const previous = new Map();
+    for (const { agent, folder, preserveSettings = false } of entries) {
+      const record = this.#accountRecord(agent);
+      if (!record || typeof folder !== 'string' || !path.isAbsolute(folder)) continue;
+      const scope = scopeFor({ ...agent, cwd: folder });
+      if (scope === record.scope && !preserveSettings) continue;
+      previous.set(agent.id, record);
+      const settings = normalizeSessionModel(record.settings);
+      // A new project's defaults are not a user model selection. Carry the
+      // current choice through the next launch, then bind its configured value.
+      const next = !Object.hasOwn(record, 'next') && settings ? { next: settings, nextToken: randomUUID() } : {};
+      this.records.set(agent.id, { ...record, ...next, scope, updatedAt: Date.now() });
+    }
+    if (!previous.size) return;
+    try { this.#save(); }
+    catch (error) { for (const [id, record] of previous) this.records.set(id, record); throw error; }
+  }
 }

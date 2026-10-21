@@ -607,6 +607,7 @@ export class HookService {
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/projects' ? 'create-project'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-settings' ? 'session-settings'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/relocate-sessions' ? 'relocate-sessions'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/send' ? 'send'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/delivery' ? 'delivery' : null;
       const workspaceAction = request.method === 'POST' && url.pathname === '/integration/v1/workspace/tasks' ? 'task' : action;

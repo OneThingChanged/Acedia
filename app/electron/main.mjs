@@ -74,6 +74,7 @@ import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capa
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { SessionLaunchSettings } from "./services/session-launch-settings.mjs";
+import { SessionRelocation } from "./services/session-relocation.mjs";
 import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -1044,12 +1045,50 @@ const sessionLaunchSettings = new SessionLaunchSettings({
     state.agents = (state.agents || []).map(item => item.id === payload.id ? { ...item, dangerous: saved.dangerous } : item);
   },
 });
+const sessionRelocation = new SessionRelocation({
+  catalog: () => monitorService?.state || {},
+  active: id => ptys.has(id),
+  writable: id => {
+    const owner = detachedAgents.get(id);
+    if (owner !== undefined && owner !== coordinatorWebContentsId) return false;
+    if (accountSwitches.has(id) && !sessionRelocation.pending?.moves.some(m => m.sessionId === id)) return false;
+    return !taskOrchestration.unavailable && !taskOrchestration.data.runs.some(run =>
+      !['completed', 'failed', 'cancelled'].includes(run.state)
+      && (run.ownerId === id || run.tasks.some(task => task.attempts.some(attempt => attempt.sessionId === id))));
+  },
+  lock: moves => { for (const move of moves) { accountSwitches.add(move.sessionId); terminalSessions.beginSpawn(move.sessionId); } },
+  unlock: moves => { for (const move of moves) accountSwitches.delete(move.sessionId); },
+  dispatch: payload => {
+    const runtime = runtimeByWebContents.get(coordinatorWebContentsId), coordinator = workspaceWindows.get(coordinatorWebContentsId);
+    if (!runtime?.workspace_window || !runtime.coordinator || !runtime.ready || !coordinator) return false;
+    sendEvent(coordinator, 'remote:relocate-sessions', payload); return true;
+  },
+  verifySaved: async moves => {
+    const snapshot = await readStorageSnapshot();
+    const saved = JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]');
+    for (const move of moves) {
+      const agent = saved.find(a => a.id === move.sessionId);
+      if (!agent || agent.projectId !== move.projectId || agent.folder !== move.folder
+        || agent.sessionHierarchy?.folderOverride !== move.folder || agent.sessionHierarchy?.inheritFolder !== false) {
+        throw Object.assign(new Error('저장된 세션 이동 결과를 확인하지 못했습니다. 등록 상태를 다시 조회하세요.'), { statusCode: 409 });
+      }
+    }
+    sessionModelMemory.relocate(moves.map(move => ({ agent: saved.find(a => a.id === move.sessionId), folder: move.folder, preserveSettings: move.projectId !== move.expectedProjectId })));
+    const ids = new Set(moves.map(m => m.sessionId));
+    monitorService.state.agents = (monitorService.state.agents || []).map(agent => {
+      const record = ids.has(agent.id) && saved.find(a => a.id === agent.id);
+      return record ? { ...agent, projectId: record.projectId, folder: record.folder,
+        sessionHierarchy: record.sessionHierarchy ? { parentId: record.sessionHierarchy.parentId, createdById: record.sessionHierarchy.createdById } : undefined } : agent;
+    });
+  },
+});
 const workspaceManagement = new WorkspaceManagement({
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
   deliveries: sessionDeliveries,
   sessionSettings: sessionLaunchSettings,
+  relocation: sessionRelocation,
   sessionState: id => {
     const target = deliveryContext(id);
     return { conversationId: target?.conversationId || null, state: target?.state || 'OFFLINE', reason: target?.reason || 'inactive' };
@@ -6047,6 +6086,14 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return sessionLaunchSettings.complete(args);
     }
+    case "validate_session_relocation":
+    case "complete_session_relocation": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) throw new Error('기본 작업창에서만 세션 등록을 변경할 수 있습니다.');
+      if (command === 'complete_session_relocation') return sessionRelocation.complete(args);
+      try { return { ok: true, moves: sessionRelocation.validate(args) }; }
+      catch (error) { return { ok: false, error: String(error.message || error).slice(0, 1000), statusCode: [400, 404, 409, 503].includes(error.statusCode) ? error.statusCode : 500 }; }
+    }
     case "restart_session_model": {
       const id = asString(args.id);
       if (args.interrupt != null && typeof args.interrupt !== "boolean") throw new Error("Invalid restart option.");
@@ -6308,6 +6355,7 @@ app.on("before-quit", (event) => {
   remoteSessionActivationBroker.close();
   remoteSessionModelBroker.close();
   sessionLaunchSettings.close();
+  sessionRelocation.close();
   void hookService.stop();
   void monitorService.stop();
   void usageDashboard.stop();

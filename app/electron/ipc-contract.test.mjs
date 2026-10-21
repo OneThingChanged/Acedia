@@ -124,6 +124,8 @@ describe("Electron IPC contract", () => {
     expect(contract.INVOKE_COMMANDS).toContain("complete_remote_session_create");
     expect(contract.INVOKE_COMMANDS).toContain("complete_remote_session_activation");
     expect(contract.INVOKE_COMMANDS).toContain("complete_session_launch_settings");
+    expect(contract.INVOKE_COMMANDS).toContain("validate_session_relocation");
+    expect(contract.INVOKE_COMMANDS).toContain("complete_session_relocation");
     expect(contract.INVOKE_COMMANDS).toContain("open_store_product");
     expect(contract.INVOKE_COMMANDS).toContain("check_for_developer_update");
     expect(contract.INVOKE_COMMANDS).toContain("install_developer_update");
@@ -133,6 +135,7 @@ describe("Electron IPC contract", () => {
     expect(contract.DELIVERED_EVENTS).toContain("remote:create-session");
     expect(contract.DELIVERED_EVENTS).toContain("remote:rename-session");
     expect(contract.DELIVERED_EVENTS).toContain("remote:session-launch-settings");
+    expect(contract.DELIVERED_EVENTS).toContain("remote:relocate-sessions");
     expect(contract.DELIVERED_EVENTS).toContain("document-browser:catalog-updated");
     expect(contract.DELIVERED_EVENTS).toContain("document-browser:show-tab");
   });

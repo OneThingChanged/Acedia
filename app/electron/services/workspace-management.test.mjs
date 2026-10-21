@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
 import { SessionLaunchSettings } from './session-launch-settings.mjs';
+import { SessionRelocation } from './session-relocation.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -94,12 +95,12 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   });
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
-  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
+  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
-  for (const action of ['send', 'delivery', 'session-settings']) {
+  for (const action of ['send', 'delivery', 'session-settings', 'relocate-sessions']) {
     const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
     expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
@@ -120,4 +121,15 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: '{}' })).status).toBe(415);
   expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, dangerous: 'true' }) })).status).toBe(400);
   expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
+  target.folder = f.root;
+  const destination = path.join(f.root, 'RnDHub'); fs.mkdirSync(destination);
+  f.catalog.projects.push({ id: 'rnd', name: 'RnDHub', folder: destination });
+  const relocation = new SessionRelocation({ catalog: () => f.catalog, active: id => f.active.has(id),
+    dispatch: payload => { queueMicrotask(() => void relocation.complete({ ...payload, ok: true })); return true; },
+    verifySaved: async moves => { for (const move of moves) Object.assign(f.catalog.agents.find(a => a.id === move.sessionId), { folder: move.folder, projectId: move.projectId }); } });
+  f.service.relocation = relocation; cleanups.push(() => relocation.close());
+  const body = { moves: [{ sessionId: target.id, expectedProjectId: target.projectId, expectedFolder: target.folder, projectId: 'rnd', folder: destination }] };
+  const moved = await rpc('tools/call', { name: 'acedia_sessions_relocate', arguments: body });
+  expect(moved.structuredContent).toMatchObject({ saved: true, active: false, moves: [{ sessionId: target.id, projectId: 'rnd', folder: fs.realpathSync(destination) }] });
+  expect((await rpc('tools/call', { name: 'acedia_projects' })).structuredContent.sessions[0]).toMatchObject({ projectId: 'rnd', folder: fs.realpathSync(destination), dangerous: true });
 });

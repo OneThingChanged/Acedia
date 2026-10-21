@@ -5,6 +5,7 @@ import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
+import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocation';
 import { SessionOrganization } from "./components/SessionOrganization";
 import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
@@ -3991,6 +3992,31 @@ function App() {
       }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: 500 }); });
     }).then(track);
 
+    listen<{ requestId: string; id: string; moves: SessionMove[] }>('remote:relocate-sessions', event => {
+      const payload = event.payload;
+      if (cancelled || !payload?.requestId || !payload.id) return;
+      const complete = (result: { ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 }) => invoke('complete_session_relocation', {
+        requestId: payload.requestId, id: payload.id, ...result,
+      }).catch(() => false);
+      launchSettingsQueue = launchSettingsQueue.catch(() => {}).then(async () => {
+        if (cancelled) { await complete({ ok: false, error: '작업창이 변경되었습니다. 다시 조회하세요.', statusCode: 503 }); return; }
+        const checked = await invoke('validate_session_relocation', { requestId: payload.requestId, id: payload.id });
+        if (!checked.ok || !checked.moves) { await complete({ ok: false, error: checked.error || '등록 정보를 다시 조회하세요.', statusCode: checked.statusCode || 409 }); return; }
+        const moves = checked.moves;
+        if (moves.some(move => detachedAgentIdsRef.current.has(move.sessionId))) throw Object.assign(new Error('다른 작업창의 세션을 기본 작업창으로 가져오세요.'), { statusCode: 409 });
+        const next = relocateSessionRegistry(agentsRef.current, projectsRef.current, groupsRef.current, moves);
+        const stored = mergeStoredByIdForWrite(next.agents.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
+        const agentsJson = JSON.stringify(stored), groupsJson = JSON.stringify(next.groups);
+        localStorage.setItem(LS_AGENTS, agentsJson); localStorage.setItem(workspace.groupsKey, groupsJson);
+        storedAgentsJsonRef.current = agentsJson; storedGroupsJsonRef.current = groupsJson;
+        agentsRef.current = next.agents; groupsRef.current = next.groups;
+        setAgents(next.agents); setGroups(next.groups);
+        await persistStorageSnapshot(true);
+        await complete({ ok: true });
+      }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: error?.statusCode === 409 ? 409 : 500 }); });
+    }).then(track);
+
     listen<{ requestId: string; id: string; settings: SessionModel | null; restart: boolean }>("remote:session-model", (event) => {
       if (cancelled) return;
       const payload = event.payload;
@@ -4056,6 +4082,7 @@ function App() {
     restartAgent,
     clearAgentStartupReadyTimer,
     text,
+    workspace.groupsKey,
   ]);
 
   const setActivePathForPane = useCallback(

@@ -9,6 +9,8 @@ sources:
   - resource: ../app/electron/services/workspace-management.test.mjs
   - resource: ../app/electron/services/session-launch-settings.mjs
   - resource: ../app/electron/services/session-launch-settings.test.mjs
+  - resource: ../app/electron/services/session-relocation.mjs
+  - resource: ../app/src/lib/sessionRelocation.ts
   - resource: ../app/electron/services/browser-mcp-server.mjs
   - resource: ../app/electron/services/hook-service.mjs
   - resource: ../app/electron/services/remote-session-create-broker.mjs
@@ -32,6 +34,7 @@ MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 등록된 로컬 프로젝트에 추가 세션 생성 |
 | `acedia_session_settings` | 기존 세션의 Dangerous 조회·저장. OFFLINE 대상 지원, 다음 실행부터 반영 |
+| `acedia_sessions_relocate` | 앱 실행 중 기존 OFFLINE 세션들의 소속 프로젝트·작업 폴더를 묶어 변경 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
 | `acedia_session_delivery` | 같은 호출 세션이 보낸 요청의 상태 조회. 입력·재전송 없음 |
 | `acedia_task_plan` | A의 계획 검증·저장 후 전용 로컬 Codex 작업 세션 자동 배정 |
@@ -122,6 +125,62 @@ Electron 검사는 임시 프로필과 모의 CLI에서 OFFLINE·실행 중 세�
 받는 것을 확인했다. `output/session-launch-settings-tests.log`,
 `output/session-launch-settings-build.log`, `output/session-launch-settings-electron.log`.
 이 소스 검증은 설치 파일 배포·사용자 세션 설정 변경을 포함하지 않는다.
+
+## 기존 세션 소속·작업 경로 변경
+
+2026-10-22 소스에 `acedia_sessions_relocate`와 인증된
+`POST /integration/v1/workspace/relocate-sessions`를 추가했다. 앱을 종료하거나 저장 파일을
+직접 편집할 필요가 없다. 대상 세션만 비활성화하고 호출 세션은 실행 중으로 유지한다.
+`acedia_projects`가 각 세션의 등록 `folder`도 반환하므로 조회한 `projectId`, `folder`를
+각각 `expectedProjectId`, `expectedFolder`로 전달한다.
+
+```json
+{
+  "moves": [
+    {
+      "sessionId": "기존 세션 ID",
+      "expectedProjectId": "기존 프로젝트 ID",
+      "expectedFolder": "G:\\AI\\ResearchA",
+      "projectId": "등록된 RnDHub 프로젝트 ID",
+      "folder": "G:\\AI\\RnDHub\\ResearchA"
+    }
+  ]
+}
+```
+
+한 요청에 1~20개 세션을 지정한다. 대상 프로젝트는 이미 등록된 로컬 프로젝트이며 새
+작업 폴더는 이 PC에 존재해야 한다. API는 실제 디렉터리를 옮기거나 프로젝트 루트의
+등록 경로를 바꾸지 않고, 지정한 세션의 프로젝트 소속과 작업 폴더를 갱신한다. 이미
+옮겨서 옛 폴더가 없어도 등록 변경을 허용한다. 새 경로는 실경로로 정규화한다.
+
+전체 요청의 ID·경로·기존 등록 값·실행 상태·창 소유권·부모 관계를 검증한다. 실행 중인
+세션, SSH, 다른 창의 세션, 종료되지 않은 작업 분담 실행의 A·하위 세션은 수정하지
+않는다. 부모·자식은 같은 프로젝트로 함께 옮기거나 먼저 조직도에서 관계를 정리한다.
+작업 폴더를 상속하는 미지정 하위 세션의 경로가 바뀌면 저장 전에 거부한다. 서로 다른
+대화가 고정된 세션은 고정 상태를 먼저 확인한다. 오류 시 임의로 관계·고정을 해제하지 않는다.
+
+coordinator는 요청을 순서대로 처리하고 저장 직전에 main에서 다시 검증한다. 저장 중인
+대상의 동시 시작·계정 변경을 막고, 세션 목록과 화면 그룹의 등록 정보를 같은 workspace
+snapshot에 저장한다. main이 모든 대상의 저장된 프로젝트·경로를 확인한 뒤
+`saved: true`, `active: false`, 정규화한 `moves`를 반환한다. 시간 초과는 성공이 아니므로
+목록을 다시 조회해 실제 저장 여부를 확인한다. 이미 적용된 목적지로 재시도해도 중복 세션을 만들지 않는다.
+
+세션 ID·이름·대화 ID·계정·Dangerous·개별 실행 옵션과 화면 배치·선택·포커스·입력
+초안을 보존하며 자동 시작하지 않는다. 이동한 세션의 폴더는 직접 지정으로 저장한다.
+Codex·Claude와 Antigravity의 현재 대화는 기존 조회 폴더를 기억한 채 새 작업 폴더에서
+다시 시작한다. 모델 기억 저장소의 Codex·Claude 모델·effort·Fast·예약 선택도 새 경로에
+이어붙여 대상 프로젝트의 기본 모델로 되돌아가는 것을 방지한다. 다른 계정의 모델을 복사하지 않는다.
+
+검증은 `session-relocation.test.mjs`, `sessionRelocation.test.ts`, 모델 기억·spawn·IPC·HTTP·stdio MCP
+검사와 `npm run electron:workspace-mcp-smoke`로 수행한다. Electron 검사는 임시 RnDHub와
+모의 CLI에서 실행 중 거부, 두 세션의 등록·디스크 저장·설정·포커스 유지와 새 폴더에서의
+실제 CLI 시작을 확인하며 사용자 폴더·세션을 변경하지 않는다. 이 기능은 아직 배포 전 소스다.
+
+2026-10-22 최종 소스 검증: 전체 **201개 파일·1,505개 검사**, TypeScript/Vite production
+build와 실제 Electron 검사를 통과했다. 종료된 세션의 이동 후 비활성 유지와 만료된 요청의
+늦은 검증 실패가 새 요청을 취소하지 않는 경우도 포함한다.
+`output/session-relocation-tests.log`, `output/session-relocation-build.log`,
+`output/session-relocation-electron.log`에 결과를 기록했다.
 
 ## 다른 세션으로 작업 전달
 
