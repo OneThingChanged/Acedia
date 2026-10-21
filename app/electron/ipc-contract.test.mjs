@@ -123,6 +123,7 @@ describe("Electron IPC contract", () => {
     expect(contract.INVOKE_COMMANDS).toContain("conversation_record_user_message");
     expect(contract.INVOKE_COMMANDS).toContain("complete_remote_session_create");
     expect(contract.INVOKE_COMMANDS).toContain("complete_remote_session_activation");
+    expect(contract.INVOKE_COMMANDS).toContain("complete_session_launch_settings");
     expect(contract.INVOKE_COMMANDS).toContain("open_store_product");
     expect(contract.INVOKE_COMMANDS).toContain("check_for_developer_update");
     expect(contract.INVOKE_COMMANDS).toContain("install_developer_update");
@@ -131,6 +132,7 @@ describe("Electron IPC contract", () => {
     expect(contract.INVOKE_COMMANDS).toContain("document_browser_hub_close");
     expect(contract.DELIVERED_EVENTS).toContain("remote:create-session");
     expect(contract.DELIVERED_EVENTS).toContain("remote:rename-session");
+    expect(contract.DELIVERED_EVENTS).toContain("remote:session-launch-settings");
     expect(contract.DELIVERED_EVENTS).toContain("document-browser:catalog-updated");
     expect(contract.DELIVERED_EVENTS).toContain("document-browser:show-tab");
   });
@@ -183,6 +185,14 @@ describe("Electron IPC contract", () => {
         ok: false,
       })
     ).toThrow(/requestId/);
+  });
+
+  it('validates session launch-settings acknowledgements', () => {
+    const result = { requestId: '11111111-1111-4111-8111-111111111111', id: '22222222-2222-4222-8222-222222222222', ok: true };
+    expect(contract.assertInvokeRequest('complete_session_launch_settings', result)).toMatchObject({ ok: true });
+    for (const patch of [{ requestId: 'wrong' }, { ok: 'true' }, { statusCode: 200 }]) {
+      expect(() => contract.assertInvokeRequest('complete_session_launch_settings', { ...result, ...patch })).toThrow();
+    }
   });
 
   it("validates submodule discovery roots", () => {

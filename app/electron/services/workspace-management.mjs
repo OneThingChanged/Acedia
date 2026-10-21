@@ -14,15 +14,15 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, deliveries = null, sessionState = () => ({}) }) {
-    Object.assign(this, { catalog, create, isActive, deliveries, sessionState });
+  constructor({ catalog, create, isActive, deliveries = null, sessionSettings = null, sessionState = () => ({}) }) {
+    Object.assign(this, { catalog, create, isActive, deliveries, sessionSettings, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
   }
   snapshot() {
     const catalog = this.catalog();
     return {
       projects: (catalog.projects || []).map(p => ({ id: p.id, name: p.name, folder: p.folder, local: !p.sshHostId })),
-      sessions: (catalog.agents || []).map(a => ({ id: a.id, projectId: a.projectId, name: a.name, aiToolId: a.aiToolId, active: this.isActive(a.id), ...this.sessionState(a.id), ...(a.sessionHierarchy?.parentId ? { parentSessionId: a.sessionHierarchy.parentId } : {}), ...(a.sessionHierarchy?.createdById ? { createdBySessionId: a.sessionHierarchy.createdById } : {}) })),
+      sessions: (catalog.agents || []).map(a => ({ id: a.id, projectId: a.projectId, name: a.name, aiToolId: a.aiToolId, dangerous: a.dangerous === true, active: this.isActive(a.id), ...this.sessionState(a.id), ...(a.sessionHierarchy?.parentId ? { parentSessionId: a.sessionHierarchy.parentId } : {}), ...(a.sessionHierarchy?.createdById ? { createdBySessionId: a.sessionHierarchy.createdById } : {}) })),
       availableTools: (catalog.availableTools || []).map(t => ({ id: t.id, label: t.label })),
     };
   }
@@ -38,6 +38,7 @@ export class WorkspaceManagement {
   handle({ action, body = {}, agentId }) {
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'session-settings') return this.sessionSettings ? this.sessionSettings.handle(body) : Promise.reject(fail('Session settings unavailable', 503));
     if (action === 'task') return this.tasks ? this.tasks.handle({ action: body.action, body: body.body, agentId }) : Promise.reject(fail('Task orchestration unavailable', 503));
     if (['send', 'delivery'].includes(action)) return this.deliveries ? this.deliveries.handle({ action, agentId, body }) : Promise.reject(fail('Session delivery unavailable', 503));
     if (!['create-project', 'create-session'].includes(action)) return Promise.reject(fail('지원하지 않는 작업입니다.', 404));

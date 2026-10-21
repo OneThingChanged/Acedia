@@ -73,6 +73,7 @@ import { confirmCodexConversationReset } from './services/codex-conversation-res
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
+import { SessionLaunchSettings } from "./services/session-launch-settings.mjs";
 import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -1015,11 +1016,40 @@ const sessionDeliveries = new SessionDeliveries({
   },
   publish: payload => sendEventToAll('agent:session-delivery', payload),
 });
+const sessionLaunchSettings = new SessionLaunchSettings({
+  agentFor: id => {
+    const agent = sessionModelAgent(id);
+    const project = monitorService?.state?.projects?.find(item => item.id === agent?.projectId);
+    const owner = detachedAgents.get(id);
+    return agent ? { ...agent, sshHostId: agent.sshHostId || project?.sshHostId, detached: owner !== undefined && owner !== coordinatorWebContentsId } : null;
+  },
+  active: id => ptys.has(id),
+  dispatch: payload => {
+    const runtime = runtimeByWebContents.get(coordinatorWebContentsId);
+    const coordinator = workspaceWindows.get(coordinatorWebContentsId);
+    if (!runtime?.workspace_window || !runtime.coordinator || !runtime.ready || !coordinator) return false;
+    sendEvent(coordinator, 'remote:session-launch-settings', payload);
+    return true;
+  },
+  verifySaved: async payload => {
+    const snapshot = await readStorageSnapshot();
+    const agents = JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]');
+    const saved = agents.find(item => item.id === payload.id);
+    if (!saved || saved.aiToolId !== payload.aiToolId || saved.dangerous !== payload.dangerous) {
+      throw Object.assign(new Error('저장된 세션 실행 옵션을 확인하지 못했습니다. 다시 조회하세요.'), { statusCode: 409 });
+    }
+    // Make an immediate API read agree with the acknowledged disk snapshot,
+    // without waiting for React's next monitor-sync effect.
+    const state = monitorService.state;
+    state.agents = (state.agents || []).map(item => item.id === payload.id ? { ...item, dangerous: saved.dangerous } : item);
+  },
+});
 const workspaceManagement = new WorkspaceManagement({
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
   deliveries: sessionDeliveries,
+  sessionSettings: sessionLaunchSettings,
   sessionState: id => {
     const target = deliveryContext(id);
     return { conversationId: target?.conversationId || null, state: target?.state || 'OFFLINE', reason: target?.reason || 'inactive' };
@@ -6010,6 +6040,13 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return remoteSessionModelBroker.complete(args);
     }
+    case "complete_session_launch_settings": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) {
+        throw new Error('세션 설정 결과는 coordinator 창에서만 전달할 수 있습니다.');
+      }
+      return sessionLaunchSettings.complete(args);
+    }
     case "restart_session_model": {
       const id = asString(args.id);
       if (args.interrupt != null && typeof args.interrupt !== "boolean") throw new Error("Invalid restart option.");
@@ -6270,6 +6307,7 @@ app.on("before-quit", (event) => {
   remoteSessionCreateBroker.close();
   remoteSessionActivationBroker.close();
   remoteSessionModelBroker.close();
+  sessionLaunchSettings.close();
   void hookService.stop();
   void monitorService.stop();
   void usageDashboard.stop();

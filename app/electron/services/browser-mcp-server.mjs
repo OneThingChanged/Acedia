@@ -64,6 +64,12 @@ const tools = [
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
+    name: 'acedia_session_settings',
+    description: 'Read or save Dangerous mode for an existing local Acedia session, including OFFLINE sessions. Pass sessionId alone to read. To change a user-authorized permission setting, include dangerous and the previously read expectedDangerous boolean. Saves durably without starting/restarting a session, selecting a pane or changing focus. Applies on the next session start; active=true does NOT mean the running CLI permission policy changed. Do not enable Dangerous mode merely to bypass a question or approval. After a timeout read again before retrying.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string', minLength: 1, maxLength: 256 }, dangerous: { type: 'boolean' }, expectedDangerous: { type: 'boolean' } }, required: ['sessionId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'acedia_project_create',
     description: 'Register an existing absolute local folder as an Acedia project and create its first AI session (Codex by default). Reuses an already registered folder without adding a session. Saves through the desktop coordinator. Check active and startError in the result; creation does not guarantee a CLI is ready. Does not create directories or submit a prompt.',
     inputSchema: { type: 'object', properties: { folder: { type: 'string' }, name: { type: 'string', maxLength: 120 }, aiToolId: { type: 'string', default: 'codex' } }, required: ['folder'], additionalProperties: false },
@@ -267,10 +273,10 @@ async function callTool(name, args) {
     if (!response.ok) throw new Error(result.error || `Acedia task request failed (${response.status})`);
     return result;
   }
-  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
+  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
-    const endpoint = name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
+    const endpoint = name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
     const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
       method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),

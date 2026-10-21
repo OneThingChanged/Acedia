@@ -1,12 +1,14 @@
 ---
 type: Integration
 title: Acedia 프로젝트·세션 MCP
-description: 기존 MCP 연결에서 프로젝트·세션을 생성하고 다른 Codex 세션에 작업을 전달하며 실제 수신·작업 시작을 확인한다.
+description: 기존 MCP 연결에서 프로젝트·세션 생성, 기존 세션 Dangerous 설정 저장과 다른 Codex 세션의 작업 전달·수신·시작을 확인한다.
 status: stable
-last_updated: 2026-10-05
+last_updated: 2026-10-22
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
+  - resource: ../app/electron/services/session-launch-settings.mjs
+  - resource: ../app/electron/services/session-launch-settings.test.mjs
   - resource: ../app/electron/services/browser-mcp-server.mjs
   - resource: ../app/electron/services/hook-service.mjs
   - resource: ../app/electron/services/remote-session-create-broker.mjs
@@ -29,6 +31,7 @@ MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없
 | `acedia_projects` | 프로젝트·세션 ID, 폴더, 터미널 실행 상태, 사용 가능한 AI 도구 조회 |
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 등록된 로컬 프로젝트에 추가 세션 생성 |
+| `acedia_session_settings` | 기존 세션의 Dangerous 조회·저장. OFFLINE 대상 지원, 다음 실행부터 반영 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
 | `acedia_session_delivery` | 같은 호출 세션이 보낸 요청의 상태 조회. 입력·재전송 없음 |
 | `acedia_task_plan` | A의 계획 검증·저장 후 전용 로컬 Codex 작업 세션 자동 배정 |
@@ -68,8 +71,57 @@ PC에 이미 있어야 하며, 폴더 자체를 새로 만들지는 않는다.
 
 인증된 loopback 통합 API만 사용하며 브라우저 Origin과 실행 종료된 호출 세션을 거부한다.
 기존 coordinator 창의 프로젝트·세션 생성, 창 소유권, 기본 실행 설정을 재사용한다.
-위험 모드를 요청할 수 없다. 생성 도구는 프롬프트를 보내지 않으며 작업 전달은 아래
+생성 도구에서는 위험 모드를 요청할 수 없다. 기존 세션의 변경은 아래 설정 도구를 사용한다. 생성 도구는 프롬프트를 보내지 않으며 작업 전달은 아래
 별도 도구를 사용한다.
+
+## 기존 세션 Dangerous 설정
+
+2026-10-22 소스에 `acedia_session_settings`와 인증된
+`POST /integration/v1/workspace/session-settings`를 추가했다. 업데이트 배포본을 적용한 뒤
+호출하는 CLI를 다시 시작해야 새 MCP 도구를 사용할 수 있다. UI 자동화나 Computer Use는 필요하지 않다.
+
+먼저 `acedia_projects`에서 정확한 Acedia 세션 `id`를 확인하고 설정을 조회한다.
+
+```json
+{"sessionId":"대상 Acedia 세션 ID"}
+```
+
+반환된 `dangerous`를 `expectedDangerous`로 전달한다. 사용자가 요청한 경우에만 권한 확인
+생략을 켜거나 끄며 질문·승인 우회를 위해 자동으로 켜지 않는다.
+
+```json
+{"sessionId":"대상 Acedia 세션 ID","dangerous":true,"expectedDangerous":false}
+```
+
+대상은 **로컬 Codex·Claude·Qwen·Antigravity**이며 OFFLINE 세션도 저장할 수 있다.
+호출하는 세션은 실행 중이어야 한다. SSH·지원하지 않는 도구와 다른 작업창에 분리된 세션의
+수정은 거부한다. 조회 결과의 `supportsDangerous`, `canEdit`로 편집 가능 여부를 확인한다.
+두 설정 값은 문자열이 아닌 불리언이어야 하며 임의 실행 인수·환경변수·`restart`는 받지 않는다.
+
+coordinator가 기존 세션만 수정하고 공통 workspace snapshot을 디스크에 저장한 뒤,
+main 프로세스가 저장된 도구·Dangerous 값을 확인해야 `saved: true`를 반환한다.
+응답의 `active`는 현재 터미널 존재 여부이고 `appliesOn: "next_start"`는 **다음 실행부터
+적용**한다는 뜻이다. 저장만으로 OFFLINE 세션을 시작하거나 실행 중인 CLI를 재시작하지
+않으며 현재 CLI 권한이 바뀌었다고 보고하지 않는다. 세션 선택·화면·포커스·입력 초안을
+바꾸지 않고 모델·effort·계정·이름·새 세션 기본값도 유지한다.
+
+같은 세션의 동시 수정을 거부하며 서로 다른 세션은 coordinator가 순서대로 저장한다.
+이미 요청한 값이 저장된 재시도는 허용한다. 설정 충돌은 409, 없는 대상은 404,
+coordinator 부재는 503, 응답 시간 초과는 504다. 시간 초과나 저장 실패는 성공으로
+처리하지 않으며, 실제 저장 여부를 재조회한 뒤 재시도한다.
+
+검증은 `session-launch-settings.test.mjs`, 실제 HTTP·stdio MCP를 사용하는
+`workspace-management.test.mjs`, `npm run electron:workspace-mcp-smoke`로 수행한다.
+Electron 검사는 임시 프로필과 모의 CLI에서 OFFLINE·실행 중 세션의 저장, 디스크 snapshot,
+화면·포커스·초안 보존 및 별도로 시작한 다음 CLI의 실제 Dangerous 인수를 확인한다.
+사용자 세션이나 실제 모델 서비스에 요청을 보내지 않는다.
+
+2026-10-22 소스 검증: 전체 **199개 파일·1,489개 검사**, TypeScript/Vite 빌드와 위
+실제 Electron 검사를 통과했다. 앱의 정상적인 세션 끄기로 OFFLINE 상태를 만든 뒤
+저장 시 자동 시작·재시작이 없고, 명시적으로 다시 열 때 모의 CLI가 Dangerous 인수를
+받는 것을 확인했다. `output/session-launch-settings-tests.log`,
+`output/session-launch-settings-build.log`, `output/session-launch-settings-electron.log`.
+이 소스 검증은 설치 파일 배포·사용자 세션 설정 변경을 포함하지 않는다.
 
 ## 다른 세션으로 작업 전달
 

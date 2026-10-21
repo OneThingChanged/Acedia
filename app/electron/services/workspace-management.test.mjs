@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
+import { SessionLaunchSettings } from './session-launch-settings.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -93,16 +94,30 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   });
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
-  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
+  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
-  for (const action of ['send', 'delivery']) {
+  for (const action of ['send', 'delivery', 'session-settings']) {
     const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
     expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'x-acedia-agent-id': 'inactive' }, body: '{}' })).status).toBe(409);
     expect((await fetch(endpoint, { method: 'POST', headers, body: '{}' })).status).toBe(503);
   }
+  const target = f.catalog.agents[0]; target.dangerous = false; f.active.delete(target.id);
+  const settings = new SessionLaunchSettings({ agentFor: id => f.catalog.agents.find(item => item.id === id), active: id => f.active.has(id),
+    dispatch: payload => { queueMicrotask(() => void settings.complete({ ...payload, ok: true })); return true; },
+    verifySaved: async payload => { target.dangerous = payload.dangerous; } });
+  cleanups.push(() => settings.close()); f.service.sessionSettings = settings;
+  const read = await rpc('tools/call', { name: 'acedia_session_settings', arguments: { sessionId: target.id } });
+  expect(read.structuredContent).toMatchObject({ dangerous: false, active: false });
+  const saved = await rpc('tools/call', { name: 'acedia_session_settings', arguments: { sessionId: target.id, dangerous: true, expectedDangerous: false } });
+  expect(saved.structuredContent).toMatchObject({ dangerous: true, saved: true, active: false, appliesOn: 'next_start' });
+  expect((await rpc('tools/call', { name: 'acedia_projects' })).structuredContent.sessions[0].dangerous).toBe(true);
+  const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/session-settings`;
+  expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: '{}' })).status).toBe(415);
+  expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, dangerous: 'true' }) })).status).toBe(400);
+  expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
 });

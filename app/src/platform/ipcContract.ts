@@ -60,7 +60,7 @@ export type RuntimeCommand =
   | "resolve_cli_session" | "resolve_cline_session" | "relink_cli_session" | "sync_remote_agents"
   | "sync_remote_view" | "sync_usage_catalog" | "sync_monitor_state"
   | "complete_remote_session_create" | "complete_remote_session_activation"
-  | "complete_remote_session_model" | "restart_session_model" | "get_session_model" | "set_session_model"
+  | "complete_remote_session_model" | "complete_session_launch_settings" | "restart_session_model" | "get_session_model" | "set_session_model"
   | "get_model_defaults" | "get_default_model_catalog" | "set_model_defaults"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
@@ -90,6 +90,7 @@ export type RuntimeEventName =
   | "desktop-pet:close-requested" | "remote:access-request"
   | "remote:restart-session" | "remote:create-session" | "remote:rename-session" | "remote:deactivate-session"
   | "remote:session-model"
+  | "remote:session-launch-settings"
   | "chat:changed"
   | "app:close-requested" | "app:close-cancelled" | "agent:hook-event" | "session:notifications"
   | "native-notification:clicked" | "update:progress"
@@ -420,6 +421,10 @@ export type RuntimeCommandContract = {
   };
   complete_remote_session_model: {
     args: { requestId: string; id: string; ok: boolean; restarted?: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+    result: boolean;
+  };
+  complete_session_launch_settings: {
+    args: { requestId: string; id: string; ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
     result: boolean;
   };
   restart_session_model: {

@@ -1292,6 +1292,7 @@ function App() {
         resumeEligible: a.resumeEligible,
         lastSessionId: a.lastSessionId ?? null,
         sshHostId: a.sshHostId ?? null,
+        dangerous: a.dangerous,
         modelSettings: a.modelSettings,
         sessionHierarchy: a.sessionHierarchy ? {
           parentId: a.sessionHierarchy.parentId,
@@ -3955,6 +3956,39 @@ function App() {
 
     listen<{ id: string }>('remote:deactivate-session', event => {
       if (!cancelled && agentsRef.current.some(agent => agent.id === event.payload?.id)) void deactivateAgent(event.payload.id);
+    }).then(track);
+
+    let launchSettingsQueue = Promise.resolve();
+    listen<{ requestId: string; id: string; aiToolId: string; dangerous: boolean; expectedDangerous: boolean }>('remote:session-launch-settings', event => {
+      const payload = event.payload;
+      if (cancelled || !payload?.requestId || !payload.id) return;
+      const complete = (result: { ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 }) => invoke('complete_session_launch_settings', {
+        requestId: payload.requestId, id: payload.id, ...result,
+      }).catch(() => false);
+      launchSettingsQueue = launchSettingsQueue.catch(() => {}).then(async () => {
+        if (cancelled) { await complete({ ok: false, error: '작업창이 변경되었습니다. 다시 조회하세요.', statusCode: 503 }); return; }
+        const agent = agentsRef.current.find(item => item.id === payload.id);
+        if (!agent) { await complete({ ok: false, error: '세션을 찾을 수 없습니다.', statusCode: 404 }); return; }
+        const project = projectsRef.current.find(item => item.id === agent.projectId);
+        if (agent.aiToolId !== payload.aiToolId || !toolForId(agent.aiToolId).dangerousFlag
+          || agent.sshHostId || project?.sshHostId || detachedAgentIdsRef.current.has(agent.id)) {
+          await complete({ ok: false, error: '기본 작업창의 로컬 세션을 선택하세요.', statusCode: 409 }); return;
+        }
+        if (typeof payload.dangerous !== 'boolean' || typeof payload.expectedDangerous !== 'boolean') {
+          await complete({ ok: false, error: '올바른 Dangerous 설정이 필요합니다.', statusCode: 400 }); return;
+        }
+        if (agent.dangerous !== payload.expectedDangerous && agent.dangerous !== payload.dangerous) {
+          await complete({ ok: false, error: '실행 옵션이 변경되었습니다. 다시 조회하세요.', statusCode: 409 }); return;
+        }
+        const next = agentsRef.current.map(item => item.id === agent.id ? { ...item, dangerous: payload.dangerous } : item);
+        const stored = mergeStoredByIdForWrite(next.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
+        const json = JSON.stringify(stored);
+        localStorage.setItem(LS_AGENTS, json); storedAgentsJsonRef.current = json;
+        agentsRef.current = next; setAgents(next);
+        await persistStorageSnapshot(true);
+        await complete({ ok: true });
+      }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: 500 }); });
     }).then(track);
 
     listen<{ requestId: string; id: string; settings: SessionModel | null; restart: boolean }>("remote:session-model", (event) => {

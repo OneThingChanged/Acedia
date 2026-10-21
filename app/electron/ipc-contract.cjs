@@ -128,6 +128,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "complete_remote_session_create",
   "complete_remote_session_activation",
   "complete_remote_session_model",
+  "complete_session_launch_settings",
   "restart_session_model",
   "get_session_model",
   "get_model_defaults",
@@ -197,6 +198,7 @@ const DELIVERED_EVENTS = Object.freeze([
   "remote:rename-session",
   "remote:deactivate-session",
   "remote:session-model",
+  "remote:session-launch-settings",
   "chat:changed",
   "app:close-requested",
   "app:close-cancelled",
@@ -417,6 +419,7 @@ function assertInvokeRequest(command, rawArgs) {
     case "complete_remote_session_create":
     case "complete_remote_session_activation":
     case "complete_remote_session_model":
+    case "complete_session_launch_settings":
       for (const key of ["requestId", "id"]) {
         if (
           typeof args[key] !== "string" ||

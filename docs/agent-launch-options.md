@@ -4,7 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 기본 모델·effort·Fast와 CLI 실행 파일, 추가 인수, 환경변수의 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-13
+last_updated: 2026-10-22
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -61,6 +61,9 @@ Alt-screen, 작업자 프리셋은 기존 실행 옵션에서 설정한다.
   [세션 속성](properties-and-usage.md)을 따른다.
 * 변경은 다음 실행부터 반영된다. 실행 중이면 비활성화한 뒤 다시 열어 적용한다.
   설정 변경만으로 프로세스를 종료하거나 대기 세션을 시작하지 않는다.
+* 공개 로컬 API와 `acedia_session_settings` MCP로 기존 로컬 세션의 Dangerous 값을
+  조회·저장할 수 있다. OFFLINE 대상도 지원하며 디스크 저장 확인 후 다음 실행에 적용한다.
+  세션을 선택하거나 포커스를 옮기지 않는다. [요청·응답과 적용 범위](workspace-mcp.md#기존-세션-dangerous-설정)를 따른다.
 * 설정이 없던 기존 세션은 기존 실행 방식을 유지한다. 앱 재시작과 창 이동 시 세션에
   저장된 설정을 복원한다.
 * SSH에는 로컬 고급 기본값을 복사하거나 전달하지 않는다. SSH의 추가 옵션은 SSH 연결
