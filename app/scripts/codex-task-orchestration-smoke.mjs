@@ -12,6 +12,7 @@ import { lastTurnModel } from '../electron/services/session-model-service.mjs';
 import { nativeCodexModel } from '../electron/services/session-model-memory.mjs';
 import { TaskOrchestration } from '../electron/services/task-orchestration.mjs';
 import { HookService } from '../electron/services/hook-service.mjs';
+import { StartupAutomation, startupPrompt } from '../electron/services/startup-automation.mjs';
 
 // Installed Codex, temporary homes, fake credentials, loopback Responses fixture.
 // This never calls a live model or sends a prompt to an existing user session.
@@ -35,7 +36,7 @@ const questions = new ActiveQuestions(); let engine, deliveries, polling, hook;
 const freshRead = id => {
   const w = workers.get(id), entry = live.get(id);
   return w && deliveryComposerReady(entry) && nativeCodexModel(entry)
-    ? { sessionId: w.conversationId ?? null, turn: null, lifecycle: 'idle', question: null } : null;
+    ? { sessionId: w.conversationId ?? null, turn: null, lifecycle: 'idle', question: null, startupTrust: entry.startupTrustConfirmation } : null;
 };
 const read = async id => {
   const w = workers.get(id); if (!w) return null;
@@ -64,7 +65,7 @@ try {
     launchedModel: id => nativeCodexModel(live.get(id)), actualModel: async (id, since) => lastTurnModel(workers.get(id)?.file, 'codex', since),
     answer: async () => {}, stop: async id => { live.get(id)?.process.kill(); live.delete(id); },
     createSession: async payload => {
-      const home = path.join(root, payload.id); fs.mkdirSync(home); fs.writeFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
+      const home = path.join(root, payload.id); fs.mkdirSync(home); fs.writeFileSync(path.join(home, 'config.toml'), '[windows]\nsandbox="unelevated"\n');
       const launch = await pool.launch(payload.id), filter = new CodexScrollbackFilter(34, 140);
       const env = { ...process.env, CODEX_HOME: home, ...launch.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', MULTIAGENT_AGENT_ID: payload.id, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token };
       for (const key of Object.keys(env)) if (/^(OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN)$/i.test(key)) delete env[key];
@@ -73,8 +74,15 @@ try {
       { cwd: root, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
       const entry = { id: payload.id, cwd: root, aiToolId: 'codex', startedAt: Date.now(), lastInputAt: 0, process: terminal, filter };
       live.set(payload.id, entry); workers.set(payload.id, { home, filter, terminal }); catalog.agents.push({ id: payload.id, projectId: 'p', aiToolId: 'codex' });
-      terminal.onData(data => { if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
+      terminal.onData(data => { const w = workers.get(payload.id); if (w) w.rawBytes = (w.rawBytes || 0) + Buffer.byteLength(data); if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
       terminal.onExit(() => { const worker = workers.get(payload.id); if (worker) worker.exited = true; });
+      await until(() => startupPrompt(entry)?.startupKind === 'folder-trust', 'native untrusted folder screen');
+      const writes = [];
+      const automation = new StartupAutomation({ entry: id => live.get(id), allowedRoot: id => engine.startupTrustRoot(id),
+        write: (_id, key) => { writes.push(key); terminal.write(key); } });
+      assert.equal(automation.check(payload.id), true, 'Configured project folder was not confirmed');
+      assert.equal(automation.check(payload.id), false, 'Duplicate folder confirmation'); assert.deepEqual(writes, ['\r']);
+      console.log('TASK_STARTUP_INSTALLED_CODEX_PROJECT_FOLDER_AUTO_TRUST_ONCE_OK');
       // These six hooks were generated above inside this disposable fixture.
       // Exercise their explicit startup review rather than bypassing trust.
       await until(() => /3\. Continue without trusting/.test(filter.viewportText()), 'fixture hook trust screen');
@@ -87,6 +95,7 @@ try {
     },
   };
   engine = new TaskOrchestration(options);
+  await engine.handle({ operator: true, action: 'policy-save', body: { ownerId: 'a', revision: 0, autoTrustProjectFolders: true, policy: { light: model, normal: model, advanced: model } } });
   polling = setInterval(async () => { for (const [id] of workers) deliveries.observe(id, live.get(id), await read(id)); await engine.tick(); }, 100);
   const planned = await engine.handle({ agentId: 'a', action: 'plan', body: { requestKey: 'native', title: 'Native Codex fixture', request: 'local fixture only', tasks: [{ id: 'native', title: 'Native worker', goal: 'Reply TASK_NATIVE_FIXTURE_OK. Do not call tools.', acceptance: 'native model and turn validated', dependsOn: [], writeScopes: [] }] } });
   await until(() => engine.data.runs[0].tasks[0].state === 'running', 'fresh worker first dispatch');
@@ -102,7 +111,7 @@ try {
 } catch (error) {
   console.error('Native task diagnostics', JSON.stringify(engine?.data.runs.map(r => r.tasks.map(t => ({ state: t.state, reason: t.reason })))));
   console.error('Fixture hooks:', JSON.stringify(hook?.recentEvents));
-  for (const [id, w] of workers) console.error('Fixture evidence:', JSON.stringify({ startedHook: w.startedHook, conversationId: w.conversationId, model: nativeCodexModel(live.get(id)), ready: deliveryComposerReady(live.get(id)), files: fs.readdirSync(w.home, { recursive: true }).filter(f => f.endsWith('.jsonl')) }));
+  for (const [id, w] of workers) console.error('Fixture evidence:', JSON.stringify({ rawBytes: w.rawBytes, exited: w.exited, startedHook: w.startedHook, conversationId: w.conversationId, model: nativeCodexModel(live.get(id)), ready: deliveryComposerReady(live.get(id)), files: fs.readdirSync(w.home, { recursive: true }).filter(f => f.endsWith('.jsonl')) }));
   for (const w of workers.values()) console.error('Fixture screen:', w.filter.viewportText()); throw error;
 } finally {
   clearInterval(polling); engine?.close(); deliveries?.dispose();

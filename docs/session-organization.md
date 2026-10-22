@@ -3,7 +3,7 @@ type: Guide
 title: 프로젝트 관계 보드와 부모·자식 세션 조직도
 description: 프로젝트 사이의 부모·자식과 폴더 참조를 연결하고, 세션별 설정 상속과 자유로운 보드 배치를 관리한다.
 status: implemented
-last_updated: 2026-10-22
+last_updated: 2026-10-23
 sources:
   - resource: ../app/src/components/SessionOrganization.tsx
   - resource: ../app/src/components/ProjectBoard.tsx
@@ -12,10 +12,48 @@ sources:
   - resource: ../app/src/lib/sessionHierarchy.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/workspace-management.mjs
+  - resource: ../app/electron/services/startup-automation.mjs
+  - resource: ../app/electron/shared/terminal-startup-prompt.mjs
   - resource: ../app/scripts/electron-session-organization-smoke.mjs
 ---
 
 # 부모·자식 세션 조직도
+
+## 프로젝트 폴더 신뢰 자동 확인 (2026-10-23, 배포 전 소스)
+
+**작업 흐름 → 모델 정책 → 프로젝트 시작 자동화**에서 **이 프로젝트의 Codex 폴더 신뢰
+자동 확인**을 켜고 설정을 저장한다. 기본은 꺼짐이며, 데스크톱·Remote·Dashboard에서
+같은 호스트 설정을 사용한다. 현재 프로젝트의 실제 루트 경로에 연결해 저장하므로
+프로젝트 폴더를 바꾸면 다시 설정한다. 설정을 끄면 아직 확인하지 않은 세션에도 바로 반영된다.
+
+승인된 프로젝트 안에서 새로 시작하거나 재시작한 로컬 Codex의 완전한 `Folder access`
+화면을 확인한 뒤 `Trust and continue`에 Enter를 한 번 보낸다. 대화에 인용된 문구나
+부분 화면은 사용하지 않는다. 실제 CLI cwd와 화면의 폴더가 일치하고, 신뢰가 적용될
+Git 저장소 루트도 승인 범위 안에 있어야 한다. 링크·junction으로 범위를 벗어나면
+자동 확인하지 않는다. 창 표시·선택·포커스와 Dangerous mode는 변경하지 않는다.
+훅 실행·명령 승인·사용자 질문·로그인·Windows sandbox 초기 설정은 각각의 확인 경로를 유지한다.
+
+시작 승인을 기다리는 하위 작업은 **승인 대기**와 구체적인 이유를 표시한다. 대기 시간은
+기존 30초 시작 제한에서 제외하며, 확인이 끝나면 같은 세션의 모델·대화·입력 준비를
+다시 검사해 첫 요청을 한 번 전달한다. 기다리는 동안 취소하면 전달하지 않는다.
+확인 전 API의 상태 이유도 `ready` 대신 `folder-trust` 또는 `hook-review`로 구분한다.
+이미 취소된 실행이나 접수 여부가 불확실한 기존 전달은 자동으로 되살리거나 재전송하지 않는다.
+
+검사: `startup-automation.test.mjs`, `task-orchestration.test.mjs`, 기존 시작 질문·전달 검사.
+실제 설치 Codex를 임시 계정·loopback 응답 fixture에서 실행해 폴더 신뢰 1회 확인부터
+첫 작업·결과·검토·재시작까지 검사한다. 실제 사용자 대화에는 시험 메시지를 보내지 않는다.
+`electron-task-orchestration-smoke.mjs`는 데스크톱 저장·복원, 390px 웹에서 동일 설정 조회와
+권한 해제를 검증한다. 기록은 `output/startup-automation-*.log`와
+`output/task-orchestration/*startup-automation*.png`에 남긴다.
+
+최종 검증은 전체 **206개 파일·1,564개 검사**, TypeScript와 Vite production build,
+실제 main-process bridge, 설치 Codex의 폴더 신뢰 1회 확인·첫 턴·모델·결과·검토·복원,
+데스크톱/390px 웹의 설정 저장·복원·해제까지 통과했다.
+`output/startup-automation-full-tests-final.log`, `output/startup-automation-build.log`,
+`output/startup-automation-main.log`, `output/startup-automation-native-final.log`,
+`output/startup-automation-electron.log`를 참고한다. 긴 경로의 soft wrap과 전체 너비 TUI가
+남기는 wrapped flag를 모두 검사해 완전한 원래 확인 화면을 유지한다.
+현재 소스 구현이며 EXE 게시와 실제 사용자 앱 업데이트는 아직 수행하지 않았다.
 
 ## 작업 분담 흐름 (2026-10-19, 배포 전 소스)
 

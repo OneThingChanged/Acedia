@@ -87,7 +87,9 @@ if (!process.versions.electron) {
     await until(() => runJS('JSON.parse(localStorage.getItem("multiagent.agents.v1")).some(a=>a.id==="background-fixture")'), 'durable background child');
     const after = await runJS('({groups:localStorage.getItem("multiagent.groups.v1"),view:localStorage.getItem("multiagent.view.v1"),focus:document.activeElement.id,draft:document.querySelector("#focus-fixture").value,agent:JSON.parse(localStorage.getItem("multiagent.agents.v1")).find(a=>a.id==="background-fixture")})');
     assert.equal(after.groups, before.groups); assert.equal(after.view, before.view); assert.equal(after.focus, 'focus-fixture'); assert.equal(after.draft, 'A draft preserved'); assert.deepEqual(after.agent.modelSettings, model); assert.equal(after.agent.sessionHierarchy.inheritModel, false);
-    const familyExpanded = await runJS('document.querySelector("[data-sidebar-agent-id=root] [aria-expanded]")?.getAttribute("aria-expanded")'); assert.equal(familyExpanded, 'false');
+    const familyExpanded = await runJS('document.querySelector("[data-sidebar-agent-id=root] [aria-expanded]")?.getAttribute("aria-expanded")'); assert.equal(familyExpanded, 'true');
+    await runJS('document.querySelector("[data-sidebar-agent-id=root] [aria-expanded]").click()');
+    await until(() => runJS('!document.querySelector(".sidebar-recents [data-sidebar-agent-id=background-fixture]")'), 'explicit family collapse');
     assert.equal(await runJS('!!document.querySelector(".sidebar-recents [data-sidebar-agent-id=root] .sidebar-family-toggle")?.getClientRects().length'), true, 'Child count/toggle hidden until hover');
     assert.equal(await runJS('!!document.querySelector(".sidebar-recents [data-sidebar-agent-id=background-fixture]")'), false);
     await runJS('document.querySelector("[data-sidebar-agent-id=root] [aria-expanded]").click()');
@@ -138,6 +140,13 @@ if (!process.versions.electron) {
     const out = path.join(repo, 'output/task-orchestration'); fs.mkdirSync(out, { recursive: true });
     await wait(150); fs.writeFileSync(path.join(out, 'desktop.png'), (await win.webContents.capturePage()).toPNG());
     await runJS('document.querySelector("[data-action=policy]").click()'); await until(() => runJS('document.querySelectorAll("[data-model]").length===3'), 'model policies');
+    assert.equal(await runJS('document.querySelector("[data-startup-trust]").checked'), false);
+    await runJS('document.querySelector("[data-startup-trust]").checked=true;document.querySelector("[data-action=save-policy]").click()');
+    await until(() => runJS('!document.querySelector(".task-policy")'), 'saved project startup automation');
+    assert.ok(engine.startupTrustRoot('root'));
+    await runJS('document.querySelector("[data-action=policy]").click()'); await until(() => runJS('document.querySelector("[data-startup-trust]")?.checked'), 'persisted startup checkbox');
+    await runJS('document.querySelector("[data-startup-trust]").scrollIntoView({block:"center"})'); await wait(150);
+    fs.writeFileSync(path.join(out, 'desktop-startup-automation.png'), (await win.webContents.capturePage()).toPNG());
     await runJS('document.querySelector("[data-action=close-policy]").click()');
     await runJS('window.taskBoardFixture=document.querySelector(".task-board");window.taskCardFixture=document.querySelector("[data-task=first]")');
     for (const taskId of ['first', 'second']) {
@@ -167,6 +176,15 @@ if (!process.versions.electron) {
     await remoteWindow.loadURL(url + '/?tasks=1');
     const remoteJS = source => remoteWindow.webContents.executeJavaScript(source);
     await until(() => remoteJS('document.querySelectorAll(".task-card").length===3'), 'Remote host tasks');
+    await remoteJS('document.querySelector("[data-action=policy]").click()'); await until(() => remoteJS('!!document.querySelector("[data-startup-trust]")'), 'Remote project startup settings');
+    assert.equal(await remoteJS('document.querySelector("[data-startup-trust]").checked'), true);
+    await remoteJS('document.querySelector("[data-startup-trust]").scrollIntoView({block:"center"})'); await wait(150);
+    assert.equal(await remoteJS('document.querySelector(".task-flow").scrollWidth<=document.querySelector(".task-flow").clientWidth'), true);
+    assert.equal(await remoteJS('document.documentElement.scrollWidth<=innerWidth'), true);
+    fs.writeFileSync(path.join(out, 'remote-startup-automation-390.png'), (await remoteWindow.webContents.capturePage()).toPNG());
+    await remoteJS('document.querySelector("[data-startup-trust]").checked=false;document.querySelector("[data-action=save-policy]").click()');
+    await until(() => !engine.startupTrustRoot('root'), 'Remote revokes startup permission');
+    console.log('TASK_STARTUP_DESKTOP_REMOTE_SETTINGS_SCOPE_PERSISTENCE_AND_REVOCATION_OK');
     await remoteJS('document.querySelector("[data-task=first]").click()'); await wait(150);
     assert.equal(await remoteJS('document.documentElement.scrollWidth<=innerWidth'), true);
     fs.writeFileSync(path.join(out, 'remote-mobile.png'), (await remoteWindow.webContents.capturePage()).toPNG());

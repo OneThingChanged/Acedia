@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { parseTerminalStartupPrompt } from '../shared/terminal-startup-prompt.mjs';
 
 const hash = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n').trim()).digest('hex');
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
@@ -11,6 +12,7 @@ const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
 
 export function deliveryComposerReady(entry, { allowWorking = false } = {}) {
   const screen = entry.filter.viewportText?.() || '';
+  if (parseTerminalStartupPrompt(screen, 'codex')) return false;
   if (!allowWorking && /esc to interrupt|Queued follow-up inputs|shift\+.*answer/i.test(screen)) return false;
   const buffer = entry.filter.shadow?.buffer.active;
   const line = buffer?.getLine(buffer.baseY + buffer.cursorY);

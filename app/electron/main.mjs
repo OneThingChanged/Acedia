@@ -70,6 +70,7 @@ import { SessionNotes } from './services/session-notes.mjs';
 import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs";
 import { createChatMessageSubmitter } from './services/chat-message-submission.mjs';
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
+import { StartupAutomation, startupPrompt } from './services/startup-automation.mjs';
 import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
@@ -602,6 +603,7 @@ async function pollActiveQuestions() {
     activeQuestions.prune(ptys.keys());
     capacityRetry.prune(ptys.keys());
     sessionDeliveries.poll();
+    for (const id of ptys.keys()) startupAutomation.check(id);
     await taskOrchestration.tick();
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
@@ -907,7 +909,7 @@ function miraControlProviderSessionId(agent) {
 
 function miraControlSnapshot() {
   const catalog = miraControlCatalog();
-  return buildMiraControlSnapshot({
+  const snapshot = buildMiraControlSnapshot({
     ...catalog,
     isActive: (agentId) => ptys.has(agentId),
     hookFor: (agentId) => monitorHooks.get(agentId) ?? null,
@@ -918,6 +920,11 @@ function miraControlSnapshot() {
     appVersion: productVersion,
     variant: runtimeVariant.id,
   });
+  for (const item of snapshot.sessions) {
+    const prompt = startupPrompt(ptys.get(item.agentId));
+    if (prompt) { item.state = 'WAIT'; item.reason = prompt.startupKind; }
+  }
+  return snapshot;
 }
 
 function miraControlAgent(agentId) {
@@ -1313,13 +1320,21 @@ const taskOrchestration = new TaskOrchestration({
   defaults: () => sessionModelDefaults.get('codex').settings,
 });
 workspaceManagement.tasks = taskOrchestration;
+const startupAutomation = new StartupAutomation({
+  entry: id => ptys.get(id), allowedRoot: id => taskOrchestration.startupTrustRoot(id),
+  blocked: id => forceClosing || questionResponder.isBusy(id) || capacityRetry.isActive(id),
+  write: (id, key) => terminalSessions.write(id, key),
+  publish: payload => { console.info('[electron] project folder trust confirmed', payload.id, payload.trustRoot); sendEventToAll('chat:changed', { agentId: payload.id }); },
+});
 async function readTaskSession(id) {
-  const result = await currentQuestion(id);
+  const entry = ptys.get(id), startup = startupPrompt(entry);
+  if (startup) return { sessionId: agentSessionIds.get(id) || accountBindings.get(id)?.sessionId || null, turn: null, question: null, startup };
+  const current = await currentQuestion(id);
+  const result = current && entry?.startupTrustConfirmation ? { ...current, startupTrust: entry.startupTrustConfirmation } : current;
   if (!result) return freshTaskSession(id);
   if (result.turn || !result.question) return result;
   // The native command approval reader owns the live question but omits the
   // transcript turn. Bind both before exposing it in the task inspector.
-  const entry = ptys.get(id);
   if (!entry || entry.aiToolId !== 'codex') return result;
   const transcript = await activeQuestions.read({ id, tool: 'codex', root: accountTranscriptRoot('codex', selectedAccountId(entry)),
     transcriptPath: agentTranscripts.get(id), sessionId: result.sessionId, startedAt: entry.startedAt });
@@ -1334,7 +1349,7 @@ function freshTaskSession(id) {
   if (attempt?.sessionId !== id || !attempt.creationAcknowledged || attempt.turnId || worker.task.state !== 'dispatching'
     || !entry || !(freshIdentity || startedIdentity)
     || !deliveryComposerReady(entry) || !(entry.runtimeModelSettings || nativeCodexModel(entry))) return null;
-  return { sessionId: conversationId || null, turn: null, question: null, lifecycle: 'idle' };
+  return { sessionId: conversationId || null, turn: null, question: null, lifecycle: 'idle', startupTrust: entry.startupTrustConfirmation };
 }
 function modelInputReady(entry) {
   return codexModelInputReady(entry, { blocked: forceClosing || questionResponder.isBusy(entry?.id) || capacityRetry.isActive(entry?.id) });

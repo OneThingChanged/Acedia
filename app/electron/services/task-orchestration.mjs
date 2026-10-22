@@ -58,7 +58,7 @@ export class TaskOrchestration {
   constructor({ file, catalog, createSession, delivery, runtime, read, models, launchedModel, actualModel, answer, stop,
     defaults, audit = async () => ({ available: false, reason: '파일 관찰 어댑터 없음' }), publish = () => {}, now = Date.now }) {
     Object.assign(this, { file, catalog, createSession, delivery, runtime, read, models, launchedModel, actualModel, answer, stop, defaults, audit, publish, now });
-    this.data = { version: 1, revision: 0, policyRevision: 0, policy: null, runs: [] };
+    this.data = { version: 1, revision: 0, policyRevision: 0, policy: null, startupTrust: {}, runs: [] };
     this.queue = Promise.resolve(); this.inflight = new Set(); this.closed = false;
     try {
       if (fs.statSync(file).size > 8 * 1024 * 1024) throw Error('작업 기록이 너무 큽니다.');
@@ -67,6 +67,9 @@ export class TaskOrchestration {
         || data.runs.some(r => !key(r.requestKey) || !text(r.id, 128) || !text(r.ownerId, 200) || !Array.isArray(r.tasks) || r.tasks.length > 32
           || r.tasks.some(t => !key(t.id) || !states.has(t.state) || !Array.isArray(t.attempts)))) throw Error('작업 기록 형식 오류');
       this.data = data;
+      this.data.startupTrust ??= {};
+      if (typeof this.data.startupTrust !== 'object' || Array.isArray(this.data.startupTrust)
+        || Object.entries(this.data.startupTrust).some(([id, folder]) => !text(id, 200) || !text(folder, 4096))) throw Error('폴더 신뢰 설정 형식 오류');
       for (const run of data.runs) for (const task of run.tasks) if (active.has(task.state) && !['result_submitted', 'verifying'].includes(task.state)) {
         task.state = 'reconcile_required'; task.reason = '앱 재시작 후 실제 세션·전달 확인 필요';
       }
@@ -87,6 +90,13 @@ export class TaskOrchestration {
     this.publish({ revision: this.data.revision });
   }
   policy() { return copy(this.data.policy || Object.fromEntries(levels.map(level => [level, this.defaults()]))); }
+  startupTrust(ownerId) {
+    const agent = this.session(ownerId), project = (this.catalog().projects || []).find(p => p.id === agent?.projectId);
+    let folder = null;
+    try { if (project && !project.sshHostId && !agent.sshHostId) folder = taskPath(project.folder, '.'); } catch { /* unavailable project */ }
+    return { projectId: project?.id || null, folder, enabled: !!folder && this.data.startupTrust?.[project.id] === folder };
+  }
+  startupTrustRoot(id) { if (this.unavailable || this.closed) return null; const setting = this.startupTrust(id); return setting.enabled ? setting.folder : null; }
   session(id) { return (this.catalog().agents || []).find(a => a.id === id); }
   folderFor(id) {
     const agent = this.session(id), project = (this.catalog().projects || []).find(p => p.id === agent?.projectId);
@@ -156,7 +166,7 @@ export class TaskOrchestration {
         .filter(r => !body.ownerId || r.ownerId === body.ownerId).sort((a, b) => b.updatedAt - a.updatedAt);
       return { revision: this.data.revision, runs: runs.slice(offset, offset + 20).map(r => this.summary(r)), nextOffset: offset + 20 < runs.length ? offset + 20 : null };
     }
-    if (action === 'policy') return { policy: this.policy(), revision: this.data.policyRevision };
+    if (action === 'policy') return { policy: this.policy(), revision: this.data.policyRevision, startupTrust: this.startupTrust(operator ? body.ownerId : agentId) };
     if (action === 'catalog') {
       if (!operator || !this.session(body.ownerId)) throw fail('A 세션을 선택하세요.', 403);
       return this.models(body.ownerId);
@@ -166,7 +176,14 @@ export class TaskOrchestration {
       if (body.revision !== this.data.policyRevision) throw fail('모델 정책을 다시 불러오세요.');
       const policy = {};
       for (const level of levels) { policy[level] = normalizeSessionModel(body.policy?.[level]); if (!policy[level]) throw fail('세 등급의 모델을 설정하세요.', 400); await this.checkModel(policy[level], body.ownerId); }
-      this.data.policy = policy; this.data.policyRevision++; this.save(); return { policy: copy(policy), revision: this.data.policyRevision };
+      if (body.autoTrustProjectFolders != null) {
+        if (typeof body.autoTrustProjectFolders !== 'boolean') throw fail('폴더 신뢰 자동 확인 설정 형식 오류', 400);
+        const setting = this.startupTrust(body.ownerId);
+        if (!setting.folder || !setting.projectId) throw fail('사용 가능한 로컬 프로젝트를 선택하세요.');
+        if (body.autoTrustProjectFolders) this.data.startupTrust[setting.projectId] = setting.folder;
+        else delete this.data.startupTrust[setting.projectId];
+      }
+      this.data.policy = policy; this.data.policyRevision++; this.save(); return { policy: copy(policy), revision: this.data.policyRevision, startupTrust: this.startupTrust(body.ownerId) };
     }
     if (action === 'plan') return this.plan(agentId, body, operator);
     const run = this.owned(agentId, body.runId, operator);
@@ -359,9 +376,21 @@ export class TaskOrchestration {
       catch { task.state = 'reconcile_required'; run.state = 'cancelling'; task.reason = '생성 직후 취소: 실제 종료 확인 실패'; }
       this.touch(run); return;
     }
-    const deadline = this.now() + 30000;
-    while (!this.closed && this.now() < deadline) {
+    let deadline = this.now() + 30000;
+    while (!this.closed && (task.state === 'waiting_approval' || this.now() < deadline)) {
+      if (!['dispatching', 'waiting_approval'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
+      if (!this.runtime(attempt.sessionId)) throw fail('시작 확인 중 담당 CLI가 종료되었습니다.');
       const current = await this.read(attempt.sessionId);
+      if (this.closed || !['dispatching', 'waiting_approval'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
+      if (current?.startup) {
+        const reason = current.startup.startupKind === 'folder-trust' ? '폴더 신뢰 확인 대기 · 프로젝트 자동 확인 설정 또는 하위 대화에서 승인' : '시작 훅 검토 대기 · 하위 대화에서 선택';
+        if (task.state !== 'waiting_approval' || task.reason !== reason) { task.state = 'waiting_approval'; task.reason = reason; this.touch(run); }
+        deadline = this.now() + 30000;
+        await new Promise(resolve => setTimeout(resolve, 150));
+        continue;
+      }
+      if (task.state === 'waiting_approval') { deadline = this.now() + 30000; task.state = 'dispatching'; task.reason = '시작 확인 완료 · 모델·입력 준비 대기'; this.touch(run); }
+      if (current?.startupTrust) attempt.startupTrust = copy(current.startupTrust);
       if (current && !current.question && taskModelsMatch(this.launchedModel(attempt.sessionId), attempt.requestedModel)) { attempt.conversationId = current.sessionId ?? null; attempt.launchModelVerified = true; break; }
       await new Promise(resolve => setTimeout(resolve, 150));
     }

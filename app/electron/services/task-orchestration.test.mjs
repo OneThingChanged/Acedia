@@ -17,6 +17,7 @@ function fixture(options = {}) {
   const createSession = vi.fn(async payload => {
     catalog.agents.push({ id: payload.id, projectId: 'p', aiToolId: 'codex' }); live.set(payload.id, { ...payload, cwd: payload.folder });
     reads.set(payload.id, { sessionId: 'conversation-' + payload.id, turn: { id: 'before' }, question: null });
+    if (options.startup) reads.get(payload.id).startup = { startupKind: options.startup };
     if (options.lostCreate) throw Error('creation response lost');
     return { id: payload.id };
   });
@@ -47,6 +48,37 @@ function fixture(options = {}) {
 }
 
 describe('durable independent Codex task orchestration', () => {
+  it('keeps startup approvals waiting past the launch deadline and sends once after confirmation', async () => {
+    const f = fixture({ startup: 'folder-trust' });
+    let clock = Date.now(); f.engine.now = () => clock;
+    await f.plan(); await until(() => f.engine.data.runs[0].tasks[0].state === 'waiting_approval');
+    const task = f.engine.data.runs[0].tasks[0], attempt = task.attempts[0];
+    clock += 60000; await new Promise(resolve => setTimeout(resolve, 190)); await f.engine.tick();
+    expect(task.state).toBe('waiting_approval'); expect(task.reason).toContain('폴더 신뢰'); expect(f.delivery.handle).not.toHaveBeenCalled();
+    delete f.reads.get(attempt.sessionId).startup;
+    await until(() => task.state === 'running');
+    expect(f.delivery.handle.mock.calls.filter(([c]) => c.action === 'send')).toHaveLength(1); expect(f.createSession).toHaveBeenCalledTimes(1);
+  });
+  it('cancels a worker during hook review without submitting or automatically approving it', async () => {
+    const f = fixture({ startup: 'hook-review' }), { run } = await f.plan();
+    await until(() => f.engine.data.runs[0].tasks[0].state === 'waiting_approval');
+    expect(f.engine.data.runs[0].tasks[0].reason).toContain('훅 검토');
+    await f.call('cancel', { runId: run.id }); await new Promise(resolve => setTimeout(resolve, 190));
+    expect(f.engine.data.runs[0].state).toBe('cancelled'); expect(f.delivery.handle).not.toHaveBeenCalled(); expect(f.adapter.answer).not.toHaveBeenCalled();
+  });
+  it('requires operator settings, binds trust to the project folder, persists it and supports revocation', async () => {
+    const f = fixture();
+    expect((await f.call('policy')).startupTrust.enabled).toBe(false);
+    await expect(f.call('policy-save', { policy, ownerId: 'a', revision: 0, autoTrustProjectFolders: true })).rejects.toThrow('사용자');
+    await f.call('policy-save', { policy, ownerId: 'a', revision: 0, autoTrustProjectFolders: true }, 'a', true);
+    expect(f.engine.startupTrustRoot('a')).toBeTruthy();
+    f.engine.close(); const restored = f.make(); expect(restored.startupTrustRoot('a')).toBeTruthy();
+    const original = f.catalog.projects[0].folder; f.catalog.projects[0].folder = path.dirname(original);
+    expect(restored.startupTrustRoot('a')).toBe(null); f.catalog.projects[0].folder = original;
+    f.catalog.agents[0].sshHostId = 'ssh'; expect(restored.startupTrustRoot('a')).toBe(null); delete f.catalog.agents[0].sshHostId;
+    await restored.handle({ action: 'policy-save', operator: true, body: { policy, ownerId: 'a', revision: 1, autoTrustProjectFolders: false } });
+    expect(restored.startupTrustRoot('a')).toBe(null);
+  });
   it('starts two independent workers and gates a dependent task on reviewed results', async () => {
     const f = fixture(), { run } = await f.plan([task('one', ['a.ts']), task('two', ['b.ts']), task('verify', [], ['one', 'two'])]);
     await until(() => f.engine.data.runs[0].tasks.slice(0, 2).every(t => t.state === 'running'));
