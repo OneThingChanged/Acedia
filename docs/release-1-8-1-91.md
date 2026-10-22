@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.1.91
-status: preparing
+status: published
 last_updated: 2026-10-23
 ---
 
@@ -30,8 +30,23 @@ This Standard EXE release reuses the signed Android **1.8.1.39/code 21** artifac
 
 - 배포 버전 확정 후에도 전체 **206개 파일·1,564개 검사**와 네이티브 PTY 검사 통과: `output/exe-91-tests.log`, `output/exe-91-pty-smoke.log`.
 
-EXE 빌드·패키지 검증·공개 다운로드 결과는 완료 후 기록한다.
+- 고정 소스의 TypeScript·Vite production build와 Standard NSIS 빌드 통과. `app/electron-dist/exe-1.8.1.91`으로 출력을 분리했고 빌드 단계의 자동 게시는 비활성화했다. 기존 APK의 패키지·arm64 아키텍처·인증서·해시도 다시 확인했다. `output/exe-91-build.log`. 기존 Vite 500KB 번들 경고는 남아 있다.
+- 패키지의 내장 Git·브라우저 bridge·Dashboard·PTY·문서 재사용과 종료·트레이·보안 검사 통과. `output/exe-91-packaged-smoke.log`, `output/exe-91-packaged-lifecycle-smoke.log`. 임시 packaged 실행기의 외부 제한만 45초로 설정하고 원래 성공 조건을 유지했다. 이전 릴리스에도 있던 모의 PTY 종료의 `AttachConsole failed` 진단과 Chromium API 경고는 남지만 성공 표식과 종료 코드 0을 확인했다.
+- 새 자동화 서비스·공통 시작 화면 판독부를 포함한 런타임·렌더러 **338개 파일**이 고정 빌드 소스와 일치했다. 설치 파일 FileVersion **1.8.1.91**, ProductVersion **1.8.1**, 크기·SHA-256이 같은 빌드 manifest와 일치한다. Authenticode는 **NotSigned**다. `output/exe-release-1.8.1.91/local-verification.json`, `output/exe-release-1.8.1.91/windows-verification.json`.
+- 공개 GitHub에서 **1.8.1.90·1.8.1.89 → 1.8.1.91** 업데이트 감지를 확인했다. 실제 업데이터로 EXE 전체를 다운로드하고 세 자산의 크기·SHA-256·공식 URL·태그·소스 커밋·최신 안정 릴리스를 검증했다. `output/exe-91-public-verify.log`, `.build-tools/public-verified-1.8.1.91.json`.
 
 ## 배포 기록
 
-준비 중. 공개 게시와 사용자 PC의 업데이트 설치는 별개다.
+- 공개 게시: **2026-10-23 01:58:59 KST**. [GitHub Release v1.8.1.91](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.91).
+- 고정 소스·태그: `59030c4698f32b6134968db1837416817b310643`.
+- 공개 다운로드 검증 완료: **2026-10-23 01:59:48 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.91**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. 새 APK·Company·Microsoft Store 배포는 실행하지 않았다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.91-x64.exe | 151455924 | `a5946a52c221d93da4d32786ac36edb5f90884be6398f12abc692c4c8230f903` |
+| Acedia-Setup-1.8.1.91-x64.exe.blockmap | 159019 | `4d5857fd3c8157eacba263598234c8786e18ea58aabee78686b2805fd7040bd4` |
+| latest-exe.json | 256 | `011ac21b14c767343a56cf7d694bc90c753132762a7d41d42888fe7916ffc825` |
+
+설정의 **Check → Update** 또는 다음 앱 실행의 업데이트 안내로 적용한다. 이후 **작업 흐름 → 모델 정책 → 프로젝트 시작 자동화**에서 프로젝트의 폴더 신뢰 자동 확인을 켠다. 이번 배포에서 실제 사용자 앱을 교체하거나 시험 작업을 전달하지 않았다. 공개 게시와 사용자 PC의 설치 완료는 별개다.

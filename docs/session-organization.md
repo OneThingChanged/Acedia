@@ -19,7 +19,7 @@ sources:
 
 # 부모·자식 세션 조직도
 
-## 프로젝트 폴더 신뢰 자동 확인 (2026-10-23, 배포 전 소스)
+## 프로젝트 폴더 신뢰 자동 확인 (Standard EXE 1.8.1.91)
 
 **작업 흐름 → 모델 정책 → 프로젝트 시작 자동화**에서 **이 프로젝트의 Codex 폴더 신뢰
 자동 확인**을 켜고 설정을 저장한다. 기본은 꺼짐이며, 데스크톱·Remote·Dashboard에서
@@ -53,7 +53,9 @@ Git 저장소 루트도 승인 범위 안에 있어야 한다. 링크·junction�
 `output/startup-automation-main.log`, `output/startup-automation-native-final.log`,
 `output/startup-automation-electron.log`를 참고한다. 긴 경로의 soft wrap과 전체 너비 TUI가
 남기는 wrapped flag를 모두 검사해 완전한 원래 확인 화면을 유지한다.
-현재 소스 구현이며 EXE 게시와 실제 사용자 앱 업데이트는 아직 수행하지 않았다.
+[Standard EXE 1.8.1.91](release-1-8-1-91.md)에 포함해 공개 게시했다. 해당 릴리스의
+패키지 실행·종료와 공개 다운로드 검증까지 통과했다. 설정의 **Check → Update**로 적용한 뒤
+위 프로젝트 옵션을 켠다. 이번 검증에서 실제 사용자 앱을 교체하지는 않았다.
 
 ## 작업 분담 흐름 (2026-10-19, 배포 전 소스)
 
