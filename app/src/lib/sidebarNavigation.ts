@@ -9,9 +9,30 @@ import { repairSessionHierarchy } from './sessionHierarchy';
 // The editable parent defines the navigation tree. Creation provenance must
 // not stop a moved or manually organized session following its current parent.
 // Searching remains flat so collapsed children stay independently findable.
-export function sidebarSessionFamilies(visible: Agent[], all: Agent[]) {
+export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: { includeSleepingDescendants?: boolean; sortByName?: boolean } = {}) {
   const catalog = repairSessionHierarchy(all), byId = new Map(catalog.map(a => [a.id, a]));
   const included = new Map(visible.map(a => [a.id, byId.get(a.id) || a]));
+  if (options.includeSleepingDescendants) {
+    const descendants = new Map<string, Agent[]>();
+    for (const agent of catalog) {
+      const parent = agent.sessionHierarchy?.parentId ? byId.get(agent.sessionHierarchy.parentId) : undefined;
+      if (!parent || agent.sidebarArchived || parent.sidebarArchived || parent.projectId !== agent.projectId) continue;
+      const children = descendants.get(parent.id) || []; children.push(agent); descendants.set(parent.id, children);
+    }
+    // Only genuinely active parents add sleeping context. An inactive ancestor
+    // included for another active child must not reveal all of its siblings.
+    const pending = visible.filter(agent => matchesSidebarFilter(agent, 'active')).map(agent => agent.id);
+    const visited = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const child of descendants.get(id) || []) {
+        if (!isStandbySession(child)) continue;
+        included.set(child.id, child); pending.push(child.id);
+      }
+    }
+  }
   for (const agent of visible) {
     let current = byId.get(agent.id);
     while (current?.sessionHierarchy?.parentId) {
@@ -27,6 +48,7 @@ export function sidebarSessionFamilies(visible: Agent[], all: Agent[]) {
       const rows = children.get(hierarchy.parentId) || []; rows.push(agent); children.set(hierarchy.parentId, rows);
     } else roots.push(agent);
   }
+  if (options.includeSleepingDescendants) for (const members of children.values()) members.sort((a, b) => compareSidebarSessions(a, b, options.sortByName));
   return { roots, children };
 }
 
@@ -71,6 +93,12 @@ export function sidebarSessionTime(agent: Agent): number {
   return typeof opened === "number" && Number.isFinite(opened) && opened > 0 ? opened : agent.createdAt;
 }
 
+function compareSidebarSessions(a: Agent, b: Agent, sortByName = false): number {
+  return Number(!!b.sidebarPinned) - Number(!!a.sidebarPinned)
+    || (sortByName ? a.name.localeCompare(b.name) : sidebarSessionTime(b) - sidebarSessionTime(a))
+    || a.id.localeCompare(b.id);
+}
+
 export function sidebarDateGroup(agent: Agent, now: number): SidebarDateGroup {
   if (agent.sidebarPinned) return "pinned";
   const today = new Date(now); today.setHours(0, 0, 0, 0);
@@ -94,9 +122,7 @@ export function recentSidebarSessions(agents: Agent[], projects: Project[], fold
     if (agent.sidebarArchived || !project || (options.projectId && agent.projectId !== options.projectId) || !matchesSidebarFilter(agent, options.filter)) return false;
     const folder = project.projectFolderId ? folderById.get(project.projectFolderId) : undefined;
     return !query || matchesSessionSearch(query, agent.name, agent.folder, agent.remoteFolder, project.name, project.folder, project.remoteFolder, folder?.name, toolForId(agent.aiToolId).label);
-  }).sort((a, b) => Number(!!b.sidebarPinned) - Number(!!a.sidebarPinned)
-    || (options.sortByName ? a.name.localeCompare(b.name) : sidebarSessionTime(b) - sidebarSessionTime(a))
-    || a.id.localeCompare(b.id));
+  }).sort((a, b) => compareSidebarSessions(a, b, options.sortByName));
 }
 
 // Inline search spans every project and non-archived session, independently of

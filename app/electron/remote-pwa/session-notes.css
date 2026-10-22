@@ -1,0 +1,24 @@
+.session-note-workspace { display:flex; flex:1; min-height:0; min-width:0; }
+.session-note-workspace > .session-content { flex:1; min-width:0; }
+.remote-session-note { display:flex; flex-direction:column; gap:12px; width:310px; max-width:45%; min-width:230px; padding:17px; margin-left:16px; border-left:1px solid var(--line); background:var(--panel); color:var(--text); }
+.remote-note-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.remote-note-head h3 { margin:0; font-size:16px; }
+.remote-note-head > div { display:flex; gap:4px; }
+.remote-note-owner { color:var(--amber); font-size:13px; overflow-wrap:anywhere; }
+.remote-note-editor { min-height:140px; flex:1; width:100%; resize:none; border:0; border-top:1px solid var(--line); border-radius:0; background:transparent; color:var(--text); font:inherit; font-size:16px; line-height:1.9; padding:14px 0; }
+.remote-session-note footer { border-top:1px solid var(--line); padding-top:10px; color:var(--muted); font-size:12px; }
+.remote-session-note footer p { margin:8px 0 0; }
+.remote-note-status[data-state="error"], .remote-note-status[data-state="too-large"], .remote-note-backup-error { color:var(--red); }
+.remote-note-conflict { padding:10px; border:1px solid var(--line); border-radius:8px; max-height:45%; overflow:auto; font-size:13px; }
+.remote-note-conflict > div { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.remote-note-conflict pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; max-height:160px; overflow:auto; }
+.remote-note-overlay { position:fixed; inset:0; z-index:220; display:flex; justify-content:flex-end; padding:env(safe-area-inset-top,0px) 0 var(--safe-area-bottom); }
+.remote-note-backdrop { position:absolute; inset:0; border:0; background:#0007; }
+.remote-note-overlay .remote-session-note { position:relative; max-width:100%; width:360px; margin:0; height:100%; box-shadow:var(--shadow); }
+#sessionNoteButton { position:relative; }
+#sessionNoteButton.on { color:var(--amber); border-color:var(--amber); }
+#sessionNoteButton.has-note::after { content:''; position:absolute; top:4px; right:5px; width:4px; height:4px; border-radius:50%; background:var(--amber); }
+@media(max-width:1000px) {
+  .session-note-workspace { flex-direction:column; }
+  .session-note-workspace > .remote-session-note { order:-1; width:100%; max-width:none; min-width:0; height: min(42dvh,360px); min-height:240px; margin:0 0 12px; border-left:0; border-bottom:1px solid var(--line); flex-shrink:0; }
+}

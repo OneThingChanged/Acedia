@@ -1,5 +1,5 @@
 import { t } from './i18n.js';
-export function createSessionModelEditor({ getAgent, selectedId, projectName, showToast, refresh, rename, closeSession, restartSession }) {
+export function createSessionModelEditor({ getAgent, selectedId, projectName, showToast, refresh, rename, closeSession, restartSession, note }) {
   const $ = id => document.getElementById(id);
   const menu = $('sessionContextMenu'), overlay = $('sessionModelOverlay'), form = $('sessionModelForm');
   const model = $('sessionModelSelect'), effort = $('sessionEffortSelect'), fast = $('sessionFastSelect');
@@ -105,6 +105,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, sh
     if (!action) return; menu.hidden = true;
     if (action === 'model') open(menuTarget, source);
     if (action === 'rename') rename?.(menuTarget);
+    if (action === 'note') note?.(menuTarget);
     if (action === 'close') void closeSession?.(menuTarget);
     if (action === 'restart') void restartSession?.(menuTarget);
   });

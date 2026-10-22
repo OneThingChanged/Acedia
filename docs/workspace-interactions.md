@@ -868,6 +868,16 @@ Selection, draft and queue remain isolated per session/conversation across
 Chat/terminal switches. Startup, question, dead-session and model-change guards
 retain their existing submission restrictions.
 
+A terminal's first provider session ID binds its previously unbound Chat state
+to the same conversation. Queued startup requests, drafts, attachments, delivery
+selection and submission errors follow that initial binding. An in-flight send
+keeps its lock and records its receipt against the newly bound ID. Subsequent
+known-conversation switches stay isolated, including the render before reset
+effects run. `electron-chat-first-message-smoke.mjs` checks the startup queue,
+draft/remount preservation, in-flight binding, queue isolation and failure review.
+See the [2026-10-22 investigation](chat-first-request-review-2026-10-22.md) for
+the reproduced timing, source verification and remaining installation checks.
+
 `electron-chat-delivery-smoke.mjs` verifies these choices, cooldown priority,
 completion-only drain, cancellation, conversation/remount isolation, question
 protection, autocomplete/newline/IME/focus behavior, Codex/Claude routing and

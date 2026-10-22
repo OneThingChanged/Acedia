@@ -120,6 +120,9 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/chat-files.js", { file: "chat-files.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/model-editor.js", { file: "model-editor.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/workspace-ui.js", { file: "workspace-ui.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-notes.js", { file: "session-notes.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-notes.css", { file: "session-notes.css", type: "text/css; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-notes-client.js", { file: "../shared/session-notes-client.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/dom.js", { file: "dom.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/i18n.js", { file: "i18n.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/translations.js", { file: "translations.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
@@ -1116,8 +1119,8 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
-    Object.assign(this, { chatImages, chatDetails, modelDefaults, tasks, closeSession });
+  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+    Object.assign(this, { chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
     this.notificationAllowed = notificationAllowed ?? (() => true);

@@ -61,6 +61,13 @@ const attachStore = new Map<string, Attachment[]>();
 type ComposerContext = { mode: "reuse" | "quote"; value: string };
 type ComposerIntent = ComposerContext & { storageKey: string };
 const composerContextStore = new Map<string, ComposerContext>();
+// A new terminal has no provider session ID until SessionStart. Its first
+// binding belongs to the same conversation, including unsent composer state.
+const initialSessionBindings = new Set<string>();
+function moveChatStorage<T>(store: Map<string, T>, from: string, to: string) {
+  if (store.has(from) && !store.has(to)) store.set(to, store.get(from)!);
+  store.delete(from);
+}
 const appliedComposerIntents = new WeakSet<ComposerIntent>();
 const directBlockKeys = new WeakMap<ChatBlock, number>();
 let nextDirectBlockKey = 0;
@@ -419,9 +426,12 @@ export function ChatView({
   // Reserved (queued) messages waiting to be sent while the agent is working.
   // Restored from the module store so switching to the terminal and back keeps
   // them; every mutation writes back through mutateQueue.
-  const [queue, setQueue] = useState<QueuedMessage[]>(() => queueStore.get(storeKey) ?? []);
+  const [queueState, setQueueState] = useState(() => ({ key: storeKey, items: queueStore.get(storeKey) ?? [] }));
+  // Never drain the previous conversation's state during the render before
+  // its reset effect runs.
+  const queue = queueState.key === storeKey ? queueState.items : [];
   const lastDispatchRef = useRef(0);
-  const submissionInFlight = useRef<string | null>(null);
+  const submissionInFlight = useRef<{ key: string; sessionId?: string } | null>(null);
   const [submittingMessage, setSubmittingMessage] = useState(false);
   const [failedSubmission, setFailedSubmission] = useState(() => failedSubmissionStore.get(storeKey) || "");
   // Messages just sent from the composer, echoed instantly so the chat updates
@@ -445,7 +455,25 @@ export function ChatView({
   const clearedSigRef = useRef<string | null>(null);
   const clearedConversationRef = useRef<{ id?: string; session?: string; sequence?: number } | null>(null);
 
+  useLayoutEffect(() => {
+    if (!sessionId || initialSessionBindings.has(agentId)) return;
+    initialSessionBindings.add(agentId);
+    const unboundKey = `${agentId}:unbound`;
+    moveChatStorage(queueStore, unboundKey, storeKey);
+    moveChatStorage(draftStore, unboundKey, storeKey);
+    moveChatStorage(attachStore, unboundKey, storeKey);
+    moveChatStorage(sendModeStore, unboundKey, storeKey);
+    moveChatStorage(composerContextStore, unboundKey, storeKey);
+    moveChatStorage(failedSubmissionStore, unboundKey, storeKey);
+    const submission = submissionInFlight.current;
+    if (submission?.key === unboundKey) {
+      submission.key = storeKey;
+      submission.sessionId = sessionId;
+    }
+  }, [agentId, sessionId, storeKey]);
+
   useEffect(() => {
+    const submittingHere = submissionInFlight.current?.key === storeKey;
     keyRef.current = "";
     blocksRef.current = [];
     historyEpochRef.current++;
@@ -462,15 +490,16 @@ export function ChatView({
     setArtifacts([]);
     setVisible(CHAT_PAGE);
     setShowJumpToLatest(false);
-    setPending([]);
-    setSubmittingMessage(false);
+    if (!submittingHere) setPending([]);
+    setSubmittingMessage(submittingHere);
     setFailedSubmission(failedSubmissionStore.get(storeKey) || "");
-    setQueue(queueStore.get(storeKey) ?? []); // restore this exact conversation's reservations
+    setQueueState({ key: storeKey, items: queueStore.get(storeKey) ?? [] });
     setAnsweredPromptSig("");
     setPendingQuestion(null);
     setPromptError("");
     setStoppedKey(null);
-    setLifecycle(undefined); setLifecycleAt(undefined); setTranscriptTool(undefined); setDispatchAt(0);
+    setLifecycle(undefined); setLifecycleAt(undefined); setTranscriptTool(undefined);
+    if (!submittingHere) setDispatchAt(0);
     firstLoadRef.current = true;
     followBottomRef.current = true;
     clearedSigRef.current = null;
@@ -914,8 +943,9 @@ export function ChatView({
   // echo is not a persisted user message until that submission succeeds.
   const dispatch = useCallback(
     async (value: string, continuing = false) => {
-      if (submissionInFlight.current === storeKey) return;
-      submissionInFlight.current = storeKey;
+      if (submissionInFlight.current?.key === storeKey) return;
+      const submission = { key: storeKey, sessionId };
+      submissionInFlight.current = submission;
       setSubmittingMessage(true);
       lastDispatchRef.current = Date.now();
       if (!continuing) setDispatchAt(lastDispatchRef.current);
@@ -925,7 +955,7 @@ export function ChatView({
       try {
         const sent = await invoke("submit_chat_message", { id: agentId, sessionId, message: value, steering: continuing });
         if (!sent) throw new Error("The session did not accept this message.");
-        if (currentStoreKey.current !== storeKey) return;
+        if (currentStoreKey.current !== submission.key) return;
         if (value.trim() === "/clear") {
           // Suppress pre-clear history only after the CLI accepts the reset.
           clearedSigRef.current = keyRef.current || "empty";
@@ -944,7 +974,7 @@ export function ChatView({
         } else {
           void invoke("conversation_record_user_message", {
             id: agentId,
-            sessionId,
+            sessionId: submission.sessionId,
             text: value,
           }).catch(() => {});
         }
@@ -957,14 +987,14 @@ export function ChatView({
       } catch {
         // Text may already be in the terminal. Preserve it for review, stop
         // draining, and never replay an uncertain paste automatically.
-        failedSubmissionStore.set(storeKey, value);
-        if (currentStoreKey.current !== storeKey) return;
+        failedSubmissionStore.set(submission.key, value);
+        if (currentStoreKey.current !== submission.key) return;
         setFailedSubmission(value);
         setPending(p => { const next = [...p]; const index = next.lastIndexOf(value); if (index >= 0) next.splice(index, 1); return next; });
         if (!continuing) setDispatchAt(0);
       } finally {
-        if (submissionInFlight.current === storeKey) submissionInFlight.current = null;
-        if (currentStoreKey.current === storeKey) setSubmittingMessage(false);
+        if (submissionInFlight.current === submission) submissionInFlight.current = null;
+        if (currentStoreKey.current === submission.key) setSubmittingMessage(false);
       }
     },
     [agentId, sessionId, storeKey]
@@ -974,11 +1004,12 @@ export function ChatView({
   // ChatView unmount/remount on a terminal ↔ chat switch.
   const mutateQueue = useCallback(
     (fn: (q: QueuedMessage[]) => QueuedMessage[]) => {
-      setQueue((prev) => {
-        const next = fn(prev);
+      setQueueState((prev) => {
+        const items = prev.key === storeKey ? prev.items : queueStore.get(storeKey) ?? [];
+        const next = fn(items);
         if (next.length) queueStore.set(storeKey, next);
         else queueStore.delete(storeKey);
-        return next;
+        return { key: storeKey, items: next };
       });
     },
     [storeKey]
@@ -995,7 +1026,7 @@ export function ChatView({
     const liveStartup = canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex");
     const ready = alive && !initializing && !prompt && !liveStartup && !failedSubmission;
     const delivery: SendMode = ready && supportsSteering && mode === "now" ? "now" : "queue";
-    if (ready && cooled && submissionInFlight.current !== storeKey && ((delivery === "now" && !queue.some(item => item.mode === "now")) || (!busy && queue.length === 0))) void dispatch(value, busy);
+    if (ready && cooled && submissionInFlight.current?.key !== storeKey && ((delivery === "now" && !queue.some(item => item.mode === "now")) || (!busy && queue.length === 0))) void dispatch(value, busy);
     else mutateQueue(q => {
       const item = { text: value, mode: delivery };
       // A short input cooldown must not change a requested steer into a
@@ -1012,7 +1043,7 @@ export function ChatView({
     const wait = Math.max(0, QUEUE_COOLDOWN_MS - (Date.now() - lastDispatchRef.current));
     const timer = window.setTimeout(() => {
       if (isChatSessionModelChanging(agentId)) return;
-      if (submissionInFlight.current === storeKey) return;
+      if (submissionInFlight.current?.key === storeKey) return;
       if (canReadStartupPrompt && parseTerminalStartupPrompt(readTerminalScreen!(), "codex")) return;
       dispatch(queue[0].text, busy);
       mutateQueue((q) => q.slice(1));

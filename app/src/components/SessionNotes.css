@@ -1,0 +1,38 @@
+.session-note-toggle { position:relative; }
+.session-note-toggle.on { color:var(--note-accent, #e2b777); }
+.session-note-toggle .session-note-dot { position:absolute; right:3px; top:3px; }
+.session-note-dot { display:inline-block; width:5px; height:5px; flex-shrink:0; border-radius:50%; background:var(--note-accent, #e2b777); }
+.session-note-panel { --note-accent:color-mix(in srgb, var(--app-text,#e6edf3) 55%, #bb841e); display:flex; flex-direction:column; width:300px; max-width:45%; min-width:220px; min-height:0; flex-shrink:0; padding:17px 18px 13px; border-left:1px solid var(--app-border,#30363d); background:var(--app-bg-elevated,#161b22); color:var(--app-text,#e6edf3); font-size:12px; }
+.session-note-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.session-note-head h3 { display:flex; align-items:center; gap:7px; margin:0; font-size:13px; font-weight:600; }
+.session-note-head h3 svg { color:var(--note-accent); }
+.session-note-head > div { display:flex; gap:3px; }
+.session-note-icon { display:inline-grid; place-items:center; width:27px; height:27px; padding:0; color:var(--app-muted,#8b949e); background:transparent; border:0; border-radius:5px; cursor:pointer; font-size:17px; }
+.session-note-icon:hover { background:var(--app-hover,#21262d); color:var(--app-text,#e6edf3); }
+.session-note-icon:disabled { opacity:.4; cursor:default; }
+.session-note-owner { display:flex; align-items:center; gap:7px; margin:15px 0 10px; font-size:11px; }
+.session-note-owner strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:500; }
+.session-note-owner > span:last-child { margin-left:auto; color:var(--app-muted,#8b949e); flex-shrink:0; font-size:10px; }
+.session-note-editor { display:block; width:100%; flex:1; min-height:90px; resize:none; padding:14px 0; border:0; border-top:1px solid var(--app-border,#30363d); border-radius:0; background:transparent; color:inherit; font-family:inherit; font-size:13px; line-height:1.9; }
+.session-note-editor::placeholder { color:var(--app-muted,#8b949e); }
+.session-note-editor:focus { outline:0; box-shadow:none; }
+.session-note-footer { border-top:1px solid var(--app-border,#30363d); padding-top:10px; font-size:11px; color:var(--app-muted,#8b949e); }
+.session-note-footer p { margin:7px 0 0; }
+.session-note-save { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.session-note-save.error, .session-note-save.too-large { color:var(--app-danger,#f78181); }
+.session-note-save button, .session-note-conflict button { border:1px solid var(--app-border,#30363d); border-radius:5px; padding:4px 8px; background:transparent; color:var(--app-text,#e6edf3); cursor:pointer; font:inherit; }
+.session-note-copy-status:empty { display:none; }
+.session-note-conflict { margin:8px 0; padding:10px; border:1px solid var(--app-border,#30363d); border-radius:6px; max-height:45%; overflow:auto; }
+.session-note-conflict p { margin:0 0 8px; }
+.session-note-conflict summary { cursor:pointer; color:var(--note-accent); }
+.session-note-conflict pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; max-height:150px; overflow:auto; }
+.session-note-conflict > div { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+.session-note-overlay { position:fixed; inset:0; z-index:1000; display:flex; justify-content:flex-end; }
+.session-note-backdrop { position:absolute; inset:0; border:0; background:#0005; }
+.session-note-overlay > .session-note-panel { position:relative; width:340px; max-width:100%; height:100%; box-shadow:-8px 0 30px #0003; }
+.pane-slot { container-type:inline-size; }
+@container (max-width:650px) {
+  .pane-workspace-content:has(> .session-note-panel) { flex-direction:column; }
+  .pane-workspace-content > .session-note-panel { width:100%; max-width:none; min-width:0; height:48%; min-height:210px; border-left:0; border-top:1px solid var(--app-border,#30363d); }
+}
+@media(pointer:coarse) { .session-note-icon { min-width:40px; min-height:40px; } .session-note-editor { font-size:16px; } }

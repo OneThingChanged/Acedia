@@ -1,6 +1,6 @@
 import { sendJson } from './remote-http.mjs';
 
-const routes = new Set(['/api/chat/images', '/api/chat/details', '/api/session/defaults', '/api/session/close', '/api/tasks']);
+const routes = new Set(['/api/chat/images', '/api/chat/details', '/api/session/defaults', '/api/session/close', '/api/session/notes', '/api/tasks']);
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sessionId = value => {
   if (typeof value !== 'string' || !value.trim() || value.length > 200 || /[\x00-\x1f]/.test(value)) throw fail('Invalid session id');
@@ -21,7 +21,7 @@ export async function serveRemoteWorkspaceApi(request, response, url, { provider
       || (['/api/session/close', '/api/chat/details'].includes(url.pathname) && !mutation)) throw fail('Method not allowed', 405);
     if (mutation && !allowed()) throw fail('Cross-origin request blocked', 403);
     if (mutation && !String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw fail('application/json required', 415);
-    const body = mutation ? await readJson(request, 16 * 1024) : {};
+    const body = mutation ? await readJson(request, url.pathname === '/api/session/notes' ? 400 * 1024 : 16 * 1024) : {};
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('Invalid JSON object');
     if (url.pathname === '/api/tasks') {
       if (!providers.tasks) throw fail('작업 분담을 사용할 수 없습니다.', 503);
@@ -45,7 +45,12 @@ export async function serveRemoteWorkspaceApi(request, response, url, { provider
       const state = snapshot();
       const agents = [...(state.agents || []), ...(state.view?.agents || [])];
       if (!agents.some(agent => agent.id === id)) throw fail('Session not found', 404);
-      if (url.pathname === '/api/chat/details') {
+      if (url.pathname === '/api/session/notes') {
+        if (!providers.sessionNotes) throw fail('Session notes unavailable', 501);
+        const result = mutation ? await providers.sessionNotes.save({ id, text: body.text, revision: body.revision }) : await providers.sessionNotes.read(id);
+        if (!mutation && url.searchParams.get('revision') === String(result.revision)) sendJson(response, 200, { unchanged: true });
+        else sendJson(response, mutation && !result.saved ? 409 : 200, result);
+      } else if (url.pathname === '/api/chat/details') {
         const conversation = sessionId(body.conversationId), providerSession = sessionId(body.sessionId);
         if (!Array.isArray(body.sequences) || body.sequences.length < 1 || body.sequences.length > 20
           || body.sequences.some(sequence => !Number.isSafeInteger(sequence) || sequence < 1)) throw fail('Invalid block selection');

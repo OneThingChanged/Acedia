@@ -11,6 +11,20 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it('shows sleeping children of an active parent in both lists, keeping their status and runtime-only counts', () => {
+    const saved:Record<string,string>={'multiagent.sessionFilter.v1':'active','multiagent.sidebarExpandedProjects.v1':'["p"]'};
+    vi.stubGlobal('localStorage',{getItem:(key:string)=>saved[key]??null,setItem:vi.fn()});
+    const parent=agent('RnDHub',{status:'working',runtimeStatus:'running'});
+    const child=agent('Shader',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}});
+    const unrelated=agent('unrelated',{deferredStart:true,resumeEligible:true});
+    const html=render([parent,child,unrelated]);
+    expect(html.match(/data-sidebar-agent-id="Shader"/g)).toHaveLength(2);
+    expect(html.match(/data-sidebar-parent-id="RnDHub"/g)).toHaveLength(2);
+    expect(html).toContain('status-sleeping');expect(html).toContain('Sleeping');
+    expect(html).not.toContain('data-sidebar-agent-id="unrelated"');
+    expect(html).toMatch(/data-session-filter="active" aria-pressed="true"[^]*?sidebar-session-filter-count">1</);
+    expect(html).toMatch(/data-session-filter="sleeping" aria-pressed="false"[^]*?sidebar-session-filter-count">2</);
+  });
   it('renders reparented Shader sessions once under RnDHub with their current parent label', () => {
     const children=['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id=>agent(id,{sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}}));
     const html=render([agent('RnDHub'),...children]);

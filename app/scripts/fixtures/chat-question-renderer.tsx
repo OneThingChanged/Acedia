@@ -18,6 +18,8 @@ const resolvedPaths = [];
 const chatReads = [];
 const submittedMessages = [];
 const recordedMessages = [];
+let holdSubmissions = false;
+const heldSubmissions = [];
 let holdChatReads = false;
 const heldChatReads = [];
 let imagesBySequence = {};
@@ -33,7 +35,9 @@ window.multiAgentElectron = {
     if (command === "submit_chat_message") {
       submittedMessages.push(args);
       if (failWrites) throw new Error("fixture message submission failure");
-      return submitPtyMessage({ ptyProcess: { write: value => writes.push(value) }, message: args.message, waitForOutputQuiet: !args.steering });
+      const sent = await submitPtyMessage({ ptyProcess: { write: value => writes.push(value) }, message: args.message, waitForOutputQuiet: !args.steering });
+      if (holdSubmissions) await new Promise(resolve => heldSubmissions.push(resolve));
+      return sent;
     }
     if (command === "conversation_record_user_message") { recordedMessages.push(args); return null; }
     if (command === "chat_blocks") {
@@ -75,7 +79,8 @@ window.multiAgentElectron = {
 };
 
 function Harness() {
-  const [state, setState] = useState({ agentStatus: "waiting", provider: "codex", question: null, questionToken: 1, sessionId: "fixture-session" });
+  const [state, setState] = useState({ agentId: "fixture", agentStatus: "waiting", provider: "codex", question: null, questionToken: 1, sessionId: "fixture-session",
+    ...(new URLSearchParams(location.search).has('unbound') ? { agentStatus: 'starting', sessionId: undefined } : {}) });
   const [show, setShow] = useState(true);
   window.questionFixture = {
     writes,
@@ -91,10 +96,12 @@ function Harness() {
     emit: payload => listeners.forEach(listener => listener(payload)),
     holdReads: () => { holdChatReads = true; },
     releaseReads: () => { holdChatReads = false; heldChatReads.splice(0).forEach(resolve => resolve(chat)); },
+    releaseSubmissions: () => { holdSubmissions = false; heldSubmissions.splice(0).forEach(resolve => resolve()); },
     patch: patch => {
       if ("show" in patch) setShow(patch.show);
       if (patch.state) setState(current => ({ ...current, ...patch.state }));
       if ("failWrites" in patch) failWrites = patch.failWrites;
+      if ("holdSubmissions" in patch) holdSubmissions = patch.holdSubmissions;
       if ("failClipboard" in patch) failClipboard = patch.failClipboard;
       if ("filesToSelect" in patch) filesToSelect = patch.filesToSelect;
       if ("terminalScreen" in patch) terminalScreen = patch.terminalScreen;
@@ -109,7 +116,7 @@ function Harness() {
       }
     },
   };
-  return show ? <ChatView {...state} agentId="fixture" active theme="soft"
+  return show ? <ChatView {...state} active theme="soft"
     readTerminalScreen={readTerminalScreen}
     onOpenPath={path => openedPaths.push(path)}
     onOpenTerminal={() => { window.questionTerminalOpened = true; }} /> : null;

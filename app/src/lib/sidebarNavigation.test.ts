@@ -8,6 +8,35 @@ const projects: Project[] = [{ id: "p", name: "Acedia", folder: "C:/Acedia", cre
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: "C:/Acedia", aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
 
 describe("sidebar navigation", () => {
+  it('keeps sleeping descendants under an active parent without changing runtime, counts or unrelated sessions', () => {
+    const parent=agent('parent',{status:'working',runtimeStatus:'running'});
+    const sleeping=(id:string,parentId?:string,extra:Partial<Agent>={})=>agent(id,{deferredStart:true,resumeEligible:true,sessionHierarchy:parentId?{parentId}:undefined,...extra});
+    const child=sleeping('child','parent'),grandchild=sleeping('grandchild','child');
+    const all=[parent,child,grandchild,sleeping('unrelated'),sleeping('archived','parent',{sidebarArchived:true}),sleeping('other-project','parent',{projectId:'ssh'})];
+    const before=structuredClone(all);
+    const visible=recentSidebarSessions(all,projects,[],{projectId:'p',filter:'active',query:''});
+    expect(visible.map(a=>a.id)).toEqual(['parent']);
+    const tree=sidebarSessionFamilies(visible,all,{includeSleepingDescendants:true});
+    expect(tree.roots.map(a=>a.id)).toEqual(['parent']);
+    expect(tree.children.get('parent')?.map(a=>a.id)).toEqual(['child']);
+    expect(tree.children.get('child')?.map(a=>a.id)).toEqual(['grandchild']);
+    expect(matchesSidebarFilter(child,'active')).toBe(false);expect(matchesSidebarFilter(child,'sleeping')).toBe(true);
+    expect(all).toEqual(before);
+    expect(sidebarSessionFamilies(visible,all).children.size).toBe(0);
+  });
+  it('does not expose sleeping siblings through an inactive contextual parent and hides them when the parent stops', () => {
+    const parent=agent('parent'),active=agent('active',{status:'working',sessionHierarchy:{parentId:'parent'}});
+    const sleeping=agent('sleeping',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:'parent'}});
+    const tree=sidebarSessionFamilies([active],[parent,active,sleeping],{includeSleepingDescendants:true});
+    expect(tree.roots.map(a=>a.id)).toEqual(['parent']);expect(tree.children.get('parent')?.map(a=>a.id)).toEqual(['active']);
+    expect(sidebarSessionFamilies([],[parent,sleeping],{includeSleepingDescendants:true}).roots).toEqual([]);
+  });
+  it('orders sleeping context by the same visits, pins and name preference as other tree children', () => {
+    const parent=agent('parent',{status:'working'});
+    const children=[agent('b',{deferredStart:true,resumeEligible:true,lastOpenedAt:20,sessionHierarchy:{parentId:'parent'}}),agent('a',{deferredStart:true,resumeEligible:true,lastOpenedAt:10,sessionHierarchy:{parentId:'parent'}})];
+    expect(sidebarSessionFamilies([parent],[parent,...children],{includeSleepingDescendants:true}).children.get('parent')?.map(a=>a.id)).toEqual(['b','a']);
+    expect(sidebarSessionFamilies([parent],[parent,...children],{includeSleepingDescendants:true,sortByName:true}).children.get('parent')?.map(a=>a.id)).toEqual(['a','b']);
+  });
   it('groups all organized children below the current parent, including manually organized sessions', () => {
     const parent = agent('A'), child = agent('worker', { sessionHierarchy: { parentId: 'A', createdById: 'A' } }), manual = agent('manual', { sessionHierarchy: { parentId: 'A' } });
     const all = [child, manual, parent], family = sidebarSessionFamilies(all, all);

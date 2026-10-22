@@ -7,7 +7,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "browser_extensions_list", "browser_extensions_change",
   "idle_preferences_get", "idle_preferences_set", "idle_view_update", "idle_session_suspend",
   "notification_preferences_get", "notification_preferences_set", "power_policy_status", "notification_policy_check",
-  "session_notifications_get", "session_notifications_set", "answer_question",
+  "session_notifications_get", "session_notifications_set", "session_notes_get", "session_notes_save", "answer_question",
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
@@ -207,6 +207,7 @@ const DELIVERED_EVENTS = Object.freeze([
   "app:close-cancelled",
   "agent:hook-event",
   "session:notifications",
+  "session:notes",
   "native-notification:clicked",
   "update:progress",
   "session-detached",
@@ -316,6 +317,12 @@ function assertInvokeRequest(command, rawArgs) {
             args.allowedNetworks.some(value => typeof value !== "string" || value.length > 64)) throw new TypeError("Invalid LAN allowed networks");
       } else if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
       break;
+    case "session_notes_save":
+      assertId(args);
+      assertNonNegativeInteger(args.revision, 'note revision', Number.MAX_SAFE_INTEGER);
+      if (typeof args.text !== 'string' || Buffer.byteLength(args.text, 'utf8') > 65536) throw new TypeError('Session note exceeds 64 KB');
+      break;
+    case "session_notes_get":
     case "session_notifications_get":
     case "capacity_retry_get":
     case "capacity_retry_cancel":

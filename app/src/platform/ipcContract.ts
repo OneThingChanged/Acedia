@@ -4,6 +4,7 @@ export type RuntimeCommand =
   | "idle_preferences_get" | "idle_preferences_set" | "idle_view_update" | "idle_session_suspend"
   | "notification_preferences_get" | "notification_preferences_set" | "power_policy_status" | "notification_policy_check"
   | "session_notifications_get" | "session_notifications_set" | "answer_question"
+  | "session_notes_get" | "session_notes_save"
   | "capacity_retry_get" | "capacity_retry_cancel"
   | "session_deliveries_get"
   | "task_orchestration"
@@ -94,6 +95,7 @@ export type RuntimeEventName =
   | "remote:relocate-sessions"
   | "chat:changed"
   | "app:close-requested" | "app:close-cancelled" | "agent:hook-event" | "session:notifications"
+  | "session:notes"
   | "native-notification:clicked" | "update:progress"
   | "session-detached" | "sessions-reattached"
   | "workspace:coordinator-changed" | "document-browser:update"
@@ -555,6 +557,14 @@ export type RuntimeCommandContract = {
   conversation_storage_get: {
     args: Record<string, never>;
     result: ConversationStorageStatus;
+  };
+  session_notes_get: {
+    args: { id: string };
+    result: import('../../electron/shared/session-notes-client.mjs').SessionNote;
+  };
+  session_notes_save: {
+    args: { id: string; text: string; revision: number };
+    result: { saved: boolean; note: import('../../electron/shared/session-notes-client.mjs').SessionNote };
   };
   conversation_storage_set: {
     args: { path: string | null };

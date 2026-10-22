@@ -131,7 +131,7 @@ function WorkspaceSidebar(props: SidebarProps) {
   const scoped = useMemo(() => navigable.filter(agent => !scope || agent.projectId === scope), [navigable, scope]);
   const counts = { all: scoped.length, active: scoped.filter(agent => matchesSidebarFilter(agent, "active")).length, sleeping: scoped.filter(agent => matchesSidebarFilter(agent, "sleeping")).length };
   const recent = useMemo(() => recentSidebarSessions(agents, projects, projectFolders, { projectId: scope, filter, query: "", sortByName }), [agents, projects, projectFolders, scope, filter, sortByName]);
-  const families = useMemo(() => sidebarSessionFamilies(recent, navigable), [recent, navigable]);
+  const families = useMemo(() => sidebarSessionFamilies(recent, navigable, { includeSleepingDescendants: filter === 'active', sortByName }), [recent, navigable, filter, sortByName]);
   const searchResults = useMemo(() => searchSidebarItems(agents, projects, projectFolders, searchQuery), [agents, projects, projectFolders, searchQuery]);
   const screens = useMemo(() => sidebarScreens(props.groups, agents, projects, activeAgentId), [props.groups, agents, projects, activeAgentId]);
   const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects]);
@@ -251,7 +251,7 @@ function WorkspaceSidebar(props: SidebarProps) {
     const children = tree.children.get(agent.id) || [];
     return <Fragment key={agent.id}>{renderAgent(agent, nested, false, children)}{!collapsedFamilies.has(agent.id) && children.length > 0 && <li className="sidebar-session-children" data-sidebar-parent-id={agent.id} role="presentation"><ul id={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} className="sidebar-recent-list">{children.map(child => renderFamily(child, nested, tree))}</ul></li>}</Fragment>;
   };
-  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
+  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable, { includeSleepingDescendants: filter === 'active', sortByName }); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
 
   return <>
     <aside ref={sidebarRef} className={`sidebar sidebar-workspace${collapsed ? " sidebar-workspace-collapsed" : ""}`} aria-label={text("작업 공간 탐색", "Workspace navigation")} onKeyDownCapture={searchKeyDown}>

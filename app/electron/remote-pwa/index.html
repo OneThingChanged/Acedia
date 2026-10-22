@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/pwa/xterm.css">
   <link rel="stylesheet" href="/pwa/styles.css">
   <link rel="stylesheet" href="/pwa/task-flow.css">
+  <link rel="stylesheet" href="/pwa/session-notes.css">
   <title>Acedia Remote</title>
   <script src="/pwa/xterm.js" defer></script>
   <script src="/pwa/terminal-touch.js" defer></script>
@@ -348,6 +349,7 @@
             <div class="session-head-actions">
               <button class="small-button session-icon-button" id="sessionNotifications" type="button" aria-label="세션 알림 켜짐 · 클릭하여 끄기"></button>
               <button class="small-button session-rename-button" id="renameSessionButton" type="button">이름 변경</button>
+              <button class="small-button" id="sessionNoteButton" type="button" aria-expanded="false">✎ 메모</button>
               <button class="small-button" id="sessionModelButton" type="button" hidden>모델 / effort</button>
               <div class="session-mode" id="sessionMode" role="tablist">
                 <button class="on" data-mode="chat" type="button" role="tab" aria-controls="chatView" aria-selected="true">💬 채팅</button>
@@ -494,6 +496,7 @@
     </div>
 
     <div class="document-context-menu" id="sessionContextMenu" role="menu" aria-label="세션 설정" hidden>
+      <button type="button" role="menuitem" data-session-action="note">세션 메모</button>
       <button type="button" role="menuitem" data-session-action="model">모델 / effort 변경</button><button type="button" role="menuitem" data-session-action="rename">이름 변경</button><button type="button" role="menuitem" data-session-action="restart" title="현재 작업을 중단하고 같은 세션을 다시 시작합니다.">재시작</button><button type="button" role="menuitem" data-session-action="close">세션 닫기</button>
     </div>
     <div class="session-editor-overlay" id="sessionModelOverlay" role="dialog" aria-modal="true" aria-labelledby="sessionModelTitle" hidden>

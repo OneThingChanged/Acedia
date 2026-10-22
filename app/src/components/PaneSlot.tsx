@@ -36,6 +36,8 @@ import { SessionServerButton } from "./SessionServerButton";
 import { SessionAccountIndicator } from "./SessionAccountIndicator";
 import { SessionNotificationButton } from "./SessionNotificationButton";
 import { SessionToolbarIcon } from "./SessionToolbarIcon";
+import { SessionNoteButton, SessionNotePanel } from './SessionNotes';
+import { registerSessionNotesOpener } from '../lib/sessionNotes';
 import {
   docFileExtension,
   docTabBasename,
@@ -146,6 +148,7 @@ export function PaneSlot({
   const pendingTabDragRef = useRef<PendingTabDrag | null>(null);
   const suppressNextTabClickRef = useRef(false);
   const [workersOpen, setWorkersOpen] = useState(false);
+  const [noteOwnerId, setNoteOwnerId] = useState<string | null>(null);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState("");
@@ -156,6 +159,12 @@ export function PaneSlot({
   } | null>(null);
   const [imageMenu, setImageMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const active = pathEq(path, ctx.activePath);
+  const activePaneRef = useRef(active);
+  activePaneRef.current = active;
+  useEffect(() => registerSessionNotesOpener(id => {
+    if (!activePaneRef.current) return false;
+    setWorkersOpen(false); setNoteOwnerId(id); return true;
+  }), []);
   const activeTabId = activeAgentInLeaf(leaf);
   const activeBrowserTabId =
     activeTabId && isBrowserTabId(activeTabId) ? activeTabId : null;
@@ -190,6 +199,8 @@ export function PaneSlot({
   // Chat vs terminal view is a per-session preference held in App, so the
   // toggle, tab context menu, and re-opening a session all stay in sync.
   const chatMode = activeAgentId ? ctx.chatModeAgents.has(activeAgentId) : false;
+  const noteOwner = ctx.agents.find(agent => agent.id === noteOwnerId) ?? null;
+  useEffect(() => { setNoteOwnerId(previous => previous ? activeAgentId : null); }, [activeAgentId]);
   const { termsRef, setAgentStatus, setAgentSessionId } = ctx;
   const readChatTerminalScreen = useCallback(() => {
     const entry = activeAgentId ? termsRef.current.get(activeAgentId) : null;
@@ -1074,6 +1085,7 @@ export function PaneSlot({
           </button>
         )}
         {isElectronRuntime() && <SessionNotificationButton key={activeAgentId} agentId={activeAgentId}/>}
+        {activeAgentId && isElectronRuntime() && <SessionNoteButton id={activeAgentId} open={!!noteOwner} onClick={() => { setWorkersOpen(false); setNoteOwnerId(previous => previous === activeAgentId ? null : activeAgentId); }} />}
         {activeAgentId && activeAgent?.aiToolId === "codex" && isElectronRuntime() && <button className="pane-chat-toggle session-icon-button" onClick={()=>setWorkersOpen(v=>!v)} aria-pressed={workersOpen} aria-label={text("작업자", "Workers")} data-tooltip={text("작업자", "Workers")}><SessionToolbarIcon name="workers"/></button>}
         {activeAgentId && toolSupportsChat(activeAgent?.aiToolId) && (
           <button
@@ -1208,6 +1220,7 @@ export function PaneSlot({
         />
       )}
       </div>
+      {noteOwner && <SessionNotePanel key={noteOwner.id} agent={noteOwner} onClose={() => setNoteOwnerId(null)} />}
       {workersOpen && activeAgentId && activeAgent?.aiToolId === "codex" && !activeDocId && !activeBrowserTabId && <SubagentMonitor key={activeAgentId} agentId={activeAgentId} sessionId={activeAgent?.activity?.providerSessionId ?? activeAgent?.lastSessionId ?? undefined} onClose={()=>setWorkersOpen(false)}/>}
       </div>
       {overlayZone && (

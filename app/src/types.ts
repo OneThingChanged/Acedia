@@ -386,6 +386,7 @@ export type ScreenContextMenuState = {
 
 export type SessionContextAction =
   | "open"
+  | "note"
   | "open-new-window"
   | "tab"
   | "split-h"

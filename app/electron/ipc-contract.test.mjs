@@ -6,6 +6,12 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('bounds human notes by UTF-8 bytes and revision, separate from chat submissions', () => {
+    const args={id:'a',text:'사람이 참고할 메모\n',revision:0};
+    expect(contract.assertInvokeRequest('session_notes_get',{id:'a'})).toEqual({id:'a'});
+    expect(contract.assertInvokeRequest('session_notes_save',args)).toEqual(args);
+    for(const patch of [{id:''},{text:3},{revision:-1},{revision:0.5},{text:'가'.repeat(22000)}])expect(()=>contract.assertInvokeRequest('session_notes_save',{...args,...patch})).toThrow();
+  });
   it('validates independent history cursors and identity-bound work details', () => {
     const page = { id: 'a', conversationId: 'c', afterSequence: 10, turnLimit: 5 };
     expect(contract.assertInvokeRequest('chat_blocks', page)).toEqual(page);

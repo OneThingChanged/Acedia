@@ -438,6 +438,9 @@ export function ContextMenu({
         <button className="ctx-item" onClick={() => onAction("rename")}>
           {text("세션 별명 변경", "Rename session")}
         </button>
+        <button className="ctx-item" data-session-action="note" onClick={() => onAction('note')}>
+          {text('세션 메모', 'Session note')}
+        </button>
         <button className="ctx-item" onClick={() => onAction("sidebar-pin")}>
           {sidebarPinned ? text("대화 고정 해제", "Unpin conversation") : text("대화 고정", "Pin conversation")}
         </button>

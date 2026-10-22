@@ -1,6 +1,7 @@
 import { createHostingView } from './hosting.js';
 import { createImageZoom } from './image-zoom.js';
 import { createSessionModelEditor } from './session-model.js';
+import { createSessionNotes } from './session-notes.js';
 import { createAccountPoolView } from './account-pool.js';
 import { createSessionUsageView } from './usage-sessions.js';
 import { createTaskFlowView, taskDelegationRequest } from './task-flow.js';
@@ -797,7 +798,9 @@ function renderSummary() {
   }
 }
 
+const sessionNotesView = createSessionNotes({ getAgent: id => agentMap().get(id), selectedId: () => selection.type === 'session' ? selection.id : null });
 const sessionModelEditor = createSessionModelEditor({
+  note: id => sessionNotesView.open(id),
   getAgent: id => agentMap().get(id),
   selectedId: () => selection.type === "session" ? selection.id : null,
   projectName, statusOf, showToast,
@@ -3218,6 +3221,7 @@ function renderSelection() {
   if (selection.type === "session") renderSession();
   syncTerminal();
   syncSessionView();
+  sessionNotesView.update();
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");

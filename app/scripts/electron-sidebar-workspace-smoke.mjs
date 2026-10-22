@@ -442,6 +442,44 @@ async function exerciseSessionFamilies(reload = false) {
   return 'SIDEBAR_CURRENT_PARENT_TREE_RELOAD_PROJECT_SEARCH_REVEAL_OK';
 }
 
+async function exerciseActiveFamilySleeping(stopParent = false) {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 100));
+  const until = async predicate => { for(let i=0;i<60;i++){if(predicate())return;await wait();}throw Error('Active family condition timed out'); };
+  const check = (value, message) => { if(!value)throw Error(message); };
+  const row = id => document.querySelector(`.sidebar-recents [data-sidebar-agent-id="${id}"]`);
+  const sleeping = ['ShaderLevelUp','ShaderNoiseBall'];
+  if (!stopParent) {
+    row('rnd-root').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    await until(()=>document.querySelector('.pane-active')?.dataset.paneActiveAgentId==='rnd-root'&&!document.querySelector('.pane-active .session-standby'));
+    // This fixture attaches a fake terminal; supply its first output so the
+    // real App runtime reducer sees the same live state as an actual PTY.
+    const data='Fixture CLI ready\r\n';
+    for(const id of ['rnd-root','ShaderSkinner']) window.sidebarFixtureEmit('pty:data',{id,data,sequenceStart:0,sequenceEnd:data.length});
+    await until(()=>!!row('rnd-root')?.querySelector('.sidebar-session-close'));
+    const before = window.layoutCalls.filter(call=>['spawn_pty','kill_pty','terminal_session_action'].includes(call.command)).length;
+    const sleepingCount=document.querySelector('[data-session-filter="sleeping"] .sidebar-session-filter-count').textContent;
+    document.querySelector('[data-session-filter="active"]').click();
+    await until(()=>sleeping.every(id=>!!row(id)));
+    for(const id of sleeping) {
+      check(row(id).closest('[data-sidebar-parent-id="rnd-root"]'),'Sleeping child detached from active parent');
+      check(row(id).querySelector('.status-sleeping') && row(id).querySelector('.sidebar-sleep-label')?.textContent,'Sleeping child changed runtime classification');
+      check(document.querySelector(`[data-sidebar-project-id="rnd"] [data-sidebar-parent-id="rnd-root"] [data-sidebar-agent-id="${id}"]`),'Project list omitted sleeping context');
+    }
+    check(document.querySelector('[data-session-filter="active"] .sidebar-session-filter-count').textContent==='2','Sleeping context inflated Active count');
+    check(document.querySelector('[data-session-filter="sleeping"] .sidebar-session-filter-count').textContent===sleepingCount,'Sleeping count changed when expanding Active');
+    document.querySelector('[data-session-filter="sleeping"]').click();await wait();
+    check(sleeping.every(id=>!!row(id))&&!row('ShaderSkinner'),'Sleeping filter changed its strict status selection');
+    document.querySelector('[data-session-filter="active"]').click();await wait();
+    check(sleeping.every(id=>!!row(id)),'Sleeping context did not return under the active parent');
+    check(window.layoutCalls.filter(call=>['spawn_pty','kill_pty','terminal_session_action'].includes(call.command)).length===before,'Filtering started or stopped a session');
+    return 'SIDEBAR_ACTIVE_PARENT_SLEEPING_CHILDREN_STATUS_COUNTS_AND_NO_RUNTIME_OK';
+  }
+  row('rnd-root').querySelector('.sidebar-session-close').click();
+  await until(()=>sleeping.every(id=>!row(id)));
+  check(row('ShaderSkinner')?.closest('[data-sidebar-parent-id="rnd-root"]'),'Active child lost its inactive parent context');
+  return 'SIDEBAR_INACTIVE_CONTEXT_PARENT_DOES_NOT_REVEAL_SLEEPING_SIBLINGS_OK';
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.disableHardwareAcceleration();
@@ -570,6 +608,9 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(false)`));
     await win.loadFile(path.join(directory,'index.html'));
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(true)`));
+    console.log(await win.webContents.executeJavaScript(`(${exerciseActiveFamilySleeping.toString()})()`));
+    await fs.writeFile(path.join(directory,'sidebar-active-parent-sleeping-children.png'),(await win.webContents.capturePage()).toPNG());
+    console.log(await win.webContents.executeJavaScript(`(${exerciseActiveFamilySleeping.toString()})(true)`));
     await fs.writeFile(path.join(directory,'sidebar-session-family-tree.png'),(await win.webContents.capturePage()).toPNG());
     if (errors.length) throw Error(errors.join('\n'));
     app.exit(0);

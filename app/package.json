@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.89",
+  "multiAgentReleaseVersion": "1.8.1.90",
   "multiAgentVariant": "standard",
   "type": "module",
   "scripts": {
@@ -53,12 +53,14 @@
     "electron:document-download-smoke": "electron scripts/electron-document-download-smoke.mjs",
     "electron:remote-html-smoke": "node scripts/electron-remote-html-smoke.mjs",
     "electron:session-model-smoke": "electron scripts/electron-session-model-smoke.mjs",
+    "electron:session-notes-smoke": "node scripts/electron-session-notes-smoke.mjs",
     "electron:session-restart-smoke": "node scripts/electron-session-restart-smoke.mjs",
     "electron:chat-question-smoke": "node scripts/electron-chat-question-smoke.mjs",
     "electron:chat-pagination-smoke": "node scripts/electron-chat-pagination-smoke.mjs",
     "electron:chat-approval-smoke": "node scripts/electron-chat-approval-smoke.mjs",
     "electron:codex-approval-cli-smoke": "node scripts/codex-approval-cli-smoke.mjs",
     "electron:chat-delivery-smoke": "node scripts/electron-chat-delivery-smoke.mjs",
+    "electron:chat-first-message-smoke": "node scripts/electron-chat-first-message-smoke.mjs",
     "codex:steering-smoke": "node scripts/codex-steering-cli-smoke.mjs",
     "codex:session-settings-smoke": "node scripts/codex-session-settings-smoke.mjs",
     "electron:chat-model-smoke": "node scripts/electron-chat-model-smoke.mjs",
@@ -165,9 +167,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.89-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.90-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.89",
+      "uninstallDisplayName": "Acedia 1.8.1.90",
       "include": "electron/installer.nsh"
     },
     "publish": [

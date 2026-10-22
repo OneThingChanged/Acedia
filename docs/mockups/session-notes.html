@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ko" style="color-scheme:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Acedia · 세션 메모 초안</title><style>body{margin:0;padding:16px;background:light-dark(#e9edf2,#090d12)}@media(max-width:480px){body{padding:0}}</style></head><body>
+<div id="acedia-session-notes" lang="ko" role="region" aria-label="Acedia 세션 메모 초안">
+  <style>
+    #acedia-session-notes { --an-bg:light-dark(#fafbfc,#0c1117); --an-side:light-dark(#f0f3f7,#111820); --an-panel:light-dark(#fff,#151d26); --an-raised:light-dark(#e8edf4,#202c3a); --an-hover:light-dark(#e4eaf1,#1c2733); --an-line:light-dark(#dbe1e8,#29333f); --an-text:light-dark(#202d3b,#e2e8ef); --an-muted:light-dark(#526475,#9aaaba); --an-faint:light-dark(#697987,#7c8d9d); --an-blue:light-dark(#2869bb,#75aff8); --an-selected:light-dark(#deebfb,#20334b); --an-amber:light-dark(#986409,#ecc47a); --an-note:light-dark(#fffcf5,#191c21); --an-soft:light-dark(#f6ecd7,#312c22); --an-green:light-dark(#32784e,#8dcaa3); font:13px/1.65 'Segoe UI','Malgun Gothic',sans-serif; color:var(--an-text); color-scheme:inherit; width:100%; }
+    #acedia-session-notes * { box-sizing:border-box; }
+    #acedia-session-notes button, #acedia-session-notes input, #acedia-session-notes textarea { font:inherit; color:inherit; }
+    #acedia-session-notes button { border:0; background:none; cursor:pointer; }
+    #acedia-session-notes button:disabled { opacity:.4; cursor:default; }
+    #acedia-session-notes button:focus-visible, #acedia-session-notes input:focus-visible, #acedia-session-notes textarea:focus-visible { outline:2px solid var(--an-blue); outline-offset:3px; }
+    #acedia-session-notes [hidden] { display:none !important; }
+    #acedia-session-notes h1, #acedia-session-notes h2, #acedia-session-notes p { margin:0; }
+    #acedia-session-notes .an-window { background:var(--an-bg); border:1px solid var(--an-line); border-radius:10px; overflow:clip; }
+    #acedia-session-notes .an-chrome { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:39px; padding:5px 16px; background:var(--an-side); border-bottom:1px solid var(--an-line); }
+    #acedia-session-notes .an-chrome-label { color:var(--an-faint); font-size:11px; letter-spacing:.04em; }
+    #acedia-session-notes .an-quick { display:flex; align-items:center; gap:8px; width:280px; padding:3px 10px; border:1px solid var(--an-line); border-radius:6px; color:var(--an-muted); font-size:11px; }
+    #acedia-session-notes .an-quick kbd { margin-left:auto; font:10px 'Segoe UI',sans-serif; border:1px solid var(--an-line); border-radius:3px; padding:0 4px; }
+    #acedia-session-notes .an-layout { display:grid; grid-template-columns:208px minmax(0,1fr); min-height:696px; }
+    #acedia-session-notes .an-sidebar { background:var(--an-side); border-right:1px solid var(--an-line); padding:20px 11px 12px; display:flex; flex-direction:column; gap:20px; min-width:0; }
+    #acedia-session-notes .an-brand { display:flex; align-items:center; gap:8px; padding:0 9px; font-size:18px; font-weight:600; letter-spacing:-.5px; }
+    #acedia-session-notes .an-brand-mark { width:27px; height:27px; object-fit:contain; }
+    #acedia-session-notes .an-brand .an-icon { margin-left:auto; color:var(--an-muted); }
+    #acedia-session-notes .an-search { display:flex; align-items:center; gap:7px; padding:7px 9px; border:1px solid var(--an-line); border-radius:7px; background:var(--an-bg); color:var(--an-muted); }
+    #acedia-session-notes .an-search input { width:100%; min-width:0; background:none; border:0; outline:none; font-size:11px; }
+    #acedia-session-notes .an-nav { display:flex; align-items:center; gap:8px; margin-top:9px; border-radius:6px; padding:7px 9px; background:var(--an-hover); font-size:12px; }
+    #acedia-session-notes .an-section-label { margin:0 8px 8px; font-size:11px; color:var(--an-faint); }
+    #acedia-session-notes .an-project { display:flex; align-items:center; gap:7px; padding:5px 8px; font-size:12px; }
+    #acedia-session-notes .an-project small { margin-left:auto; color:var(--an-faint); }
+    #acedia-session-notes .an-tree { padding-left:10px; margin:3px 0 9px 13px; border-left:1px solid var(--an-line); }
+    #acedia-session-notes .an-session { position:relative; display:flex; align-items:center; gap:5px; border-radius:7px; min-width:0; margin:2px 0; }
+    #acedia-session-notes .an-session:hover, #acedia-session-notes .an-session:focus-within { background:var(--an-hover); }
+    #acedia-session-notes .an-session[data-selected=true] { background:var(--an-selected); box-shadow:inset 2px 0 var(--an-blue); }
+    #acedia-session-notes .an-session-main { display:flex; align-items:center; gap:8px; padding:8px 9px; min-width:0; flex:1; text-align:left; }
+    #acedia-session-notes .an-session-main span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #acedia-session-notes .an-dot { width:5px; height:5px; background:var(--an-green); border-radius:50%; flex-shrink:0; }
+    #acedia-session-notes .an-dot.offline { background:var(--an-faint); }
+    #acedia-session-notes .an-row-action { display:none; padding:3px 7px; margin-right:4px; color:var(--an-muted); }
+    #acedia-session-notes .an-session:hover .an-row-action, #acedia-session-notes .an-session:focus-within .an-row-action { display:block; }
+    #acedia-session-notes .an-sidebar-hint { margin-top:auto; padding:12px 8px 0; color:var(--an-faint); font-size:11px; border-top:1px solid var(--an-line); }
+    #acedia-session-notes .an-workspace { min-width:0; display:flex; flex-direction:column; }
+    #acedia-session-notes .an-tabs { display:flex; gap:3px; align-items:stretch; min-height:37px; border-bottom:1px solid var(--an-line); padding:0 10px; }
+    #acedia-session-notes .an-tab { display:flex; align-items:center; gap:8px; padding:7px 12px; font-size:12px; border-top:2px solid var(--an-blue); }
+    #acedia-session-notes .an-tabs .an-prototype { margin:auto 3px auto auto; color:var(--an-faint); font-size:11px; }
+    #acedia-session-notes .an-split { margin:4px; padding:2px 8px; font-size:11px; color:var(--an-muted); border-radius:5px; }
+    #acedia-session-notes .an-split[aria-pressed=true] { color:var(--an-blue); background:var(--an-selected); }
+    #acedia-session-notes .an-panes { display:grid; flex:1; min-width:0; }
+    #acedia-session-notes[data-split=true] .an-panes { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+    #acedia-session-notes .an-pane { min-width:0; display:flex; flex-direction:column; container-type:inline-size; }
+    #acedia-session-notes .an-pane + .an-pane { border-left:1px solid var(--an-line); }
+    #acedia-session-notes .an-toolbar { min-height:47px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 17px; border-bottom:1px solid var(--an-line); }
+    #acedia-session-notes .an-session-identity { min-width:0; display:flex; flex-wrap:wrap; gap:0 8px; align-items:center; font-size:12px; }
+    #acedia-session-notes .an-session-identity span { color:var(--an-faint); font-size:11px; }
+    #acedia-session-notes .an-tools { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+    #acedia-session-notes .an-tool { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid var(--an-line); border-radius:6px; color:var(--an-muted); font-size:11px; }
+    #acedia-session-notes .an-tool:hover { background:var(--an-hover); }
+    #acedia-session-notes .an-tool[aria-pressed=true] { color:var(--an-amber); background:var(--an-soft); border-color:color-mix(in srgb,var(--an-amber) 35%,var(--an-line)); }
+    #acedia-session-notes .an-note-dot { width:4px; height:4px; border-radius:50%; background:var(--an-amber); }
+    #acedia-session-notes .an-pane-body { display:grid; grid-template-columns:minmax(0,1fr); flex:1; min-width:0; }
+    #acedia-session-notes .an-pane-body[data-notes-open=true] { grid-template-columns:minmax(0,1fr) var(--an-note-width,300px); }
+    #acedia-session-notes .an-chat { min-width:0; display:flex; flex-direction:column; gap:24px; padding:27px clamp(18px,4cqw,42px) 17px; }
+    #acedia-session-notes .an-date { text-align:center; font-size:11px; color:var(--an-faint); }
+    #acedia-session-notes .an-user { align-self:flex-end; background:var(--an-raised); border-radius:17px 17px 4px 17px; max-width:90%; padding:13px 16px; font-size:13px; white-space:pre-wrap; }
+    #acedia-session-notes .an-assistant { font-size:13px; }
+    #acedia-session-notes .an-assistant-label { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--an-muted); margin-bottom:15px; }
+    #acedia-session-notes .an-agent-mark { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:7px; background:var(--an-selected); color:var(--an-blue); font-size:15px; }
+    #acedia-session-notes .an-assistant p + p { margin-top:13px; }
+    #acedia-session-notes .an-assistant ul { padding-left:18px; margin:13px 0; }
+    #acedia-session-notes .an-assistant li { margin:5px 0; }
+    #acedia-session-notes .an-complete { margin-top:15px; font-size:11px; color:var(--an-faint); }
+    #acedia-session-notes .an-compose { margin-top:auto; padding-top:15px; }
+    #acedia-session-notes .an-context { color:var(--an-faint); font-size:11px; margin:0 4px 7px; }
+    #acedia-session-notes .an-composer { background:var(--an-panel); border:1px solid var(--an-line); border-radius:13px; padding:12px 14px; }
+    #acedia-session-notes .an-composer textarea { display:block; width:100%; resize:none; background:none; border:0; min-height:52px; outline:none; font-size:12px; }
+    #acedia-session-notes .an-composer-foot { display:flex; align-items:center; gap:12px; color:var(--an-muted); font-size:11px; }
+    #acedia-session-notes .an-send { margin-left:auto; padding:2px 9px; border-radius:6px; background:var(--an-raised); color:var(--an-faint); }
+    #acedia-session-notes .an-terminal { flex:1; min-width:0; padding:25px 20px; font:12px/1.9 Consolas,monospace; overflow-wrap:anywhere; }
+    #acedia-session-notes .an-terminal p { margin-bottom:16px; }
+    #acedia-session-notes .an-terminal .an-prompt { color:var(--an-blue); }
+    #acedia-session-notes .an-terminal .an-answer { color:var(--an-green); }
+    #acedia-session-notes .an-offline { margin:auto; text-align:center; padding:65px 18px; color:var(--an-muted); }
+    #acedia-session-notes .an-offline strong { display:block; color:var(--an-text); margin-bottom:8px; }
+    #acedia-session-notes .an-notes { display:flex; flex-direction:column; min-width:0; padding:18px 19px 14px; background:var(--an-note); border-left:1px solid var(--an-line); }
+    #acedia-session-notes .an-note-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    #acedia-session-notes .an-note-heading h2 { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; }
+    #acedia-session-notes .an-note-heading h2 .an-icon { color:var(--an-amber); }
+    #acedia-session-notes .an-icon-button { width:27px; height:27px; display:inline-grid; place-items:center; color:var(--an-muted); border-radius:5px; }
+    #acedia-session-notes .an-icon-button:hover { background:var(--an-hover); }
+    #acedia-session-notes .an-note-actions { display:flex; gap:3px; }
+    #acedia-session-notes .an-owner { margin-top:17px; display:flex; align-items:center; gap:7px; color:var(--an-muted); font-size:11px; }
+    #acedia-session-notes .an-owner strong { color:var(--an-text); font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #acedia-session-notes .an-owner .an-owner-status { margin-left:auto; font-size:10px; color:var(--an-faint); white-space:nowrap; }
+    #acedia-session-notes .an-note-editor { width:100%; flex:1; min-height:330px; resize:none; border:0; border-top:1px solid var(--an-line); border-radius:0; background:transparent; margin-top:13px; padding:17px 0; color:var(--an-text); line-height:1.95; outline-offset:5px; }
+    #acedia-session-notes .an-note-editor::placeholder { color:var(--an-faint); }
+    #acedia-session-notes .an-note-footer { border-top:1px solid var(--an-line); padding-top:11px; font-size:11px; }
+    #acedia-session-notes .an-save { display:flex; align-items:center; gap:6px; color:var(--an-muted); min-height:21px; }
+    #acedia-session-notes .an-save .an-icon { color:var(--an-green); }
+    #acedia-session-notes .an-personal { color:var(--an-faint); display:flex; align-items:center; gap:5px; margin-top:6px; }
+    #acedia-session-notes .an-icon { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex-shrink:0; }
+    #acedia-session-notes .an-icon svg { width:16px; height:16px; stroke-width:1.6; }
+    #acedia-session-notes .an-icon:has(svg) .an-fallback { display:none; }
+    #acedia-session-notes .an-menu { position:absolute; width:185px; padding:5px; background:var(--an-panel); border:1px solid var(--an-line); border-radius:8px; box-shadow:0 8px 30px light-dark(#26374c25,#0005); z-index:8; }
+    #acedia-session-notes .an-menu button { display:flex; align-items:center; gap:9px; width:100%; padding:8px 10px; text-align:left; border-radius:4px; font-size:12px; }
+    #acedia-session-notes .an-menu button:hover { background:var(--an-hover); }
+    #acedia-session-notes .an-menu small { display:block; padding:3px 10px; font-size:10px; color:var(--an-faint); }
+    #acedia-session-notes .an-statusbar { min-height:27px; padding:4px 12px; display:flex; gap:8px; align-items:center; border-top:1px solid var(--an-line); font-size:10px; background:var(--an-side); color:var(--an-muted); }
+    #acedia-session-notes .an-statusbar span:last-child { margin-left:auto; color:var(--an-faint); }
+    #acedia-session-notes .an-no-results { padding:10px; color:var(--an-muted); font-size:12px; }
+    @container (max-width:690px) {
+      #acedia-session-notes .an-pane-body[data-notes-open=true] { grid-template-columns:minmax(0,1fr); }
+      #acedia-session-notes .an-notes { border-left:0; border-top:1px solid var(--an-line); order:-1; }
+      #acedia-session-notes .an-note-editor { min-height:230px; max-height:330px; }
+      #acedia-session-notes .an-chat { gap:20px; }
+    }
+    @media(max-width:760px) {
+      #acedia-session-notes .an-layout { grid-template-columns:164px minmax(0,1fr); }
+      #acedia-session-notes .an-sidebar { padding:16px 7px; }
+      #acedia-session-notes .an-brand { font-size:16px; }
+      #acedia-session-notes .an-toolbar { padding:9px 12px; flex-wrap:wrap; }
+      #acedia-session-notes[data-split=true] .an-panes { grid-template-columns:1fr; }
+      #acedia-session-notes .an-pane + .an-pane { border-left:0; border-top:1px solid var(--an-line); }
+      #acedia-session-notes .an-chrome-label { display:none; }
+      #acedia-session-notes .an-quick { width:auto; flex:1; }
+    }
+    @media(max-width:480px) {
+      #acedia-session-notes .an-layout { grid-template-columns:1fr; }
+      #acedia-session-notes .an-sidebar { border-right:0; border-bottom:1px solid var(--an-line); gap:10px; padding:12px; }
+      #acedia-session-notes .an-brand { font-size:16px; }
+      #acedia-session-notes .an-sidebar .an-projects, #acedia-session-notes .an-sidebar-hint, #acedia-session-notes .an-nav { display:none; }
+      #acedia-session-notes .an-session-list { display:flex; flex-wrap:wrap; gap:3px; }
+      #acedia-session-notes .an-session { max-width:100%; }
+      #acedia-session-notes .an-session-main { padding:6px 9px; font-size:12px; }
+      #acedia-session-notes .an-row-action { display:block; margin:0; padding:3px; }
+      #acedia-session-notes .an-section-label { margin-bottom:3px; }
+      #acedia-session-notes .an-search { margin-top:2px; }
+      #acedia-session-notes .an-tabs { padding:0 4px; gap:0; }
+      #acedia-session-notes .an-tab { padding:7px; }
+      #acedia-session-notes .an-prototype { display:none; }
+      #acedia-session-notes .an-notes { padding:15px 19px; }
+      #acedia-session-notes .an-note-editor, #acedia-session-notes .an-composer textarea, #acedia-session-notes .an-search input { font-size:16px; }
+      #acedia-session-notes .an-statusbar span:last-child { display:none; }
+    }
+    @media(pointer:coarse) { #acedia-session-notes .an-tool, #acedia-session-notes .an-icon-button, #acedia-session-notes .an-row-action { min-height:44px; min-width:44px; } #acedia-session-notes .an-session-main { min-height:44px; } }
+  </style>
+  <div class="an-window">
+    <header class="an-chrome"><span class="an-chrome-label">ACEDIA</span><div class="an-quick"><span class="an-icon"><i data-lucide="search" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">⌕</span></span>Quick Search<kbd>Ctrl K</kbd></div><span class="an-chrome-label">세션 메모 · UX 초안</span></header>
+    <div class="an-layout">
+      <aside class="an-sidebar" aria-label="세션 목록">
+        <div class="an-brand"><img class="an-brand-mark" src="data:image/png;base64,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" alt="">Acedia<span class="an-icon"><i data-lucide="panel-left" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">◫</span></span></div>
+        <div><label class="an-search"><span aria-hidden="true">⌕</span><input id="an-session-search" type="search" placeholder="세션과 프로젝트 검색" aria-label="세션과 프로젝트 검색"></label><div class="an-nav"><span class="an-icon"><i data-lucide="messages-square" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">☷</span></span>모든 대화</div></div>
+        <div class="an-projects"><div class="an-section-label">프로젝트</div><div class="an-project"><span aria-hidden="true">⌄</span><span class="an-icon"><i data-lucide="folder" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">▱</span></span>RnDHub <small>4</small></div><div class="an-tree" data-tree-list></div><div class="an-project"><span aria-hidden="true">›</span><span class="an-icon"><i data-lucide="folder" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">▱</span></span>ProjectWitch <small>2</small></div></div>
+        <div><div class="an-section-label">최근 세션</div><div class="an-session-list" data-recent-list></div><p class="an-no-results" hidden>검색 결과가 없습니다.</p></div>
+        <div class="an-sidebar-hint">세션 우클릭 → 메모<br>꺼진 세션도 메모할 수 있어요.</div>
+      </aside>
+      <main class="an-workspace" aria-label="세션 작업 공간">
+        <div class="an-tabs"><div class="an-tab"><span class="an-dot"></span><span data-tab-name>RnDHub</span></div><span class="an-prototype">미리보기</span><button type="button" class="an-split" data-action="split" aria-pressed="false">◫ 분할</button></div>
+        <div class="an-panes"><section class="an-pane" data-pane="main" aria-label="주 세션"></section><section class="an-pane" data-pane="side" aria-label="분할 세션" hidden></section></div>
+      </main>
+    </div>
+    <footer class="an-statusbar"><span class="an-dot"></span>로컬 작업 공간<span>초안 메모는 이 미리보기에서만 저장됩니다.</span></footer>
+  </div>
+  <div class="an-menu" role="menu" aria-label="세션 메뉴" hidden><small data-menu-owner></small><button type="button" role="menuitem" data-action="context-note"><span class="an-icon"><i data-lucide="notebook-pen" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">✎</span></span>세션 메모 열기</button></div>
+  <template id="an-pane-template">
+    <header class="an-toolbar"><div class="an-session-identity"><strong data-session-name></strong><span data-session-runtime></span></div><div class="an-tools"><button type="button" class="an-tool" data-action="mode" aria-label="터미널 모드로 전환"><span data-mode-label>터미널</span></button><button type="button" class="an-tool" data-action="note" aria-pressed="true" aria-expanded="true"><span class="an-icon"><i data-lucide="notebook-pen" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">✎</span></span>메모<span class="an-note-dot" aria-label="저장된 메모 있음"></span></button></div></header>
+    <div class="an-pane-body" data-notes-open="true"><div class="an-conversation"></div><aside class="an-notes" aria-label="세션 메모"><div class="an-note-heading"><h2><span class="an-icon"><i data-lucide="notebook-pen" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">✎</span></span>세션 메모</h2><div class="an-note-actions"><button type="button" class="an-icon-button" data-action="copy" aria-label="메모 복사" title="메모 복사"><span class="an-icon"><i data-lucide="copy" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">⧉</span></span></button><button type="button" class="an-icon-button" data-action="close" aria-label="메모 닫기">×</button></div></div><div class="an-owner"><span class="an-note-dot"></span><strong data-note-owner></strong><span class="an-owner-status" data-note-runtime></span></div><textarea class="an-note-editor" aria-label="개인 세션 메모" spellcheck="false" placeholder="다음에 이어서 할 일이나 기억해 둘 내용을 자유롭게 적어 보세요."></textarea><footer class="an-note-footer"><div class="an-save" role="status" aria-live="polite"><span class="an-icon"><i data-lucide="check" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">✓</span></span><span data-save-label>저장됨</span></div><div class="an-personal"><span class="an-icon"><i data-lucide="lock-keyhole" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">⌑</span></span>AI 대화에 자동으로 전달되지 않아요.</div></footer></aside></div>
+  </template>
+  <script>
+    (() => {
+      const root = document.getElementById('acedia-session-notes');
+      const sessions = {
+        rnd: { name:'RnDHub', project:'RnDHub', online:true, initial:'다음에 이어서 할 일\n\n• ShaderNoiseBall 결과 먼저 확인\n• 세 작업이 끝나면 비교 스크린샷 모으기\n• 주말에 전체 진행 상황 정리\n\n기억할 것\n\n지금은 실험 단계. 원본 프로젝트는 건드리지 말기.\n좋았던 결과는 ref 폴더에 따로 모아 두자.' },
+        level: { name:'ShaderLevelUp', project:'RnDHub', online:true, initial:'카메라 가까이에서도 경계가 자연스러운지 확인.\n\n밝은 배경, 어두운 배경 두 가지로 비교하기.' },
+        noise: { name:'ShaderNoiseBall', project:'RnDHub', online:true, initial:'속도 0.4 근처가 가장 자연스러웠음.\n\n다음에는 노이즈 크기만 바꿔서 비교하기.' },
+        skin: { name:'ShaderSkinner', project:'RnDHub', online:true, initial:'' },
+        witch: { name:'ProjectWitch', project:'ProjectWitch', online:true, initial:'멀티플레이 테스트할 때 노트북도 함께 켜기.' },
+        nogari: { name:'Nogari', project:'Nogari', online:false, initial:'시간 날 때 UI 아이디어만 정리.\n급한 작업은 아님.' }
+      };
+      const storageKey = 'acedia.mockup.session-notes.v1';
+      const state = { split:false, notes:{}, active:'rnd', owner:'rnd', open:true, mode:'chat', sideOpen:false, sideMode:'chat' };
+      for (const [id,s] of Object.entries(sessions)) state.notes[id] = s.initial;
+      let storageAvailable = false;
+      try { const saved = JSON.parse(localStorage.getItem(storageKey) || 'null'); if (saved && typeof saved.notes === 'object') for(const id of Object.keys(sessions)) if(typeof saved.notes[id] === 'string') state.notes[id] = saved.notes[id]; storageAvailable = true; } catch {}
+      const hostState = globalThis.openai?.widgetState?.privateContent;
+      if(hostState?.demo === 'acedia-session-notes' && hostState.notes) for(const id of Object.keys(sessions)) if(typeof hostState.notes[id] === 'string') state.notes[id] = hostState.notes[id];
+      const paneTemplate = root.querySelector('#an-pane-template');
+      for(const pane of root.querySelectorAll('.an-pane')) pane.append(paneTemplate.content.cloneNode(true));
+      const main = root.querySelector('[data-pane="main"]');
+      const side = root.querySelector('[data-pane="side"]');
+      const menu = root.querySelector('.an-menu');
+      const saveTimers = new Map();
+      let contextOwner = 'rnd';
+      let copiedTimer;
+      function icon(name,fallback) { return `<span class="an-icon"><i data-lucide="${name}" aria-hidden="true"></i><span class="an-fallback" aria-hidden="true">${fallback}</span></span>`; }
+      function refreshIcons() { globalThis.lucide?.createIcons({root,attrs:{width:16,height:16}}); }
+      function persist() {
+        let saved = false;
+        if(storageAvailable) try { localStorage.setItem(storageKey,JSON.stringify({notes:state.notes})); saved = true; } catch { storageAvailable = false; }
+        const privateContent = {demo:'acedia-session-notes',notes:state.notes};
+        if(globalThis.openai?.setWidgetState && new TextEncoder().encode(JSON.stringify(privateContent)).length < 14000) {
+          Promise.resolve(globalThis.openai.setWidgetState({modelContent:null,privateContent})).catch(() => {});
+          saved = true;
+        }
+        return saved;
+      }
+      function saveLabel(id,label) { for(const pane of [main,side]) if(pane.dataset.owner === id) pane.querySelector('[data-save-label]').textContent = label; }
+      function flush(id) { if(saveTimers.has(id)) { clearTimeout(saveTimers.get(id)); saveTimers.delete(id); } const saved = persist(); const stamp = new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); saveLabel(id,saved ? `${stamp} · 미리보기에 저장됨` : '이번 미리보기 동안 유지됨'); }
+      function renderLists() {
+        const filter = root.querySelector('#an-session-search').value.trim().toLowerCase();
+        const row = id => { const s = sessions[id]; return `<div class="an-session" data-id="${id}" data-selected="${id===state.active}"><button type="button" class="an-session-main" data-action="select" data-id="${id}" aria-label="${s.name} 세션 선택"><span class="an-dot ${s.online?'':'offline'}"></span><span>${s.name}</span></button><button type="button" class="an-row-action" data-action="row-menu" data-id="${id}" aria-label="${s.name} 세션 메뉴">···</button></div>`; };
+        root.querySelector('[data-tree-list]').innerHTML = ['rnd','level','noise','skin'].filter(id => !filter || `${sessions[id].name} ${sessions[id].project}`.toLowerCase().includes(filter)).map(row).join('');
+        const ids = ['rnd','witch','nogari'].filter(id => !filter || `${sessions[id].name} ${sessions[id].project}`.toLowerCase().includes(filter));
+        if(filter) for(const id of ['level','noise','skin']) if(`${sessions[id].name} ${sessions[id].project}`.toLowerCase().includes(filter)) ids.push(id);
+        root.querySelector('[data-recent-list]').innerHTML = ids.map(row).join('');
+        root.querySelector('.an-no-results').hidden = ids.length > 0;
+      }
+      function conversation(id,mode) {
+        const s = sessions[id];
+        if(!s.online) return `<div class="an-offline"><strong>${s.name}</strong><p>세션이 꺼져 있습니다.</p><p>메모는 언제든 작성할 수 있어요.</p></div>`;
+        if(mode === 'terminal') return `<div class="an-terminal"><p class="an-prompt">› ${id==='rnd'?'세 작업의 진행 상황을 확인하고 정리해줘.':'작업 결과를 확인해줘.'}</p><p>프로젝트 문서와 현재 작업 상태를 확인했습니다.</p><p class="an-answer">✓ ${s.name} 작업 내용을 정리했습니다.</p><p>다음 작업은 결과를 비교한 뒤 이어갈 수 있습니다.</p><p class="an-prompt">› 다음 요청을 입력하세요</p></div>`;
+        return `<div class="an-chat"><div class="an-date">오늘</div><div class="an-user">${id==='rnd'?'세 작업의 진행 상황을 확인하고\n다음에 할 일을 정리해줘.':`${s.name} 작업 결과를 정리해줘.`}</div><div class="an-assistant"><div class="an-assistant-label"><span class="an-agent-mark" aria-hidden="true">✧</span>Acedia · ${s.project}</div><p>${id==='rnd'?'세 작업의 현재 상태를 확인했습니다.':'작업 결과를 확인했습니다.'}</p><ul><li>구현 결과와 검증 기록을 모았습니다.</li><li>비교할 항목은 각 세션에 정리했습니다.</li><li>다음 작업은 결과 검토 후 이어갈 수 있습니다.</li></ul><p>확인하고 싶은 부분부터 이어가 주세요.</p><div class="an-complete">작업 완료 · 오후 3:42</div></div><div class="an-compose"><div class="an-context">${icon('folder','▱')} ${s.project} · 이 컴퓨터</div><div class="an-composer"><textarea aria-label="대화 입력 미리보기" placeholder="대화를 이어가세요…" rows="2"></textarea><div class="an-composer-foot"><span aria-hidden="true">＋</span><span>GPT-6.1-Sol ⌄</span><span class="an-send" aria-hidden="true">↑</span></div></div></div></div>`;
+      }
+      function renderPane(pane,id,owner,open,mode) {
+        pane.dataset.session = id; pane.dataset.owner = owner;
+        pane.querySelector('[data-session-name]').textContent = sessions[id].name;
+        pane.querySelector('[data-session-runtime]').textContent = sessions[id].online ? 'GPT-6.1-Sol · xhigh' : '오프라인';
+        pane.querySelector('[data-mode-label]').textContent = mode === 'chat' ? '터미널' : '채팅';
+        pane.querySelector('[data-action="mode"]').setAttribute('aria-label',mode === 'chat' ? '터미널 모드로 전환' : '채팅 모드로 전환');
+        const noteButton = pane.querySelector('[data-action="note"]');
+        noteButton.setAttribute('aria-pressed',String(open)); noteButton.setAttribute('aria-expanded',String(open));
+        noteButton.setAttribute('aria-label',`${sessions[id].name} 메모 ${open?'닫기':'열기'}`);
+        noteButton.querySelector('.an-note-dot').hidden = !state.notes[id].trim();
+        pane.querySelector('.an-pane-body').dataset.notesOpen = String(open);
+        pane.querySelector('.an-notes').hidden = !open;
+        pane.querySelector('[data-note-owner]').textContent = sessions[owner].name;
+        pane.querySelector('[data-note-runtime]').textContent = sessions[owner].online ? '개인 메모' : '오프라인 · 개인 메모';
+        pane.querySelector('.an-note-editor').value = state.notes[owner];
+        pane.querySelector('.an-note-editor').setAttribute('aria-label',`${sessions[owner].name} 개인 세션 메모`);
+        pane.querySelector('[data-save-label]').textContent = state.notes[owner] ? '자동 저장' : '입력하면 자동 저장됩니다';
+        pane.querySelector('[data-action="copy"]').disabled = !state.notes[owner].trim();
+        pane.querySelector('.an-conversation').innerHTML = conversation(id,mode);
+      }
+      function render() {
+        root.dataset.split = String(state.split);
+        root.querySelector('[data-action="split"]').setAttribute('aria-pressed',String(state.split));
+        root.querySelector('[data-tab-name]').textContent = sessions[state.active].name;
+        side.hidden = !state.split;
+        renderLists(); renderPane(main,state.active,state.owner,state.open,state.mode); renderPane(side,'noise','noise',state.sideOpen,state.sideMode); refreshIcons();
+      }
+      function showNote(id) { state.owner = id; state.open = true; menu.hidden = true; render(); main.querySelector('.an-note-editor').focus(); }
+      function openMenu(id,x,y) {
+        contextOwner = id; menu.querySelector('[data-menu-owner]').textContent = sessions[id].name;
+        menu.hidden = false; root.style.position = 'relative';
+        const box = root.getBoundingClientRect();
+        menu.style.left = `${Math.max(6,Math.min(x-box.left,box.width-193))}px`;
+        menu.style.top = `${Math.max(6,Math.min(y-box.top,box.height-90))}px`;
+        menu.querySelector('button').focus();
+      }
+      root.addEventListener('contextmenu',event => { const row = event.target.closest('.an-session'); if(!row) return; event.preventDefault(); openMenu(row.dataset.id,event.clientX,event.clientY); });
+      root.addEventListener('click',async event => {
+        const button = event.target.closest('button[data-action]');
+        if(!button) { if(!event.target.closest('.an-menu')) menu.hidden = true; return; }
+        const action = button.dataset.action; const pane = button.closest('.an-pane'); const isSide = pane === side;
+        if(action !== 'row-menu') menu.hidden = true;
+        if(action === 'row-menu') { const b = button.getBoundingClientRect(); openMenu(button.dataset.id,b.right,b.bottom); return; }
+        if(action === 'context-note') { showNote(contextOwner); return; }
+        if(action === 'select') { flush(state.owner); state.active = button.dataset.id; state.owner = state.active; render(); return; }
+        if(action === 'split') { state.split = !state.split; render(); return; }
+        if(action === 'mode') { if(isSide) state.sideMode = state.sideMode === 'chat' ? 'terminal' : 'chat'; else state.mode = state.mode === 'chat' ? 'terminal' : 'chat'; render(); return; }
+        if(action === 'note' || action === 'close') {
+          if(isSide) state.sideOpen = action === 'close' ? false : !state.sideOpen;
+          else { state.open = action === 'close' ? false : !state.open; if(action === 'note') state.owner = state.active; }
+          render(); if(action === 'close') pane.querySelector('[data-action="note"]').focus(); return;
+        }
+        if(action === 'copy') {
+          const editor = pane.querySelector('.an-note-editor'); let copied = false;
+          try { await navigator.clipboard.writeText(editor.value); copied = true; } catch { editor.focus(); editor.select(); try { copied = document.execCommand('copy'); } catch {} }
+          const label = pane.querySelector('[data-save-label]'); label.textContent = copied ? '메모를 복사했습니다' : '텍스트를 선택해 복사해 주세요';
+          clearTimeout(copiedTimer); const owner = pane.dataset.owner; copiedTimer = setTimeout(() => saveLabel(owner,'자동 저장'),1800);
+        }
+      });
+      root.addEventListener('input',event => {
+        if(event.target.id === 'an-session-search') { renderLists(); return; }
+        if(!event.target.matches('.an-note-editor')) return;
+        const pane = event.target.closest('.an-pane'); const id = pane.dataset.owner;
+        state.notes[id] = event.target.value;
+        for(const other of [main,side]) {
+          if(other !== pane && other.dataset.owner === id) other.querySelector('.an-note-editor').value = state.notes[id];
+          if(other.dataset.owner === id) other.querySelector('[data-action="copy"]').disabled = !state.notes[id].trim();
+          if(other.dataset.session === id) other.querySelector('[data-action="note"] .an-note-dot').hidden = !state.notes[id].trim();
+        }
+        saveLabel(id,'저장 중…'); clearTimeout(saveTimers.get(id)); saveTimers.set(id,setTimeout(() => flush(id),500));
+      });
+      root.addEventListener('focusout',event => { if(event.target.matches('.an-note-editor')) flush(event.target.closest('.an-pane').dataset.owner); });
+      root.addEventListener('keydown',event => { if(event.key === 'Escape') { if(!menu.hidden) menu.hidden = true; else if(event.target.closest('.an-notes')) { const pane=event.target.closest('.an-pane'); if(pane===side) state.sideOpen=false; else state.open=false; render(); pane.querySelector('[data-action="note"]').focus(); } } });
+      addEventListener('pagehide',() => { for(const id of saveTimers.keys()) flush(id); });
+      addEventListener('openai:set_globals',event => {
+        const next = event.detail?.globals?.widgetState?.privateContent;
+        if(next?.demo !== 'acedia-session-notes' || !next.notes || saveTimers.size || root.contains(document.activeElement)) return;
+        for(const id of Object.keys(sessions)) if(typeof next.notes[id] === 'string') state.notes[id] = next.notes[id]; render();
+      });
+      render();
+      if(globalThis.Tweak) { const design={width:300}; const tweak=new Tweak({container:root,onChange:() => root.style.setProperty('--an-note-width',`${design.width}px`)}); tweak.addSlider(design,'width',{label:'메모 패널 너비',min:260,max:360,step:10,unit:'px'}); }
+    })();
+  </script>
+</div>
+
+</body></html>

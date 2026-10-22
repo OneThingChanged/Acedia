@@ -66,6 +66,7 @@ import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
+import { SessionNotes } from './services/session-notes.mjs';
 import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs";
 import { createChatMessageSubmitter } from './services/chat-message-submission.mjs';
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
@@ -469,6 +470,24 @@ function accountTranscriptRoot(tool, accountId) {
 const accountSwitches = new Set();
 const accountBindings = new Map();
 const sessionService = new SessionService(app.getPath("userData"));
+const sessionNotes = new SessionNotes(app.getPath('userData'));
+const sessionNoteProvider = {
+  async read(id) { await requireNoteSession(id); return sessionNotes.read(id); },
+  async save(args) {
+    await requireNoteSession(args.id);
+    const result = sessionNotes.save(args);
+    if (result.saved) sendEventToAll('session:notes', { id: args.id, revision: result.note.revision, hasNote: !!result.note.text.trim() });
+    return result;
+  },
+};
+async function requireNoteSession(id) {
+  if (monitorService?.state?.agents?.some(agent => agent.id === id)) return;
+  const snapshot = await readStorageSnapshot();
+  const agents = JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]');
+  if (!agents.some(agent => agent.id === id)) {
+    throw Object.assign(new Error('Session not found'), { statusCode: 404 });
+  }
+}
 const sessionModelDefaults = new SessionModelDefaults(path.join(app.getPath("userData"), "session-model-defaults.json"));
 sessionModelMemory = new SessionModelMemory(path.join(app.getPath("userData"), "session-model-memory.json"), {
   defaultSettings: args => sessionModelDefaults.get(args.aiToolId).settings,
@@ -1324,6 +1343,7 @@ function modelInputReady(entry) {
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  sessionNotes: sessionNoteProvider,
   tasks: request => taskOrchestration.handle({ ...request, operator: true }),
   answerQuestion: (id, request) => questionResponder.answer(id, request),
   sessionNotifications: sessionNotificationPreference,
@@ -5382,6 +5402,8 @@ async function invokeCommand(event, command, rawArgs) {
       return allowNotification(notificationSettings.get(), args.kind, focused, args.id ? sessionNotifications.get(args.id).enabled : true);
     }
     case "session_notifications_get": return sessionNotificationPreference(asString(args.id));
+    case "session_notes_get": return sessionNoteProvider.read(args.id);
+    case "session_notes_save": return sessionNoteProvider.save(args);
     case "session_notifications_set": return sessionNotificationPreference(asString(args.id), args);
     case "answer_question": return questionResponder.answer(asString(args.id), args);
     case "saved_commands_get": return savedCommands.store.get();

@@ -1,5 +1,7 @@
 import { markIdleSuspended } from './lib/idleSessions';
 import { StartupUpdatePrompt } from "./components/StartupUpdatePrompt";
+import { SessionNoteOverlay } from './components/SessionNotes';
+import { openSessionNotes, sessionNotes } from './lib/sessionNotes';
 import { viewedImagePaths } from './lib/viewedImagePath';
 import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
@@ -668,6 +670,7 @@ function App() {
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(loadFilesOpen);
+  const [standaloneNoteId, setStandaloneNoteId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const [sidebarNavWidth, setSidebarNavWidth] = useState(loadSidebarWidth);
   const [renameScreenId, setRenameScreenId] = useState<string | null>(null);
@@ -2101,6 +2104,7 @@ function App() {
       if (closing) return;
       closing = true;
       try {
+        await sessionNotes.flushAll();
         const running = agentsRef.current
           .filter((agent) => {
             if (isStandbySession(agent)) return true;
@@ -3790,6 +3794,7 @@ function App() {
     else if (action === "split-h") splitWith(id, "h");
     else if (action === "split-v") splitWith(id, "v");
     else if (action === "rename") setRenameSessionId(id);
+    else if (action === 'note') { if (!openSessionNotes(id)) setStandaloneNoteId(id); }
     else if (action === "sidebar-pin") setSidebarPreference(id, "sidebarPinned");
     else if (action === "sidebar-archive") setSidebarPreference(id, "sidebarArchived");
     else if (action === "pin-session") pinContextGroupSessions(id);
@@ -4594,6 +4599,7 @@ function App() {
         />
       )}
       <StartupUpdatePrompt enabled={runtimeFlags?.startup_update_enabled ?? false} />
+      {standaloneNoteId && agents.some(agent => agent.id === standaloneNoteId) && <SessionNoteOverlay agent={agents.find(agent => agent.id === standaloneNoteId)!} onClose={() => setStandaloneNoteId(null)} />}
       {settingsOpen && (
         <SettingsModal
           projects={projects} onRunSavedCommand={runSavedCommand}
