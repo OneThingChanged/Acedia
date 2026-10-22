@@ -400,6 +400,48 @@ async function exerciseSearchReveal() {
   return 'SIDEBAR_SEARCH_FOLDER_AND_LIVE_UPDATE_OK';
 }
 
+async function exerciseSessionFamilies(reload = false) {
+  const wait = () => new Promise(resolve => setTimeout(resolve, 180));
+  const check = (ok, message) => { if (!ok) throw Error(message); };
+  const row = id => document.querySelector(`.sidebar-recents [data-sidebar-agent-id="${id}"]`);
+  for (let i=0;i<40&&!row('rnd-root');i++) await wait();
+  const ids=['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'];
+  const toggle=()=>row('rnd-root')?.querySelector('.sidebar-family-toggle');
+  if (!reload) {
+    check(toggle()?.getAttribute('aria-expanded')==='true','Current-parent tree is not expanded by default');
+    for(const id of ids) {
+      check(row(id)?.closest('[data-sidebar-parent-id="rnd-root"]'),'Shader not nested below current RnDHub parent');
+      check(row(id).querySelector('.sidebar-session-task-meta').textContent.includes('RnDHub'),'Row still labels the original creator as parent');
+      check(document.querySelectorAll(`.sidebar-recents [data-sidebar-agent-id="${id}"]`).length===1,'Child duplicated in recents');
+    }
+    const calls=window.layoutCalls.filter(c=>['spawn_pty','kill_pty','terminal_session_action'].includes(c.command)).length;
+    const view=localStorage.getItem('multiagent.view.v1');
+    toggle().click(); await wait();
+    check(ids.every(id=>!row(id))&&toggle().getAttribute('aria-expanded')==='false','Family collapse did not hide only child rows');
+    check(JSON.parse(localStorage.getItem('multiagent.sidebarCollapsedSessionFamilies.v1')).includes('rnd-root'),'Family fold not saved');
+    check(localStorage.getItem('multiagent.view.v1')===view,'Folding selected another pane');
+    check(window.layoutCalls.filter(c=>['spawn_pty','kill_pty','terminal_session_action'].includes(c.command)).length===calls,'Folding changed CLI lifecycle');
+    return 'SIDEBAR_CURRENT_PARENT_TREE_COLLAPSE_NO_RUNTIME_OK';
+  }
+  check(toggle()?.getAttribute('aria-expanded')==='false'&&ids.every(id=>!row(id)),'Family fold lost on reload');
+  toggle().click(); await wait();
+  check(ids.every(id=>row(id)?.closest('[data-sidebar-parent-id="rnd-root"]')),'Unfold lost child hierarchy');
+  const project=document.querySelector('[data-sidebar-project-id="rnd"] .project-item');
+  if(project.getAttribute('aria-expanded')!=='true'){project.click();await wait();}
+  check(document.querySelectorAll('[data-sidebar-project-id="rnd"] [data-sidebar-parent-id="rnd-root"] [data-sidebar-agent-id]').length===3,'Project list did not share the hierarchy');
+  toggle().click(); await wait();
+  const input=document.querySelector('.sidebar-workspace-search input');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'ShaderSkinner');
+  input.dispatchEvent(new Event('input',{bubbles:true})); await wait();
+  const result=document.querySelector('[data-sidebar-search-result="session"][data-search-id="ShaderSkinner"]');
+  check(result,'Collapsed child cannot be found by search');
+  result.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); await wait();
+  check(!document.querySelector('.sidebar-search-results')&&row('ShaderSkinner')?.classList.contains('active'),'Selecting search result did not reveal the active child');
+  check(toggle().getAttribute('aria-expanded')==='true','Selecting a child did not expand its ancestors');
+  check(document.documentElement.scrollWidth===innerWidth,'Session tree caused horizontal overflow');
+  return 'SIDEBAR_CURRENT_PARENT_TREE_RELOAD_PROJECT_SEARCH_REVEAL_OK';
+}
+
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.disableHardwareAcceleration();
@@ -513,6 +555,22 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript(`(${exerciseSearchReveal.toString()})()`));
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionActions.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-session-actions.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript(`{
+      const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value)),now=Date.now();
+      write('multiagent.projects.v1',[{id:'creator-project',name:'AIHub',folder:'C:/fixture/AIHub',createdAt:now},{id:'rnd',name:'RnDHub',folder:'C:/fixture/RnDHub',createdAt:now}]);
+      const make=(id,projectId,sessionHierarchy)=>({id,name:id==='rnd-root'?'RnDHub':id,projectId,folder:'C:/fixture/'+id,aiToolId:'codex',aiLabel:'Codex',dangerous:false,status:'idle',deferredStart:true,resumeEligible:true,createdAt:now,sessionHierarchy});
+      write('multiagent.agents.v1',[make('AIHub','creator-project'),make('rnd-root','rnd'),...['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id=>make(id,'rnd',{parentId:'rnd-root',createdById:'AIHub',inheritFolder:false}))]);
+      const groups=['rnd-root','ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id=>({id:'family-'+id,projectId:'rnd',layout:{type:'leaf',id:'leaf-'+id,tabs:[id],activeIndex:0}}));
+      const view={activeProjectId:'rnd',activeGroupId:'family-rnd-root',activePath:[]};
+      for(const key of ['multiagent.groups.v1','multiagent.workspace.primary.groups.v1'])write(key,groups);
+      for(const key of ['multiagent.view.v1','multiagent.workspace.primary.view.v1'])write(key,view);
+      write('multiagent.sidebarCollapsedSessionFamilies.v1',[]);localStorage.setItem('multiagent.sessionFilter.v1','all');
+    }`);
+    await win.loadFile(path.join(directory,'index.html'));
+    console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(false)`));
+    await win.loadFile(path.join(directory,'index.html'));
+    console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(true)`));
+    await fs.writeFile(path.join(directory,'sidebar-session-family-tree.png'),(await win.webContents.capturePage()).toPNG());
     if (errors.length) throw Error(errors.join('\n'));
     app.exit(0);
   } catch (error) {

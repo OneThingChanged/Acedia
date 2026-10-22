@@ -14,8 +14,8 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, deliveries = null, sessionSettings = null, relocation = null, sessionState = () => ({}) }) {
-    Object.assign(this, { catalog, create, isActive, deliveries, sessionSettings, relocation, sessionState });
+  constructor({ catalog, create, isActive, deliveries = null, sessionSettings = null, sessionStart = null, relocation = null, sessionState = () => ({}) }) {
+    Object.assign(this, { catalog, create, isActive, deliveries, sessionSettings, sessionStart, relocation, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
   }
   snapshot() {
@@ -38,6 +38,7 @@ export class WorkspaceManagement {
   handle({ action, body = {}, agentId }) {
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'start') return this.sessionStart ? this.sessionStart.handle(body) : Promise.reject(fail('Session start unavailable', 503));
     if (action === 'session-settings') return this.sessionSettings ? this.sessionSettings.handle(body) : Promise.reject(fail('Session settings unavailable', 503));
     if (action === 'relocate-sessions') return this.relocation ? this.relocation.handle(body) : Promise.reject(fail('Session relocation unavailable', 503));
     if (action === 'task') return this.tasks ? this.tasks.handle({ action: body.action, body: body.body, agentId }) : Promise.reject(fail('Task orchestration unavailable', 503));

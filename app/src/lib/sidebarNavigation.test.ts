@@ -2,20 +2,48 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
 import { loadStoredAgents, normalizeStoredGroups } from "./persistence";
 import type { Agent, Group, Project } from "../types";
-import { sidebarSessionFamilies } from './sidebarNavigation';
+import { sidebarSessionFamilies, loadSidebarCollapsedFamilies, LS_SIDEBAR_COLLAPSED_FAMILIES } from './sidebarNavigation';
 
 const projects: Project[] = [{ id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 }, { id: "ssh", name: "Server", folder: "", sshHostId: "server", remoteFolder: "/work/remote", createdAt: 1 }];
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: "C:/Acedia", aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
 
 describe("sidebar navigation", () => {
-  it('groups background children below their creator, retains filtered parent context and leaves manual children searchable', () => {
+  it('groups all organized children below the current parent, including manually organized sessions', () => {
     const parent = agent('A'), child = agent('worker', { sessionHierarchy: { parentId: 'A', createdById: 'A' } }), manual = agent('manual', { sessionHierarchy: { parentId: 'A' } });
     const all = [child, manual, parent], family = sidebarSessionFamilies(all, all);
-    expect(family.roots.map(a => a.id)).toEqual(['manual', 'A']); expect(family.children.get('A')?.map(a => a.id)).toEqual(['worker']);
+    expect(family.roots.map(a => a.id)).toEqual(['A']); expect(family.children.get('A')?.map(a => a.id)).toEqual(['worker', 'manual']);
     expect(sidebarSessionFamilies([child], all).roots.map(a => a.id)).toEqual(['A']);
     const archived = { ...parent, sidebarArchived: true };
     expect(sidebarSessionFamilies([child], [child, archived]).roots.map(a => a.id)).toEqual(['worker']);
     expect(all[0].sessionHierarchy?.parentId).toBe('A');
+  });
+  it('follows RnDHub after reparenting AIHub-created sessions and retains filtered ancestor context', () => {
+    const creator = agent('AIHub', { projectId:'other' }), parent = agent('RnDHub');
+    const children = ['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id => agent(id, { status:'working', sessionHierarchy:{parentId:parent.id,createdById:creator.id} }));
+    const all = [creator,...children,parent], before = structuredClone(all);
+    const family = sidebarSessionFamilies(children,all);
+    expect(family.roots.map(a=>a.id)).toEqual(['RnDHub']);
+    expect(family.children.get('RnDHub')?.map(a=>a.id)).toEqual(children.map(a=>a.id));
+    expect(family.children.has('AIHub')).toBe(false);
+    expect(all).toEqual(before);
+    expect(searchSidebarItems(all,projects,[],'ShaderSkinner').sessions.map(a=>a.id)).toEqual(['ShaderSkinner']);
+  });
+  it('retains nested ancestor chains but detaches missing, archived, cross-project and cyclic parents', () => {
+    const grandparent=agent('grandparent'), parent=agent('parent',{sessionHierarchy:{parentId:'grandparent'}}), child=agent('child',{sessionHierarchy:{parentId:'parent',createdById:'old'}});
+    const family=sidebarSessionFamilies([child],[child,parent,grandparent]);
+    expect(family.roots.map(a=>a.id)).toEqual(['grandparent']);
+    expect(family.children.get('grandparent')?.map(a=>a.id)).toEqual(['parent']);
+    expect(family.children.get('parent')?.map(a=>a.id)).toEqual(['child']);
+    for(const input of [[child],[child,{...parent,sidebarArchived:true}],[child,{...parent,projectId:'other'}],[child,{...parent,sessionHierarchy:{parentId:'child'}}]]) {
+      expect(sidebarSessionFamilies([child],input).roots.map(a=>a.id)).toEqual(['child']);
+    }
+  });
+  it('loads remembered collapsed families and safely defaults malformed data to expanded', () => {
+    for(const raw of ['null','{}','broken']) {
+      vi.stubGlobal('localStorage',{getItem:()=>raw}); expect([...loadSidebarCollapsedFamilies()]).toEqual([]);
+    }
+    vi.stubGlobal('localStorage',{getItem:(key:string)=>key===LS_SIDEBAR_COLLAPSED_FAMILIES?'["RnDHub",null,42,"","RnDHub"]':null});
+    expect([...loadSidebarCollapsedFamilies()]).toEqual(['RnDHub']);
   });
   afterEach(() => vi.unstubAllGlobals());
   it("sorts by user visits, pins before recent entries, and never uses runtime progress to reorder", () => {

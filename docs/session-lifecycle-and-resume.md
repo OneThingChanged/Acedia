@@ -84,6 +84,13 @@ Returning from the tray reattaches only IDs confirmed live by the main process;
 having one live PTY does not activate the remaining dormant sessions. Explicit
 Remote activation continues to support starting a session in the background.[^app-shell]
 
+[Standard EXE 1.8.1.89](release-1-8-1-89.md) also routes the authenticated
+integration `sessions/:agentId/activate` endpoint through this background
+launcher. It no longer shows/restores/focuses a workspace window or selects the
+target pane. The new `acedia_session_start` MCP tool exposes the same operation
+for existing local AI sessions. Earlier integration activation opens a visible
+window. See [Workspace MCP](workspace-mcp.md#기존-세션-백그라운드-시작).
+
 Spawning resolves the local or SSH command, provider session ID, terminal
 compatibility flags, dangerous mode, and optional content-worker settings.
 Local Codex and Claude sessions resume through provider session identifiers;

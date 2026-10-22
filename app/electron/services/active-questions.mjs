@@ -38,14 +38,19 @@ export class AsyncQuestionNotifier {
 
 // Only live, account-scoped transcripts. No catalog scan or whole-file read.
 export class ActiveQuestions {
-  constructor() { this.cache = new Map(); this.pending = new Map(); }
+  constructor({ resolveTranscript = () => null } = {}) { this.resolveTranscript = resolveTranscript; this.cache = new Map(); this.pending = new Map(); }
   prune(ids) {
     const live = new Set(ids);
     for (const id of this.cache.keys()) if (!live.has(id)) this.cache.delete(id);
   }
   async read({ id, tool, root, transcriptPath, sessionId, startedAt = 0 }) {
-    if (!['codex', 'claude', 'qwen'].includes(tool) || !sessionId || !transcriptPath || !root
-      || !transcriptPath.toLowerCase().includes(sessionId.toLowerCase()) || !isTranscriptInsideRoot(root, transcriptPath)) return null;
+    if (!['codex', 'claude', 'qwen'].includes(tool) || !sessionId || !root) return null;
+    const scoped = candidate => typeof candidate === 'string' && candidate.toLowerCase().includes(sessionId.toLowerCase()) && isTranscriptInsideRoot(root, candidate);
+    if (!scoped(transcriptPath)) {
+      try { transcriptPath = this.resolveTranscript({ id, tool, root, sessionId }); }
+      catch { return null; }
+    }
+    if (!scoped(transcriptPath)) return null;
     if (this.pending.has(id)) { await this.pending.get(id); return this.read({ id, tool, root, transcriptPath, sessionId, startedAt }); }
     const operation = this.#read({ id, tool, transcriptPath, sessionId, startedAt });
     this.pending.set(id, operation);

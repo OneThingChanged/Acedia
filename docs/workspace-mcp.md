@@ -1,13 +1,15 @@
 ---
 type: Integration
 title: Acedia 프로젝트·세션 MCP
-description: 기존 MCP 연결에서 프로젝트·세션 생성, 기존 세션 Dangerous 설정 저장과 다른 Codex 세션의 작업 전달·수신·시작을 확인한다.
+description: 기존 MCP 연결에서 프로젝트·세션 생성, 기존 세션 백그라운드 시작·Dangerous 설정 저장과 다른 Codex 세션의 작업 전달·수신·시작을 확인한다.
 status: stable
 last_updated: 2026-10-22
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
   - resource: ../app/electron/services/session-launch-settings.mjs
+  - resource: ../app/electron/services/session-start.mjs
+  - resource: ../app/electron/services/session-start.test.mjs
   - resource: ../app/electron/services/session-launch-settings.test.mjs
   - resource: ../app/electron/services/session-relocation.mjs
   - resource: ../app/src/lib/sessionRelocation.ts
@@ -33,6 +35,7 @@ MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없
 | `acedia_projects` | 프로젝트·세션 ID, 폴더, 터미널 실행 상태, 사용 가능한 AI 도구 조회 |
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 등록된 로컬 프로젝트에 추가 세션 생성 |
+| `acedia_session_start` | 기존 비활성 로컬 세션을 화면·창 활성화 없이 백그라운드에서 시작. 실행 중이면 유지 |
 | `acedia_session_settings` | 기존 세션의 Dangerous 조회·저장. OFFLINE 대상 지원, 다음 실행부터 반영 |
 | `acedia_sessions_relocate` | 앱 실행 중 기존 OFFLINE 세션들의 소속 프로젝트·작업 폴더를 묶어 변경 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
@@ -76,6 +79,48 @@ PC에 이미 있어야 하며, 폴더 자체를 새로 만들지는 않는다.
 기존 coordinator 창의 프로젝트·세션 생성, 창 소유권, 기본 실행 설정을 재사용한다.
 생성 도구에서는 위험 모드를 요청할 수 없다. 기존 세션의 변경은 아래 설정 도구를 사용한다. 생성 도구는 프롬프트를 보내지 않으며 작업 전달은 아래
 별도 도구를 사용한다.
+
+## 기존 세션 백그라운드 시작
+
+[Standard EXE 1.8.1.89](release-1-8-1-89.md)부터 `acedia_session_start`와 인증된
+`POST /integration/v1/workspace/start`를 제공한다.
+`acedia_projects`에서 기존 세션의 정확한 ID를 조회한 뒤 다음 요청으로 시작한다.
+
+```json
+{ "sessionId": "기존 세션 ID" }
+```
+
+대상은 coordinator 창에 속한 기존 로컬 Codex·Claude·Qwen·Antigravity 세션이다.
+새 세션·창을 만들거나 기존 창의 `show()`·`showInactive()`·`focus()`·`restore()`를
+호출하지 않는다. 선택한 세션·탭·분할 화면·입력 포커스·초안을 유지하며, 기존 모델·effort·Fast·계정·
+Dangerous·대화 재개 경로로 CLI만 시작한다. 이미 실행 중인 CLI에는 재시작이나 입력을 하지 않는다.
+다른 창 소유·SSH·지원하지 않는 도구와 설정 변경으로 잠긴 대상은 오류로 반환한다.
+
+성공 응답 `{ "sessionId": "...", "active": true, "started": true, "background": true }`는
+PTY가 실제로 생성된 뒤 반환한다. 이미 실행 중이면 `started: false`다. `active`는 CLI 입력
+준비나 작업 접수를 뜻하지 않는다. `acedia_projects`를 다시 읽어 현재 `conversationId`와
+준비 상태를 확인한 뒤 `acedia_session_send`로 전달한다. 실패·timeout 때도 상태를 재조회하며
+보이는 창 열기로 자동 전환하지 않는다.
+
+기존 **`POST /integration/v1/sessions/:agentId/activate`**도 같은 백그라운드 시작 경로를
+사용하도록 변경했다. 이 기존 API는 Codex·Claude 대상과 `202` 성공 상태를 유지하고,
+PTY 확인 후 `agentId`와 위 시작 결과를 반환한다. 이전 배포본의 이 API는 창을 표시·선택했다.
+Remote/Dashboard의 `/api/session/restart`에서 `restart`를 생략한 요청은 기존 백그라운드
+시작 동작을 유지하며, 명시적 `restart: true`만 CLI를 재시작한다. 데스크톱의 사용자가 누른
+세션 열기·펫의 보이는 창 열기는 별도 경로다.
+
+호출 CLI는 새 도구가 포함된 앱 업데이트 후 재시작해야 한다. 창 활성화 금지는 이 API의
+백그라운드 시작과 충돌하지 않는다. 실제 사용자 세션을 시작하거나 작업을 전달하는 것은
+사용자가 요청한 대상·범위에 한한다.
+
+최종 결합 소스 검증: 전체 **202개 파일·1,533개 검사**와 TypeScript/Vite production build 통과.
+실제 Electron 임시 프로필·모의 CLI에서 두 HTTP 시작 API의 OFFLINE 시작, PTY 확인,
+같은 실행 중 대상의 재시작 부재, 대화 등록 ID·작업 폴더·화면 선택·포커스·초안 보존을
+확인했다. 모든 기존 창의 `show`·`showInactive`·`focus`·`restore` 호출을 계수해 0회임을
+검증하고 새 창이 생성되지 않은 것도 확인했다. 실제 HTTP·stdio MCP에서는 새 도구의
+등록·인증·Origin·호출 세션·입력·대상 검사와 시작 결과를 검증했다.
+`output/session-start-family-delivery-tests.log`, `output/session-start-family-delivery-build.log`,
+`output/session-start-family-delivery-electron.log`에 기록했다. 실제 사용자 세션은 변경하지 않았다.
 
 ## 기존 세션 Dangerous 설정
 
@@ -183,6 +228,29 @@ build와 실제 Electron 검사를 통과했다. 종료된 세션의 이동 후 
 `output/session-relocation-electron.log`에 결과를 기록했다.
 
 ## 다른 세션으로 작업 전달
+
+[Standard EXE 1.8.1.89](release-1-8-1-89.md)부터 hook이 아직 오지 않은 재개 세션도 정확한 계정·
+대화 ID로 로그 경로를 찾는다. 이전 구현은 hook이나 Chat 조회가 먼저 `agentTranscripts`에
+경로를 등록해야 전달 검사가 가능했다. 따라서 터미널·대화 ID는 살아 있고 목록에
+`WAIT/ready`여도 백그라운드 재개 직후에는 `currentQuestion`이 `null`이 되어 전달을 거부했다.
+목록의 `ready`는 터미널과 hook 상태의 요약이며 전달 준비 완료 자체를 보증하지 않는다.
+
+보완한 경로 탐색은 선택한 계정의 transcript root와 정확한 대화 ID만 허용한다.
+캐시한 경로를 재사용하고 실패 조회는 15초간 제한한다. 최신 대화·다른 계정으로 대체하지
+않으며 기존 256KB tail·시작 이후 파일 갱신·대화 ID·질문·작업 중·빈 입력창·동시 입력
+검사를 유지한다. 거절 시 `transcript-unavailable`, `conversation-changed`, `question-pending`,
+`turn-working`, `composer-or-runtime-not-ready`, `session-changed`, `input-changed` 중 판정 사유를
+오류에 포함한다. 아직 입력하지 않은 거절은 요청 키를 예약하지 않으므로 원인이 해소되면
+같은 의도·본문·키로 재시도한다. 이미 전송·수신·시작되었거나 불확실한 요청은 기존의
+중복 전송 방지를 따른다.
+
+추가 회귀 검사로 실제 main의 `currentQuestion`과 resolver를 hook 경로가 없는 재개 계정
+binding에서 실행해 로그 조회·캐시·다른 계정 거부를 확인했다. 관련 **2개 파일·22개 검사**
+통과: `output/session-delivery-main-reader-tests.log`. 설치된 네이티브 Codex와 격리된
+가짜 계정·로컬 응답 서버에서 첫 작업 완료 후 기존 대화를 재개하고, hook·Chat 조회 없이
+실제 stdio MCP로 수신·새 턴 시작·한글·기존 문맥·동일 키 중복 방지를 확인했다.
+`ACEDIA_DELIVERY_RESUME=1`로 실행한 `output/session-delivery-resume-cli-after.log`에 두
+성공 marker를 기록했다. 실제 세 Shader 세션에는 테스트 작업을 보내지 않았다.
 
 사용자가 다른 세션에 맡기라고 요청한 작업을 `acedia_session_send`로 전달한다.
 먼저 `acedia_projects`에서 정확한 세션 `id`와 현재 `conversationId`, `state`, `reason`을

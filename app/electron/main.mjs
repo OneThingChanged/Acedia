@@ -75,6 +75,7 @@ import { RemoteSessionCreateBroker } from "./services/remote-session-create-brok
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { SessionLaunchSettings } from "./services/session-launch-settings.mjs";
 import { SessionRelocation } from "./services/session-relocation.mjs";
+import { SessionStart } from "./services/session-start.mjs";
 import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -493,7 +494,24 @@ const idlePolicy = new IdleSessionPolicy({
 });
 const notificationSettings = notificationPreferences(app.getPath('userData'));
 const sessionNotifications = new SessionNotifications(app.getPath('userData'));
-const activeQuestions = new ActiveQuestions();
+const activeQuestions = new ActiveQuestions({
+  resolveTranscript: ({ id, tool, root, sessionId }) => {
+    const entry = ptys.get(id);
+    if (!entry || entry.ssh || entry.aiToolId !== tool || !['codex', 'claude'].includes(tool)
+      || (agentSessionIds.get(id) || accountBindings.get(id)?.sessionId) !== sessionId
+      || (transcriptMissUntil.get(id) || 0) > Date.now()) return null;
+    // A resumed CLI can be ready before its first hook supplies a transcript
+    // path. Resolve only the exact conversation in the selected account, just
+    // as Chat does; never substitute the newest session or another account.
+    const resolved = resolveChatTranscriptBySession(tool, sessionId, { toolId: tool, accountId: selectedAccountId(entry) });
+    const candidate = normalizeTranscriptPath(resolved?.path);
+    if (!candidate || !candidate.toLowerCase().includes(sessionId.toLowerCase()) || !isTranscriptInsideRoot(root, candidate)) {
+      transcriptMissUntil.set(id, Date.now() + 15000); return null;
+    }
+    agentTranscripts.set(id, candidate); agentTranscriptTool.set(id, tool); transcriptMissUntil.delete(id);
+    return candidate;
+  },
+});
 const asyncQuestionNotifier = new AsyncQuestionNotifier(payload => remoteService.notifyAgentQuestion(payload));
 const commandApprovals = new CommandApprovalResponder({ entry: id => ptys.get(id),
   snapshot: id => ptys.get(id)?.filter.viewportText?.() || '',
@@ -890,22 +908,19 @@ function miraControlAgent(agentId) {
   return agent;
 }
 
-function activateMiraControlAgent(agentId) {
+async function activateMiraControlAgent(agentId) {
   const agent = miraControlAgent(agentId);
   if (!agent) {
     return { ok: false, httpStatus: 404, error: "session not found" };
   }
-  const target = showWorkspaceWindow(agent.id);
-  // Existing windows need an explicit selection event. A newly-created window
-  // also receives openAgentId in its initial query, so this remains safe if the
-  // renderer is still loading and cannot receive the event yet.
-  sendEvent(target, "desktop-pet:activate", { agentId: agent.id });
-  return {
-    ok: true,
-    httpStatus: 202,
-    agentId: agent.id,
-    active: ptys.has(agent.id),
-  };
+  try {
+    // API activation means starting the CLI, not displaying its window. Keep
+    // explicit desktop-pet/user navigation on its separate visible-open path.
+    const result = await sessionStart.handle({ sessionId: agent.id });
+    return { ok: true, httpStatus: 202, agentId: agent.id, ...result };
+  } catch (error) {
+    return { ok: false, httpStatus: error.statusCode || 500, error: error.message };
+  }
 }
 
 function writeMiraControlAgentInput({
@@ -1082,12 +1097,24 @@ const sessionRelocation = new SessionRelocation({
     });
   },
 });
+const sessionStart = new SessionStart({
+  agentFor: id => {
+    const agent = sessionModelAgent(id);
+    const project = monitorService?.state?.projects?.find(item => item.id === agent?.projectId);
+    const owner = detachedAgents.get(id);
+    return agent ? { ...agent, sshHostId: agent.sshHostId || project?.sshHostId,
+      detached: owner !== undefined && owner !== coordinatorWebContentsId } : null;
+  },
+  writable: id => !forceClosing && !accountSwitches.has(id),
+  activate: id => remoteSessionActivationBroker.activate(id),
+});
 const workspaceManagement = new WorkspaceManagement({
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
   deliveries: sessionDeliveries,
   sessionSettings: sessionLaunchSettings,
+  sessionStart,
   relocation: sessionRelocation,
   sessionState: id => {
     const target = deliveryContext(id);

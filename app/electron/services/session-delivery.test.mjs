@@ -44,11 +44,11 @@ it('reports actual sent, received and identified new-turn stages; keeps the orig
 it('allows only the internal first-turn path with an empty composer and no previous turn', async () => {
   const f = fixture();
   f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: null, question: null });
-  await expect(f.send()).rejects.toThrow('busy');
+  await expect(f.send()).rejects.toThrow('turn-working');
   expect(await f.service.handle({ action: 'send', agentId: 'caller', body: f.body, freshSession: true })).toMatchObject({ status: 'sent' });
   const g = fixture();
   g.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: { id: 'existing-turn' } });
-  await expect(g.service.handle({ action: 'send', agentId: 'caller', body: g.body, freshSession: true })).rejects.toThrow('busy');
+  await expect(g.service.handle({ action: 'send', agentId: 'caller', body: g.body, freshSession: true })).rejects.toThrow('turn-working');
   await expect(g.send({ freshSession: true })).rejects.toMatchObject({ statusCode: 400 });
 });
 it('deduplicates concurrent retries and app restarts without sending again, rejecting changed request content', async () => {
@@ -107,6 +107,13 @@ it('refuses inactive, SSH, non-Codex, busy, changed, question and non-ready rece
     f => { f.contexts.target.conversationId = 'other'; }, f => { f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working' }); },
     f => { f.options.read.mockResolvedValue({ sessionId: 'conversation', question: {} }); }, f => { f.service.ready = () => false; }];
   for (const change of changes) { const f = fixture(); change(f); await expect(f.send()).rejects.toThrow(); expect(f.options.submit).not.toHaveBeenCalled(); }
+});
+it('identifies a missing transcript without reserving the request key or writing input', async () => {
+  const f=fixture(); f.options.read.mockResolvedValueOnce(null);
+  await expect(f.send()).rejects.toThrow('transcript-unavailable');
+  expect(f.options.submit).not.toHaveBeenCalled(); expect(f.service.list('caller')).toEqual([]);
+  // Once exact transcript lookup is available, the same intended request is safe.
+  expect(await f.send()).toMatchObject({status:'sent'}); expect(f.options.submit).toHaveBeenCalledTimes(1);
 });
 it('rejects terminal controls, self-targets, oversized input and invalid delivery options', async () => {
   const f = fixture();

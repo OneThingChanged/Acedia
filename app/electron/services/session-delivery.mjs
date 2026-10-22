@@ -153,8 +153,14 @@ export class SessionDeliveries {
       // The normal HTTP/MCP send contract cannot request it. An empty native
       // composer and no previous turn remain mandatory, alongside model checks.
       const firstTurn = freshSession && !current?.turn;
-      if (!current || current.sessionId !== target.conversationId || current.question || (current.lifecycle === 'working' && !firstTurn)
-        || !this.ready(target, { freshSession: firstTurn }) || this.context(body.sessionId)?.entry !== entry || entry.lastInputAt !== inputAt) throw fail('Receiving session is busy, has a draft/question, or is not ready; nothing sent');
+      const blocked = !current ? 'transcript-unavailable'
+        : current.sessionId !== target.conversationId ? 'conversation-changed'
+        : current.question ? 'question-pending'
+        : current.lifecycle === 'working' && !firstTurn ? 'turn-working'
+        : !this.ready(target, { freshSession: firstTurn }) ? 'composer-or-runtime-not-ready'
+        : this.context(body.sessionId)?.entry !== entry ? 'session-changed'
+        : entry.lastInputAt !== inputAt ? 'input-changed' : null;
+      if (blocked) throw fail(`Receiving session is not ready (${blocked}); nothing sent`);
       const deliveryId = randomUUID();
       const message = `[Acedia handoff: ${deliveryId}]\nFrom: ${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}\n\n${body.message}`;
       if (Buffer.byteLength(message, 'utf8') > 12288) throw fail('Delivery envelope too large', 400);

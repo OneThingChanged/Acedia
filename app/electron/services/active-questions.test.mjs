@@ -2,14 +2,63 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ActiveQuestions, AsyncQuestionNotifier, QUESTION_TAIL_BYTES } from './active-questions.mjs';
 import { hasQueuedCodexQuestion, codexQuestionFrame } from './question-responder.mjs';
 import { CommandApprovalResponder } from './command-approval.mjs';
+import { normalizeTranscriptPath, isTranscriptInsideRoot } from './transcript-path.mjs';
 
 const line = payload => JSON.stringify({ type: 'response_item', payload }) + '\n';
 const call = { type: 'function_call', call_id: 'q1', name: 'functions.request_user_input', arguments: '{"questions":[{"id":"color","question":"Which?","options":[{"label":"Blue"}]}]}' };
 describe('active question tail monitor', () => {
+  it('wires the real main-process reader to the resumed conversation binding without a hook path', async () => {
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'acedia-active-question-'));
+    const root=path.join(directory,'selected'),other=path.join(directory,'other');
+    await fs.mkdir(root);await fs.mkdir(other);
+    const transcriptPath=path.join(root,'session-resumed.jsonl'),foreign=path.join(other,'session-resumed.jsonl');
+    try {
+      const content=JSON.stringify({timestamp:new Date().toISOString(),type:'event_msg',payload:{type:'task_complete',turn_id:'previous'}})+'\n';
+      await fs.writeFile(transcriptPath,content);await fs.writeFile(foreign,content);
+      const source=await fs.readFile(new URL('../main.mjs',import.meta.url),'utf8');
+      const setup=source.match(/const activeQuestions = new ActiveQuestions\(\{[\s\S]*?\r?\n\}\);/)?.[0];
+      const readSource=source.match(/async function currentQuestion\(id\) \{[\s\S]*?\r?\n\}/)?.[0];
+      expect(setup).toBeTruthy();expect(readSource).toBeTruthy();
+      const resolve=vi.fn(()=>({path:transcriptPath,tool:'codex'}));
+      const env={ActiveQuestions,ptys:new Map([['target',{id:'target',aiToolId:'codex',startedAt:0}]]),agentSessionIds:new Map(),
+        accountBindings:new Map([['target',{toolId:'codex',accountId:'selected',sessionId:'session-resumed'}]]),
+        agentTranscripts:new Map(),agentTranscriptTool:new Map(),transcriptMissUntil:new Map(),normalizeTranscriptPath,isTranscriptInsideRoot,
+        resolveChatTranscriptBySession:resolve,selectedAccountId:()=> 'selected',accountTranscriptRoot:()=>root,
+        commandApprovals:{read:()=>null},hasQueuedCodexQuestion,codexQuestionFrame};
+      const reader=vm.runInNewContext(`(function(){${setup}; return ${readSource};})()`,env);
+      expect(await reader('target')).toMatchObject({sessionId:'session-resumed',lifecycle:'idle',question:null});
+      expect(resolve).toHaveBeenCalledWith('codex','session-resumed',{toolId:'codex',accountId:'selected'});
+      expect(env.agentTranscripts.get('target')).toBe(transcriptPath);
+      await reader('target');expect(resolve).toHaveBeenCalledTimes(1);
+      env.agentTranscripts.clear();resolve.mockReturnValue({path:foreign,tool:'codex'});
+      expect(await reader('target')).toBeNull();expect(env.agentTranscripts.size).toBe(0);
+      await reader('target');expect(resolve).toHaveBeenCalledTimes(2);
+    } finally {await fs.rm(directory,{recursive:true});}
+  });
+  it('resolves an exact account-scoped resumed transcript before any hook or Chat lookup', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-active-question-'));
+    const transcriptPath = path.join(root, 'session-resumed.jsonl');
+    try {
+      await fs.writeFile(transcriptPath, JSON.stringify({ timestamp: new Date().toISOString(), type:'event_msg', payload:{type:'task_complete',turn_id:'previous-turn'} })+'\n');
+      const resolveTranscript = vi.fn(() => transcriptPath);
+      const monitor = new ActiveQuestions({ resolveTranscript });
+      const args = { id:'background', tool:'codex', root, sessionId:'session-resumed', startedAt:0 };
+      const read = await monitor.read(args);
+      expect(read).toMatchObject({ sessionId:'session-resumed', question:null, lifecycle:'idle', turn:{id:'previous-turn',status:'done'} });
+      expect(resolveTranscript).toHaveBeenCalledWith({ id:'background', tool:'codex', root, sessionId:'session-resumed' });
+      expect(await monitor.read({...args,transcriptPath})).toBe(read);
+      expect(resolveTranscript).toHaveBeenCalledTimes(1);
+      // Scope, identity and launch freshness remain required after resolution.
+      expect(await monitor.read({...args,root:path.join(root,'other')})).toBeNull();
+      expect(await monitor.read({...args,sessionId:'wrong-session'})).toBeNull();
+      expect(await monitor.read({...args,startedAt:Date.now()+1000})).toBeNull();
+      expect(await new ActiveQuestions().read(args)).toBeNull();
+    } finally { await fs.rm(root,{recursive:true}); }
+  });
   it('retains a live Claude form when its earlier user prompt is flushed after the assistant call', async () => {
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'acedia-active-question-'));
     const transcriptPath=path.join(root,'claude-session.jsonl');

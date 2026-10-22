@@ -4,13 +4,12 @@ import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { isStandbySession } from "../lib/sessionStandby";
 import { isAgentRuntimeActive } from "../lib/agentActivity";
-import { LS_SIDEBAR_FILTER, loadSidebarFilter, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth, type SidebarDateGroup } from "../lib/sidebarNavigation";
+import { LS_SIDEBAR_FILTER, LS_SIDEBAR_COLLAPSED_FAMILIES, loadSidebarFilter, loadSidebarCollapsedFamilies, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth, sidebarSessionFamilies, type SidebarDateGroup } from "../lib/sidebarNavigation";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
 import { SidebarIcon } from "./SidebarIcon";
 import { ProviderLogo } from "./ProviderLogo";
 import "./Sidebar.css";
-import { sidebarSessionFamilies } from '../lib/sidebarNavigation';
 import { useTaskSessionNavigation } from '../hooks/useTaskSessionNavigation';
 
 type SidebarProps = SidebarProjectTreeProps & {
@@ -65,7 +64,7 @@ function WorkspaceSidebar(props: SidebarProps) {
   const [filter, setFilter] = useState(loadSidebarFilter);
   const [scope, setScope] = useState<string | null>(null);
   const [sortByName, setSortByName] = useState(false);
-  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const [collapsedFamilies, setCollapsedFamilies] = useState(loadSidebarCollapsedFamilies);
   const [showArchive, setShowArchive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searching = searchQuery.trim().length > 0;
@@ -84,6 +83,7 @@ function WorkspaceSidebar(props: SidebarProps) {
   useEffect(() => () => pointerCleanupRef.current?.(), []);
   useEffect(() => { const timer = window.setInterval(() => setToday(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { try { localStorage.setItem(LS_SIDEBAR_FILTER, filter); } catch {} }, [filter]);
+  useEffect(() => { try { localStorage.setItem(LS_SIDEBAR_COLLAPSED_FAMILIES, JSON.stringify([...collapsedFamilies])); } catch {} }, [collapsedFamilies]);
   useEffect(() => { try { localStorage.setItem("multiagent.sidebarProjectsOpen.v1", String(projectsOpen)); } catch {} }, [projectsOpen]);
   useEffect(() => { try { localStorage.setItem("multiagent.sidebarScreensOpen.v1", String(screensOpen)); } catch {} }, [screensOpen]);
   useEffect(() => { if (scope && !projects.some(project => project.id === scope)) setScope(null); }, [projects, scope]);
@@ -109,6 +109,24 @@ function WorkspaceSidebar(props: SidebarProps) {
   const navigable = useMemo(() => agents.filter(agent => !agent.sidebarArchived), [agents]);
   const taskSessions = useTaskSessionNavigation(navigable, !collapsed);
   const agentById = useMemo(() => new Map(agents.map(agent => [agent.id, agent])), [agents]);
+  const activeFamilyPath = useMemo(() => {
+    const path: string[] = [], seen = new Set<string>();
+    let current = activeAgentId ? agentById.get(activeAgentId) : undefined;
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = current.sessionHierarchy?.parentId ? agentById.get(current.sessionHierarchy.parentId) : undefined;
+      if (!parent || parent.sidebarArchived || parent.projectId !== current.projectId || seen.has(parent.id)) break;
+      path.push(parent.id); current = parent;
+    }
+    return JSON.stringify(path);
+  }, [activeAgentId, agentById]);
+  useEffect(() => {
+    const ancestors: string[] = JSON.parse(activeFamilyPath);
+    setCollapsedFamilies(current => {
+      if (!ancestors.some(id => current.has(id))) return current;
+      const next = new Set(current); ancestors.forEach(id => next.delete(id)); return next;
+    });
+  }, [activeFamilyPath]);
   const taskLabels: Record<string, string> = { planned: text('선행 대기', 'Pending'), ready: text('배정 준비', 'Ready'), dispatching: text('전달 확인 중', 'Dispatching'), running: text('진행', 'Running'), waiting_user: text('답변 필요', 'Answer needed'), waiting_approval: text('승인 필요', 'Approval needed'), result_submitted: text('결과 검토', 'Review needed'), verifying: text('검증 중', 'Verifying'), completed: text('작업 완료', 'Task complete'), failed: text('검증 실패', 'Validation failed'), cancelled: text('취소됨', 'Cancelled'), reconcile_required: text('상태 확인', 'Reconcile needed') };
   const scoped = useMemo(() => navigable.filter(agent => !scope || agent.projectId === scope), [navigable, scope]);
   const counts = { all: scoped.length, active: scoped.filter(agent => matchesSidebarFilter(agent, "active")).length, sleeping: scoped.filter(agent => matchesSidebarFilter(agent, "sleeping")).length };
@@ -198,10 +216,10 @@ function WorkspaceSidebar(props: SidebarProps) {
     const project = projectById.get(agent.projectId);
     const screen = screenByAgent.get(agent.id);
     const task = taskSessions[agent.id];
-    const parent = agent.sessionHierarchy?.createdById ? agentById.get(agent.sessionHierarchy.createdById) : undefined;
+    const parent = agent.sessionHierarchy?.parentId ? agentById.get(agent.sessionHierarchy.parentId) : undefined;
     const model = task?.model || agent.modelSettings;
     const attention = familyChildren.filter(child => ['waiting_user', 'waiting_approval', 'failed', 'reconcile_required'].includes(taskSessions[child.id]?.state)).length;
-    const familyToggle = !fromSearch && familyChildren.length > 0 ? <button type="button" className="sidebar-icon-button sidebar-family-toggle" aria-expanded={expandedFamilies.has(agent.id)} aria-label={text(`${agent.name} 하위 세션 ${expandedFamilies.has(agent.id) ? '접기' : '펼치기'}`, `${expandedFamilies.has(agent.id) ? 'Collapse' : 'Expand'} ${agent.name} child sessions`)} title={text(`하위 세션 ${familyChildren.length}개 · 확인 필요 ${attention}개`, `${familyChildren.length} child sessions · ${attention} need attention`)} onClick={event => { event.stopPropagation(); setExpandedFamilies(value => { const next = new Set(value); next.has(agent.id) ? next.delete(agent.id) : next.add(agent.id); return next; }); }}>{expandedFamilies.has(agent.id) ? '▾' : '▸'}{familyChildren.length}{attention > 0 && <span className="sidebar-family-attention"> · {attention}!</span>}</button> : null;
+    const familyToggle = !fromSearch && familyChildren.length > 0 ? <button type="button" className="sidebar-icon-button sidebar-family-toggle" aria-expanded={!collapsedFamilies.has(agent.id)} aria-controls={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} aria-label={text(`${agent.name} 하위 세션 ${collapsedFamilies.has(agent.id) ? '펼치기' : '접기'}`, `${collapsedFamilies.has(agent.id) ? 'Expand' : 'Collapse'} ${agent.name} child sessions`)} title={text(`하위 세션 ${familyChildren.length}개 · 확인 필요 ${attention}개`, `${familyChildren.length} child sessions · ${attention} need attention`)} onClick={event => { event.stopPropagation(); setCollapsedFamilies(value => { const next = new Set(value); next.has(agent.id) ? next.delete(agent.id) : next.add(agent.id); return next; }); }}>{collapsedFamilies.has(agent.id) ? '▸' : '▾'}{familyChildren.length}{attention > 0 && <span className="sidebar-family-attention"> · {attention}!</span>}</button> : null;
     const statusTitle = sleeping ? agent.idleResumeSessionId
       ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
       : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
@@ -215,7 +233,7 @@ function WorkspaceSidebar(props: SidebarProps) {
       onContextMenu={event => { if (detached) return; event.preventDefault(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, event.clientX, event.clientY); }}>
       <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
       <ProviderLogo toolId={agent.aiToolId} />
-      <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={project?.folder}>{fromSearch ? highlight(project?.name || text("미분류", "Uncategorized")) : project?.name || text("미분류", "Uncategorized")}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}</span>}{parent && <span className="sidebar-session-task-meta" title={`${text('생성 세션', 'Created by')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`}><span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>{task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}</span>}</div>
+      <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={project?.folder}>{fromSearch ? highlight(project?.name || text("미분류", "Uncategorized")) : project?.name || text("미분류", "Uncategorized")}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}</span>}{parent && <span className="sidebar-session-task-meta" title={`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`}><span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>{task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}</span>}</div>
       {familyToggle}
       <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
@@ -229,8 +247,11 @@ function WorkspaceSidebar(props: SidebarProps) {
     </li>;
   };
 
-  const renderFamily = (agent: Agent, depth = 0, nested = false, tree = families): React.ReactNode => <Fragment key={agent.id}>{renderAgent(agent, nested, false, tree.children.get(agent.id) || [])}{expandedFamilies.has(agent.id) && tree.children.get(agent.id)?.map(child => <li className="sidebar-session-children" key={child.id} style={{ marginLeft: Math.min(depth + 1, 4) * 12 }}><ul className="sidebar-recent-list">{renderFamily(child, depth + 1, nested, tree)}</ul></li>)}</Fragment>;
-  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable); return tree.roots.map(agent => renderFamily(agent, 0, true, tree)); };
+  const renderFamily = (agent: Agent, nested = false, tree = families): React.ReactNode => {
+    const children = tree.children.get(agent.id) || [];
+    return <Fragment key={agent.id}>{renderAgent(agent, nested, false, children)}{!collapsedFamilies.has(agent.id) && children.length > 0 && <li className="sidebar-session-children" data-sidebar-parent-id={agent.id} role="presentation"><ul id={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} className="sidebar-recent-list">{children.map(child => renderFamily(child, nested, tree))}</ul></li>}</Fragment>;
+  };
+  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
 
   return <>
     <aside ref={sidebarRef} className={`sidebar sidebar-workspace${collapsed ? " sidebar-workspace-collapsed" : ""}`} aria-label={text("작업 공간 탐색", "Workspace navigation")} onKeyDownCapture={searchKeyDown}>

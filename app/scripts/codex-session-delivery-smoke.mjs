@@ -33,7 +33,12 @@ const pool = new AccountPool(path.join(root, 'pool'), { port: 0, safeStorage, fe
     { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
   return new Response(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
 } });
-const filter = new CodexScrollbackFilter(34, 140), questions = new ActiveQuestions();
+let filter = new CodexScrollbackFilter(34, 140);
+let transcriptResolutions = 0;
+const questions = new ActiveQuestions({ resolveTranscript: ({ root: scopedRoot, tool, sessionId }) => {
+  transcriptResolutions++;
+  return tool === 'codex' && scopedRoot === path.join(home, 'sessions') && transcript?.includes(sessionId) ? transcript : null;
+} });
 const wait = delay => new Promise(resolve => setTimeout(resolve, delay));
 const waitFor = async (condition, label) => {
   const end = Date.now() + 30000;
@@ -60,11 +65,26 @@ try {
       const file = fs.readdirSync(folder, { recursive: true }).find(file => file.endsWith('.jsonl')); if (!file) return null;
       transcript = path.join(folder, file); conversationId = path.basename(file).match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0];
     }
-    return questions.read({ id: entry.id, tool: 'codex', root: path.join(home, 'sessions'), transcriptPath: transcript, sessionId: conversationId, startedAt: entry.startedAt });
+    // Hooks are disabled: simulate a resumed background session whose catalog
+    // knows the conversation ID but has never populated the hook path map.
+    return questions.read({ id: entry.id, tool: 'codex', root: path.join(home, 'sessions'), sessionId: conversationId, startedAt: entry.startedAt });
   };
   await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'initial composer');
   await submitPtyMessage({ ptyProcess: terminal, message: 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.' });
   await waitFor(async () => (await read())?.turn?.status === 'done' && deliveryComposerReady(entry), 'completed native composer');
+  if (process.env.ACEDIA_DELIVERY_RESUME === '1') {
+    const stopped = new Promise(resolve => terminal.onExit(resolve)); terminal.kill(); await stopped;
+    filter.dispose(); filter = new CodexScrollbackFilter(34, 140);
+    terminal = pty.spawn(binary, ['resume', conversationId, '--cd', root, '--no-alt-screen', '-m', 'gpt-6.1-sol', ...launch.args,
+      '-c', 'model_reasoning_effort="high"', '-c', 'features.daemon_auto_start=false', '-c', 'features.hooks=false',
+      '-c', 'features.plugins=false', '-c', 'analytics.enabled=false'],
+      { cwd: root, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
+    Object.assign(entry, { process: terminal, filter, startedAt: Date.now(), lastInputAt: 0 });
+    terminal.onData(data => { if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
+    await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'resumed native composer');
+    await waitFor(async () => (await read())?.lifecycle === 'idle' && deliveryComposerReady(entry), 'resumed account-scoped transcript and empty composer');
+    console.log('RESUMED_DELIVERY_READINESS', JSON.stringify({ composer: deliveryComposerReady(entry), transcript: await read() }));
+  }
   const options = { file: path.join(root, 'deliveries.json'), read,
     context: id => id === 'caller' ? { entry: caller, name: 'ProjectWitch', projectName: 'Fixture' }
       : id === 'target' ? { entry, name: 'UI', conversationId } : null,
@@ -116,6 +136,8 @@ try {
   await wait(800); assert.equal(generations().length, count);
   assert.ok(generations().every(c => c.model === 'gpt-6.1-sol' && c.reasoning.effort === 'high'));
   assert.ok(updates.some(u => u.status === 'received')); assert.ok(updates.some(u => u.status === 'started'));
+  assert.ok(transcriptResolutions > 0);
+  console.log('SESSION_DELIVERY_WITHOUT_HOOK_PATH_OR_CHAT_OPEN_OK');
   console.log('SESSION_DELIVERY_REAL_MCP_CODEX_RECEIPT_START_UNICODE_CONTEXT_AND_NO_REPLAY_OK');
 } finally {
   clearInterval(polling); service?.dispose();

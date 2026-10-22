@@ -11,6 +11,32 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it('renders reparented Shader sessions once under RnDHub with their current parent label', () => {
+    const children=['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id=>agent(id,{sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}}));
+    const html=render([agent('RnDHub'),...children]);
+    expect(html).toContain('data-sidebar-parent-id="RnDHub"');
+    expect(html).toContain('aria-label="RnDHub 하위 세션 접기"');
+    for(const child of children) {
+      expect(html.match(new RegExp(`data-sidebar-agent-id="${child.id}"`,'g'))).toHaveLength(1);
+      expect(html.indexOf(`data-sidebar-agent-id="${child.id}"`)).toBeGreaterThan(html.indexOf('data-sidebar-parent-id="RnDHub"'));
+    }
+    expect(html).toContain('상위 세션: RnDHub'); expect(html).not.toContain('↳ AIHub');
+  });
+  it('restores collapsed families while retaining their parent toggle and counts', () => {
+    vi.stubGlobal('localStorage',{getItem:(key:string)=>key==='multiagent.sidebarCollapsedSessionFamilies.v1'?'["RnDHub"]':null,setItem:vi.fn()});
+    const html=render([agent('RnDHub'),agent('Shader',{sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}})]);
+    expect(html).toContain('data-sidebar-agent-id="RnDHub"');
+    expect(html).toContain('aria-expanded="false" aria-controls="sidebar-session-children-recent-RnDHub"');
+    expect(html).not.toContain('data-sidebar-agent-id="Shader"');
+    expect(html).toContain('하위 세션 1개');
+  });
+  it('keeps an inactive parent as tree context for active child results without counting it as active', () => {
+    vi.stubGlobal('localStorage',{getItem:(key:string)=>key==='multiagent.sessionFilter.v1'?'active':null,setItem:vi.fn()});
+    const html=render([agent('RnDHub'),agent('Shader',{status:'working',sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}})]);
+    expect(html).toContain('data-sidebar-agent-id="RnDHub"'); expect(html).toContain('data-sidebar-parent-id="RnDHub"');
+    expect(html).toContain('data-sidebar-agent-id="Shader"');
+    expect(html).toMatch(/data-session-filter="active" aria-pressed="true"[^]*?sidebar-session-filter-count">1</);
+  });
   afterEach(() => vi.unstubAllGlobals());
   it("keeps recent conversations available even when their project folder is collapsed", () => {
     vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.collapsedProjectFolders.v1" ? '["f"]' : null, setItem: vi.fn() });

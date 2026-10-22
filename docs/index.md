@@ -22,6 +22,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.89](release-1-8-1-89.md) - 창 활성화 없는 기존 세션 시작 API·MCP, 현재 부모 기준 사이드바 트리와 hook 없는 재개 세션의 작업 전달 보완.
 * [Acedia 1.8.1.88](release-1-8-1-88.md) - 기존 비활성 세션의 프로젝트 소속·작업 경로 변경 API·MCP와 EXE 배포 검증 기록.
 * [Acedia 1.8.1.87](release-1-8-1-87.md) - 기존·OFFLINE 세션 Dangerous 설정의 공개 로컬 API·MCP와 EXE 배포 검증 기록.
 * [Acedia 1.8.1.86](release-1-8-1-86.md) - 이미지 우클릭 복사·Ctrl 클릭 파일 위치와 한 줄의 여러 링크 수정 및 EXE 배포 검증 기록.

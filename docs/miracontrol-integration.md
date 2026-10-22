@@ -51,7 +51,7 @@ tool, state, reason, active flag, and last hook timestamp.
 
 * `GET /integration/v1/health` - API version and process health.
 * `GET /integration/v1/sessions` - application metadata and session snapshot.
-* `POST /integration/v1/sessions/:agentId/activate` - activate the configured session.
+* `POST /integration/v1/sessions/:agentId/activate` - start an existing local Codex/Claude session in the background without showing, restoring or focusing a window. An active CLI is left running. Starting is acknowledged only after a live PTY is confirmed; refresh the snapshot for CLI readiness and conversation identity before sending input. [Standard EXE 1.8.1.89](release-1-8-1-89.md) replaces this endpoint's earlier visible-window activation. See [Workspace MCP](workspace-mcp.md#기존-세션-백그라운드-시작) for the new `acedia_session_start` tool and `/integration/v1/workspace/start` endpoint supporting local Codex, Claude, Qwen and Antigravity.
 * `POST /integration/v1/sessions/:agentId/input` - guarded raw terminal input and optional submit.
 * `/integration/v1/browser/...` - the fixed embedded-browser actions used by the
   managed browser MCP.[^hook-service]

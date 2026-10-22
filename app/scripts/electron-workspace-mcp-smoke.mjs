@@ -148,9 +148,48 @@ if (process.versions.electron) {
     }
     assert.equal(fs.readFileSync(path.join(root, `cwd-${first.sessionId}.txt`), 'utf8'), fs.realpathSync(moves[0].folder));
     assert.ok(fs.existsSync(projectFolder), 'Registry relocation moved physical directories');
-    await invoke('kill_pty', { id: rnd.sessionId });
     console.log('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK');
-    for (const id of ['workspace-mcp-caller', first.sessionId, second.sessionId]) await invoke('kill_pty', { id });
+    // Both public start routes must start existing OFFLINE sessions without
+    // opening/selecting their panes or calling any native activation method.
+    await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`[data-sidebar-agent-id="${first.sessionId}"] .sidebar-session-close`)}).click()`);
+    for (let i = 0; i < 100; i++) {
+      if ((await call('/projects')).sessions.filter(s => [first.sessionId, second.sessionId].includes(s.id)).every(s => !s.active)) break;
+      await wait(100);
+    }
+    await wait(200);
+    assert.equal((await call('/projects')).sessions.find(s => s.id === first.sessionId).active, false);
+    await window.webContents.executeJavaScript(`document.getElementById('launch-settings-focus').focus()`);
+    const readStartUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),groups:localStorage.getItem('multiagent.groups.v1'),focus:document.activeElement?.id,draft:document.getElementById('launch-settings-focus')?.value,ids:JSON.parse(localStorage.getItem('multiagent.agents.v1')).map(a=>a.id)})`);
+    const startUi = await readStartUi(), nativeCalls = [], restoreMethods = [];
+    const nativeState = () => BrowserWindow.getAllWindows().map(w => ({ id:w.id, visible:w.isVisible(), focused:w.isFocused(), minimized:w.isMinimized() }));
+    const beforeNative = nativeState();
+    for (const w of BrowserWindow.getAllWindows()) for (const name of ['show', 'showInactive', 'focus', 'restore']) {
+      const original = w[name];
+      w[name] = () => { nativeCalls.push({ id:w.id, name }); };
+      restoreMethods.push(() => { w[name] = original; });
+    }
+    try {
+      const launchBefore = [first.sessionId, second.sessionId].map(id => fs.statSync(launchFile(id)).mtimeMs);
+      assert.deepEqual(await call('/start', { sessionId:first.sessionId }), { sessionId:first.sessionId, active:true, started:true, background:true });
+      const activateResponse = await fetch(`http://127.0.0.1:${info.port}/integration/v1/sessions/${second.sessionId}/activate`, { method:'POST', headers });
+      assert.equal(activateResponse.status, 202);
+      assert.deepEqual(await activateResponse.json(), { ok:true, agentId:second.sessionId, sessionId:second.sessionId, active:true, started:true, background:true });
+      for (let i = 0; i < 100 && [first.sessionId, second.sessionId].some((id, index) => fs.statSync(launchFile(id)).mtimeMs === launchBefore[index]); i++) await wait(100);
+      const currentLaunch = [first.sessionId, second.sessionId].map(id => fs.statSync(launchFile(id)).mtimeMs);
+      assert.ok(currentLaunch.every((time, index) => time > launchBefore[index]), 'Background CLI did not start');
+      assert.equal((await call('/start', { sessionId:first.sessionId })).started, false);
+      const repeated = await fetch(`http://127.0.0.1:${info.port}/integration/v1/sessions/${second.sessionId}/activate`, { method:'POST', headers });
+      assert.equal((await repeated.json()).started, false);
+      await wait(200);
+      assert.deepEqual([first.sessionId, second.sessionId].map(id => fs.statSync(launchFile(id)).mtimeMs), currentLaunch, 'Start restarted an active CLI');
+      assert.deepEqual(await readStartUi(), startUi, 'Background start changed selection, layout, focus, draft or session IDs');
+      assert.deepEqual(nativeCalls, [], 'Start called a native window display/activation method');
+      assert.deepEqual(nativeState(), beforeNative, 'Start changed native window state or opened another window');
+      assert.equal((await call('/projects')).sessions.find(s => s.id === rnd.sessionId).active, true, 'Unrelated CLI was stopped');
+      for (const move of moves) assert.equal(fs.readFileSync(path.join(root, `cwd-${move.sessionId}.txt`), 'utf8'), fs.realpathSync(move.folder));
+      console.log('ACEDIA_EXISTING_SESSION_START_BOTH_APIS_NO_WINDOW_FOCUS_OK');
+    } finally { for (const restore of restoreMethods) restore(); }
+    for (const id of ['workspace-mcp-caller', first.sessionId, second.sessionId, rnd.sessionId]) await invoke('kill_pty', { id });
     console.log('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK');
     clearTimeout(timeout); app.quit();
   } catch (error) { console.error(error); clearTimeout(timeout); app.exit(1); }
@@ -173,10 +212,12 @@ if (process.versions.electron) {
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_OFFLINE_ACTIVE_DURABLE_NO_FOCUS_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK'), output);
+    assert.ok(output.includes('ACEDIA_EXISTING_SESSION_START_BOTH_APIS_NO_WINDOW_FOCUS_OK'), output);
     console.log('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK');
     console.log('ACEDIA_SESSION_SETTINGS_OFFLINE_ACTIVE_DURABLE_NO_FOCUS_OK');
     console.log('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK');
     console.log('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK');
+    console.log('ACEDIA_EXISTING_SESSION_START_BOTH_APIS_NO_WINDOW_FOCUS_OK');
   } finally {
     if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-workspace-mcp-smoke-')) throw new Error('Unexpected cleanup path');
     await fs.promises.rm(root, { recursive: true, maxRetries: 10, retryDelay: 200 });

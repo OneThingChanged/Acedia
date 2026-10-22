@@ -59,7 +59,7 @@ const tools = [
   },
   {
     name: 'acedia_projects',
-    description: 'List registered Acedia projects, sessions, active status, current conversationId/state/reason and available AI tools on this host PC. Use session IDs and the current conversationId for acedia_session_send.',
+    description: 'List registered Acedia projects, sessions, active status, current conversationId/state/reason and available AI tools on this host PC. Start an OFFLINE session with acedia_session_start in the background, then refresh this list for its current conversationId/state before acedia_session_send.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
@@ -89,6 +89,12 @@ const tools = [
     description: 'Create an additional AI session in a registered local Acedia project. Use a new requestKey (letters, digits, _ or -) for each intended session and reuse it when retrying the same request in this running app. Codex is the default. Check active and startError in the result. Does not submit a prompt.',
     inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string', maxLength: 120 }, aiToolId: { type: 'string', default: 'codex' }, requestKey: { type: 'string', pattern: '^[a-zA-Z0-9_-]{1,128}$' } }, required: ['projectId', 'requestKey'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'acedia_session_start',
+    description: 'Start a user-authorized existing inactive local Acedia AI session in the BACKGROUND without showing, focusing or restoring the Acedia window, selecting a pane or changing the input draft. First read acedia_projects for its exact sessionId. Supports Codex, Claude, Qwen and Antigravity in the coordinator window. An already-running session is left running; never restarts it. Does not create a session or send a prompt. active=true confirms a live terminal, not CLI readiness or task acceptance. Read acedia_projects again for its current conversationId/state before acedia_session_send. On timeout read status before retrying.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string', minLength: 1, maxLength: 256 } }, required: ['sessionId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'acedia_session_send',
@@ -282,10 +288,10 @@ async function callTool(name, args) {
     if (!response.ok) throw new Error(result.error || `Acedia task request failed (${response.status})`);
     return result;
   }
-  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
+  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_start', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
-    const endpoint = name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
+    const endpoint = name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
     const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
       method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),

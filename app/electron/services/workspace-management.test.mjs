@@ -7,6 +7,7 @@ import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
 import { SessionLaunchSettings } from './session-launch-settings.mjs';
 import { SessionRelocation } from './session-relocation.mjs';
+import { SessionStart } from './session-start.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -95,12 +96,12 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   });
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
-  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
+  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_start', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
-  for (const action of ['send', 'delivery', 'session-settings', 'relocate-sessions']) {
+  for (const action of ['send', 'delivery', 'session-settings', 'relocate-sessions', 'start']) {
     const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
     expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
@@ -132,4 +133,16 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   const moved = await rpc('tools/call', { name: 'acedia_sessions_relocate', arguments: body });
   expect(moved.structuredContent).toMatchObject({ saved: true, active: false, moves: [{ sessionId: target.id, projectId: 'rnd', folder: fs.realpathSync(destination) }] });
   expect((await rpc('tools/call', { name: 'acedia_projects' })).structuredContent.sessions[0]).toMatchObject({ projectId: 'rnd', folder: fs.realpathSync(destination), dangerous: true });
+  const activate = vi.fn(async id => { const alreadyActive = f.active.has(id); f.active.add(id); return { active: true, restarted: !alreadyActive }; });
+  f.service.sessionStart = new SessionStart({ agentFor: id => f.catalog.agents.find(a => a.id === id), activate });
+  const start = () => rpc('tools/call', { name: 'acedia_session_start', arguments: { sessionId: target.id } });
+  expect((await start()).structuredContent).toMatchObject({ sessionId: target.id, active: true, started: true, background: true });
+  expect((await start()).structuredContent).toMatchObject({ started: false, active: true });
+  expect(activate).toHaveBeenCalledTimes(2);
+  expect((await rpc('tools/call', { name: 'acedia_projects' })).structuredContent.sessions[0]).toMatchObject({ active: true, dangerous: true, projectId: 'rnd' });
+  expect(f.catalog.agents).toHaveLength(1);
+  const startEndpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/start`;
+  expect((await fetch(startEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
+  expect((await fetch(startEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, focus: true }) })).status).toBe(400);
+  expect((await rpc('tools/call', { name: 'acedia_session_start', arguments: { sessionId: 'missing' } })).isError).toBe(true);
 });
