@@ -41,8 +41,8 @@ Shader 세션을 RnDHub 아래에 한 번씩 표시하고, 접기·펼치기·�
 최근 대화의 일치·접힌 자식 검색·선택 후 조상 펼침을 확인했다. 접기만으로 대화 선택이나
 CLI 시작·종료를 하지 않으며 가로 넘침도 없었다. `output/sidebar-session-family-electron.log`와
 `output/sidebar-workspace-app/sidebar-session-family-tree.png`에 기록했다.
-최종 결합 소스의 전체 202개 파일·1,533개 검사 및 production build 결과는
-`output/session-start-family-delivery-tests.log`, `output/session-start-family-delivery-build.log`다.
+1.8.1.89 배포 소스의 전체 202개 파일·1,534개 검사 및 production build 결과는
+`output/exe-89-tests.log`, `output/exe-89-build.log`다.
 
 실행 목록은 20개씩 조회하고 보드는 변경된 카드만 받는다. 선택한 작업의 결과·검사 출력은 별도로 읽으며 다른 작업이 바뀔 때 기존 카드와 선택 상세를 유지한다. 화면을 닫거나 다른 화면으로 이동하면 갱신을 중단한다.
 

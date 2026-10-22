@@ -2,7 +2,7 @@
 type: Release
 title: Acedia 1.8.1.89
 description: "기존 세션 백그라운드 시작, 현재 부모 기준 사이드바 트리와 hook 없는 재개 세션의 작업 전달 보완."
-status: validating
+status: stable
 last_updated: 2026-10-22
 ---
 
@@ -38,7 +38,24 @@ Restart the calling CLI after updating to load the new tool. Retry requests reje
 - 실제 Electron 임시 프로필·모의 CLI에서 두 시작 HTTP API의 OFFLINE 시작, PTY 확인과 활성 CLI 재시작 부재를 확인했다. 창의 show/showInactive/focus/restore 호출 0회, 기존 화면·선택·초안·등록 ID와 다른 CLI 보존을 확인했다. `output/session-start-family-delivery-electron.log`.
 - 실제 전체 앱 fixture에서 다른 생성자의 Shader 세션을 RnDHub 아래에 한 번씩 표시하고, 접기·복원·양 목록 일치·검색·선택 후 조상 펼침과 가로 넘침 부재를 확인했다. `output/sidebar-session-family-electron.log`.
 - 설치된 네이티브 Codex를 격리된 가짜 계정·로컬 응답 서버에서 실행했다. 첫 대화 완료 후 재개하고 hook/Chat 경로 없이 실제 stdio MCP의 수신·새 턴 시작·한글·기존 문맥·중복 전송 방지를 확인했다. `output/session-delivery-resume-cli-after.log`. 실제 사용자 세션에는 테스트 작업을 보내지 않았다.
+- 고정 소스의 TypeScript·Vite production build와 Standard NSIS 빌드 통과: `output/exe-89-build.log`. 기존 출력과 분리한 `app/electron-dist/exe-1.8.1.89`에 빌드했다. 기존 500KB 이상 Vite 번들 경고는 남아 있다.
+- 패키지의 실행·내장 Git·브라우저 bridge·Dashboard·PTY와 종료·트레이·보안 검사 통과: `output/exe-89-packaged-smoke.log`, `output/exe-89-packaged-lifecycle-smoke.log`. 임시 packaged 실행기의 외부 제한만 45초로 설정했고 원래 성공 조건·제품 소스·개별 PTY 제한은 유지했다.
+- 설치 파일 FileVersion **1.8.1.89**, ProductVersion **1.8.1**, 크기·SHA-256이 같은 빌드 manifest와 일치한다. Authenticode는 **NotSigned**다. `output/exe-release-1.8.1.89/windows-verification.json`.
+- 새 시작 서비스를 포함한 패키지 런타임·렌더러 **326개 파일**이 고정 빌드 소스와 일치했다. 기존 서명 APK **1.8.1.39/code 21**의 패키지·아키텍처·인증서·해시도 재검증했다. `output/exe-release-1.8.1.89/local-verification.json`.
+- 공개 GitHub에서 **1.8.1.88·1.8.1.87 → 1.8.1.89** 업데이트 감지를 확인했다. 실제 업데이터로 EXE 전체를 다운로드하고 세 자산의 크기·SHA-256·URL·태그·소스 커밋·최신 안정 릴리스를 검증했다. `output/exe-89-public-verify.log`, `.build-tools/public-verified-1.8.1.89.json`.
 
 ## 배포 기록
 
-버전 검증·EXE 빌드·패키지 검사·공개 게시·다운로드 검증 결과는 완료 후 기록한다.
+- 공개 게시: **2026-10-22 12:46:55 KST**. [GitHub Release v1.8.1.89](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.89).
+- 고정 소스·태그: `f76eaceea894b87c4a2d7bf52927ff1124390576`.
+- 공개 다운로드 검증 완료: **2026-10-22 12:47:34 KST**.
+- 소스 제품 버전·Android 소스 versionName: **1.8.1.89**. npm 호환 버전: **1.8.1**.
+- 기존 서명 APK **1.8.1.39/code 21** 재사용. 새 APK·Company·Microsoft Store 배포는 실행하지 않았다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.89-x64.exe | 151437115 | `14eadd437411e5b719a51fc0a92b62d10d184882e9e827242687f26ececccbee` |
+| Acedia-Setup-1.8.1.89-x64.exe.blockmap | 159376 | `be07beed83cb2657e0a11aa687dd3b9f9d0c980c14a7ba4e969ba26ed48fe9a1` |
+| latest-exe.json | 256 | `0e0018f8c73352a5ed73433ef679cf2c6763c821ff344f5b4c33be4b7f7a617a` |
+
+설정의 **Check → Update** 또는 다음 앱 실행의 업데이트 안내로 적용한다. 새 시작 MCP를 사용할 호출 CLI는 업데이트 후 **Restart**한다. 이 배포에서는 설치 프로그램을 실행하거나 실제 사용자 세션에 작업을 전달하지 않았다. 공개 게시와 사용자 PC의 설치 완료는 별개다.

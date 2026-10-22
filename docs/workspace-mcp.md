@@ -113,13 +113,13 @@ Remote/Dashboard의 `/api/session/restart`에서 `restart`를 생략한 요청�
 백그라운드 시작과 충돌하지 않는다. 실제 사용자 세션을 시작하거나 작업을 전달하는 것은
 사용자가 요청한 대상·범위에 한한다.
 
-최종 결합 소스 검증: 전체 **202개 파일·1,533개 검사**와 TypeScript/Vite production build 통과.
+1.8.1.89 배포 소스 검증: 전체 **202개 파일·1,534개 검사**와 TypeScript/Vite production build 통과.
 실제 Electron 임시 프로필·모의 CLI에서 두 HTTP 시작 API의 OFFLINE 시작, PTY 확인,
 같은 실행 중 대상의 재시작 부재, 대화 등록 ID·작업 폴더·화면 선택·포커스·초안 보존을
 확인했다. 모든 기존 창의 `show`·`showInactive`·`focus`·`restore` 호출을 계수해 0회임을
 검증하고 새 창이 생성되지 않은 것도 확인했다. 실제 HTTP·stdio MCP에서는 새 도구의
 등록·인증·Origin·호출 세션·입력·대상 검사와 시작 결과를 검증했다.
-`output/session-start-family-delivery-tests.log`, `output/session-start-family-delivery-build.log`,
+`output/exe-89-tests.log`, `output/exe-89-build.log`,
 `output/session-start-family-delivery-electron.log`에 기록했다. 실제 사용자 세션은 변경하지 않았다.
 
 ## 기존 세션 Dangerous 설정
