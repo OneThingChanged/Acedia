@@ -81,4 +81,7 @@ TypeScript 검사와 Vite 프로덕션 빌드 통과. 별도 Electron 프로필�
 빌드 결과는 `output/session-notes-build.log`, 화면 검증 결과는
 `output/session-notes-validation/passed.json`에 기록했다.
 
-현재 소스 구현이며 설치 파일 게시와 실행 중인 사용자 앱의 업데이트는 별도 배포 단계다.
+[Standard EXE 1.8.1.90](release-1-8-1-90.md)에 포함해 공개 게시했다. 해당 릴리스의
+최종 전체 205개 파일·1,555개 검사, 패키지 실행과 공개 다운로드 검증도 통과했다.
+설정의 **Check → Update** 또는 다음 실행의 업데이트 안내로 적용한다.
+실행 중인 사용자 앱을 이번 검증에서 교체하지는 않았다.

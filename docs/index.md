@@ -23,8 +23,8 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.90](release-1-8-1-90.md) - 세션별 개인 메모, Active 부모 아래 Sleeping 자식 표시와 채팅 첫 요청 보존.
-* [채팅 첫 요청 누락 조사](chat-first-request-review-2026-10-22.md) - 최초 세션 ID 연결 시 시작 대기 요청·초안 누락 수정과 격리 검증; 소스 검증 완료, 설치·배포 전.
+* [Acedia 1.8.1.90](release-1-8-1-90.md) - 세션별 개인 메모, Active 부모 아래 Sleeping 자식 표시와 채팅 첫 요청 보존; 안정 EXE 게시·공개 다운로드 검증 완료.
+* [채팅 첫 요청 누락 조사](chat-first-request-review-2026-10-22.md) - 최초 세션 ID 연결 시 시작 대기 요청·초안 누락 수정과 격리 검증; 1.8.1.90 EXE 배포에 포함.
 * [Acedia 1.8.1.89](release-1-8-1-89.md) - 창 활성화 없는 기존 세션 시작 API·MCP, 현재 부모 기준 사이드바 트리와 hook 없는 재개 세션의 작업 전달 보완.
 * [Acedia 1.8.1.88](release-1-8-1-88.md) - 기존 비활성 세션의 프로젝트 소속·작업 경로 변경 API·MCP와 EXE 배포 검증 기록.
 * [Acedia 1.8.1.87](release-1-8-1-87.md) - 기존·OFFLINE 세션 Dangerous 설정의 공개 로컬 API·MCP와 EXE 배포 검증 기록.
