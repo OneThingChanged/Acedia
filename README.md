@@ -83,7 +83,7 @@ Any CLI works in **Shell only** mode — you get the terminal without hooks, res
 
 | Tool | Version |
 |---|---|
-| Node.js | 24+ |
+| Node.js | 24.22.1+ on the 24.x line, or 26.12.1+ on the 26.x line |
 | Visual Studio 2022 Build Tools | "Desktop development with C++" workload |
 | PowerShell | 7+ recommended (falls back to 5.1) |
 
@@ -100,6 +100,7 @@ npm run electron:dev    # Electron shell (dev, HMR on port 4420)
 
 ```bash
 npm test                       # vitest unit/integration tests
+npm run security:audit         # all dependencies, including the shipped Electron runtime
 
 npm run electron:dist          # Electron installer (standard)
 npm run electron:dist:all      # Electron standard + company

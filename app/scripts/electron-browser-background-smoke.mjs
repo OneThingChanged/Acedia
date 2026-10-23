@@ -27,9 +27,17 @@ void app.whenReady().then(async () => {
     await view.webContents.executeJavaScript("document.querySelector('input').value='AI input'; document.querySelector('input').focus();");
     const image = nativeImage.createFromBuffer(await captureBrowserPng(view.webContents));
     assert.ok(!image.isEmpty() && image.toPNG().length > 100);
+    assert.deepEqual([...image.toBitmap().subarray(0, 4)], [71, 99, 255, 255], "Hidden capture must contain the page, not a black window surface");
+    console.log("BROWSER_HIDDEN_PIXELS_OK");
+    await view.webContents.executeJavaScript("document.documentElement.style.overflow='hidden'; document.body.style.minHeight='2000px'; document.body.style.background='#00ff00'; window.scrollTo(0,200);");
+    const crop = nativeImage.createFromBuffer(await captureBrowserPng(view.webContents, { x: 10, y: 20, width: 50, height: 60 }));
+    assert.deepEqual(crop.getSize(), { width: 50, height: 60 });
+    assert.deepEqual([...crop.toBitmap().subarray(0, 4)], [0, 255, 0, 255], "Repeated capture must include the latest page update");
+    assert.equal(view.webContents.getBackgroundThrottling(), false);
+    console.log("BROWSER_HIDDEN_SCROLLED_CROP_OK");
     assert.equal(shown, 0); assert.equal(focused, 0);
     assert.equal(win.isVisible(), false); assert.equal(view.getVisible(), false);
-    console.log("BROWSER_BACKGROUND_SMOKE_OK hidden navigation, DOM input, screenshot without show/focus");
+    console.log("BROWSER_BACKGROUND_SMOKE_OK hidden navigation, DOM input, real pixels and scrolled crop without show/focus");
     workspace = new BrowserWindow({ show: false, focusable: false, skipTaskbar: true, width: 1280, height: 800 });
     workspace.on("show", () => shown++);
     workspace.on("focus", () => focused++);

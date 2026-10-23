@@ -6,7 +6,7 @@ MultiAgent 데스크톱 앱은 Electron 단일 런타임을 사용합니다.
 
 | 도구 | 버전 | 용도 |
 |---|---|---|
-| **Node.js** | 24+ | 프런트엔드, Electron, 빌드 스크립트 |
+| **Node.js** | 24.22.1+ (24.x) 또는 26.12.1+ (26.x) | 프런트엔드, Electron, 빌드 스크립트 |
 | **Visual Studio 2022 Build Tools** | latest | `node-pty` 네이티브 모듈. **Desktop development with C++** 워크로드 필요 |
 | **PowerShell** | 7+ 권장 | 개발·검증 스크립트 |
 

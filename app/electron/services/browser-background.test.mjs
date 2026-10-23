@@ -96,8 +96,41 @@ it("captures the scrolled viewport without replacing another debugger connection
       ? { cssVisualViewport: { pageX: 0, pageY: 200, clientWidth: 800, clientHeight: 600 } }
       : { data: Buffer.from("png").toString("base64") }),
   };
-  expect((await captureBrowserPng({ debugger: debuggerApi, isDestroyed: () => false }, { x: 10, y: 20, width: 50, height: 60 })).toString()).toBe("png");
+  const setBackgroundThrottling = vi.fn();
+  expect((await captureBrowserPng({ debugger: debuggerApi, isDestroyed: () => false,
+    getBackgroundThrottling: () => false, setBackgroundThrottling }, { x: 10, y: 20, width: 50, height: 60 })).toString()).toBe("png");
   expect(debuggerApi.sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", expect.objectContaining({ clip: { x: 10, y: 220, width: 50, height: 60, scale: 1 } }));
   expect(debuggerApi.attach).not.toHaveBeenCalled();
   expect(debuggerApi.detach).not.toHaveBeenCalled();
+  expect(setBackgroundThrottling.mock.calls.map(([value]) => value)).toEqual([true, false, false]);
+});
+
+it("restores a throttled browser and its debugger after a failed capture", async () => {
+  let attached = false;
+  const debuggerApi = {
+    isAttached: () => attached, attach: vi.fn(() => { attached = true; }),
+    detach: vi.fn(() => { attached = false; }),
+    sendCommand: vi.fn(async method => {
+      if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 800, clientHeight: 600 } };
+      throw new Error("renderer disconnected");
+    }),
+  };
+  const setBackgroundThrottling = vi.fn();
+  await expect(captureBrowserPng({ debugger: debuggerApi, isDestroyed: () => false,
+    getBackgroundThrottling: () => true, setBackgroundThrottling })).rejects.toThrow("renderer disconnected");
+  expect(setBackgroundThrottling.mock.calls.map(([value]) => value)).toEqual([true, false, true]);
+  expect(debuggerApi.detach).toHaveBeenCalledOnce();
+});
+
+it("uses a ready native surface without touching another debugger or rendering policy", async () => {
+  const capturePage = vi.fn(async () => ({ isEmpty: () => false, toPNG: () => Buffer.from("native png") }));
+  const debuggerApi = { isAttached: vi.fn(() => true), sendCommand: vi.fn(), detach: vi.fn() };
+  const setBackgroundThrottling = vi.fn();
+  const rect = { x: 10, y: 20, width: 50, height: 60 };
+  expect((await captureBrowserPng({ capturePage, debugger: debuggerApi, isDestroyed: () => false,
+    getBackgroundThrottling: () => false, setBackgroundThrottling }, rect)).toString()).toBe("native png");
+  expect(capturePage).toHaveBeenCalledWith(rect, { stayHidden: true, stayAwake: false });
+  expect(debuggerApi.sendCommand).not.toHaveBeenCalled();
+  expect(debuggerApi.detach).not.toHaveBeenCalled();
+  expect(setBackgroundThrottling).not.toHaveBeenCalled();
 });

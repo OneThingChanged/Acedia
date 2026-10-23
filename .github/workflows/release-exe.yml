@@ -210,6 +210,8 @@ jobs:
           "MULTIAGENT_MOBILE_APK_PATH=$apk" >> $env:GITHUB_ENV
           "MULTIAGENT_ANDROID_CERT_SHA256=6d85fd669451bfb44289dbb1b5e1648f33367bdff0d983a9d04b76355d6f7573" >> $env:GITHUB_ENV
       - run: npm ci --no-audit --no-fund
+      - name: Audit desktop dependencies including the shipped Electron runtime
+        run: npm run security:audit
       - name: Source and creation dialog checks
         run: |
           npm test -- --exclude electron/services/electron-services.test.mjs --exclude electron/usage-collector/distribution.test.mjs --testTimeout=60000 --maxWorkers=2

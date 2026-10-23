@@ -1,7 +1,9 @@
 # Acedia Usage Collector 0.1
 
 A local-transcript collector, company receiver/dashboard, and read-only MCP
-adapter. Requires Node.js 22.13+ (tested with Node 24 on Windows). No model API
+adapter. Requires Node.js 22.23.4+ on 22.x, 24.22.1+ on 24.x, or 26.12.1+ on 26.x.
+Update the standalone Node.js installation and restart the collector/server to apply
+its security fixes; this does not replace Electron's embedded Node.js. No model API
 call is needed for background collection. MCP report requests through an AI
 host may incur that host's normal model usage.
 

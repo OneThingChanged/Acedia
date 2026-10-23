@@ -83,7 +83,7 @@
 
 | 도구 | 버전 |
 |---|---|
-| Node.js | 24+ |
+| Node.js | 24.x는 24.22.1 이상, 26.x는 26.12.1 이상 |
 | Visual Studio 2022 Build Tools | "Desktop development with C++" 워크로드 |
 | PowerShell | 7+ 권장 (없으면 5.1로 폴백) |
 
@@ -100,6 +100,7 @@ npm run electron:dev    # Electron 셸 (개발 모드, 4420 포트 HMR)
 
 ```bash
 npm test                       # vitest 단위/통합 테스트
+npm run security:audit         # 배포 엔진인 Electron을 포함한 전체 의존성 검사
 
 npm run electron:dist          # Electron 인스톨러 (standard)
 npm run electron:dist:all      # Electron standard + company

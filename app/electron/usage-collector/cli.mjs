@@ -40,7 +40,7 @@ async function main() {
     out({ plugin: target, provider, collectorHome: home, next: 'Install this local plugin using your host plugin manager. Enroll and configure the collector before enabling collection.', capabilities: CAPABILITIES }); return;
   }
   if (!['enroll', 'configure', 'status', 'accounts', 'scan', 'run', 'mcp'].includes(command)) {
-    out({ commands: ['server --port 3007 (ACEDIA_USAGE_ADMIN_TOKEN required)', 'enroll --server <origin> --code-file <file> --name <device>', 'accounts', 'configure --file <JSON>', 'status', 'scan', 'run', 'install --provider codex|claude --target <new absolute directory>', 'mcp'], profile: '--home <directory>', node: '22.13+', capabilities: CAPABILITIES }); return;
+    out({ commands: ['server --port 3007 (ACEDIA_USAGE_ADMIN_TOKEN required)', 'enroll --server <origin> --code-file <file> --name <device>', 'accounts', 'configure --file <JSON>', 'status', 'scan', 'run', 'install --provider codex|claude --target <new absolute directory>', 'mcp'], profile: '--home <directory>', node: '^22.23.4 || ^24.22.1 || ^26.12.1', capabilities: CAPABILITIES }); return;
   }
   const collector = new Collector(home);
   if (command === 'run' || command === 'mcp') {
