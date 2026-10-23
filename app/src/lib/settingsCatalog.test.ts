@@ -12,6 +12,9 @@ describe("settings search catalog", () => {
     expect(ids("codex 기본 계정")[0]).toBe("agents.codex.defaultAccount");
     expect(ids("수동")).toContain("agents.codex.sessionAccountMode");
     expect(ids("자동 시작 기본 계정")[0]).toBe("agents.codex.automaticPoolAccount");
+    expect(ids("codex Dangerous 모드 기본값")[0]).toBe("agents.codex.dangerous");
+    expect(ids("claude 권한 확인 생략")[0]).toBe("agents.claude.dangerous");
+    expect(ids("qwen remember")[0]).toBe("agents.qwen.dangerous");
     expect(ids("커서")).toEqual(["terminal.cursorStyle", "terminal.cursorBlink"]);
     expect(ids("")).toEqual([]);
     expect(ids("   ")).toEqual([]);

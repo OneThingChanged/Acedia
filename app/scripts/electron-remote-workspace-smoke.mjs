@@ -84,6 +84,48 @@ void app.whenReady().then(async () => {
         await evaluate(win, "localStorage.removeItem('multiagent.remote.launchPreferences.v1');document.querySelector('#sessionMode [data-mode=chat]').click()");
         await wait(win, "document.querySelector('#chatView .chat-user img')?.complete && document.querySelector('#chatView .chat-user img')?.naturalWidth>0");
         await wait(win, "document.querySelector('#chatView .chat-related-files')");
+        if (width === 390) {
+          // Exercise actual touch targets and the compact editor, not just CSS
+          // strings. A narrow phone must retain the same available actions.
+          for (const phoneWidth of [320, 360, 390, 430]) {
+            win.setContentSize(phoneWidth, 820); await pause(250);
+            const layout = await evaluate(win, `(() => {
+              const box=id=>document.querySelector(id).getBoundingClientRect();
+              return {editor:box('#messageInput').width,composer:box('#composerForm').width,
+                height:box('#composerForm').height,header:box('.session-head').height,
+                more:box('#sessionToolsToggle').width,mode:box('#sessionMode').width,
+                chat:box('#chatView').height,overflow:document.documentElement.scrollWidth>innerWidth+1,
+                actions:getComputedStyle(document.querySelector('#sessionTools')).display};
+            })()`);
+            assert(!layout.overflow && layout.editor >= layout.composer - 22 && layout.height <= 120 && layout.header <= 120 && layout.chat >= 350 && layout.more >= 44 && layout.actions === 'none', `Phone layout ${phoneWidth}px: ${JSON.stringify(layout)}`);
+          }
+          win.setContentSize(390, 820); await pause(250);
+          await evaluate(win, "document.querySelector('#sessionToolsToggle').click()");
+          assert(await evaluate(win, "document.querySelector('#sessionToolsToggle').getAttribute('aria-expanded')==='true' && document.querySelector('#renameSessionButton').getBoundingClientRect().height>=44 && document.querySelector('#sessionTools .task-mode-button')"), 'More menu lost touch targets or task mode');
+          await capture(win, `workspace-${kind}-390-mobile-more`);
+          await evaluate(win, "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+          assert(await evaluate(win, "document.querySelector('#sessionToolsToggle').getAttribute('aria-expanded')==='false' && document.activeElement.id==='sessionToolsToggle'"), 'More menu Escape/focus failed');
+          await evaluate(win, "document.querySelector('#sessionToolsToggle').click();document.querySelector('#renameSessionButton').click()");
+          await wait(win, "!document.querySelector('#sessionEditorOverlay').hidden");
+          assert(await evaluate(win, "document.querySelector('#sessionToolsToggle').getAttribute('aria-expanded')==='false'"), 'More menu did not close after action');
+          await evaluate(win, "document.querySelector('#sessionEditorCancel').click();document.querySelector('#sessionToolsToggle').click();document.querySelector('#chatView').click()");
+          assert(await evaluate(win, "document.querySelector('#sessionToolsToggle').getAttribute('aria-expanded')==='false'"), 'More menu outside dismissal failed');
+          await capture(win, `workspace-${kind}-390-mobile-idle`);
+          // Simulate Android's visual viewport shrinking while the layout
+          // viewport stays fixed. This does not claim physical keyboard QA.
+          await evaluate(win, `(() => {
+            window.fixtureViewportHeight=820;
+            Object.defineProperty(visualViewport,'height',{configurable:true,get:()=>window.fixtureViewportHeight});
+            document.querySelector('#messageInput').focus();visualViewport.dispatchEvent(new Event('resize'));
+          })()`); await pause(100);
+          await evaluate(win, "window.fixtureViewportHeight=450;visualViewport.dispatchEvent(new Event('resize'))"); await pause(250);
+          assert(await evaluate(win, "document.documentElement.classList.contains('keyboard-visible') && getComputedStyle(document.querySelector('#sessionMode')).display==='none' && document.querySelector('#composerForm').getBoundingClientRect().bottom<=451 && document.querySelector('#chatView').clientHeight>=150"), 'Keyboard obscured the editor or conversation');
+          await capture(win, `workspace-${kind}-390-mobile-keyboard`);
+          await evaluate(win, "delete visualViewport.height;document.querySelector('#messageInput').blur();visualViewport.dispatchEvent(new Event('resize'))"); await pause(250);
+          assert(await evaluate(win, "!document.documentElement.classList.contains('keyboard-visible') && getComputedStyle(document.querySelector('#sessionMode')).display==='none' && document.querySelector('.app-shell').dataset.sessionMode==='chat'"), 'Mobile did not remain chat-only after keyboard dismissal');
+          win.setContentSize(390, 900); await pause(250);
+          console.log(`MOBILE_WORKSPACE_UX_OK ${kind} 320/360/390/430px, More, keyboard`);
+        }
         assert(await evaluate(win, "document.querySelector('#chatView .chat-related-files').querySelectorAll('.chat-file-card').length===3"), 'File cards exceeded inline limit');
         const reads = imageReads;
         await evaluate(win, "window.originalImage=document.querySelector('#chatView .chat-user img');document.querySelector('#chatView .chat-work').open=true");

@@ -1,6 +1,11 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['작업 흐름', 'Task flow'],
+  ['세션 도구 더 보기', 'More session tools'],
+  ['세션 도구', 'Session tools'],
+  ['작업 중 추가', 'Steer'],
+  ['완료 후 예약', 'Queue'],
   ['세션 메모', 'Session note'],
   ['✎ 메모', '✎ Note'],
   ['개인 메모', 'Personal note'],

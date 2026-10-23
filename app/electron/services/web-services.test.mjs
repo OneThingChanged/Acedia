@@ -407,8 +407,10 @@ describe("Electron dashboard server", () => {
     expect(stylesBody).toContain("touch-action: none");
     expect(stylesBody).toContain(".nav-add-button");
     expect(stylesBody).toContain('[data-session-mode="chat"] .question-panel');
-    expect(pageBody).toContain('maximum-scale=1, user-scalable=no');
-    expect(stylesBody).toContain('html { touch-action: pan-x pan-y; }');
+    expect(pageBody).toContain('width=device-width, initial-scale=1');
+    expect(pageBody).not.toContain('maximum-scale=1');
+    expect(pageBody).not.toContain('user-scalable=no');
+    expect(stylesBody).toContain('html { touch-action: pan-x pan-y pinch-zoom; }');
     expect(stylesBody).toContain('touch-action: pan-y;');
     expect(stylesBody).toContain("--visual-viewport-height: 100dvh");
     expect(stylesBody).toContain("html.keyboard-visible .mobile-nav");
@@ -418,7 +420,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v102');
+    expect(workerBody).toContain('multiagent-remote-v103');
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');

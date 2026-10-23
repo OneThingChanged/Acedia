@@ -91,7 +91,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
       entry("agents." + tool + ".executable", "agents", "CLI 실행 경로", "CLI executable path", "newLocal", "고급 실행 파일 자동 감지 직접 지정 PATH advanced auto detect", extra),
       entry("agents." + tool + ".args", "agents", "추가 실행 인수", "Additional arguments", "newLocal", "고급 옵션 arguments flags advanced", extra),
       entry("agents." + tool + ".env", "agents", "환경변수", "Environment variables", "newLocal", "고급 환경 변수 env environment advanced", extra),
-      ...(toolForId(tool).dangerousFlag ? [entry("agents." + tool + ".dangerous", "agents", "권한 확인 생략", "Skip approval prompts", "newSession", "승인 dangerous permissions yolo", extra)] : []),
+      ...(toolForId(tool).dangerousFlag ? [entry("agents." + tool + ".dangerous", "agents", "Dangerous 모드 기본값", "Default Dangerous mode", "newSession", "권한 확인 생략 승인 permissions yolo skip approval prompts 켜짐 꺼짐 이전 선택 기억 remember", extra)] : []),
       ...(["codex", "claude"].includes(tool) ? [
         entry("agents." + tool + ".accounts", "agents", "로그인 계정", "Login accounts", "profiles", "계정 추가 등록 로그인 이름 이메일 login account profile email", extra),
         entry("agents." + tool + ".defaultAccount", "agents", "기본 계정", "Default account", "newLocal", "account login 로그인", extra),

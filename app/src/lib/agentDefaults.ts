@@ -3,9 +3,11 @@ import { availableAccountId } from "./removedAccounts";
 import { normalizeLaunchOptions, launchOptionsProblem, type LaunchOptions } from "./launchOptions";
 
 export const AGENT_DEFAULTS_KEY = "multiagent.agentDefaults.v1";
+export type DangerousDefaultMode = "remember" | "on" | "off";
 export type AgentDefaults = {
   launchOptions?: LaunchOptions;
   dangerous: boolean;
+  dangerousDefaultMode: DangerousDefaultMode;
   useAltScreen: boolean;
   codexAccountId: string;
   codexSessionAccountMode: "automatic" | "manual";
@@ -15,9 +17,14 @@ export type AgentDefaults = {
 export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefaults {
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const codex = toolId === "codex";
+  // Legacy settings keep remembering the last creation choice until a fixed
+  // default is explicitly selected. Unsupported tools can never enable it.
+  const dangerousDefaultMode: DangerousDefaultMode = !toolForId(toolId).dangerousFlag ? "off"
+    : value.dangerousDefaultMode === "on" || value.dangerousDefaultMode === "off" ? value.dangerousDefaultMode : "remember";
   return {
     launchOptions: toolForId(toolId).command ? normalizeLaunchOptions(value.launchOptions) : undefined,
-    dangerous: !!toolForId(toolId).dangerousFlag && value.dangerous === true,
+    dangerous: dangerousDefaultMode === "on" || (dangerousDefaultMode === "remember" && value.dangerous === true),
+    dangerousDefaultMode,
     useAltScreen: codex && value.useAltScreen === true,
     codexSessionAccountMode: codex && value.codexSessionAccountMode !== "manual" ? "automatic" : "manual",
     codexPoolAccountId: codex && typeof value.codexPoolAccountId === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value.codexPoolAccountId)

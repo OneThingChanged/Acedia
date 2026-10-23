@@ -15,6 +15,7 @@ import {
   type ProjectFolder,
 } from "../types";
 import { loadSshHosts } from "../lib/sshHosts";
+import { newSessionDangerous } from "../lib/newSessionPreferences";
 import { useAppLanguage } from "../lib/appLanguage";
 import "./NewAgentModal.css";
 
@@ -170,7 +171,7 @@ export function NewProjectModal({
                   const nextToolId = event.target.value;
                   const defaults = loadAgentDefaults(nextToolId);
                   setAiToolId(nextToolId);
-                  setDangerous(defaults.dangerous && !!toolForId(nextToolId).dangerousFlag);
+                  setDangerous(newSessionDangerous(nextToolId));
                   setLaunchOptions(defaults.launchOptions); setLaunchValid(true);
                   if (nextToolId === "codex") { setCodexAccountId(defaults.codexAccountId); setUseAltScreen(defaults.useAltScreen); }
                   if (nextToolId === "claude") setClaudeAccountId(defaults.claudeAccountId);

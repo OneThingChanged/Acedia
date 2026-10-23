@@ -27,8 +27,11 @@ function readPreferences(): NewSessionPreferences {
 }
 
 export function newSessionDangerous(toolId: string): boolean {
-  return !!toolForId(toolId).dangerousFlag &&
-    (readPreferences().dangerousByTool[toolId] ?? loadAgentDefaults(toolId).dangerous);
+  if (!toolForId(toolId).dangerousFlag) return false;
+  const defaults = loadAgentDefaults(toolId);
+  return defaults.dangerousDefaultMode === "remember"
+    ? readPreferences().dangerousByTool[toolId] ?? defaults.dangerous
+    : defaults.dangerous;
 }
 
 export function newSessionToolId(disabledTools: readonly string[], parentToolId?: string): string {

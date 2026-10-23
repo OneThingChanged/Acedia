@@ -4,7 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 기본 모델·effort·Fast와 CLI 실행 파일, 추가 인수, 환경변수의 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-22
+last_updated: 2026-10-23
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -28,8 +28,8 @@ sources:
 # 에이전트 고급 실행 설정
 
 설정 → 에이전트 → 도구 탭의 **고급 실행 설정**에서 로컬 Codex, Claude,
-Qwen, Cline의 실행 환경을 편집한다. 기존 계정 선택, 권한 확인 생략,
-Alt-screen, 작업자 프리셋은 기존 실행 옵션에서 설정한다.
+Qwen, Cline의 실행 환경을 편집한다. 계정 선택과 Dangerous 모드 기본값은
+**새 세션 기본값**에서, Codex의 Alt-screen은 **실행 옵션**에서 설정한다.
 
 | 항목 | 사용 방법 |
 |---|---|
@@ -48,11 +48,19 @@ Alt-screen, 작업자 프리셋은 기존 실행 옵션에서 설정한다.
 
 * 도구별 기본값은 기존 로컬 저장소 키 `multiagent.agentDefaults.v1`에 저장한다.
   다른 창의 변경은 설정 화면에 동기화된다.
+* **설정 → 에이전트 → 도구 → 새 세션 기본값 → Dangerous 모드 기본값**은
+  **기본 꺼짐 / 기본 켜짐 / 이전 선택 기억**을 제공한다. 켜짐·꺼짐을 고정하면
+  마지막 생성 선택보다 우선하고, 생성창의 변경은 이번 세션에만 적용한다.
+  도구별 `dangerousDefaultMode`로 저장하며 이전 저장값에는 **이전 선택 기억**을
+  적용한다. 기억한 값이 없으면 기존 `dangerous` 기본값을 사용하고, 둘 다 없으면
+  꺼짐이다. 데스크톱의 새 세션·자식 세션·새 프로젝트 첫 세션이 같은 순서를 따른다.
+  기존 세션과 Remote/Dashboard 브라우저의 생성 설정을 자동 변경하지 않는다.
 * **새 세션**은 마지막으로 생성한 세션의 AI 도구와 도구별 Dangerous 모드 켜짐·꺼짐을
   `multiagent.newSessionPreferences.v1`에 별도로 기억한다. 생성창을 다시 열거나 앱을
   재시작해도 복원하며, 취소하거나 생성에 실패한 선택은 저장하지 않는다. 기억한 도구가
   비활성화·제거되면 사용 가능한 도구를 선택한다. 자식 세션은 사용 가능한 부모 도구를
-  우선한다. 계정·Alt-screen·worker·고급 옵션은 계속 설정 화면의 기본값을 사용한다.
+  우선한다. Dangerous의 기억값은 **이전 선택 기억** 모드에서만 우선한다.
+  계정·Alt-screen·고급 옵션은 계속 설정 화면의 기본값을 사용한다.
 * 새 로컬 프로젝트의 첫 세션과 새 세션은 생성 시 기본값을 복사한다. 생성 창에서
   고급 설정을 변경하거나 초기화하면 해당 세션에만 적용한다.
 * 기존 세션은 세션 속성 → 실행 옵션에서 직접 편집한다. **현재 기본값 불러오기**는

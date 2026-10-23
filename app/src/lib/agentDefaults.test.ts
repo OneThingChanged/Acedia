@@ -10,6 +10,22 @@ function storage() {
   return data;
 }
 describe("per-tool new session defaults", () => {
+  it("persists explicit Dangerous defaults and migrates legacy settings to remember", () => {
+    const data = storage();
+    data.set(AGENT_DEFAULTS_KEY, JSON.stringify({ codex: { dangerous: true }, claude: { dangerous: false } }));
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerousDefaultMode: "remember", dangerous: true });
+    expect(loadAgentDefaults("claude")).toMatchObject({ dangerousDefaultMode: "remember", dangerous: false });
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerousDefaultMode: "off" });
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerousDefaultMode: "off", dangerous: false });
+    saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerousDefaultMode: "on" });
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerousDefaultMode: "on", dangerous: true });
+    expect(loadAgentDefaults("claude")).toMatchObject({ dangerousDefaultMode: "remember", dangerous: false });
+    expect(normalizeAgentDefaults("codex", { dangerousDefaultMode: "invalid" }).dangerousDefaultMode).toBe("remember");
+    for (const toolId of ["cline", "none", "unknown"]) {
+      expect(normalizeAgentDefaults(toolId, { dangerous: true, dangerousDefaultMode: "on" }))
+        .toMatchObject({ dangerousDefaultMode: "off", dangerous: false });
+    }
+  });
   it("defaults to automatic account selection and preserves explicitly saved modes", () => {
     storage();
     const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";

@@ -46,6 +46,32 @@ it("prefers a child's enabled parent and falls back when remembered tools are di
   expect(newSessionToolId([])).toBe("codex");
 });
 
+it.each(["codex", "claude", "qwen", "agy"])("keeps fixed Dangerous defaults above remembered overrides for %s", toolId => {
+  rememberNewSession(toolId, false);
+  saveAgentDefaults(toolId, { ...loadAgentDefaults(toolId), dangerousDefaultMode: "on" });
+  expect(newSessionDangerous(toolId)).toBe(true);
+  rememberNewSession(toolId, false);
+  expect(newSessionDangerous(toolId)).toBe(true);
+  saveAgentDefaults(toolId, { ...loadAgentDefaults(toolId), dangerousDefaultMode: "off" });
+  rememberNewSession(toolId, true);
+  expect(newSessionDangerous(toolId)).toBe(false);
+  expect(newSessionDangerous("none")).toBe(false);
+  saveAgentDefaults(toolId, { ...loadAgentDefaults(toolId), dangerousDefaultMode: "remember" });
+  expect(newSessionDangerous(toolId)).toBe(true);
+  rememberNewSession(toolId, false);
+  expect(newSessionDangerous(toolId)).toBe(false);
+});
+
+it("uses legacy fallback values in remember mode without overriding fixed settings", () => {
+  stored.set(AGENT_DEFAULTS_KEY, JSON.stringify({ codex: { dangerous: true }, claude: { dangerousDefaultMode: "off", dangerous: true } }));
+  expect(newSessionDangerous("codex")).toBe(true);
+  expect(newSessionDangerous("claude")).toBe(false);
+  rememberNewSession("codex", false);
+  rememberNewSession("claude", true);
+  expect(newSessionDangerous("codex")).toBe(false);
+  expect(newSessionDangerous("claude")).toBe(false);
+});
+
 it("ignores corrupt preferences and rejects retired tools or nonboolean permission choices", () => {
   for (const raw of ["bad JSON", "null", "[]", '{"aiToolId":"gemini","dangerousByTool":{"codex":"true"}}']) {
     stored.set(NEW_SESSION_PREFERENCES_KEY, raw);

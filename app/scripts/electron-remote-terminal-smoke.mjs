@@ -68,6 +68,11 @@ app.whenReady().then(async () => {
         windows.push(win);
         await win.loadURL(`${status.url}/?agent=one`);
         await wait(win, "document.querySelector('#detailName').textContent.includes('Terminal one')");
+        if (width === 390) {
+          await evaluate(win, "document.querySelector('#sessionMode [data-mode=term]').click()");
+          assert.equal(await evaluate(win, "document.querySelector('.app-shell').dataset.sessionMode==='chat' && document.querySelector('#sessionMode').hidden && !document.querySelector('#terminalMount .xterm')"), true, 'Phone opened a hidden terminal instead of staying in chat');
+          win.destroy(); continue;
+        }
         await evaluate(win, "document.querySelector('#sessionMode [data-mode=term]').click()");
         await wait(win, "document.querySelector('#terminalMount .xterm-screen')?.textContent.includes('BOTTOM FOOTER: model effort fast')");
         await pause(200);

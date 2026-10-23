@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-15
+last_updated: 2026-10-23
 stale_after: 2026-10-31
 sources:
   - id: web-services
@@ -92,6 +92,9 @@ sources:
   - id: remote-workspace-smoke
     resource: ../app/scripts/electron-remote-workspace-smoke.mjs
     title: "Remote and Dashboard workspace interaction verification"
+  - id: mobile-chat-layout-smoke
+    resource: ../app/scripts/electron-mobile-chat-layout-smoke.mjs
+    title: "Chat-only phone, fold and tablet layouts with preview gallery"
   - id: chat-history
     resource: ../app/electron/remote-pwa/chat-history.js
     title: "Chat page merging and sequence ordering"
@@ -851,11 +854,54 @@ only a completion marker written after the latest working hook may release a
 stale Working status and its queued messages. Missing or inconclusive evidence
 keeps the session busy.[^electron-main][^codex-turn-completion][^remote-client]
 
-On mobile, Remote fixes the document viewport to the device width and disables
-page scaling. The terminal's touch area supports vertical scrolling without
-enabling pinch zoom. The Android client also disables WebView's built-in zoom
-controls, so an updated APK is needed for that native setting; the PWA change
-is delivered through service-worker cache v72.[^remote-styles][^mobile-remote-screen]
+The mobile browser viewport uses the device width and permits page scaling for
+reading conversation text. The terminal's own touch area retains its vertical
+scroll handling. The Android client separately disables its built-in WebView
+zoom controls; the shared web change does not replace that native policy.
+[^remote-styles][^mobile-remote-screen]
+
+The 2026-10-23 development source, with web cache v103, uses a compact
+name/status header and removes the Chat/Terminal/Browser tabs on phones, touch
+tablets, unfolded phones and the native APK. **More**
+contains notifications, Rename, the personal note and task delegation; model
+selection remains beside the editor. The message input uses the full composer
+width, with attachment, model, delivery mode and Send on one toolbar below it.
+Mobile delivery labels omit desktop keyboard shortcuts. Primary touch controls
+remain at least 44px high and conversation/input text remains 16px. While the
+software keyboard is detected, bottom navigation yields space to the
+conversation and composer. These changes are shared by Remote, Dashboard
+and the APK's host-served WebView content; deployment requires updating the host.
+
+Chat-only mode applies below 801 CSS pixels, when a coarse touch pointer is
+available, or when the native APK flag is present. It overrides stale terminal
+or browser preferences without overwriting the desktop's saved preference.
+Above 800 CSS pixels, the sidebar remains available beside the conversation;
+narrower screens use the existing drawer. Conversation turns are limited to
+880px for readability on large tablets, and the composer to 920px. Folding,
+unfolding and rotation retain the selected session, draft and chat-only mode.
+
+The isolated workspace Electron fixture verifies 320/360/390/430px phone widths,
+full-width input, no horizontal page overflow, accessible More actions, Escape
+and outside dismissal, and a simulated Android visual viewport shrink/restore.
+Remote and Dashboard interaction checks preserve model/effort edits, attachments,
+image node retention, file previews, asynchronous questions and queued delivery.
+The 68 server/shared web tests and 24 mobile tests pass, along with the desktop
+production build and mobile TypeScript checking. Captures are
+`output/workspace-{remote,dashboard}-390-mobile-idle.png`
+and `-mobile-keyboard.png`. The keyboard fixture simulates viewport changes and
+does not replace physical Android/iPhone keyboard or pinch-zoom verification.
+
+`npm run electron:mobile-chat-layout-smoke` uses an isolated Remote service,
+synthetic Korean conversation and Chromium touch emulation. It checks folded
+344×882, unfolded 768×920, tablet portrait 820×1180, tablet landscape 1180×820
+and large tablet 1366×1024 CSS-pixel viewports, stale desktop preferences,
+absence of terminal streams on touch devices, More actions and draft retention
+across fold/rotation sizes. A separate layout-flag transition checks APK
+detection without simulating native authentication. Returning to a desktop
+viewport restores its saved terminal mode. Captures and a self-contained HTML
+comparison gallery are generated in `output/mobile-chat-device-review/`;
+`verification.json` explicitly records that these are rendered viewport
+simulations rather than physical device tests.
 
 Development source 1.8.1.81 on 2026-10-13 corrects the terminal's fitted content area:
 `clientWidth` and `clientHeight` include padding, which previously let the

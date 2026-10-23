@@ -172,6 +172,8 @@ const ui = {
   renameSessionButton: $("#renameSessionButton"),
   sessionNotifications: $("#sessionNotifications"),
   sessionNavButton: $("#sessionNavButton"),
+  sessionToolsToggle: $("#sessionToolsToggle"),
+  sessionTools: $("#sessionTools"),
   backToScreenButton: $("#backToScreenButton"),
   chatPrompt: $("#chatPrompt"),
   questionPanel: $("#questionPanel"),
@@ -276,11 +278,13 @@ const taskFlow = createTaskFlowView(document.getElementById('taskFlowView'), {
   },
   openSession: id => selectSession(id),
 });
-const taskButton = document.createElement('button'); taskButton.type = 'button'; taskButton.className = 'overview-button'; taskButton.textContent = '작업 흐름'; taskButton.id = 'taskFlowButton';
+const taskButton = document.createElement('button'); taskButton.type = 'button'; taskButton.className = 'overview-button'; taskButton.id = 'taskFlowButton';
+const taskButtonCopy = make('span', ''); taskButtonCopy.append(make('strong', '', t('작업 흐름')));
+taskButton.append(make('span', 'overview-icon', '⇄'), taskButtonCopy);
 ui.hostingButton.after(taskButton);
 taskButton.onclick = () => { selection = { type: 'tasks', id: null }; returnScreenId = null; updateUrl({ push: true }); renderNavigation(); renderSelection(); closeSidebar(); };
 const taskModes = new Set();
-const taskModeButton = document.createElement('button'); taskModeButton.type = 'button'; taskModeButton.className = 'small-button'; taskModeButton.textContent = '작업 분담 꺼짐';
+const taskModeButton = document.createElement('button'); taskModeButton.type = 'button'; taskModeButton.className = 'small-button task-mode-button'; taskModeButton.textContent = '작업 분담 꺼짐';
 document.querySelector('.composer-settings').append(taskModeButton);
 taskModeButton.onclick = () => { if (selection.type !== 'session' || agentMap().get(selection.id)?.aiToolId !== 'codex') return; taskModes.has(selection.id) ? taskModes.delete(selection.id) : taskModes.add(selection.id); updateComposerSendState(); };
 const sessionUsageView = createSessionUsageView(document.querySelector('#sessionUsageView'), {
@@ -1465,7 +1469,7 @@ function renderSession() {
       if (nearBottom) requestAnimationFrame(() => { ui.outputText.scrollTop = ui.outputText.scrollHeight; });
     }
   }
-  const canReturn = !isMobile() && returnScreenId && screenGroups().some((screen) => screen.id === returnScreenId);
+  const canReturn = !isChatOnly() && returnScreenId && screenGroups().some((screen) => screen.id === returnScreenId);
   ui.backToScreenButton.hidden = !canReturn;
 }
 
@@ -3187,6 +3191,7 @@ async function loadUsage(refresh = false) {
 }
 
 function renderSelection() {
+  taskButtonCopy.querySelector('strong').textContent = t('작업 흐름');
   document.getElementById('taskFlowView').hidden = selection.type !== 'tasks';
   taskButton.classList.toggle('selected', selection.type === 'tasks');
   if (selection.type === 'tasks') taskFlow.enter(); else taskFlow.leave();
@@ -3265,7 +3270,7 @@ function selectMonitor(filter = activeFilter) {
 function selectScreen(id) {
   const screen = screenGroups().find((candidate) => candidate.id === id);
   if (!screen) return;
-  if (isMobile()) {
+  if (isChatOnly()) {
     const agentId = preferredSessionId(screen);
     if (agentId) selectSession(agentId);
     return;
@@ -3495,10 +3500,11 @@ async function submitSessionEditor() {
 }
 
 function selectSession(id, fromScreenId = null) {
+  setSessionToolsOpen(false);
   acknowledgeCompletion(id);
   if (!agentMap().has(id)) return;
   selection = { type: "session", id };
-  returnScreenId = isMobile() ? null : fromScreenId;
+  returnScreenId = isChatOnly() ? null : fromScreenId;
   updateUrl({ push: true });
   renderNavigation();
   renderSelection();
@@ -3625,7 +3631,8 @@ function updateComposerSendState() {
     ? initializingTerminal
       ? t("세션 초기화가 끝나면 입력할 수 있습니다")
       : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다') : t("메시지 입력 · Enter 전송 · Shift+Enter 줄바꿈");
+    : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다')
+      : isChatOnly() ? t("메시지 입력") : t("메시지 입력 · Enter 전송 · Shift+Enter 줄바꿈");
   ui.sendButton.textContent = t(waitingForAnswer ? '예약' : '전송');
   ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
@@ -4145,8 +4152,10 @@ function updateWorking() {
   const mode = deliveryModes.get(agent?.id) || 'queued';
   const toggle = document.getElementById('composerDeliveryButton');
   toggle.hidden = agent?.aiToolId !== 'codex' || !!agent?.sshHostId;
-  toggle.textContent = t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
-  toggle.title = toggle.textContent;
+  toggle.textContent = isChatOnly() ? t(mode === 'steer' ? '작업 중 추가' : '완료 후 예약')
+    : t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
+  toggle.title = t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
+  toggle.setAttribute('aria-label', toggle.title);
 }
 function toggleDelivery() { const agent = selectedAgent(); if (agent?.aiToolId !== 'codex' || agent.sshHostId) return; deliveryModes.set(agent.id, deliveryModes.get(agent.id) === 'steer' ? 'queued' : 'steer'); updateWorking(); }
 document.getElementById('composerDeliveryButton').addEventListener('click', toggleDelivery);
@@ -4238,7 +4247,11 @@ function appendConversationTurn(container, fragment, range, blocks, agent, data)
 // mode runs one per pane, while mobile streams only its selected pane.
 const terminalSupported = typeof window.Terminal === "function";
 const mobileMedia = window.matchMedia("(max-width: 800px)");
+const touchMedia = window.matchMedia("(any-pointer: coarse)");
 const isMobile = () => mobileMedia.matches;
+// A tablet, unfolded phone or native APK remains chat-only even when its
+// viewport is wide enough to keep the session sidebar visible.
+const isChatOnly = () => isMobile() || touchMedia.matches || window.__MULTIAGENT_NATIVE_APP__ === true;
 // container element -> { term, stream, agentId, followOutput, unseenOutput,
 // connectionState }. Composer submissions do not pass through xterm's own
 // keyboard path, so follow state is managed explicitly here.
@@ -4620,7 +4633,7 @@ function syncVisualViewport() {
   const focused = document.activeElement;
   const acceptsText = Boolean(focused?.matches?.('input, textarea, [contenteditable="true"], .xterm-helper-textarea'));
   const keyboardThreshold = Math.max(100, largestVisualViewportHeight * 0.18);
-  const keyboardVisible = isMobile()
+  const keyboardVisible = isChatOnly()
     && acceptsText
     && largestVisualViewportHeight - height > keyboardThreshold;
 
@@ -4935,10 +4948,11 @@ function startRemoteBrowser(agent) {
 // Renders an agent's own transcript (via /api/chat) as a chat instead of the
 // width-constrained terminal. Default on; the session view toggles chat/term.
 const storedSessionViewMode = localStorage.getItem("multiagent.remote.sessionMode");
-let sessionViewMode = ["chat", "term", "browser"].includes(storedSessionViewMode)
+let preferredSessionViewMode = ["chat", "term", "browser"].includes(storedSessionViewMode)
   ? storedSessionViewMode
   : "chat";
-if (initialUrl.searchParams.get('view') === 'chat') sessionViewMode = 'chat';
+if (initialUrl.searchParams.get('view') === 'chat') preferredSessionViewMode = 'chat';
+let sessionViewMode = isChatOnly() ? 'chat' : preferredSessionViewMode;
 let chatRequestSeq = 0;
 let chatOlderRequestSeq = 0;
 
@@ -5263,6 +5277,7 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false, late
 
 // Show chat or terminal for the session view; refresh the active one.
 function syncSessionView() {
+  sessionViewMode = isChatOnly() ? 'chat' : preferredSessionViewMode;
   if (selection.type !== "session") {
     syncComposerAgent(null);
     renderComposerQueue();
@@ -5312,8 +5327,11 @@ function syncSessionView() {
 let lastChatStatusSig = "";
 
 function setSessionViewMode(mode) {
-  sessionViewMode = ["chat", "term", "browser"].includes(mode) ? mode : "chat";
-  localStorage.setItem("multiagent.remote.sessionMode", sessionViewMode);
+  sessionViewMode = isChatOnly() ? "chat" : ["chat", "term", "browser"].includes(mode) ? mode : "chat";
+  if (!isChatOnly()) {
+    preferredSessionViewMode = sessionViewMode;
+    localStorage.setItem("multiagent.remote.sessionMode", preferredSessionViewMode);
+  }
   lastChatFetch = { id: null, at: 0 };
   syncTerminal();
   syncSessionView();
@@ -5321,7 +5339,13 @@ function setSessionViewMode(mode) {
 }
 
 function applyScreenAvailability() {
-  const mobile = isMobile();
+  const mobile = isChatOnly();
+  ui.appShell.classList.toggle('touch-workspace', mobile);
+  ui.sessionMode.hidden = mobile;
+  sessionViewMode = mobile ? 'chat' : preferredSessionViewMode;
+  const taskModeHost = mobile ? ui.sessionTools : document.querySelector('.composer-settings');
+  if (taskModeButton.parentElement !== taskModeHost) taskModeHost.append(taskModeButton);
+  if (!mobile) setSessionToolsOpen(false);
   if (ui.screensSection) ui.screensSection.hidden = mobile;
   ui.searchInput.placeholder = mobile
     ? t("프로젝트 · 세션 검색")
@@ -5380,7 +5404,7 @@ function preferredSessionId(screen = null) {
 }
 
 function defaultWorkspaceSelection() {
-  if (!isMobile()) {
+  if (!isChatOnly()) {
     const screen = screenGroups()[0];
     if (screen) return { type: "screen", id: screen.id };
   }
@@ -5397,7 +5421,7 @@ function validateSelection() {
   if (selection.type === "session" && !agentMap().has(selection.id)) selection = defaultWorkspaceSelection();
   if (selection.type === "screen") {
     const screen = screenGroups().find((candidate) => candidate.id === selection.id);
-    if (isMobile()) {
+    if (isChatOnly()) {
       const agentId = preferredSessionId(screen);
       selection = agentId ? { type: "session", id: agentId } : defaultWorkspaceSelection();
       returnScreenId = null;
@@ -5412,7 +5436,7 @@ function validateSelection() {
     selection = fallback ? { type: "documents", id: fallback.id } : defaultWorkspaceSelection();
     selectedDocumentPath = null;
   }
-  returnScreenId = !isMobile() && selection.type === "screen" ? selection.id : returnScreenId;
+  returnScreenId = !isChatOnly() && selection.type === "screen" ? selection.id : returnScreenId;
 }
 
 function syncMobileAppDownload(info) {
@@ -6005,6 +6029,25 @@ ui.sessionNavButton.addEventListener("click", () => {
     toggleNavCollapsed();
   }
 });
+function setSessionToolsOpen(open) {
+  const expanded = Boolean(open && isChatOnly());
+  ui.sessionTools.classList.toggle('open', expanded);
+  ui.sessionToolsToggle.setAttribute('aria-expanded', String(expanded));
+}
+ui.sessionToolsToggle.addEventListener('click', () => {
+  setSessionToolsOpen(ui.sessionToolsToggle.getAttribute('aria-expanded') !== 'true');
+});
+ui.sessionTools.addEventListener('click', event => {
+  if (event.target.closest('button')) setSessionToolsOpen(false);
+});
+document.addEventListener('click', event => {
+  if (!ui.sessionTools.contains(event.target) && !ui.sessionToolsToggle.contains(event.target)) setSessionToolsOpen(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && ui.sessionToolsToggle.getAttribute('aria-expanded') === 'true') {
+    event.preventDefault(); setSessionToolsOpen(false); ui.sessionToolsToggle.focus();
+  }
+});
 ui.sidebarBackdrop.addEventListener("click", closeSidebar);
 ui.screenOpenSession.addEventListener("click", () => {
   const id = ui.screenOpenSession.dataset.agentId;
@@ -6351,7 +6394,7 @@ function toggleNavCollapsed() {
 
 // Screen mode is desktop-only. Crossing into the mobile breakpoint moves an
 // open Screen to one of its sessions and rewrites the URL to ?agent=... .
-mobileMedia.addEventListener("change", () => {
+function syncResponsiveWorkspace() {
   applyScreenAvailability();
   validateSelection();
   renderNavigation();
@@ -6361,11 +6404,14 @@ mobileMedia.addEventListener("change", () => {
   syncTerminal();
   updateSidebarToggleState();
   refitAllTerminals();
-});
+}
+mobileMedia.addEventListener("change", syncResponsiveWorkspace);
+touchMedia.addEventListener("change", syncResponsiveWorkspace);
 let resizeTimer = null;
 addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    if (ui.appShell.classList.contains('touch-workspace') !== isChatOnly()) syncResponsiveWorkspace();
     syncVisualViewport();
     refitAllTerminals();
   }, 150);

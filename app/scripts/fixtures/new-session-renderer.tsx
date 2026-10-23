@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { NewAgentModal } from "../../src/components/NewAgentModal";
 import { NewProjectModal } from "../../src/components/NewProjectModal";
+import { AgentsSettings } from "../../src/components/AgentsSettings";
 import { AppLanguageProvider } from "../../src/lib/appLanguage";
-import { saveAgentDefaults } from "../../src/lib/agentDefaults";
+import { AGENT_DEFAULTS_KEY, saveAgentDefaults } from "../../src/lib/agentDefaults";
 import { saveSshHosts } from "../../src/lib/sshHosts";
 import "../../src/App.css";
 
@@ -11,6 +12,8 @@ const accountA = "11111111-1111-4111-8111-111111111111";
 const accountB = "22222222-2222-4222-8222-222222222222";
 window.multiAgentElectron = {
   invoke: async command => {
+    if (command === "get_model_defaults") return { settings: null, revision: 0 };
+    if (command === "get_default_model_catalog") return { models: [], accountLabel: "Fixture", capabilitiesSource: "account" };
     if (command === "account_pool_choices") return {
       enabled: !window.fixtureRoutingOff,
       accounts: [{ id: accountA, label: "업무 계정", available: true }, { id: accountB, label: "개인 계정", available: true }],
@@ -27,7 +30,7 @@ window.multiAgentElectron = {
   showOpenDialog: async () => "C:/fixture/browsed-project",
 };
 localStorage.setItem("multiagent.appLanguage.v1", "ko");
-saveAgentDefaults("codex", { dangerous: true });
+if (!localStorage.getItem(AGENT_DEFAULTS_KEY)) saveAgentDefaults("codex", { dangerous: true });
 saveSshHosts([{ id: "fixture-ssh", label: "Fixture server", host: "fixture.invalid", user: "fixture", port: 22 }]);
 
 function Harness() {
@@ -52,7 +55,9 @@ function Harness() {
   return <div className={`app app-theme-${fixture.theme}`} style={{ height: "100vh" }}>
     <button id="fixture-open" onClick={() => window.fixtureShow()} style={{ margin: 20 }}>새 세션 열기</button>
     <AppLanguageProvider key={fixture.key}>
-      {open && (fixture.kind === "project"
+      {open && (fixture.kind === "settings"
+        ? <AgentsSettings disabledTools={[]} onToggleTool={() => {}} showUsageBar onShowUsageBarChange={() => {}} />
+        : fixture.kind === "project"
         ? <NewProjectModal defaultName="Project flow" onCancel={() => setOpen(false)}
             projectFolders={[
               { id: "local-folder", name: "Local projects", machineKey: "local" },

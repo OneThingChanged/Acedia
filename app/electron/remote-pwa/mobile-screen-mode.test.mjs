@@ -14,13 +14,14 @@ describe("Remote mobile Screen routing", () => {
   });
 
   it("does not choose a Screen as the mobile default", () => {
-    expect(script).toContain("if (!isMobile()) {\n    const screen = screenGroups()[0];");
+    expect(script).toContain("if (!isChatOnly()) {\n    const screen = screenGroups()[0];");
     expect(script).toContain('if (agent) return { type: "session", id: agent.id };');
   });
 
   it("redirects mobile Screen URLs and viewport transitions to a session", () => {
     expect(script).toContain('if (selection.type === "screen") {');
     expect(script).toContain('selection = agentId ? { type: "session", id: agentId } : defaultWorkspaceSelection();');
-    expect(script).toContain('mobileMedia.addEventListener("change", () => {\n  applyScreenAvailability();\n  validateSelection();');
+    expect(script).toContain('mobileMedia.addEventListener("change", syncResponsiveWorkspace);');
+    expect(script).toContain('touchMedia.addEventListener("change", syncResponsiveWorkspace);');
   });
 });

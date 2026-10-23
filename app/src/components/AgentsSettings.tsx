@@ -185,10 +185,19 @@ export function AgentsSettings({
         <div className="agent-settings-card agent-defaults">
           {tab === "codex" && <div className="agent-settings-row" {...settingTarget(prefix + ".defaultAccount")}><SettingScope id={prefix + ".defaultAccount"} /><AccountSelect value={defaults.codexAccountId} onChange={codexAccountId => updateDefaults({ codexAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Codex 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Codex sessions.")} /></div>}
           {tab === "claude" && <div className="agent-settings-row" {...settingTarget(prefix + ".defaultAccount")}><SettingScope id={prefix + ".defaultAccount"} /><AccountSelect provider="claude" value={defaults.claudeAccountId} onChange={claudeAccountId => updateDefaults({ claudeAccountId })} label={text("기본 계정", "Default account")} hint={text("새 로컬 Claude 세션에 처음 선택되는 계정입니다.", "Initially selected for new local Claude sessions.")} /></div>}
-          <details open={tab !== "codex"}><summary>{text("실행 옵션", "Launch options")}</summary>
-            <label className="agent-settings-row" {...settingTarget(prefix + ".dangerous")}><div><div className="agent-row-title">{text("권한 확인 생략", "Skip approval prompts")}<SettingScope id={prefix + ".dangerous"} /></div><div className="agent-row-sub">{text("새 세션의 Dangerous 모드 기본값", "Default Dangerous mode for new sessions")}</div></div><input type="checkbox" role="switch" checked={defaults.dangerous} onChange={e => updateDefaults({ dangerous: e.target.checked })} /></label>
-            {tab === "codex" && <><label className="agent-settings-row" {...settingTarget("agents.codex.altScreen")}><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}<SettingScope id="agents.codex.altScreen" /></div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label></>}
-          </details>
+          <div className="agent-settings-row" {...settingTarget(prefix + ".dangerous")}>
+            <label className="field"><span className="field-label">{text("Dangerous 모드 기본값", "Default Dangerous mode")}<SettingScope id={prefix + ".dangerous"} /></span>
+              <select value={defaults.dangerousDefaultMode} onChange={event => updateDefaults({ dangerousDefaultMode: event.target.value as AgentDefaults["dangerousDefaultMode"] })}>
+                <option value="off">{text("기본 꺼짐", "Off by default")}</option>
+                <option value="on">{text("기본 켜짐", "On by default")}</option>
+                <option value="remember">{text("이전 선택 기억", "Remember last choice")}</option>
+              </select>
+              <span className="check-hint">{text("켜면 권한 확인을 생략합니다. 새 세션·새 프로젝트의 첫 세션에 적용하며, 생성할 때 개별 변경할 수 있습니다. 이전 선택 기억은 마지막으로 만든 세션의 값을 사용합니다.", "When on, skips permission prompts. Applies to new sessions and a new project's first session; you can change it during creation. Remember last choice uses the last created session's value.")}</span>
+            </label>
+          </div>
+          {tab === "codex" && <details><summary>{text("실행 옵션", "Launch options")}</summary>
+            <label className="agent-settings-row" {...settingTarget("agents.codex.altScreen")}><div className="agent-row-title">{text("Alt-screen 모드", "Alt-screen mode")}<SettingScope id="agents.codex.altScreen" /></div><input type="checkbox" role="switch" checked={defaults.useAltScreen} onChange={e => updateDefaults({ useAltScreen: e.target.checked })} /></label>
+          </details>}
         </div><p className="agent-hint">{text("자동 저장됩니다. 기존 세션의 계정과 실행 옵션은 변경되지 않습니다.", "Saved automatically. Existing session accounts and options remain unchanged.")}</p>
       </>}
       {tool.command && <>

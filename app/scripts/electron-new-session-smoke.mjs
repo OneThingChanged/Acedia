@@ -156,6 +156,33 @@ async function exerciseUI() {
   check(tool().value === "codex" && !dangerous().checked, "Disabled remembered provider was selected");
   window.fixtureShow({ parentToolId: "codex" }); await wait();
   check(tool().value === "codex" && !dangerous().checked, "Child lost its parent's provider or tool permission choice");
+
+  const defaultSetting = provider => document.querySelector('[data-setting-id="agents.' + provider + '.dangerous"] select');
+  const showDefaults = async () => { window.fixtureShow({ kind: "settings" }); await wait(); };
+  await showDefaults();
+  check(defaultSetting("codex").value === "remember" && !defaultSetting("codex").closest("details"), "Dangerous default hidden or legacy mode changed");
+  await change(defaultSetting("codex"), "on");
+  check(JSON.parse(localStorage.getItem("multiagent.agentDefaults.v1")).codex.dangerousDefaultMode === "on", "Dangerous default not saved");
+  await showCodex();
+  check(dangerous().checked, "Fixed on lost to remembered off");
+  dangerous().click(); await wait(); button().click(); await wait();
+  check(!window.fixtureCreated.dangerous, "Cannot override fixed on for a single session");
+  await showCodex(); check(dangerous().checked, "Single-session override replaced fixed on");
+  window.fixtureShow({ parentToolId: "codex" }); await wait();
+  check(dangerous().checked, "Child session ignored fixed on");
+  window.fixtureShow({ kind: "project" }); await wait(); await change(projectTool(), "codex");
+  check(dangerous().checked, "Project first session ignored fixed on");
+  await showDefaults();
+  await change(defaultSetting("codex"), "off");
+  [...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.includes("Claude")).click(); await wait();
+  check(defaultSetting("claude").value === "remember", "Dangerous default leaked into another tool");
+  await showCodex(); check(!dangerous().checked, "Fixed off not applied");
+  dangerous().click(); await wait(); button().click(); await wait();
+  check(window.fixtureCreated.dangerous, "Cannot override fixed off for a single session");
+  await showCodex(); check(!dangerous().checked, "Fixed off lost to remembered on");
+  window.fixtureShow({ kind: "project" }); await wait(); await change(projectTool(), "codex");
+  check(!dangerous().checked, "Project first session ignored fixed off");
+  await change(projectTool(), "claude"); check(dangerous().checked, "Project first session ignored remember mode");
   return "CREATION_INTERACTION_OK session + project";
 }
 
@@ -175,9 +202,9 @@ function runElectronUI(temporary, artifacts) {
     await new Promise(resolve => win.webContents.once('did-finish-load', resolve));
     await win.webContents.executeJavaScript(`(async () => {
       window.fixtureShow(); await new Promise(resolve => setTimeout(resolve,150));
-      if (document.querySelector('.new-session-identity select').value !== 'claude' || !document.querySelector('.new-session-execution input').checked) throw Error('Reload lost new-session preferences');
+      if (document.querySelector('.new-session-identity select').value !== 'codex' || document.querySelector('.new-session-execution input').checked) throw Error('Reload lost fixed Dangerous default');
     })()`);
-    console.log('NEW_SESSION_PREFERENCES_RELOAD_OK');
+    console.log('NEW_SESSION_DANGEROUS_DEFAULT_RELOAD_OK');
     for (const kind of ["project", "session"]) {
     for (const [width, height, theme, language, advanced] of [
       [1366, 768, "soft", "ko", false], [1920, 1080, "soft", "ko", false],
