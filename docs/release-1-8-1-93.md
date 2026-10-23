@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.1.93
-status: prepared
+status: published
 last_updated: 2026-10-23
 ---
 
@@ -31,4 +31,21 @@ This Standard EXE updates the shared web UI delivered to Remote, Dashboard and t
 - 공용 웹·서버 **68개 검사**, Remote·Dashboard의 320/360/390/430px 입력·메뉴·키보드 높이 모사·모델·파일 미리보기·큐 검사와 PC 터미널 검사 통과.
 - 폴드 344×882·768×920, 패드 820×1180·1180×820·1366×1024 CSS-pixel 화면 검증 통과. 오래된 터미널 선택이 있어도 채팅으로 열고, 터치 화면에서 터미널 스트림을 열지 않는지 확인했다. 펼침·회전 후 초안 보존과 PC 모드 복원도 확인했다. 실제 UI 캡처와 비교 HTML은 `output/mobile-chat-device-review/`에 생성한다.
 - 위 화면 검사는 독립 프로필·검증용 대화·Chromium 터치 및 viewport 모사 결과다. 실물 휴대폰·폴드·패드 설치나 물리 키보드·네이티브 인증 검증을 대신하지 않는다.
-- TypeScript·Vite production build 통과. 고정 소스의 NSIS 생성, packaged 검사와 공개 다운로드 검증 결과는 배포 기록에 추가한다.
+- 고정 소스에서 TypeScript·Vite production build와 NSIS 설치 파일·blockmap 생성을 완료했다. 로컬 CLI wrapper와 실행 인수의 `--publish never` 중복으로 생성 후 게시 처리에서 오류가 났으며, 중복 옵션을 수정하고 이미 생성한 파일을 재사용했다. 원래 APK 서명 검증과 후처리 metadata 생성을 완료하고 아래 패키지·공개 다운로드 검사로 검증했다. 제품 소스나 설치 파일을 다시 빌드하지 않았다. `output/exe-93-build.log`.
+- packaged bridge·Dashboard·내장 Git·종료·트레이·보안 검사 통과. 런타임·렌더러 **338개 파일**이 고정 소스와 일치한다. `output/exe-93-packaged-smoke.log`, `output/exe-93-packaged-lifecycle-smoke.log`, `output/exe-release-1.8.1.93/local-verification.json`.
+- 공개 GitHub에서 **1.8.1.92·1.8.1.91 → 1.8.1.93** 업데이트 감지를 확인하고 실제 업데이터로 설치 파일 전체를 다운로드했다. 세 자산의 크기·SHA-256·공식 URL·소스 태그·최신 안정 릴리스를 확인했다. `output/exe-93-public-verify.log`, `.build-tools/public-verified-1.8.1.93.json`.
+
+## 배포 기록
+
+- EXE 공개 게시: **2026-10-23 19:57:45 KST**. [GitHub Release v1.8.1.93](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.93).
+- 공개 다운로드 검증 완료: **2026-10-23 19:59:07 KST**.
+- 고정 제품 소스·태그: `0c3d690ac7d682bac2601a8ed8b185935b8eda41`.
+- Windows 설치 파일 FileVersion **1.8.1.93**, ProductVersion **1.8.1**, Authenticode **NotSigned** 확인.
+- 번들 Android APK는 기존 **1.8.1.39/code 21**이며 인증서·패키지·아키텍처·해시를 다시 검증했다. 새 APK 빌드·서명과 Microsoft Store·Company 배포는 실행하지 않았다.
+- 설치 프로그램 실행과 사용 중인 앱의 교체는 하지 않았다. 호스트를 업데이트한 뒤 Remote 웹·휴대폰 화면을 새로고침해 새 공통 웹 UI를 사용한다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.93-x64.exe | 156174825 | `f8d5bb8346c35d423c574383f7912521dce5fe30f4dab1d76539c6b04bf54c58` |
+| Acedia-Setup-1.8.1.93-x64.exe.blockmap | 163191 | `deba1b03faf529d6dc288e1560a0c424274a0cb3458abda015839462bb4f728d` |
+| latest-exe.json | 256 | `2cd98dd0d16c13518ad793f91ba4ae7da37212d9f5c142c5d738347cd4d7152a` |
