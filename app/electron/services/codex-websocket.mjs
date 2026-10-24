@@ -6,17 +6,23 @@ import { CODEX_PAYLOAD_BYTES, CODEX_BUFFERED_BYTES, CODEX_FRAME_BYTES } from './
 // boundary falls inside a Unicode character.
 export function sendCodexJson(socket, message) {
   if (socket?.readyState !== WebSocket.OPEN) return;
-  const data = JSON.stringify(message);
+  return sendCodexText(socket, JSON.stringify(message));
+}
+
+// Already validated relay messages can keep their original UTF-8 buffer. Large
+// image/tool payloads must not be stringified and copied again on every hop.
+export function sendCodexText(socket, data) {
+  if (socket?.readyState !== WebSocket.OPEN) return;
   const bytes = Buffer.byteLength(data);
   if (bytes > CODEX_PAYLOAD_BYTES || socket.bufferedAmount + bytes > CODEX_BUFFERED_BYTES) {
     socket.close(1009);
     return;
   }
   if (bytes <= CODEX_FRAME_BYTES) {
-    socket.send(data);
+    socket.send(data, { binary: false });
     return;
   }
-  const buffer = Buffer.from(data);
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
   for (let offset = 0; offset < buffer.length; offset += CODEX_FRAME_BYTES) {
     socket.send(buffer.subarray(offset, offset + CODEX_FRAME_BYTES), {
       binary: false, fin: offset + CODEX_FRAME_BYTES >= buffer.length,

@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 계정 분산
 description: 기존 Dashboard에서 전용 계정을 등록하고 로컬 Codex 세션을 계정별로 배분하는 자체 기능.
 status: stable
-last_updated: 2026-10-18
+last_updated: 2026-10-24
 sources:
   - resource: ../app/electron/services/account-pool.mjs
   - resource: ../app/electron/services/account-pool-rpc.mjs
@@ -21,6 +21,7 @@ sources:
   - resource: ../app/electron/remote-pwa/account-pool.test.mjs
   - resource: ../app/electron/remote-pwa/styles.css
   - resource: ../app/scripts/account-pool-cli-smoke.mjs
+  - resource: ../app/scripts/codex-routing-memory-smoke.mjs
   - resource: ../app/scripts/electron-account-pool-smoke.mjs
   - resource: ../app/electron/services/codex-usage-accounts.mjs
   - resource: ../app/electron/services/codex-usage-accounts.test.mjs
@@ -200,6 +201,52 @@ Acedia는 원본 이미지나 transcript를 수정하지 않고 이 기본 요�
 
 공식 동작: [자동 요약 임계값](https://learn.chatgpt.com/docs/config-file/config-reference),
 [`/compact`](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
+
+## 라우팅 메모리 보호 (소스 1.8.1.94)
+
+연결 준비 중 받은 WebSocket 요청은 전송 직후 대기열에서 제거한다. 기존 구현은
+연결이 열린 동안 초기 요청 객체를 계속 보관했다. 연결 종료·실패 시에도 대기열을
+비운다. 설정을 변경할 필요가 없는 요청과 응답은 원래 UTF-8 버퍼로 중계해, 이미지·
+도구 결과를 포함한 전체 JSON을 다시 직렬화하고 복사하는 비용을 줄인다. 권한 검사,
+계정 변경 차단, thread 설정 적용과 모델·사용량 관찰은 유지한다.
+
+HTTP 요청 본문 버퍼는 계정 풀 전체에서 **256 MiB**를 공유한다. 청크 병합 시의 복사와
+압축 해제 작업의 최대 출력도 할당 전에 예약하며, 공간이 없으면 본문을 대기열에
+쌓지 않고 일시적인 HTTP 503을 반환한다. 이 응답으로 계정을 로그인 필요 상태로
+바꾸거나 다른 계정에 재배정하지 않는다. 인증 재시도가 끝나 응답 헤더를 받은 뒤에는
+본문 참조와 예약을 해제하고 스트림만 중계한다. 실패·취소 시에도 예약을 반환한다.
+개별 대화 요청 128 MiB와 도구 업로드 32 MiB 한도는 유지한다. 공유 한도는 중계 본문
+버퍼에 적용되며, JSON 객체·WebSocket·Codex/MCP 자식 프로세스를 포함한 시스템 전체
+메모리 상한을 뜻하지 않는다.
+
+검증은 사용자 계정과 실행 중인 앱을 건드리지 않는 격리 환경에서 수행했다.
+관련 테스트 129개, 설치된 CLI의 모의 HTTP 스트림·캐시 식별자·계정 제외 후 대화 재개,
+native 43 MiB 이미지 기록의 조회·resume·compaction·후속 턴을 통과했다.
+`npm run account-pool:memory-smoke`는 128 MiB JS 힙 제한의 별도 Node 프로세스에서
+12개 연결을 열어 둔 채 각 1 MiB 초기 요청의 회수를 확인한다. 수정 전 소스는 요청
+객체 12개를 계속 보관했고, 수정 후 소스는 입력 버퍼와 파싱 객체가 모두 회수됐다.
+이 변경은 EXE 1.8.1.94의 배포 대상이며, 이전 실행 중인 앱에는 설치형 업데이트 후 적용된다.
+
+## 간헐적 프리징 진단에서 확인된 범위
+
+2026-10-24에 ComputerCheck의 기존 진단과 Windows 이벤트를 대조했다. 10월 19일
+`node.exe` PID 29028의 약 62.3 GiB 커밋 사용 기록은 별도 AXFoliage 보고서 검증
+스크립트와 실행 시각·할당 실패 기록이 강하게 일치한다. 당시 PID의 부모·명령줄은
+복구되지 않아 확정 귀속은 아니며, 이 기록을 라우팅 메모리 누수의 증거로 사용하지 않는다.
+
+10월 20일 22:55의 `0x4E / 0x99`와 21일 00:20의 `0x1A / 0x41792`는 메모리 관리
+정보 손상 기록이다. 충돌 직전 물리 RAM 여유는 각각 약 28.6 GiB와 37.3 GiB였다.
+이 물리 RAM 기록만으로 당시 커밋·페이지파일 여유까지 확정할 수는 없다. ComputerCheck의
+덤프 분석은 특정 RAM·CPU·보드·드라이버를 원인으로 지목하지 못했다. 이 오류의 의미는
+[Microsoft의 0x4E 설명](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x4e--pfn-list-corrupt)과
+[0x1A 설명](https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/bug-check-0x1a--memory-management)을 따른다.
+
+라우팅의 메모리 보관 수정과 Windows 메모리 손상의 원인 판정은 구분한다. 이번 검증은
+실제 프리징의 해결이나 하드웨어 정상 판정을 의미하지 않는다. 기존 진단 자료는
+`HardwareMonitoring/Diagnostics/20261019-freeze/incident-2147/node-attribution.json`,
+`20261020-freeze/incident-2256/analysis-summary.json`,
+`20261021-freeze/incident-0020/analysis-summary.json`에 보존되어 있다. 사용자 라우팅 설정,
+실행 중인 세션, BIOS·드라이버·페이지파일 설정을 변경하거나 하드웨어 부하 검사를 실행하지 않았다.
 
 ## 기본 도구와 분산 계정 (1.8.1.48)
 

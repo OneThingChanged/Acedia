@@ -1,13 +1,20 @@
 import { once } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
-import { sendCodexJson } from './codex-websocket.mjs';
+import { sendCodexJson, sendCodexText } from './codex-websocket.mjs';
 import { CODEX_BUFFERED_BYTES, CODEX_PAYLOAD_BYTES, CODEX_FRAME_BYTES } from './codex-transport-limits.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
 describe('Codex JSON WebSocket transport', () => {
+  it('forwards an existing UTF-8 payload as text without copying or reserializing it', () => {
+    const socket = { readyState: WebSocket.OPEN, bufferedAmount: 0, send: vi.fn(), close: vi.fn() };
+    const raw = Buffer.from(' { "method": "turn/start", "params": { "text": "한글 🚀" } } ');
+    sendCodexText(socket, raw);
+    expect(socket.send).toHaveBeenCalledExactlyOnceWith(raw, { binary: false });
+    expect(socket.send.mock.calls[0][0]).toBe(raw);
+  });
   it('reassembles a fragmented Unicode RPC as one text message and preserves the next RPC', async () => {
     const server = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: CODEX_PAYLOAD_BYTES });
     cleanups.push(() => new Promise(resolve => { for (const socket of server.clients) socket.terminate(); server.close(resolve); }));

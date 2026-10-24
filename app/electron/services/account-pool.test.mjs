@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, it, expect } from 'vitest';
 import { browserLoginUrl, accountLoginError } from './account-login.mjs';
 import { AccountPool } from './account-pool.mjs';
+import { CodexRequestBodyBudget } from './codex-request-body.mjs';
 import { LocalDashboardService, RemoteDashboardService } from './web-services.mjs';
 
 const resources = [];
@@ -40,6 +41,32 @@ async function sendRequest(pool, launch, overrides = {}) {
   return { response, text: await response.text() };
 }
 describe('Acedia account pool', () => {
+  it('rejects competing buffered requests temporarily and releases bodies before streaming', async () => {
+    let enter, finish, calls = 0, stream;
+    const entered = new Promise(resolve => { enter = resolve; });
+    const gate = new Promise(resolve => { finish = resolve; });
+    const budget = new CodexRequestBodyBudget(120);
+    const { pool } = fixture({ requestBodyBudget: budget, fetchImpl: async () => {
+      calls++; enter(); await gate;
+      return new Response(new ReadableStream({ start(controller) { stream = controller; } }), { headers: { 'content-type': 'text/event-stream' } });
+    } });
+    const id = add(pool, 'A'); await pool.setEnabled(true); const launch = await pool.launch('one');
+    const first = sendRequest(pool, launch);
+    try {
+      await entered;
+      expect(budget.used).toBeGreaterThan(0);
+      const rejected = await sendRequest(pool, launch);
+      expect(rejected.response.status).toBe(503); expect(calls).toBe(1);
+      expect(pool.account(id).status).toBe('ready');
+      finish();
+      // The model response stays open. Request history should already be freed.
+      await new Promise(resolve => setImmediate(resolve));
+      expect(budget.used).toBe(0);
+      stream.enqueue(new TextEncoder().encode('data: {"type":"response.completed"}\n\n')); stream.close();
+      expect((await first).response.status).toBe(200);
+      expect(budget.used).toBe(0);
+    } finally { finish(); try { stream?.close(); } catch {} }
+  });
   it('discovers models through the session owner and removes temporary credentials on success and failure', async () => {
     let rpcHome, closes = 0, failed = false;
     const { pool } = fixture({ rpcFactory: (_env, home) => {

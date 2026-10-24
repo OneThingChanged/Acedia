@@ -7,7 +7,7 @@ import { WebSocketServer } from 'ws';
 import { StringDecoder } from 'node:string_decoder';
 import { AccountPoolRpc } from './account-pool-rpc.mjs';
 import { AccountPoolSession } from './account-pool-session.mjs';
-import { decodeCodexRequestBody } from './codex-request-body.mjs';
+import { CodexRequestBodyBudget, readCodexRequestBody } from './codex-request-body.mjs';
 import { CODEX_PAYLOAD_BYTES, CODEX_TOOL_UPLOAD_BYTES } from './codex-transport-limits.mjs';
 import { mergeCodexRateLimits } from './codex-usage.mjs';
 import { readCodexModels } from '../shared/session-model.mjs';
@@ -38,13 +38,14 @@ const backendOrigin = raw => {
 
 export class AccountPool {
   constructor(root, { safeStorage, command, nativeCommand, rpcFactory, sessionFactory = options => new AccountPoolSession(options), fetchImpl = fetch, port = 3020,
-    upstream = DEFAULT_UPSTREAM, now = Date.now, transcriptUsageForPeriods = null, onRateLimitsChanged = () => {} } = {}) {
+    upstream = DEFAULT_UPSTREAM, now = Date.now, transcriptUsageForPeriods = null, onRateLimitsChanged = () => {}, requestBodyBudget = new CodexRequestBodyBudget() } = {}) {
     this.root = root; this.file = path.join(root, 'pool.json'); this.safeStorage = safeStorage;
     this.command = command; this.rpcFactory = rpcFactory || ((env, home) => new AccountPoolRpc(command(), env, home));
     this.nativeCommand = nativeCommand; this.sessionFactory = sessionFactory; this.nativeSessions = new Map();
     this.fetch = fetchImpl; this.port = port; this.upstream = upstream; this.now = now;
     this.transcriptUsageForPeriods = transcriptUsageForPeriods;
     this.onRateLimitsChanged = onRateLimitsChanged;
+    this.requestBodyBudget = requestBodyBudget;
     this.quotaAttempts = new Map(); this.quotaTimer = null; this.activeQuotaRefresh = null;
     this.state = { enabled: false, accounts: [], sessions: {}, recent: [] }; this.jobs = new Map(); this.locks = new Map(); this.active = new Map();
     this.server = null; this.starting = null; this.closed = false; this.controllers = new Set();
@@ -549,7 +550,7 @@ export class AccountPool {
     this.webSockets.handleUpgrade(req, socket, head, client => { void lease.runtime.attach(client); });
   }
   async proxy(req, res) {
-    let a, sessionId, record;
+    let a, sessionId, record, bodyLease;
     const controller = new AbortController(); this.controllers.add(controller);
     let clientDisconnected = false;
     res.on('close', () => {
@@ -585,10 +586,8 @@ export class AccountPool {
       let body;
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const maxBytes = nativeTool ? CODEX_TOOL_UPLOAD_BYTES : CODEX_PAYLOAD_BYTES;
-        const chunks = []; let size = 0;
-        for await (const chunk of req) { size += chunk.length; if (size > maxBytes) throw fail(nativeTool ? '도구 업로드가 32 MiB 제한을 넘었습니다.' : '대화 요청이 128 MiB 제한을 넘었습니다. 첨부나 대화 맥락을 정리한 뒤 다시 시도하세요.', 413); chunks.push(chunk); }
-        body = Buffer.concat(chunks);
-        if (!nativeTool) body = await decodeCodexRequestBody(body, req.headers['content-encoding']);
+        bodyLease = await readCodexRequestBody(req, { budget: this.requestBodyBudget, maxBytes, decode: !nativeTool, signal: controller.signal });
+        body = bodyLease.body; bodyLease.body = null;
         if (!nativeTool) try { const data = JSON.parse(body); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(); } catch { throw fail('JSON 요청이 필요합니다.'); }
       }
       a = this.choose(sessionId); this.active.set(a.id, (this.active.get(a.id) || 0) + 1);
@@ -620,6 +619,9 @@ export class AccountPool {
         upstream = await send();
       }
       record.httpStatus = upstream.status;
+      // Authentication retry is finished. Do not retain image-rich history for
+      // the remaining (potentially 15-minute) streamed response.
+      body = undefined; bodyLease?.release(); bodyLease = null;
       if (!upstream.ok) {
         record.status = 'failed';
         if (upstream.status === 401 || (!nativeTool && upstream.status === 403)) a.status = 'login_required';
@@ -729,6 +731,7 @@ export class AccountPool {
       if (!res.headersSent && !res.destroyed) json(res, error.status || 502, { error: { message: error.status ? error.message : '분산 요청 연결에 실패했습니다.', type: 'acedia_pool_error' } });
       else if (!res.destroyed) res.destroy();
     } finally {
+      bodyLease?.release();
       clearTimeout(timeout); this.controllers.delete(controller);
       if (a) this.active.set(a.id, Math.max(0, (this.active.get(a.id) || 1) - 1));
       if (a && record) {

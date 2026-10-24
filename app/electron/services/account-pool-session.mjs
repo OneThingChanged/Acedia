@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 import { parse as parseToml } from 'smol-toml';
 import { terminateWindowsProcessTree } from './process-tree.mjs';
 import { CODEX_PAYLOAD_BYTES, CODEX_BUFFERED_BYTES } from './codex-transport-limits.mjs';
-import { sendCodexJson as send } from './codex-websocket.mjs';
+import { sendCodexJson as send, sendCodexText } from './codex-websocket.mjs';
 
 const failure = message => Object.assign(new Error(message), { status: 503 });
 const REFRESH = 'account/chatgptAuthTokens/refresh';
@@ -218,7 +218,7 @@ export class AccountPoolSession extends EventEmitter {
     const queue = []; let queuedBytes = 0;
     const threadRequests = new Map();
     const relay = raw => {
-      let message;
+      let message, payload = raw;
       try {
         message = JSON.parse(raw);
         if (AUTH_MUTATIONS.has(message.method)) throw failure('이 세션의 계정은 Acedia 계정 관리에서 변경하세요.');
@@ -229,12 +229,13 @@ export class AccountPoolSession extends EventEmitter {
             if (threadRequests.size > 64) threadRequests.delete(threadRequests.keys().next().value);
           }
           message.params = { ...message.params, ...this.threadOverrides, modelProvider: 'openai', config: { ...this.profileConfig, ...message.params?.config, ...this.config } };
+          payload = JSON.stringify(message);
         }
-        if (upstream) send(upstream, message);
+        if (upstream) sendCodexText(upstream, payload);
         else {
-          queuedBytes += raw.length;
+          queuedBytes += Buffer.byteLength(payload);
           if (queuedBytes > CODEX_BUFFERED_BYTES) return client.close(1009);
-          queue.push(message);
+          queue.push(payload);
         }
       } catch (error) {
         if (message?.id != null) send(client, { id: message.id, error: { code: -32000, message: error.status ? error.message : 'Codex 요청을 처리하지 못했습니다.' } });
@@ -242,7 +243,7 @@ export class AccountPoolSession extends EventEmitter {
       }
     };
     client.on('message', relay);
-    client.on('close', () => { this.sockets.delete(client); upstream?.terminate(); });
+    client.on('close', () => { queue.length = 0; queuedBytes = 0; threadRequests.clear(); this.sockets.delete(client); upstream?.terminate(); });
     try {
       upstream = await this.connect();
       if (client.readyState !== WebSocket.OPEN) { upstream.terminate(); return; }
@@ -259,10 +260,11 @@ export class AccountPoolSession extends EventEmitter {
         }
         if (message.method === "thread/settings/updated") this.#settings(message.params);
         if (message.method === 'account/rateLimits/updated') this.#rateLimits(message.params);
-        send(client, message);
+        sendCodexText(client, raw);
       });
-      for (const message of queue) send(upstream, message);
+      for (const payload of queue) sendCodexText(upstream, payload);
     } catch { client.close(1011); }
+    finally { queue.length = 0; queuedBytes = 0; }
   }
   #settings(value) {
     if (this.closed || !this.mainThreadId || value?.threadId !== this.mainThreadId || typeof value.settings?.model !== "string") return;
