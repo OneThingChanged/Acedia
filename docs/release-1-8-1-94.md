@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.1.94
-status: draft
+status: published
 last_updated: 2026-10-24
 ---
 
@@ -36,8 +36,21 @@ These changes reduce relay memory retention and copying. They do not establish t
 - 실제 Electron의 세션·프로젝트 생성 상호작용과 **18개 화면 조합**, 조직·폴더 이동·재개·동기화, 세션 사용량, 터미널 링크·native PTY 검사를 통과했다. `output/exe-94-electron-*.log`.
 - `npm run account-pool:memory-smoke` 재검증 통과. `output/exe-94-account-pool-memory-smoke.log`.
 - native PTY 성공 표식과 종료 코드 0을 확인했다. 종료 시 기존 `AttachConsole failed` 진단 출력이 남았으며, 실행·입출력 검증의 실패와 구분했다.
-- 패키지·공개 다운로드 검증 결과는 완료 후 기록한다.
+- TypeScript·Vite production build와 NSIS 설치 파일·blockmap·EXE 업데이트 manifest 생성을 완료했다. `output/exe-94-build.log`.
+- packaged bridge·Dashboard·내장 Git·종료·트레이·보안 검사를 통과했다. 런타임·렌더러 **338개 파일**이 고정 소스와 일치한다. `output/exe-94-packaged-smoke.log`, `output/exe-94-packaged-lifecycle-smoke.log`, `output/exe-release-1.8.1.94/local-verification.json`.
+- 공개 업데이터에서 **1.8.1.93·1.8.1.92·1.8.1.89 → 1.8.1.94** 감지를 확인하고 설치 파일 전체를 다운로드했다. 세 자산의 크기·SHA-256·공식 URL·소스 태그와 최신 안정 릴리스를 검증했다. `output/exe-94-public-verify.log`.
 
 ## 배포 기록
 
-고정 소스 푸시와 EXE 빌드·검증·공개 게시를 진행한다. 설치 프로그램 실행과 사용 중인 앱의 교체는 별도다.
+- EXE 공개 게시: **2026-10-24 18:41:59 KST**. [GitHub Release v1.8.1.94](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.94).
+- 공개 다운로드 검증 완료: **2026-10-24 18:45:08 KST**.
+- 고정 제품 소스·태그: `eff014526eb782e0c0f2009f6a1dd4f83518ae0a`.
+- Windows 설치 파일 FileVersion **1.8.1.94**, ProductVersion **1.8.1**, Authenticode **NotSigned** 확인.
+- 번들 APK는 기존 **1.8.1.39/code 21**이며 인증서·패키지·아키텍처·해시를 검증했다. 새 APK·Microsoft Store·Company 배포는 실행하지 않았다.
+- 설치 프로그램을 실행하거나 사용 중인 앱을 교체·재시작하지 않았다. 설정의 **Check → Update**로 설치형 업데이트를 적용한다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.94-x64.exe | 156176430 | `194cd8a4cb5d90a38a8dec97b48f0956714360ecf1fe219f4ea77b206b019435` |
+| Acedia-Setup-1.8.1.94-x64.exe.blockmap | 163275 | `c0039b54bf32f86ebeaf351602a78f554c98b7c7e7bba8e3ea3b82a5b70cd28b` |
+| latest-exe.json | 256 | `7d7b858594d9d763cbcd844a365b65ed4278d557959ab088544c0f877f8d7538` |
