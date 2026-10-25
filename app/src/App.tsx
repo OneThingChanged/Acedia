@@ -7,6 +7,8 @@ import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
+import { isAbsoluteFsPath, joinFsPath, relativeIfInside } from "./lib/path";
+import { resolveSessionDocumentLink } from "./lib/sessionFileLinks";
 import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocation';
 import { SessionOrganization } from "./components/SessionOrganization";
 import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
@@ -561,29 +563,6 @@ function loadAlwaysOnTop() {
   } catch {
     return false;
   }
-}
-
-function isAbsoluteFsPath(path: string) {
-  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
-}
-
-function joinFsPath(folder: string, relativePath: string) {
-  return `${folder.replace(/[\\/]+$/, "")}/${relativePath}`;
-}
-
-// Returns the project-relative path when absolutePath is inside folder,
-// otherwise null. Case-insensitive to match Windows path semantics.
-function relativeIfInside(folder: string, absolutePath: string): string | null {
-  const normFolder = folder.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normPath = absolutePath.replace(/\\/g, "/");
-  if (!normFolder) return null;
-  if (
-    normPath.toLowerCase().startsWith(`${normFolder.toLowerCase()}/`) &&
-    normPath.length > normFolder.length + 1
-  ) {
-    return normPath.slice(normFolder.length + 1);
-  }
-  return null;
 }
 
 function App() {
@@ -3486,37 +3465,18 @@ function App() {
   const handleOpenMarkdownPath = useCallback(
     async (agentId: string, path: string, external = false) => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
-      const project = projectsRef.current.find(
-        (candidate) => candidate.id === agent?.projectId
-      );
-      if (!agent || !project?.folder) return;
+      if (!agent) return;
 
       try {
-        const relativePath = await invoke<string>("resolve_markdown_path", {
-          folder: project.folder,
-          path,
-        });
+        const target = await resolveSessionDocumentLink(agent, agentsRef.current, projectsRef.current, path,
+          args => invoke<string>("resolve_markdown_path", args));
         // Ctrl/Cmd+click → open with the OS default app (browser for .html)
         // instead of the in-app doc tab.
-        if (external) {
-          const fullPath = isAbsoluteFsPath(relativePath)
-            ? relativePath
-            : joinFsPath(project.folder, relativePath);
-          await invoke("open_local_path", { path: fullPath });
+        if (external || !target.relativePath) {
+          await invoke("open_local_path", { path: target.absolutePath });
           return;
         }
-        // resolve_markdown_path returns an absolute path only for docs living
-        // outside the project root — those still open externally.
-        if (isAbsoluteFsPath(relativePath)) {
-          const inside = relativeIfInside(project.folder, relativePath);
-          if (inside) {
-            openDocTab(project.id, inside, agentId);
-          } else {
-            await invoke("open_local_path", { path: relativePath });
-          }
-          return;
-        }
-        openDocTab(project.id, relativePath, agentId);
+        openDocTab(target.projectId, target.relativePath, agentId);
       } catch {
         pushToast(agentId, agent.name, text("문서 파일을 열 수 없습니다.", "Could not open the document file."));
       }
@@ -3564,7 +3524,7 @@ function App() {
       if (!agent || !project?.folder) return;
 
       try {
-        await invoke("open_folder_path", { folder: project.folder, path });
+        await invoke("open_folder_path", { folder: resolveSessionSettings(agent, agentsRef.current, projectsRef.current).folder || project.folder, path });
       } catch (error) {
         pushToast(agentId, agent.name, text(`폴더를 열 수 없습니다: ${String(error)}`, `Could not open the folder: ${String(error)}`));
       }

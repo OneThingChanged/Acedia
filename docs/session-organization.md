@@ -3,13 +3,14 @@ type: Guide
 title: 프로젝트 관계 보드와 부모·자식 세션 조직도
 description: 프로젝트 사이의 부모·자식과 폴더 참조를 연결하고, 세션별 설정 상속과 자유로운 보드 배치를 관리한다.
 status: implemented
-last_updated: 2026-10-23
+last_updated: 2026-10-25
 sources:
   - resource: ../app/src/components/SessionOrganization.tsx
   - resource: ../app/src/components/ProjectBoard.tsx
   - resource: ../app/src/lib/projectHierarchy.ts
   - resource: ../app/src/lib/projectBoard.ts
   - resource: ../app/src/lib/sessionHierarchy.ts
+  - resource: ../app/src/lib/sessionFileLinks.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/startup-automation.mjs
@@ -185,6 +186,21 @@ MCP 호출자가 같은 프로젝트에서 세션을 생성할 때만 조직상�
 생성 기록을 추가했다고 AI 작업의 자동 위임·결과 회수가 새로 활성화되는 것은 아니다.
 
 ## 상속 규칙
+
+2026-10-25 소스 수정: 대화·터미널의 HTML/Markdown 상대경로 링크와 폴더 링크는 해당
+세션의 유효 작업 폴더를 기준으로 연다. 예를 들어 프로젝트가 `RnDHub`, 자식 세션의
+작업 폴더가 `RnDHub/RnDProject`이면 `Saved/Tests/index.html`은
+`RnDHub/RnDProject/Saved/Tests/index.html`에서 찾는다. 부모에서 폴더를 상속한 경우에도
+같은 설정 계산을 사용한다. 문서 탭에는 등록 프로젝트 기준인
+`RnDProject/Saved/Tests/index.html`로 변환해 전달하므로 열람·재열기·탭 중복 판정이
+같은 파일을 가리킨다. Ctrl/Cmd+클릭도 같은 절대 경로를 사용하며, 프로젝트 밖의 문서를
+외부 프로그램으로 여는 정책은 유지한다. 이 수정은 EXE 1.8.1.95의 배포 대상이다.
+
+같은 이름의 부모·자식 보고서, 여러 단계 폴더 상속, 절대 경로와 외부 문서 경계를
+포함한 관련 검사 42개, TypeScript·Vite production build와 기존 터미널 링크 클릭
+검사를 통과했다. 실제 `RnDProject` 보고서도 등록 프로젝트 기준으로 변환한 경로에서
+미리보기 HTTP 200과 원본 파일 내용 일치를 확인했다. 사용자 세션을 재시작하거나
+실행 중인 설치 앱에 변경을 적용하지 않았다.
 
 | 항목 | 동작 |
 | --- | --- |
