@@ -2,7 +2,7 @@
 type: Guide
 title: Pixel Office — 프로젝트 보드와 우측 사무실 보기
 description: Pixel Agents의 공개 픽셀 자산에 Acedia의 세션 상태와 부모·자식 관계를 연결한다.
-status: implemented
+status: stable
 last_updated: 2026-10-27
 sources:
   - resource: ../app/src/components/PixelOffice.tsx
@@ -17,7 +17,7 @@ sources:
 
 # Pixel Office
 
-Standard EXE 1.8.1.96에 포함한다. 검증·공개 배포 결과는 [릴리스 기록](release-1-8-1-96.md)을 따른다.
+Standard EXE 1.8.1.96에 포함됐다. 검증·공개 배포 결과는 [릴리스 기록](release-1-8-1-96.md)을 따른다.
 
 ## 열기와 배치
 

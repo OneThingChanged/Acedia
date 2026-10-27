@@ -24,7 +24,7 @@ configuration that supports it.
 
 ## Settings and review
 
-* [Acedia 1.8.1.96](release-1-8-1-96.md) - UTF-8 세션 수신함·한글 전달, 조직도 API, 자식 작업 폴더, 휴면 자식 표시 선택과 Pixel Office; EXE 검증·배포 기록.
+* [Acedia 1.8.1.96](release-1-8-1-96.md) - UTF-8 세션 수신함·한글 전달, 조직도 API, 자식 작업 폴더, 휴면 자식 표시 선택과 Pixel Office; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [Acedia 1.8.1.91](release-1-8-1-91.md) - 프로젝트별 Codex 폴더 신뢰 자동 확인과 하위 작업의 시작 승인 대기·전달 개선; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [Acedia 1.8.1.90](release-1-8-1-90.md) - 세션별 개인 메모, Active 부모 아래 Sleeping 자식 표시와 채팅 첫 요청 보존; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [채팅 첫 요청 누락 조사](chat-first-request-review-2026-10-22.md) - 최초 세션 ID 연결 시 시작 대기 요청·초안 누락 수정과 격리 검증; 1.8.1.90 EXE 배포에 포함.

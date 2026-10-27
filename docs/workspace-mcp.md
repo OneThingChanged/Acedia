@@ -180,7 +180,7 @@ Unicode 전달도 실제 CLI에서 회귀 검사했다. 두 native 검사는 기
 기록은 `output/session-messages-adjacent-tests.log`, `output/session-messages-powershell.log`,
 `output/session-messages-native-final.log`, `output/session-messages-legacy-native-regression.log`,
 `output/session-messages-electron.log`, `output/session-messages-build.log`다. 사용자 세션에는
-테스트 명령을 보내지 않았다. 이 소스를 배포한 뒤 보내는 세션과 받는 세션의 CLI를
+테스트 명령을 보내지 않았다. Standard EXE 1.8.1.96 업데이트 후 보내는 세션과 받는 세션의 CLI를
 다시 시작해야 새 MCP 도구 목록을 사용할 수 있다.
 
 ## 조직도 관리와 실행 전 등록 (2026-10-27, 1.8.1.96)
