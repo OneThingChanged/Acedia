@@ -6,6 +6,59 @@ import { spawn } from "node:child_process";
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = path.resolve(appRoot, "../output/sidebar-workspace-app");
+const familyOnly = process.argv.includes('--inactive-family-only') || process.env.ACEDIA_SIDEBAR_FAMILY_ONLY === '1';
+const fileRootsOnly = process.argv.includes('--session-folders-only') || process.env.ACEDIA_SIDEBAR_FILE_ROOTS_ONLY === '1';
+
+async function exerciseFileRoots() {
+  const wait = (ms = 80) => new Promise(resolve => setTimeout(resolve, ms));
+  const until = async predicate => { for (let i = 0; i < 80; i++) { if (predicate()) return; await wait(); } throw Error('File root condition timed out: ' + document.querySelector('.file-tree-panel')?.textContent?.slice(0, 600)); };
+  const check = (value, message) => { if (!value) throw Error(message); };
+  const root = () => document.querySelector('.file-tree-working-folder')?.getAttribute('title');
+  const select = async id => {
+    document.querySelector(`.sidebar-recents [data-sidebar-agent-id="${id}"]`).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await wait();
+  };
+  window.sidebarFixtureFileRoots = { 'G:/AI': ['parent-only.md', 'README.md'], 'D:/AI2/PCGLab': ['pcg-only.md', 'README.md'], 'E:/Motion': ['motion-only.md', 'README.md'] };
+  window.dispatchEvent(new Event('focus'));
+  await until(() => root() === 'D:/AI2/PCGLab' && document.querySelector('.file-tree-panel')?.textContent.includes('pcg-only.md'));
+  check(document.querySelector('.file-tree-project-name').textContent === 'PCGLab', 'Tree title is still the parent project');
+  check(document.querySelector('.sidebar-recents [data-sidebar-agent-id="pcg"] .sidebar-session-meta [title]').title === 'D:/AI2/PCGLab', 'Sidebar still reports the stale root');
+  const row = () => [...document.querySelectorAll('.file-tree-row')].find(e => e.textContent.includes('README.md'));
+  row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  await until(() => window.layoutCalls.some(c => c.command === 'read_markdown_file' && c.args.folder === 'D:/AI2/PCGLab' && c.args.relativePath === 'README.md'));
+  check(root() === 'D:/AI2/PCGLab', 'Opening a child document reset the tree to the project root');
+  await until(() => Object.keys(localStorage).filter(k => k.includes('groups')).some(k => localStorage.getItem(k)?.includes('doc2:')));
+  await select('motion');
+  await until(() => root() === 'E:/Motion' && document.querySelector('.file-tree-panel').textContent.includes('motion-only.md'));
+  check(!document.querySelector('.file-tree-panel').textContent.includes('pcg-only.md'), 'Sibling root reused a stale directory cache');
+  document.querySelector('.file-tree-pin').click(); await wait();
+  await select('manager');
+  check(root() === 'E:/Motion', 'Pin did not retain the child session root');
+  check(JSON.parse(localStorage.getItem('multiagent.fileTreePin.v1')).sessionId === 'motion', 'Pinned session identity was not saved');
+  return 'SESSION_FILE_ROOT_CUSTOM_DRIVE_DOCUMENT_OWNER_SIBLING_CACHE_AND_PIN_OK';
+}
+
+async function exerciseFileRootRestore() {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const until = async predicate => { for (let i = 0; i < 80; i++) { if (predicate()) return; await wait(80); } throw Error('Restored file root condition timed out'); };
+  const root = () => document.querySelector('.file-tree-working-folder')?.getAttribute('title');
+  window.sidebarFixtureFileRoots = { 'G:/AI': ['parent-only.md'], 'D:/AI2/PCGLab': ['pcg-only.md'], 'E:/Motion': ['motion-only.md'] };
+  await until(() => root() === 'E:/Motion');
+  document.querySelector('.file-tree-pin').click();
+  await until(() => root() === 'G:/AI');
+  window.sidebarFixtureFileDelays = { 'D:/AI2/PCGLab': 350 };
+  const select = id => document.querySelector(`.sidebar-recents [data-sidebar-agent-id="${id}"]`).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  select('pcg'); await wait(70); select('motion');
+  await until(() => root() === 'E:/Motion' && document.querySelector('.file-tree-panel').textContent.includes('motion-only.md'));
+  await wait(500);
+  if (document.querySelector('.file-tree-panel').textContent.includes('pcg-only.md')) throw Error('An old root request overwrote the new tree');
+  window.sidebarFixtureFileDelays = {};
+  select('pcg'); await until(() => root() === 'D:/AI2/PCGLab');
+  const scm = [...document.querySelectorAll('.file-tree-tab')].find(b => /Source Control|소스 제어/.test(b.textContent + b.title));
+  if (!scm) throw Error('Source Control tab missing'); scm.click();
+  await until(() => window.layoutCalls.some(c => c.command === 'git_changes' && c.args.folder === 'D:/AI2/PCGLab'));
+  return 'SESSION_FILE_ROOT_PIN_RESTORE_UNPIN_LATE_IO_AND_SCM_CWD_OK';
+}
 
 async function exerciseScreenIdentity() {
   const wait = () => new Promise(resolve => setTimeout(resolve, 180));
@@ -447,8 +500,11 @@ async function exerciseActiveFamilySleeping(stopParent = false) {
   const until = async predicate => { for(let i=0;i<60;i++){if(predicate())return;await wait();}throw Error('Active family condition timed out'); };
   const check = (value, message) => { if(!value)throw Error(message); };
   const row = id => document.querySelector(`.sidebar-recents [data-sidebar-agent-id="${id}"]`);
-  const sleeping = ['ShaderLevelUp','ShaderNoiseBall'];
+  const sleeping = ['ShaderLevelUp','ShaderNoiseBall','SleepingGrandchild'];
+  const inactive = ['StoppedChild','NewChild'];
+  const context = [...sleeping,...inactive];
   if (!stopParent) {
+    await until(()=>context.every(id=>!!row(id)));
     row('rnd-root').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
     await until(()=>document.querySelector('.pane-active')?.dataset.paneActiveAgentId==='rnd-root'&&!document.querySelector('.pane-active .session-standby'));
     // This fixture attaches a fake terminal; supply its first output so the
@@ -459,25 +515,47 @@ async function exerciseActiveFamilySleeping(stopParent = false) {
     const before = window.layoutCalls.filter(call=>['spawn_pty','kill_pty','terminal_session_action'].includes(call.command)).length;
     const sleepingCount=document.querySelector('[data-session-filter="sleeping"] .sidebar-session-filter-count').textContent;
     document.querySelector('[data-session-filter="active"]').click();
-    await until(()=>sleeping.every(id=>!!row(id)));
+    await until(()=>context.every(id=>!row(id)));
+    check(row('ShaderSkinner')?.closest('[data-sidebar-parent-id="rnd-root"]'),'Default hiding removed an active child');
+    const toggleInactive = async () => {
+      row('rnd-root').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:160,clientY:180}));
+      await until(()=>!!document.querySelector('[data-session-action="sidebar-toggle-inactive-children"]'));
+      document.querySelector('[data-session-action="sidebar-toggle-inactive-children"]').click();
+      await until(()=>!document.querySelector('.ctx-menu'));
+    };
+    await toggleInactive();
+    await until(()=>context.every(id=>!!row(id)));
+    await until(()=>JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(a=>a.id==='rnd-root').sidebarShowInactiveChildren===true);
     for(const id of sleeping) {
       check(row(id).closest('[data-sidebar-parent-id="rnd-root"]'),'Sleeping child detached from active parent');
       check(row(id).querySelector('.status-sleeping') && row(id).querySelector('.sidebar-sleep-label')?.textContent,'Sleeping child changed runtime classification');
       check(document.querySelector(`[data-sidebar-project-id="rnd"] [data-sidebar-parent-id="rnd-root"] [data-sidebar-agent-id="${id}"]`),'Project list omitted sleeping context');
     }
+    for(const id of inactive) {
+      check(row(id).closest('[data-sidebar-parent-id="rnd-root"]'),'Stopped/new child detached from active parent');
+      check(!row(id).querySelector('.sidebar-sleep-label')&&!row(id).querySelector('.sidebar-session-close'),'Stopped/new child acquired a sleeping or live classification');
+      check(document.querySelector(`[data-sidebar-project-id="rnd"] [data-sidebar-agent-id="${id}"]`),'Project list omitted stopped/new context');
+    }
+    check(row('SleepingGrandchild').closest('[data-sidebar-parent-id="StoppedChild"]'),'Inactive intermediate child broke the family tree');
     check(document.querySelector('[data-session-filter="active"] .sidebar-session-filter-count').textContent==='2','Sleeping context inflated Active count');
     check(document.querySelector('[data-session-filter="sleeping"] .sidebar-session-filter-count').textContent===sleepingCount,'Sleeping count changed when expanding Active');
     document.querySelector('[data-session-filter="sleeping"]').click();await wait();
-    check(sleeping.every(id=>!!row(id))&&!row('ShaderSkinner'),'Sleeping filter changed its strict status selection');
+    check(sleeping.every(id=>!!row(id))&&!row('ShaderSkinner')&&!row('NewChild'),'Sleeping filter changed its strict status selection');
     document.querySelector('[data-session-filter="active"]').click();await wait();
-    check(sleeping.every(id=>!!row(id)),'Sleeping context did not return under the active parent');
+    check(context.every(id=>!!row(id)),'Inactive context did not return under the active parent');
+    await toggleInactive();
+    await until(()=>context.every(id=>!row(id)));
+    await until(()=>JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(a=>a.id==='rnd-root').sidebarShowInactiveChildren===false);
+    check(row('ShaderSkinner')?.closest('[data-sidebar-parent-id="rnd-root"]'),'Hiding inactive children removed an active child');
+    document.querySelector('[data-session-filter="all"]').click();await until(()=>context.every(id=>!!row(id)));
+    document.querySelector('[data-session-filter="active"]').click();await until(()=>context.every(id=>!row(id)));
     check(window.layoutCalls.filter(call=>['spawn_pty','kill_pty','terminal_session_action'].includes(call.command)).length===before,'Filtering started or stopped a session');
-    return 'SIDEBAR_ACTIVE_PARENT_SLEEPING_CHILDREN_STATUS_COUNTS_AND_NO_RUNTIME_OK';
+    return 'SIDEBAR_ACTIVE_PARENT_SLEEPING_STOPPED_NEW_DESCENDANTS_COUNTS_AND_NO_RUNTIME_OK\nSIDEBAR_INACTIVE_CHILD_VISIBILITY_DEFAULT_HIDE_CONTEXT_TOGGLE_AND_PERSIST_OK';
   }
   row('rnd-root').querySelector('.sidebar-session-close').click();
-  await until(()=>sleeping.every(id=>!row(id)));
+  await until(()=>context.every(id=>!row(id)));
   check(row('ShaderSkinner')?.closest('[data-sidebar-parent-id="rnd-root"]'),'Active child lost its inactive parent context');
-  return 'SIDEBAR_INACTIVE_CONTEXT_PARENT_DOES_NOT_REVEAL_SLEEPING_SIBLINGS_OK';
+  return 'SIDEBAR_INACTIVE_CONTEXT_PARENT_DOES_NOT_REVEAL_INACTIVE_SIBLINGS_OK';
 }
 
 if (process.versions.electron) {
@@ -489,6 +567,26 @@ if (process.versions.electron) {
     const errors = [];
     win.webContents.on('console-message', details => { if (details.level === 'error') { errors.push(details.message); console.error('RENDERER_ERROR', details.message); } });
     await win.loadFile(path.join(directory, 'index.html'), { query: { 'two-screens': '1' } });
+    if (fileRootsOnly) {
+      await win.webContents.executeJavaScript(`{
+        const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value));
+        write('multiagent.projects.v1',[{id:'p',name:'AIHub',folder:'G:/AI',createdAt:1}]);
+        const make=(id,name,folder,sessionHierarchy)=>({id,name,folder,projectId:'p',aiToolId:'codex',createdAt:1,resumeEligible:false,sessionHierarchy});
+        write('multiagent.agents.v1',[make('manager','AIHub 관리자','G:/AI'),make('pcg','PCGLab','G:/stale',{parentId:'manager',inheritFolder:false,folderOverride:'D:/AI2/PCGLab'}),make('motion','Mixamo','G:/stale',{parentId:'manager',inheritFolder:false,folderOverride:'E:/Motion'})]);
+        const groups=[{id:'files',projectId:'p',layout:{type:'leaf',id:'leaf',tabs:['manager','pcg','motion'],activeIndex:1}}],view={activeProjectId:'p',activeGroupId:'files',activePath:[]};
+        for(const key of ['multiagent.groups.v1','multiagent.workspace.primary.groups.v1'])write(key,groups);
+        for(const key of ['multiagent.view.v1','multiagent.workspace.primary.view.v1'])write(key,view);
+        localStorage.setItem('multiagent.filesOpen.v1','true');localStorage.setItem('multiagent.sessionFilter.v1','all');localStorage.removeItem('multiagent.fileTreePin.v1');
+      }`);
+      await win.loadFile(path.join(directory, 'index.html'));
+      console.log(await win.webContents.executeJavaScript(`(${exerciseFileRoots.toString()})()`));
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await win.loadFile(path.join(directory, 'index.html'));
+      console.log(await win.webContents.executeJavaScript(`(${exerciseFileRootRestore.toString()})()`));
+      if(errors.length) throw Error(errors.join('\n'));
+      app.exit(0);return;
+    }
+    if (!familyOnly) {
     console.log(await win.webContents.executeJavaScript(`(${exerciseScreenIdentity.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-screen-identity-dark.png'), (await win.webContents.capturePage()).toPNG());
     for (const [surface, selector] of [
@@ -593,6 +691,7 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript(`(${exerciseSearchReveal.toString()})()`));
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionActions.toString()})()`));
     await fs.writeFile(path.join(directory, 'sidebar-session-actions.png'), (await win.webContents.capturePage()).toPNG());
+    }
     await win.webContents.executeJavaScript(`{
       const write=(key,value)=>localStorage.setItem(key,JSON.stringify(value)),now=Date.now();
       write('multiagent.projects.v1',[{id:'creator-project',name:'AIHub',folder:'C:/fixture/AIHub',createdAt:now},{id:'rnd',name:'RnDHub',folder:'C:/fixture/RnDHub',createdAt:now}]);
@@ -608,16 +707,25 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(false)`));
     await win.loadFile(path.join(directory,'index.html'));
     console.log(await win.webContents.executeJavaScript(`(${exerciseSessionFamilies.toString()})(true)`));
+    await win.webContents.executeJavaScript(`{
+      const key='multiagent.agents.v1',agents=JSON.parse(localStorage.getItem(key)),base=agents.find(agent=>agent.id==='rnd-root');
+      agents.push(...[
+        {id:'StoppedChild',parentId:'rnd-root',resumeEligible:false},
+        {id:'NewChild',parentId:'rnd-root',resumeEligible:false},
+        {id:'SleepingGrandchild',parentId:'StoppedChild',resumeEligible:true},
+      ].map(({id,parentId,resumeEligible})=>({...base,id,name:id,status:'idle',runtimeStatus:'idle',deferredStart:true,resumeEligible,lastSessionId:undefined,sessionHierarchy:{parentId,inheritFolder:true}})));
+      localStorage.setItem(key,JSON.stringify(agents));window.dispatchEvent(new StorageEvent('storage',{key}));
+    }`);
     console.log(await win.webContents.executeJavaScript(`(${exerciseActiveFamilySleeping.toString()})()`));
-    await fs.writeFile(path.join(directory,'sidebar-active-parent-sleeping-children.png'),(await win.webContents.capturePage()).toPNG());
+    if (!familyOnly) await fs.writeFile(path.join(directory,'sidebar-active-parent-sleeping-children.png'),(await win.webContents.capturePage()).toPNG());
     console.log(await win.webContents.executeJavaScript(`(${exerciseActiveFamilySleeping.toString()})(true)`));
-    await fs.writeFile(path.join(directory,'sidebar-session-family-tree.png'),(await win.webContents.capturePage()).toPNG());
+    if (!familyOnly) await fs.writeFile(path.join(directory,'sidebar-session-family-tree.png'),(await win.webContents.capturePage()).toPNG());
     if (errors.length) throw Error(errors.join('\n'));
     app.exit(0);
   } catch (error) {
     console.error(error);
     if (win && !win.isDestroyed()) {
-      await fs.writeFile(path.join(directory, 'sidebar-failure.png'), (await win.webContents.capturePage()).toPNG());
+      if (!familyOnly) await fs.writeFile(path.join(directory, 'sidebar-failure.png'), (await win.webContents.capturePage()).toPNG());
       console.error(await win.webContents.executeJavaScript(`JSON.stringify({ agent: document.querySelector('.pane-active')?.dataset.paneActiveAgentId, toggles: [...document.querySelectorAll('.pane-chat-toggle')].map(button => ({label:button.getAttribute('aria-label'), on:button.classList.contains('on')})), content:document.querySelector('.terminal-area')?.innerText.slice(0,1000) })`));
     }
     app.exit(1);
@@ -629,7 +737,8 @@ if (process.versions.electron) {
   const profile = await fs.mkdtemp(path.join(directory, 'profile-'));
   await build({ entryPoints: [path.join(appRoot, 'scripts/fixtures/sidebar-workspace-renderer.tsx')], bundle: true, jsx: 'automatic', define: { 'import.meta.env': '{}', '__MULTIAGENT_APP_VERSION__': JSON.stringify('sidebar-smoke') }, outfile: path.join(directory, 'renderer.js') });
   await fs.writeFile(path.join(directory, 'index.html'), '<meta charset="utf-8"><link rel="stylesheet" href="renderer.css"><div id="root"></div><script src="renderer.js"></script>');
-  const env = { ...process.env, ACEDIA_SIDEBAR_SMOKE_PROFILE: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  const env = { ...process.env, ACEDIA_SIDEBAR_SMOKE_PROFILE: profile, ACEDIA_SIDEBAR_FAMILY_ONLY: familyOnly ? '1' : '0' }; delete env.ELECTRON_RUN_AS_NODE;
+  env.ACEDIA_SIDEBAR_FILE_ROOTS_ONLY = fileRootsOnly ? '1' : '0';
   await new Promise((resolve, reject) => {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { cwd: appRoot, env, stdio: 'inherit', windowsHide: true });
     const timer = setTimeout(() => { child.kill(); reject(Error('Sidebar smoke timed out')); }, 60000);

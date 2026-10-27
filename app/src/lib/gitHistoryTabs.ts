@@ -1,3 +1,5 @@
+import { isAbsoluteFsPath } from './path';
+
 // Git History tabs are encoded as prefixed tab ids inside LeafNode.tabs so the
 // whole layout/group algebra (pruneAgent, addTabToLeafAt, performDrop, …) keeps
 // operating on opaque strings without a schema migration — the same trick doc
@@ -11,7 +13,7 @@ export const GIT_HISTORY_TAB_V2_PREFIX = "githist2:";
 
 export type GitHistoryTabRef = {
   projectId: string;
-  // null → the registered project root; otherwise a submodule path.
+  // null → registered root; otherwise a project-relative or absolute working root.
   repositoryPath: string | null;
   // null → whole-repo history; otherwise a file/folder path (forward slashes).
   path: string | null;
@@ -30,9 +32,8 @@ export function makeGitHistoryTabId(
   repositoryPath?: string | null
 ): string {
   const rel = (relativePath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
-  const repository = (repositoryPath ?? "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+|\/+$/g, "");
+  const rawRepository = (repositoryPath ?? '').replace(/\\/g, '/');
+  const repository = isAbsoluteFsPath(rawRepository) ? rawRepository.replace(/\/+$/, '') || '/' : rawRepository.replace(/^\/+|\/+$/g, '');
   if (repository) {
     return `${GIT_HISTORY_TAB_V2_PREFIX}${encodeURIComponent(projectId)}:${encodeURIComponent(repository)}:${encodeURIComponent(rel)}`;
   }

@@ -101,13 +101,13 @@ export class SessionDeliveries {
     this.live.set(record.deliveryId, { record, entry: target.entry });
     this.observe(record.targetId, target.entry, result);
   }
-  async handle({ action, agentId, body, freshSession = false }) {
+  async handle({ action, agentId, body, freshSession = false, asciiEnvelope = false }) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('JSON object required', 400);
     const allowed = action === 'send' ? ['sessionId', 'expectedConversationId', 'message', 'requestKey', 'waitMs'] : ['requestKey', 'waitMs'];
     if (Object.keys(body).some(k => !allowed.includes(k)) || typeof body.requestKey !== 'string' || !keyPattern.test(body.requestKey)) throw fail('Invalid delivery options or requestKey', 400);
     const waitMs = body.waitMs ?? (action === 'send' ? 8000 : 0);
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 10000) throw fail('waitMs must be between 0 and 10000', 400);
-    if (action === 'send') await this.#send(agentId, body, freshSession);
+    if (action === 'send') await this.#send(agentId, body, freshSession, asciiEnvelope);
     const record = this.records.get(this.#key(agentId, body.requestKey));
     if (!record) throw fail('Delivery not found for this calling session', 404);
     if (waitMs && ['sending', 'sent', 'received'].includes(record.status)) await new Promise(resolve => {
@@ -117,7 +117,7 @@ export class SessionDeliveries {
     });
     return this.#view(record);
   }
-  async #send(sourceId, body, freshSession) {
+  async #send(sourceId, body, freshSession, asciiEnvelope) {
     if (typeof body.sessionId !== 'string' || !body.sessionId || body.sessionId.length > 256
       || (!(freshSession && body.expectedConversationId == null) && (typeof body.expectedConversationId !== 'string' || !body.expectedConversationId || body.expectedConversationId.length > 256))
       || typeof body.message !== 'string' || !body.message.trim() || /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(body.message)
@@ -136,11 +136,11 @@ export class SessionDeliveries {
       return pending.operation;
     }
     if (this.unavailable || this.records.size >= 1000) throw fail('Delivery history unavailable or full; nothing sent', 503);
-    const operation = this.#deliver(sourceId, body, key, signature, freshSession);
+    const operation = this.#deliver(sourceId, body, key, signature, freshSession, asciiEnvelope);
     this.inflight.set(key, { signature, operation });
     try { await operation; } finally { this.inflight.delete(key); }
   }
-  async #deliver(sourceId, body, key, signature, freshSession) {
+  async #deliver(sourceId, body, key, signature, freshSession, asciiEnvelope) {
     if (this.locks.has(body.sessionId)) throw fail('A delivery to this session is already being submitted');
     this.locks.add(body.sessionId);
     try {
@@ -164,7 +164,8 @@ export class SessionDeliveries {
         : entry.lastInputAt !== inputAt ? 'input-changed' : null;
       if (blocked) throw fail(`Receiving session is not ready (${blocked}); nothing sent`);
       const deliveryId = randomUUID();
-      const message = `[Acedia handoff: ${deliveryId}]\nFrom: ${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}\n\n${body.message}`;
+      const from = asciiEnvelope ? 'Acedia session' : `${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}`;
+      const message = `[Acedia handoff: ${deliveryId}]\nFrom: ${from}\n\n${body.message}`;
       if (Buffer.byteLength(message, 'utf8') > 12288) throw fail('Delivery envelope too large', 400);
       const record = { deliveryId, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
         targetId: body.sessionId, targetName: target.name || body.sessionId, conversationId: target.conversationId ?? null,

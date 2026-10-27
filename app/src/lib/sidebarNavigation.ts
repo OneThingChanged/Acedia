@@ -9,26 +9,55 @@ import { repairSessionHierarchy } from './sessionHierarchy';
 // The editable parent defines the navigation tree. Creation provenance must
 // not stop a moved or manually organized session following its current parent.
 // Searching remains flat so collapsed children stay independently findable.
-export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: { includeSleepingDescendants?: boolean; sortByName?: boolean } = {}) {
+export function sidebarInactiveChildrenVisible(agent: Agent, all: readonly Agent[]): boolean {
+  return inactiveChildrenVisible(agent, new Map(all.map(item => [item.id, item])));
+}
+
+function inactiveChildrenVisible(agent: Agent, byId: ReadonlyMap<string, Agent>): boolean {
+  const seen = new Set<string>();
+  let current: Agent | undefined = agent;
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    if (typeof current.sidebarShowInactiveChildren === 'boolean') return current.sidebarShowInactiveChildren;
+    const parent: Agent | undefined = current.sessionHierarchy?.parentId ? byId.get(current.sessionHierarchy.parentId) : undefined;
+    current = parent && !parent.sidebarArchived && parent.projectId === current.projectId ? parent : undefined;
+  }
+  return false;
+}
+
+export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: { includeDescendants?: boolean; respectInactiveChildrenVisibility?: boolean; sortByName?: boolean } = {}) {
   const catalog = repairSessionHierarchy(all), byId = new Map(catalog.map(a => [a.id, a]));
   const included = new Map(visible.map(a => [a.id, byId.get(a.id) || a]));
-  if (options.includeSleepingDescendants) {
+  if (options.includeDescendants) {
     const descendants = new Map<string, Agent[]>();
     for (const agent of catalog) {
       const parent = agent.sessionHierarchy?.parentId ? byId.get(agent.sessionHierarchy.parentId) : undefined;
       if (!parent || agent.sidebarArchived || parent.sidebarArchived || parent.projectId !== agent.projectId) continue;
       const children = descendants.get(parent.id) || []; children.push(agent); descendants.set(parent.id, children);
     }
-    // Only genuinely active parents add sleeping context. An inactive ancestor
-    // included for another active child must not reveal all of its siblings.
+    // Office views retain the whole family. The sidebar opts into remembered
+    // visibility, including stopped/new nodes and inactive intermediate nodes.
     const pending = visible.filter(agent => matchesSidebarFilter(agent, 'active')).map(agent => agent.id);
+    // A contextual parent with an explicit Show choice may reveal its other
+    // inactive branches too. Required ancestors of active results always stay.
+    if (options.respectInactiveChildrenVisibility) for (const agent of visible) {
+      let current = byId.get(agent.id);
+      const seen = new Set<string>();
+      while (current?.sessionHierarchy?.parentId && !seen.has(current.id)) {
+        seen.add(current.id);
+        const parent = byId.get(current.sessionHierarchy.parentId);
+        if (!parent || parent.sidebarArchived || parent.projectId !== agent.projectId) break;
+        pending.push(parent.id); current = parent;
+      }
+    }
     const visited = new Set<string>();
     while (pending.length) {
       const id = pending.pop()!;
       if (visited.has(id)) continue;
       visited.add(id);
+      const parent = byId.get(id);
+      if (options.respectInactiveChildrenVisibility && (!parent || !inactiveChildrenVisible(parent, byId))) continue;
       for (const child of descendants.get(id) || []) {
-        if (!isStandbySession(child)) continue;
         included.set(child.id, child); pending.push(child.id);
       }
     }
@@ -48,7 +77,7 @@ export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: 
       const rows = children.get(hierarchy.parentId) || []; rows.push(agent); children.set(hierarchy.parentId, rows);
     } else roots.push(agent);
   }
-  if (options.includeSleepingDescendants) for (const members of children.values()) members.sort((a, b) => compareSidebarSessions(a, b, options.sortByName));
+  if (options.includeDescendants) for (const members of children.values()) members.sort((a, b) => compareSidebarSessions(a, b, options.sortByName));
   return { roots, children };
 }
 

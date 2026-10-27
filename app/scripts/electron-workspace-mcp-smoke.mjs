@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const trustOnly = process.argv.includes('--folder-trust') || process.env.ACEDIA_WORKSPACE_AUTO_TRUST_FIXTURE === '1';
+const organizationOnly = process.argv.includes('--organization') || process.env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE === '1';
+const messagesOnly = process.argv.includes('--messages') || process.env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE === '1';
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.on('browser-window-created', (_event, win) => win.on('show', () => win.hide()));
@@ -32,7 +35,22 @@ if (process.versions.electron) {
     console.log('WORKSPACE_FIXTURE_COORDINATOR_READY');
     const invoke = (command, args = {}) => window.webContents.executeJavaScript(`window.multiAgentElectron.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`);
     const executable = path.join(root, 'fixture-cli.ps1');
-    fs.writeFileSync(executable, 'Write-Output "ACEDIA_WORKSPACE_FIXTURE_CLI"\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("launch-" + $env:MULTIAGENT_AGENT_ID + ".json")), (ConvertTo-Json -InputObject @($args) -Compress))\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("cwd-" + $env:MULTIAGENT_AGENT_ID + ".txt")), $PWD.Path)\n[Console]::ReadLine() | Out-Null\n');
+    const trustScreen = trustOnly ? `Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
+Write-Output 'Folder access'
+Write-Output $PWD.Path
+Write-Output ''
+Write-Output 'Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.'
+Write-Output ''
+Write-Output '> 1. Trust and continue'
+Write-Output '  2. Quit'
+Write-Output ''
+Write-Output ('enter continue ' + [char]183 + ' esc quit')
+$answer = [Console]::ReadLine()
+if ($null -eq $answer -or $answer -ne '') { exit 1 }
+[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ('trust-' + $env:MULTIAGENT_AGENT_ID + '.json')), '{"confirmed":true}')
+Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
+` : '';
+    fs.writeFileSync(executable, '[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("launch-" + $env:MULTIAGENT_AGENT_ID + ".json")), (ConvertTo-Json -InputObject @($args) -Compress))\n[IO.File]::WriteAllText((Join-Path $env:ACEDIA_WORKSPACE_MCP_FIXTURE ("cwd-" + $env:MULTIAGENT_AGENT_ID + ".txt")), $PWD.Path)\n' + trustScreen + 'Write-Output "ACEDIA_WORKSPACE_FIXTURE_CLI"\n[Console]::ReadLine() | Out-Null\n');
     await window.webContents.executeJavaScript(`localStorage.setItem('multiagent.agentDefaults.v1', ${JSON.stringify(JSON.stringify({ codex: { launchOptions: { executable }, dangerous: false } }))})`);
     await invoke('spawn_pty', { id: 'workspace-mcp-caller', aiToolId: 'none', cwd: root, cols: 80, rows: 24 });
     console.log('WORKSPACE_FIXTURE_CALLER_READY');
@@ -60,6 +78,109 @@ if (process.versions.electron) {
     console.log('WORKSPACE_FIXTURE_PROJECT_CREATED');
     assert.equal(first.created, true); assert.equal(first.active, true, JSON.stringify(first));
     assert.equal((await call('/projects', { folder: projectFolder })).created, false);
+    if (messagesOnly) {
+      const target = await call('/sessions', { projectId: first.projectId, name: '한글 수신 세션', requestKey: 'message-target' });
+      const original = '한글 작업 지시를 원문 그대로 저장합니다. 🚀\n\t줄바꿈과 들여쓰기도 유지합니다.';
+      const nativeCalls = [], restore = [];
+      for (const win of BrowserWindow.getAllWindows()) for (const name of ['show', 'showInactive', 'focus', 'restore']) {
+        const method = win[name]; restore.push(() => { win[name] = method; }); win[name] = () => { nativeCalls.push(name); };
+      }
+      await window.webContents.executeJavaScript(`{ const input=document.createElement('input');input.id='message-focus';input.value='preserve draft';document.body.appendChild(input);input.focus(); }`);
+      const readUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),groups:localStorage.getItem('multiagent.groups.v1'),focus:document.activeElement?.id,draft:document.getElementById('message-focus')?.value})`);
+      const before = await readUi();
+      const message = async (sender, endpoint, body) => {
+        const response = await fetch(base + '/messages/' + endpoint, { method:'POST',headers:{...headers,'x-acedia-agent-id':sender},body:JSON.stringify(body) });
+        const data = await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;
+      };
+      const body = { sessionId:target.sessionId,message:original,requestKey:'utf8-native-main',notify:false };
+      const saved = await message(first.sessionId,'send',body);
+      assert.equal(saved.saved,true);assert.equal(saved.readAt,null);
+      const received = await message(target.sessionId,'receive',{messageId:saved.messageId,includeBase64:true});
+      assert.equal(received.messages[0].message,original);assert.equal(Buffer.from(received.messages[0].messageBase64,'base64').toString('utf8'),original);
+      const repeated = await message(first.sessionId,'send',body);assert.equal(repeated.messageId,saved.messageId);assert.ok(repeated.readAt);
+      await message(target.sessionId,'send',{sessionId:first.sessionId,message:'원문 확인했습니다.',replyTo:saved.messageId,requestKey:'reply-main',notify:false});
+      assert.equal((await message(first.sessionId,'receive',{})).messages[0].message,'원문 확인했습니다.');
+      const disk = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'),'session-messages-v1.json'),'utf8'));
+      assert.equal(disk.find(r=>r.messageId===saved.messageId).message,original);assert.ok(disk.find(r=>r.messageId===saved.messageId).readAt);
+      assert.deepEqual(await readUi(),before,'Messages changed selection, pane, focus or draft');assert.deepEqual(nativeCalls,[]);
+      restore.forEach(fn=>fn());for(const id of ['workspace-mcp-caller',first.sessionId,target.sessionId])await invoke('kill_pty',{id});
+      console.log('ACEDIA_SESSION_MESSAGES_MAIN_PROCESS_UTF8_READ_REPLY_DURABLE_NO_FOCUS_OK');clearTimeout(timeout);app.quit();return;
+    }
+    if (organizationOnly) {
+      const nativeCalls = [], restore = [];
+      const readUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),groups:localStorage.getItem('multiagent.groups.v1'),focus:document.activeElement?.id,draft:document.getElementById('organization-focus')?.value})`);
+      await window.webContents.executeJavaScript(`{ const input=document.createElement('input'); input.id='organization-focus'; input.value='preserve organization draft'; document.body.appendChild(input); input.focus(); }`);
+      const beforeUi = await readUi();
+      for (const win of BrowserWindow.getAllWindows()) for (const name of ['show', 'showInactive', 'focus', 'restore']) {
+        const original = win[name]; restore.push(() => { win[name] = original; }); win[name] = () => { nativeCalls.push(name); };
+      }
+      const folder = path.join(projectFolder, 'PCGLab'); fs.mkdirSync(folder);
+      const body = { projectId: first.projectId, parentSessionId: first.sessionId, folder, name: 'Worker', start: false, requestKey: 'explicit-standby' };
+      const child = await call('/sessions', body);
+      const launch = id => path.join(root, `launch-${id}.json`);
+      const storedAgents = async () => JSON.parse((await invoke('storage_snapshot_get')).values['multiagent.agents.v1']);
+      const record = (await storedAgents()).find(a => a.id === child.sessionId);
+      assert.equal(child.active, false); assert.equal(fs.existsSync(launch(child.sessionId)), false);
+      assert.equal(record.folder, fs.realpathSync(folder)); assert.equal(record.resumeEligible, false);
+      assert.equal(record.sessionHierarchy.parentId, first.sessionId); assert.equal(record.sessionHierarchy.inheritFolder, false);
+      assert.equal((await call('/sessions', body)).sessionId, child.sessionId);
+      const organized = await call('/organize-sessions', { changes: [
+        { sessionId: first.sessionId, name: 'Chief', expectedName: 'Session 1' },
+        { sessionId: child.sessionId, name: 'PCGLab', expectedName: 'Worker', parentSessionId: null, expectedParentSessionId: first.sessionId },
+      ] });
+      assert.equal(organized.saved, true);
+      let listed = await call('/projects');
+      assert.equal(listed.sessions.find(a => a.id === first.sessionId).name, 'Chief');
+      assert.equal(listed.sessions.find(a => a.id === child.sessionId).parentSessionId, undefined);
+      assert.equal(listed.sessions.find(a => a.id === first.sessionId).active, true);
+      const parentBack = { changes: [{ sessionId: child.sessionId, parentSessionId: first.sessionId, expectedParentSessionId: null }] };
+      await call('/organize-sessions', parentBack); await call('/organize-sessions', parentBack);
+      const invalid = await fetch(base + '/organize-sessions', { method: 'POST', headers, body: JSON.stringify({ changes: [{ sessionId: first.sessionId, parentSessionId: child.sessionId, expectedParentSessionId: null }] }) });
+      assert.equal(invalid.status, 409);
+      assert.equal((await call('/start', { sessionId: child.sessionId })).active, true);
+      for (let i = 0; i < 100 && !fs.existsSync(launch(child.sessionId)); i++) await wait(100);
+      assert.equal(fs.readFileSync(path.join(root, `cwd-${child.sessionId}.txt`), 'utf8'), fs.realpathSync(folder));
+      assert.deepEqual(await readUi(), beforeUi, 'Create, rename, reparent or start changed the workspace');
+      // Mount a real terminal pane before stopping: its exit handler must not
+      // restart the CLI, remove the pane or alter the selected project.
+      await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`[data-sidebar-agent-id="${child.sessionId}"]`)}).dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }))`);
+      await wait(200);
+      await window.webContents.executeJavaScript(`document.getElementById('organization-focus').focus()`);
+      const mountedUi = await readUi();
+      const stopped = await call('/stop', { sessionId: child.sessionId });
+      assert.deepEqual(stopped, { saved: true, background: true, sessionId: child.sessionId, active: false });
+      await call('/stop', { sessionId: child.sessionId });
+      await wait(200);
+      assert.equal((await call('/projects')).sessions.find(a => a.id === child.sessionId).active, false, 'Mounted pane restarted a stopped CLI');
+      assert.deepEqual(await readUi(), mountedUi, 'Stopping removed or selected a pane or changed the draft');
+      const stoppedRecord = (await storedAgents()).find(a => a.id === child.sessionId);
+      assert.equal(stoppedRecord.resumeEligible, false);
+      assert.equal(stoppedRecord.sessionHierarchy.parentId, first.sessionId);
+      const newFolder = path.join(projectFolder, 'MovedLab'); fs.mkdirSync(newFolder);
+      await call('/relocate-sessions', { moves: [{ sessionId: child.sessionId, projectId: first.projectId, folder: newFolder, expectedProjectId: first.projectId, expectedFolder: fs.realpathSync(folder) }] });
+      await call('/start', { sessionId: child.sessionId });
+      for (let i = 0; i < 100 && fs.readFileSync(path.join(root, `cwd-${child.sessionId}.txt`), 'utf8') !== fs.realpathSync(newFolder); i++) await wait(100);
+      assert.equal(fs.readFileSync(path.join(root, `cwd-${child.sessionId}.txt`), 'utf8'), fs.realpathSync(newFolder));
+      const standbyProjectFolder = path.join(root, 'StandbyProject'); fs.mkdirSync(standbyProjectFolder);
+      const standby = await call('/projects', { folder: standbyProjectFolder, name: 'Standby', start: false });
+      await wait(300);
+      assert.equal(standby.active, false); assert.equal(fs.existsSync(launch(standby.sessionId)), false);
+      assert.deepEqual(await readUi(), mountedUi, 'Organization API changed the selected project, pane layout, focus or draft');
+      assert.deepEqual(nativeCalls, [], 'Organization API activated a native window');
+      restore.forEach(fn => fn());
+      for (const id of ['workspace-mcp-caller', first.sessionId, child.sessionId]) await invoke('kill_pty', { id });
+      console.log('ACEDIA_ORGANIZATION_RENAME_REPARENT_EXPLICIT_CWD_STANDBY_STOP_MOVE_START_DURABLE_NO_FOCUS_OK');
+      clearTimeout(timeout); app.quit(); return;
+    }
+    const nativeCalls = [];
+    const originalMethods = [];
+    const readTrustUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),groups:localStorage.getItem('multiagent.groups.v1'),focus:document.activeElement?.id,draft:document.getElementById('trust-focus')?.value})`);
+    if (trustOnly) await window.webContents.executeJavaScript(`{ const input=document.createElement('input'); input.id='trust-focus'; input.value='preserve trust draft'; document.body.appendChild(input); input.focus(); }`);
+    const trustUi = trustOnly ? await readTrustUi() : null;
+    if (trustOnly) for (const win of BrowserWindow.getAllWindows()) for (const name of ['show', 'showInactive', 'focus', 'restore']) {
+      const original = win[name]; originalMethods.push(() => { win[name] = original; });
+      win[name] = () => { nativeCalls.push(name); };
+    }
     const second = await call('/sessions', { projectId: first.projectId, name: 'Additional session', requestKey: 'additional' });
     assert.equal(second.created, true); assert.equal(second.active, true, JSON.stringify(second));
     const retried = await call('/sessions', { projectId: first.projectId, name: 'Additional session', requestKey: 'additional' });
@@ -70,6 +191,23 @@ if (process.versions.electron) {
     assert.equal(ui.projects.filter(p => p.folder === projectFolder).length, 1);
     assert.equal(ui.agents.filter(a => a.projectId === first.projectId).length, 2);
     assert.ok(ui.agents.filter(a => a.projectId === first.projectId).every(a => a.dangerous === false));
+    if (trustOnly) {
+      for (const id of [first.sessionId, second.sessionId]) {
+        const receipt = path.join(root, `trust-${id}.json`);
+        for (let i = 0; i < 100 && !fs.existsSync(receipt); i++) await wait(100);
+        assert.ok(fs.existsSync(receipt), 'Main process did not confirm API-created folder trust');
+        assert.equal(JSON.parse(fs.readFileSync(receipt, 'utf8')).confirmed, true);
+        assert.equal(ui.agents.find(a => a.id === id).sessionHierarchy.createdById, 'workspace-mcp-caller');
+      }
+      const policy = await invoke('task_orchestration', { action: 'policy', body: { ownerId: first.sessionId } });
+      assert.equal(policy.startupTrust.enabled, false);
+      assert.deepEqual(await readTrustUi(), trustUi, 'Folder confirmation changed selection, focus or draft');
+      assert.deepEqual(nativeCalls, [], 'Folder confirmation activated a window');
+      originalMethods.forEach(restore => restore());
+      for (const id of ['workspace-mcp-caller', first.sessionId, second.sessionId]) await invoke('kill_pty', { id });
+      console.log('ACEDIA_API_CREATED_FOLDER_TRUST_MAIN_PROCESS_NO_OPT_IN_NO_ACTIVATION_OK');
+      clearTimeout(timeout); app.quit(); return;
+    }
     // Both active and OFFLINE targets save without selecting a session, moving
     // the pane, changing DOM focus or starting/restarting a native process.
     const launchFile = id => path.join(root, `launch-${id}.json`);
@@ -142,7 +280,8 @@ if (process.versions.electron) {
     const beforeMoveLaunch = fs.statSync(launchFile(first.sessionId)).mtimeMs;
     await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(`[data-sidebar-agent-id="${first.sessionId}"]`)}).dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true }))`);
     clicked = false;
-    for (let i = 0; i < 100 && fs.statSync(launchFile(first.sessionId)).mtimeMs === beforeMoveLaunch; i++) {
+    for (let i = 0; i < 100 && (fs.statSync(launchFile(first.sessionId)).mtimeMs === beforeMoveLaunch
+      || fs.readFileSync(path.join(root, `cwd-${first.sessionId}.txt`), 'utf8') !== fs.realpathSync(moves[0].folder)); i++) {
       if (!clicked) clicked = await window.webContents.executeJavaScript(`{ const b=document.querySelector('.session-standby button'); if(b) b.click(); Boolean(b); }`);
       await wait(100);
     }
@@ -160,7 +299,7 @@ if (process.versions.electron) {
     assert.equal((await call('/projects')).sessions.find(s => s.id === first.sessionId).active, false);
     await window.webContents.executeJavaScript(`document.getElementById('launch-settings-focus').focus()`);
     const readStartUi = () => window.webContents.executeJavaScript(`({view:localStorage.getItem('multiagent.view.v1'),groups:localStorage.getItem('multiagent.groups.v1'),focus:document.activeElement?.id,draft:document.getElementById('launch-settings-focus')?.value,ids:JSON.parse(localStorage.getItem('multiagent.agents.v1')).map(a=>a.id)})`);
-    const startUi = await readStartUi(), nativeCalls = [], restoreMethods = [];
+    const startUi = await readStartUi(), restoreMethods = [];
     const nativeState = () => BrowserWindow.getAllWindows().map(w => ({ id:w.id, visible:w.isVisible(), focused:w.isFocused(), minimized:w.isMinimized() }));
     const beforeNative = nativeState();
     for (const w of BrowserWindow.getAllWindows()) for (const name of ['show', 'showInactive', 'focus', 'restore']) {
@@ -198,7 +337,10 @@ if (process.versions.electron) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-workspace-mcp-smoke-'));
   const home = path.join(root, 'codex'); fs.mkdirSync(home);
   const env = { ...process.env, ACEDIA_WORKSPACE_MCP_FIXTURE: root, MULTIAGENT_ELECTRON_USER_DATA: path.join(root, 'profile'),
-    MULTIAGENT_LOCAL_DATA: path.join(root, 'local-data'), CODEX_HOME: home };
+    MULTIAGENT_LOCAL_DATA: path.join(root, 'local-data'), CODEX_HOME: home,
+    ACEDIA_WORKSPACE_AUTO_TRUST_FIXTURE: trustOnly ? '1' : '0' };
+  env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE = organizationOnly ? '1' : '0';
+  env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE = messagesOnly ? '1' : '0';
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { env, cwd: appRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -208,6 +350,16 @@ if (process.versions.electron) {
     const timer = setTimeout(() => child.kill(), 75000);
     const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); }).finally(() => clearTimeout(timer));
     assert.equal(code, 0, output);
+    if (messagesOnly) {
+      const marker = 'ACEDIA_SESSION_MESSAGES_MAIN_PROCESS_UTF8_READ_REPLY_DURABLE_NO_FOCUS_OK';
+      assert.ok(output.includes(marker), output); console.log(marker);
+    } else if (organizationOnly) {
+      const marker = 'ACEDIA_ORGANIZATION_RENAME_REPARENT_EXPLICIT_CWD_STANDBY_STOP_MOVE_START_DURABLE_NO_FOCUS_OK';
+      assert.ok(output.includes(marker), output); console.log(marker);
+    } else if (trustOnly) {
+      const marker = 'ACEDIA_API_CREATED_FOLDER_TRUST_MAIN_PROCESS_NO_OPT_IN_NO_ACTIVATION_OK';
+      assert.ok(output.includes(marker), output); console.log(marker);
+    } else {
     assert.ok(output.includes('ACEDIA_WORKSPACE_MCP_PROJECT_AND_SESSIONS_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_OFFLINE_ACTIVE_DURABLE_NO_FOCUS_OK'), output);
     assert.ok(output.includes('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK'), output);
@@ -218,6 +370,7 @@ if (process.versions.electron) {
     console.log('ACEDIA_SESSION_SETTINGS_NEXT_CLI_FLAG_OK');
     console.log('ACEDIA_SESSION_RELOCATION_BATCH_PERSIST_FOCUS_AND_NATIVE_CWD_OK');
     console.log('ACEDIA_EXISTING_SESSION_START_BOTH_APIS_NO_WINDOW_FOCUS_OK');
+    }
   } finally {
     if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-workspace-mcp-smoke-')) throw new Error('Unexpected cleanup path');
     await fs.promises.rm(root, { recursive: true, maxRetries: 10, retryDelay: 200 });

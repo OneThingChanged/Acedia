@@ -51,6 +51,29 @@ function parseNumstat(stdout) {
   return stats;
 }
 
+export async function gitWorkingStatus(root) {
+  // -z status paths are always Git-root-relative, even with --short and
+  // status.relativePaths=true. Translate only this working folder's entries.
+  const [status, rawPrefix] = await Promise.all([
+    runGit(root, ['status', '--porcelain', '-z', '--', '.']),
+    runGit(root, ['rev-parse', '--show-prefix']),
+  ]);
+  const prefix = rawPrefix.replace(/[\r\n]+$/, '').replace(/\\/g, '/');
+  if (!prefix) return status;
+  const tokens = status.split('\0'), result = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.length < 4 || token[2] !== ' ') continue;
+    const renamed = token[0] === 'R' || token[0] === 'C';
+    const previous = renamed ? tokens[++i] : null;
+    const path = token.slice(3).replace(/\\/g, '/');
+    if (!path.startsWith(prefix)) continue;
+    result.push(token.slice(0, 3) + (path.slice(prefix.length) || './'));
+    if (renamed) result.push(previous || '');
+  }
+  return result.length ? result.join('\0') + '\0' : '';
+}
+
 export async function gitChanges(folder) {
   const root = fs.realpathSync(typeof folder === "string" ? folder : "");
   if (!(await isGitRepository(root))) {
@@ -65,13 +88,13 @@ export async function gitChanges(folder) {
       commits: [],
     };
   }
-  const statusOut = await runGit(root, ["status", "--porcelain", "-z"]);
+  const statusOut = await gitWorkingStatus(root);
   const { staged, unstaged } = parseGitStatusZ(statusOut);
 
   const [stagedStatsOut, unstagedStatsOut, branchOut, logOut] =
     await Promise.all([
-      runGit(root, ["diff", "--numstat", "--cached"]).catch(() => ""),
-      runGit(root, ["diff", "--numstat"]).catch(() => ""),
+      runGit(root, ["diff", "--relative", "--numstat", "--cached"]).catch(() => ""),
+      runGit(root, ["diff", "--relative", "--numstat"]).catch(() => ""),
       runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => ""),
       runGit(root, ["log", "-n", "8", "--pretty=format:%h%x00%s"]).catch(
         () => ""

@@ -16,6 +16,15 @@ import {
 } from "./docTabs";
 
 describe("doc tab ids", () => {
+  it('round-trips external working roots and keeps distinct same-named files separate', () => {
+    const a = makeDocTabId('p', 'Docs/Report.md', 'D:/AI2/PCGLab');
+    const b = makeDocTabId('p', 'Docs/Report.md', 'D:/AI2/Other');
+    expect(isDocTabId(a)).toBe(true); expect(a).not.toBe(b);
+    expect(parseDocTabId(a)).toEqual({ projectId: 'p', relativePath: 'Docs/Report.md', rootFolder: 'D:/AI2/PCGLab' });
+    expect(docTabBasename(a)).toBe('Report.md');
+    expect(parseDocTabId('doc2:p:%xx:README.md')).toBeNull();
+    expect(parseDocTabId('doc2:p:relative:README.md')).toBeNull();
+  });
   it("round-trips project id + relative path", () => {
     const id = makeDocTabId("project-1", "docs/README.md");
     expect(isDocTabId(id)).toBe(true);

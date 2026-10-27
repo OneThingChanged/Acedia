@@ -15,7 +15,7 @@ export function startupPrompt(entry) {
   return parseTerminalStartupPrompt(screen, entry.aiToolId);
 }
 
-// The operator grants a project directory, never a provider-wide permission.
+// The operator opt-in or API creation grants only the current project directory.
 // No window navigation and no persisted Codex config edits are needed.
 export class StartupAutomation {
   constructor({ entry, allowedRoot, write, blocked = () => false, publish = () => {} }) {

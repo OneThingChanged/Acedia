@@ -203,6 +203,8 @@ export type Agent = {
   // Sidebar organization does not pin tabs or change the session runtime.
   sidebarPinned?: boolean;
   sidebarArchived?: boolean;
+  // Active sidebar: opt in to inactive descendants; undefined inherits a parent choice.
+  sidebarShowInactiveChildren?: boolean;
   lastOpenedAt?: number;
   status: AgentStatus;
   runtimeStatus?: AgentRuntimeStatus;
@@ -242,6 +244,7 @@ export type StoredAgent = {
   tabColor?: string;
   sidebarPinned?: boolean;
   sidebarArchived?: boolean;
+  sidebarShowInactiveChildren?: boolean;
   lastOpenedAt?: number;
   createdAt: number;
   lastSessionId?: string;
@@ -394,6 +397,7 @@ export type SessionContextAction =
   | "rename"
   | "sidebar-pin"
   | "sidebar-archive"
+  | "sidebar-toggle-inactive-children"
   | "pin-session"
   | "clear-session-pin"
   | "deactivate"

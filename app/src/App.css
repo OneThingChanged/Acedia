@@ -3629,6 +3629,18 @@ body.files-resizing .files-resizer::after {
   border-bottom: 1px solid var(--docs-border);
   flex-shrink: 0;
 }
+
+.file-tree-working-folder {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  min-width: 0;
+  color: var(--docs-muted);
+  font-size: 10px;
+  border-bottom: 1px solid var(--docs-border);
+}
+.file-tree-working-folder > span { flex-shrink: 0; }
+.file-tree-working-folder > code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .file-tree-scope-label {
   flex: 0 0 auto;
   color: var(--docs-muted);

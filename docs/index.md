@@ -16,6 +16,7 @@ configuration that supports it.
 * [Project managed files](project-managed-files.md) - Acedia settings registry, Git/Perforce ignores, and read-only repair at local session startup.
 * [Workspace interactions](workspace-interactions.md) - Centered Quick Search, inline project/session search, Chat model/effort controls, fitted image previews, changed-file summaries and searchable file dialogs, conversation performance, navigation, sessions, panes, documents, source control, and notifications.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
+* [Pixel Office](pixel-office.md) - Project Board와 우측 사이드바에서 보는 세션 사무실, Pixel Agents 자산·실제 상태 연동·부모 자식 관계·이미지 캐시와 숨김 시 중단.
 * [세션별 개인 메모](session-notes.md) - 사람이 사용하는 세션별 메모, 채팅·터미널·Remote 공통 저장과 동시 편집 보호.
 * [멀티세션 작업 분담 구현 기록](task-orchestration-handoff-2026-10-19.md) - A의 계획·배정·결과 검토, 전용 Codex 세션, 모델 자동 선택, 재시작 복구와 데스크톱·Remote 검사 및 남은 범위. [첫 한국어 초안](mockups/task-orchestration.html), [프로젝트 보드 확장 시안](mockups/project-board-task-flow.html).
 * [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
@@ -23,6 +24,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.1.96](release-1-8-1-96.md) - UTF-8 세션 수신함·한글 전달, 조직도 API, 자식 작업 폴더, 휴면 자식 표시 선택과 Pixel Office; EXE 검증·배포 기록.
 * [Acedia 1.8.1.91](release-1-8-1-91.md) - 프로젝트별 Codex 폴더 신뢰 자동 확인과 하위 작업의 시작 승인 대기·전달 개선; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [Acedia 1.8.1.90](release-1-8-1-90.md) - 세션별 개인 메모, Active 부모 아래 Sleeping 자식 표시와 채팅 첫 요청 보존; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [채팅 첫 요청 누락 조사](chat-first-request-review-2026-10-22.md) - 최초 세션 ID 연결 시 시작 대기 요청·초안 누락 수정과 격리 검증; 1.8.1.90 EXE 배포에 포함.

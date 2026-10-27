@@ -78,6 +78,8 @@ import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { SessionLaunchSettings } from "./services/session-launch-settings.mjs";
 import { SessionRelocation } from "./services/session-relocation.mjs";
 import { SessionStart } from "./services/session-start.mjs";
+import { SessionRegistry } from "./services/session-registry.mjs";
+import { SessionMessages } from './services/session-messages.mjs';
 import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -132,7 +134,7 @@ import {
 import { browserFormRuntimeExpression } from "./services/browser-form-automation.mjs";
 import { uploadBrowserFiles } from "./services/browser-file-upload.mjs";
 import { isGitRepository, runGit } from "./services/git-command.mjs";
-import { gitChanges, gitLetterFromCode } from "./services/git-changes.mjs";
+import { gitChanges, gitLetterFromCode, gitWorkingStatus } from "./services/git-changes.mjs";
 import {
   buildWindowSessionUsage,
   claimWindowSession,
@@ -1058,6 +1060,13 @@ const sessionDeliveries = new SessionDeliveries({
   },
   publish: payload => sendEventToAll('agent:session-delivery', payload),
 });
+const sessionMessages = new SessionMessages({
+  file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
+  sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
+  context: deliveryContext,
+  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true }),
+  receipt: (agentId, requestKey) => sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }),
+});
 const sessionLaunchSettings = new SessionLaunchSettings({
   agentFor: id => {
     const agent = sessionModelAgent(id);
@@ -1134,14 +1143,56 @@ const sessionStart = new SessionStart({
   writable: id => !forceClosing && !accountSwitches.has(id),
   activate: id => remoteSessionActivationBroker.activate(id),
 });
+const sessionRegistry = new SessionRegistry({
+  catalog: () => monitorService?.state || {},
+  active: id => ptys.has(id),
+  writable: id => {
+    const owner = detachedAgents.get(id);
+    return !forceClosing && (owner === undefined || owner === coordinatorWebContentsId)
+      && (!accountSwitches.has(id) || sessionRegistry.pending?.ids.includes(id))
+      && !taskOrchestration.unavailable && !taskOrchestration.data.runs.some(run =>
+        !['completed', 'failed', 'cancelled'].includes(run.state)
+        && (run.ownerId === id || run.tasks.some(task => task.attempts.some(attempt => attempt.sessionId === id))));
+  },
+  lock: ids => { for (const id of ids) accountSwitches.add(id); },
+  unlock: ids => { for (const id of ids) accountSwitches.delete(id); },
+  dispatch: payload => {
+    const runtime = runtimeByWebContents.get(coordinatorWebContentsId), coordinator = workspaceWindows.get(coordinatorWebContentsId);
+    if (!runtime?.workspace_window || !runtime.coordinator || !runtime.ready || !coordinator) return false;
+    sendEvent(coordinator, 'remote:session-registry-change', payload); return true;
+  },
+  verifySaved: async (operation, body) => {
+    const snapshot = await readStorageSnapshot();
+    const agents = JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]');
+    const changes = operation === 'stop' ? [{ sessionId: body.sessionId }] : body.changes;
+    const sessions = changes.map(change => {
+      const saved = agents.find(a => a.id === change.sessionId);
+      if (!saved || (Object.hasOwn(change, 'name') && saved.name !== change.name)
+        || (Object.hasOwn(change, 'parentSessionId') && (saved.sessionHierarchy?.parentId || null) !== change.parentSessionId)
+        || (operation === 'stop' && saved.resumeEligible !== false)) {
+        throw Object.assign(new Error('저장된 세션 변경 결과를 확인하지 못했습니다. 목록을 다시 조회하세요.'), { statusCode: 409 });
+      }
+      return { sessionId: saved.id, name: saved.name, parentSessionId: saved.sessionHierarchy?.parentId || null, active: ptys.has(saved.id) };
+    });
+    const ids = new Set(sessions.map(s => s.sessionId));
+    monitorService.state.agents = (monitorService.state.agents || []).map(agent => {
+      const saved = ids.has(agent.id) && agents.find(a => a.id === agent.id);
+      return saved ? { ...agent, name: saved.name, ...(operation === 'stop' ? { status: 'idle', runtimeStatus: 'idle' } : {}),
+        sessionHierarchy: saved.sessionHierarchy ? { parentId: saved.sessionHierarchy.parentId, createdById: saved.sessionHierarchy.createdById } : undefined } : agent;
+    });
+    return operation === 'stop' ? { sessionId: body.sessionId, active: false } : { sessions };
+  },
+});
 const workspaceManagement = new WorkspaceManagement({
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
   deliveries: sessionDeliveries,
+  messages: sessionMessages,
   sessionSettings: sessionLaunchSettings,
   sessionStart,
   relocation: sessionRelocation,
+  registry: sessionRegistry,
   sessionState: id => {
     const target = deliveryContext(id);
     return { conversationId: target?.conversationId || null, state: target?.state || 'OFFLINE', reason: target?.reason || 'inactive' };
@@ -4104,7 +4155,7 @@ async function gitStatusForTree(folder) {
   if (!(await isGitRepository(root))) {
     return { is_repo: false, entries: [] };
   }
-  const stdout = await runGit(root, ["status", "--porcelain", "-z"]);
+  const stdout = await gitWorkingStatus(root);
   const entries = [];
   const tokens = stdout.split("\0");
   for (let i = 0; i < tokens.length; i += 1) {
@@ -6158,6 +6209,14 @@ async function invokeCommand(event, command, rawArgs) {
       try { return { ok: true, moves: sessionRelocation.validate(args) }; }
       catch (error) { return { ok: false, error: String(error.message || error).slice(0, 1000), statusCode: [400, 404, 409, 503].includes(error.statusCode) ? error.statusCode : 500 }; }
     }
+    case "validate_session_registry_change":
+    case "complete_session_registry_change": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) throw new Error('기본 작업창에서만 세션 등록을 변경할 수 있습니다.');
+      if (command === 'complete_session_registry_change') return sessionRegistry.complete(args);
+      try { return { ok: true, ...sessionRegistry.validate(args) }; }
+      catch (error) { return { ok: false, error: String(error.message || error).slice(0, 1000), statusCode: [400, 404, 409, 503].includes(error.statusCode) ? error.statusCode : 500 }; }
+    }
     case "restart_session_model": {
       const id = asString(args.id);
       if (args.interrupt != null && typeof args.interrupt !== "boolean") throw new Error("Invalid restart option.");
@@ -6420,6 +6479,7 @@ app.on("before-quit", (event) => {
   remoteSessionModelBroker.close();
   sessionLaunchSettings.close();
   sessionRelocation.close();
+  sessionRegistry.close();
   void hookService.stop();
   void monitorService.stop();
   void usageDashboard.stop();

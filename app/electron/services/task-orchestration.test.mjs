@@ -79,6 +79,30 @@ describe('durable independent Codex task orchestration', () => {
     await restored.handle({ action: 'policy-save', operator: true, body: { policy, ownerId: 'a', revision: 1, autoTrustProjectFolders: false } });
     expect(restored.startupTrustRoot('a')).toBe(null);
   });
+  it('automatically scopes API-created Codex trust to its current local project without enabling manual sessions', async () => {
+    const f = fixture();
+    const child = { id: 'api-child', projectId: 'p', aiToolId: 'codex',
+      sessionHierarchy: { createdById: 'deleted-creator', parentId: 'a' } };
+    f.catalog.agents.push(child);
+    expect((await f.call('policy')).startupTrust.enabled).toBe(false);
+    expect(f.engine.startupTrustRoot(child.id)).toBe(taskPath(f.root, '.'));
+    expect(f.engine.startupTrustRoot('a')).toBe(null);
+    f.catalog.agents[1].sessionHierarchy = { parentId: 'a' }; // User-created child.
+    expect(f.engine.startupTrustRoot('other')).toBe(null);
+    f.engine.close();
+    const restored = f.make();
+    expect(restored.startupTrustRoot(child.id)).toBe(taskPath(f.root, '.'));
+    // Revoking the manual-session opt-in does not disable API creation behavior.
+    await restored.handle({ action: 'policy-save', operator: true,
+      body: { policy, ownerId: 'a', revision: 0, autoTrustProjectFolders: false } });
+    expect(restored.startupTrustRoot(child.id)).toBe(taskPath(f.root, '.'));
+    expect(restored.startupTrustRoot('a')).toBe(null);
+    child.aiToolId = 'claude'; expect(restored.startupTrustRoot(child.id)).toBe(null);
+    child.aiToolId = 'codex'; child.sshHostId = 'ssh'; expect(restored.startupTrustRoot(child.id)).toBe(null);
+    delete child.sshHostId; f.catalog.projects[0].sshHostId = 'ssh'; expect(restored.startupTrustRoot(child.id)).toBe(null);
+    delete f.catalog.projects[0].sshHostId;
+    child.projectId = 'missing'; expect(restored.startupTrustRoot(child.id)).toBe(null);
+  });
   it('starts two independent workers and gates a dependent task on reviewed results', async () => {
     const f = fixture(), { run } = await f.plan([task('one', ['a.ts']), task('two', ['b.ts']), task('verify', [], ['one', 'two'])]);
     await until(() => f.engine.data.runs[0].tasks.slice(0, 2).every(t => t.state === 'running'));

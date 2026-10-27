@@ -75,9 +75,9 @@ async function readIntegrationJson(request) {
     chunks.push(chunk);
   }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)) || '{}');
   } catch {
-    const error = new Error("invalid json");
+    const error = new Error('invalid JSON or UTF-8; send application/json; charset=utf-8 with UTF-8 bytes');
     error.status = 400;
     throw error;
   }
@@ -608,10 +608,14 @@ export class HookService {
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-settings' ? 'session-settings'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/start' ? 'start'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/stop' ? 'stop'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/organize-sessions' ? 'organize-sessions'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/relocate-sessions' ? 'relocate-sessions'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/send' ? 'send'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/delivery' ? 'delivery' : null;
-      const workspaceAction = request.method === 'POST' && url.pathname === '/integration/v1/workspace/tasks' ? 'task' : action;
+      const messageAction = request.method === 'POST' && url.pathname === '/integration/v1/workspace/messages/send' ? 'message-send'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/messages/receive' ? 'message-receive' : action;
+      const workspaceAction = request.method === 'POST' && url.pathname === '/integration/v1/workspace/tasks' ? 'task' : messageAction;
       try {
         if (!workspaceAction) throw Object.assign(new Error('not found'), { statusCode: 404 });
         if (!this.workspaceProvider) throw Object.assign(new Error('workspace unavailable'), { statusCode: 503 });

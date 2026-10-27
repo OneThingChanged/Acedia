@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.95",
+  "multiAgentReleaseVersion": "1.8.1.96",
   "multiAgentVariant": "standard",
   "type": "module",
   "engines": {
@@ -34,6 +34,7 @@
     "electron:workspace-layout-smoke": "node scripts/electron-workspace-layout-smoke.mjs",
     "electron:sidebar-smoke": "node scripts/electron-sidebar-workspace-smoke.mjs",
     "electron:organization-smoke": "node scripts/electron-session-organization-smoke.mjs",
+    "electron:pixel-office-smoke": "node scripts/electron-pixel-office-smoke.mjs",
     "electron:task-orchestration-smoke": "node scripts/electron-task-orchestration-smoke.mjs",
     "codex:task-orchestration-smoke": "node scripts/codex-task-orchestration-smoke.mjs",
     "electron:properties-smoke": "node scripts/electron-properties-smoke.mjs",
@@ -173,9 +174,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.95-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.1.96-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.95",
+      "uninstallDisplayName": "Acedia 1.8.1.96",
       "include": "electron/installer.nsh"
     },
     "publish": [

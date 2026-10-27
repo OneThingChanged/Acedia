@@ -176,6 +176,7 @@ export function loadStoredAgents(rawAgents: StoredAgent[], projects: Project[]):
         tabColor: c.tabColor || undefined,
         sidebarPinned: c.sidebarPinned === true || undefined,
         sidebarArchived: c.sidebarArchived === true || undefined,
+        sidebarShowInactiveChildren: typeof c.sidebarShowInactiveChildren === 'boolean' ? c.sidebarShowInactiveChildren : undefined,
         lastOpenedAt: typeof c.lastOpenedAt === "number" && Number.isFinite(c.lastOpenedAt) && c.lastOpenedAt > 0 ? c.lastOpenedAt : undefined,
         createdAt: c.createdAt,
         // Migrate legacy fields: prefer new lastSessionId, fall back to either

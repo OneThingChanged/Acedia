@@ -3,13 +3,16 @@ type: Guide
 title: 프로젝트 관계 보드와 부모·자식 세션 조직도
 description: 프로젝트 사이의 부모·자식과 폴더 참조를 연결하고, 세션별 설정 상속과 자유로운 보드 배치를 관리한다.
 status: implemented
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 sources:
   - resource: ../app/src/components/SessionOrganization.tsx
   - resource: ../app/src/components/ProjectBoard.tsx
   - resource: ../app/src/lib/projectHierarchy.ts
   - resource: ../app/src/lib/projectBoard.ts
   - resource: ../app/src/lib/sessionHierarchy.ts
+  - resource: ../app/src/lib/sidebarNavigation.ts
+  - resource: ../app/src/components/Sidebar.tsx
+  - resource: ../app/src/components/Menus.tsx
   - resource: ../app/src/lib/sessionFileLinks.ts
   - resource: ../app/src/lib/spawn.ts
   - resource: ../app/electron/services/workspace-management.mjs
@@ -20,9 +23,110 @@ sources:
 
 # 부모·자식 세션 조직도
 
+## 자식 작업 폴더와 우측 파일 패널 (2026-10-27, 1.8.1.96)
+
+자식에 전용 `folderOverride`가 지정돼 있고 부모 폴더 상속이 꺼져 있으면, 그 폴더를
+실제 작업 경로로 사용한다. 상속이 켜져 있으면 부모의 유효 작업 폴더를 따른다.
+기존 실행 경로 계산과 동일한 `resolveSessionSettings`를 파일 패널에도 적용했다.
+폴더 이름을 보고 추측하거나 기존 세션·대화의 경로를 자동 변경하지 않는다.
+
+우측 파일·Git 패널은 선택한 세션의 작업 폴더를 따라가고, 머리말에 세션명과 전체
+작업 경로를 표시한다. 좌측 자식 행에도 프로젝트 이름 대신 전용 폴더의 끝부분을
+표시하고 전체 경로는 툴팁으로 확인한다. 프로젝트 소속과 부모 연결은 유지한다.
+프로젝트 선택 목록에서 직접 프로젝트를 고르면 해당 프로젝트 루트를 볼 수 있다.
+SSH 작업 폴더는 원격 경로로 표시하며 로컬 파일 목록으로 접근하지 않는다.
+
+트리·검색·확장 상태·하위 저장소 선택의 키는 실제 작업 폴더를 포함하므로 같은
+프로젝트의 형제 세션도 폴더가 다르면 분리된다. 이전 폴더의 지연된 목록 응답이
+새 폴더의 캐시를 덮지 않는다. 핀은 현재 세션의 폴더를 고정하며 선택을 바꾸거나
+앱을 다시 열어도 유지한다. 기존 프로젝트 핀은 프로젝트 고정을 유지하고, 핀을
+풀면 현재 세션을 따른다. 고정된 세션이나 프로젝트를 삭제하면 현재 선택으로 복귀한다.
+
+프로젝트 안의 파일은 기존 프로젝트 상대경로 문서 탭을 재사용한다. 다른 드라이브나
+프로젝트 밖의 전용 폴더는 `doc2:` 탭에 별도 루트를 저장해 같은 이름의 부모 파일과
+혼동하지 않는다. 문서·Git 이력 탭을 열거나 복원한 뒤에도 해당 폴더 문맥을 유지한다.
+Git 이력은 상대 저장소와 절대 작업 폴더를 모두 지원한다. Git 저장소의 하위 폴더에서
+조회한 변경 경로는 작업 폴더 기준으로 바꿔 파일 열기·stage와 상태 배지가 어긋나지 않는다.
+
+검증: 관련 10개 파일의 113개 검사와 TypeScript·Vite build 통과. 격리한 실제 App에서
+다른 드라이브의 자식 폴더, 동일 이름 문서의 올바른 루트, 문서 탭 선택 후 폴더 유지,
+형제 전환·캐시 분리, 핀·재시작 복원·해제, 지연 응답 차단과 Git 조회 cwd를 확인했다.
+임시 실제 Git 저장소에서도 하위 작업 폴더의 상태·증감 줄 수·stage 경로를 검증했다.
+기록은 `output/session-file-root-tests-final.log`, `output/session-file-root-build-final.log`,
+`output/session-file-root-electron-final.log`다. 실제 사용자 세션·설정은 변경하지 않았다.
+
+## 활성 목록의 휴면·정지 자식 표시 (2026-10-27, 1.8.1.96)
+
+사이드바 **Active** 목록에서는 부모가 활성 상태여도 휴면·정지·종료·미시작 자식은
+기본으로 숨긴다. 자식이 있는 부모 세션을 우클릭하면 **휴면·정지 하위 세션 표시**를
+선택할 수 있고, 표시 중에는 같은 위치에서 **휴면·정지 하위 세션 숨기기**로 되돌린다.
+프로젝트 안의 목록과 최근 대화에 같은 규칙을 적용한다.
+
+선택은 부모의 `sidebarShowInactiveChildren`에 저장하므로 앱을 다시 열어도 유지된다.
+부모를 표시로 바꾸면 비활성 중간 자식을 거친 손자도 표시한다. 하위 관리자에서 따로
+숨김을 선택하면 그 가지의 선택을 우선하며 명시적인 `false`도 저장한다.
+실행 중인 자식과 그 자식을 연결하는 부모 경로는 숨김 선택과 관계없이 유지한다.
+전체·휴면 탭과 검색에서는 계속 찾을 수 있으며, 전체 하위 세션 접기와 별도로 동작한다.
+이 선택은 사이드바 표시만 바꾸며 CLI 시작·종료, 작업 상태, Active/Sleeping 개수,
+대화·조직도 연결과 Pixel Office 표시는 변경하지 않는다.
+
+관련 5개 파일의 70개 검사와 TypeScript·Vite production build를 통과했다.
+실제 App을 사용하는 격리 Electron fixture에서 기본 숨김, 부모 우클릭 표시·숨김,
+양쪽 트리와 손자 표시, `true`/`false` 저장, 전체·휴면 필터 전환, 실행 중인 자식 유지,
+상태별 개수와 CLI 실행 호출 불변을 검증했다. 기록은
+`output/sidebar-inactive-visibility-tests.log`, `output/sidebar-inactive-visibility-build.log`,
+`output/sidebar-inactive-visibility-electron.log`다. 실제 사용자 세션은 변경하지 않았다.
+
+## 공개 API의 조직도 변경 (2026-10-27, 1.8.1.96)
+
+`acedia_sessions_organize`로 기존 세션들의 이름과 부모를 최대 20개씩 한 번에 변경한다.
+실행 중·Sleeping·정지 세션을 지원하며 부모 지정·변경·해제가 가능하다. 기존 대화와
+작업 폴더·모델·effort·Fast·지침을 보존하고, 새 부모 연결만으로 설정 상속을 바꾸지 않는다.
+`acedia_session_create`는 선택적인 `parentSessionId`, `folder`, `start: false`를 지원한다.
+`acedia_session_stop`으로 창 활성화 없이 종료한 뒤 기존 이동 API로 폴더를 바꿀 수 있다.
+인수·동시 변경 검사·작업 분담 예약 제한·예제는 [프로젝트·세션 MCP](workspace-mcp.md)를 따른다.
+
+## Pixel Office (2026-10-27, 1.8.1.96)
+
+Project Board와 프로젝트 세션 트리의 **Pixel Office** 버튼으로 사무실 보기를 연다.
+우측 파일·Git 탭 옆에서도 열 수 있고 보드와 우측 배치를 전환할 수 있다.
+실제 프로젝트·세션·현재 부모 관계와 작업 상태를 사용하며 캐릭터 선택만으로 CLI를
+시작하지 않는다. 전체 동작, Pixel Agents 자산 출처와 검증은 [Pixel Office](pixel-office.md)를 따른다.
+
+## API 생성 세션의 폴더 신뢰 자동 확인 (2026-10-27, 1.8.1.96)
+
+`acedia_session_create`, `acedia_project_create`의 첫 세션, 작업 분담의 전용 하위 세션은
+별도 프로젝트 옵션을 켜지 않아도 로컬 Codex의 `Trust and continue`를 자동 확인한다.
+API 생성 시 저장한 `sessionHierarchy.createdById`로 구분하므로 앱 재시작, 기존 세션
+백그라운드 시작, 부모 변경·삭제 뒤에도 적용한다. 현재 확인 화면에서 대기 중인 기존
+API 생성 세션도 같은 폴링으로 처리하며 다시 생성하거나 요청을 재전송하지 않는다.
+
+현재 등록된 로컬 프로젝트의 실제 경로를 범위로 사용한다. CLI cwd·화면의 폴더가
+일치하고 Git 신뢰 루트도 그 프로젝트 안에 있을 때에만 Enter를 한 번 보낸다.
+창·탭·포커스를 바꾸지 않으며, 훅·명령·로그인·사용자 질문에는 입력하지 않는다.
+프로젝트 밖 경로, SSH, 잘린 화면, 사용자가 선택한 Quit에는 자동 입력하지 않는다.
+Dangerous mode와 실행 권한 설정은 그대로 유지한다.
+
+작업 흐름의 프로젝트 시작 자동화 옵션은 **직접 만든 Codex 세션도 폴더 신뢰 자동 확인**으로
+표시한다. 이 옵션의 기본값은 계속 꺼짐이며 API 생성 세션의 기본 자동 확인과 구분한다.
+부모만 지정해 사람이 만든 자식은 API 생성 세션으로 취급하지 않는다.
+
+검증은 관련 **8개 파일·95개 검사**, TypeScript·Vite production build를 통과했다.
+설치 Codex를 임시 프로필·loopback 응답에서 실행해 프로젝트 옵션 없이 폴더 신뢰를
+정확히 한 번 확인하고 첫 작업 전달·모델·결과·검토·복원을 확인했다.
+실제 Electron main/coordinator의 `electron-workspace-mcp-smoke.mjs --folder-trust`에서도
+프로젝트 첫 세션과 추가 세션의 자동 확인, 옵션 꺼짐 유지, 창 활성화 호출 0회,
+화면 선택·포커스·초안 보존을 검증했다. 실제 사용자 세션에는 입력하지 않았다.
+
+기록은 `output/api-startup-trust-tests.log`, `output/api-startup-trust-adjacent-tests.log`,
+`output/api-startup-trust-build.log`, `output/api-startup-trust-native.log`,
+`output/api-startup-trust-electron-final.log`다. 최초 main fixture는 기능 확인 뒤 종료 시
+비정상 종료했으며, 일반 검사와 같이 격리 PTY를 명시적으로 종료하도록 정리한 뒤
+정상 종료 코드 0으로 재검증했다. Standard EXE 1.8.1.96 검증·배포 기록은 [릴리스 문서](release-1-8-1-96.md)를 따른다.
+
 ## 프로젝트 폴더 신뢰 자동 확인 (Standard EXE 1.8.1.91)
 
-**작업 흐름 → 모델 정책 → 프로젝트 시작 자동화**에서 **이 프로젝트의 Codex 폴더 신뢰
+1.8.1.91 배포 동작은 **작업 흐름 → 모델 정책 → 프로젝트 시작 자동화**에서 **이 프로젝트의 Codex 폴더 신뢰
 자동 확인**을 켜고 설정을 저장한다. 기본은 꺼짐이며, 데스크톱·Remote·Dashboard에서
 같은 호스트 설정을 사용한다. 현재 프로젝트의 실제 루트 경로에 연결해 저장하므로
 프로젝트 폴더를 바꾸면 다시 설정한다. 설정을 끄면 아직 확인하지 않은 세션에도 바로 반영된다.
@@ -86,6 +190,20 @@ AIHub에서 생성한 세션을 RnDHub 아래로 옮겼으면 **현재 `parentId
 Sleeping 자식의 양쪽 목록 표시, 실제 상태별 개수 유지, 필터 전환 시 CLI 실행 불변,
 부모 비활성 후 Sleeping 형제 제외를 확인했다. 검증 기록은
 `output/sidebar-active-sleeping-electron.log`에 남겼다.
+
+2026-10-26 소스 수정은 위 Active 문맥 확장을 Sleeping 이외의 상태에도 적용한다.
+실제 활성 부모 아래에서는 정지·종료·미시작 자식도 보이며, 비활성 자식 아래의 손자까지
+전체 계층을 유지한다. 프로젝트 목록과 최근 대화에 같은 규칙을 적용한다. 표시를 위해
+세션을 시작하거나 활성 상태로 바꾸지 않고 Active/Sleeping 개수는 실제 상태로 집계한다.
+보관한 세션·다른 프로젝트는 제외하며, 활성 자식 때문에 문맥으로만 추가된 비활성
+부모가 다른 비활성 형제까지 펼치는 동작은 추가하지 않는다. 기존 접기와 평면 검색은 유지한다.
+
+관련 검사 62개와 TypeScript·Vite production build를 통과했다. 전체 사이드바 화면 검사는 새 기능 검사
+이전의 숨김 창 캡처에서 `UnknownVizError`로 중단됐다. 별도
+`node app/scripts/electron-sidebar-workspace-smoke.mjs --inactive-family-only` 모드로
+실제 App의 양쪽 트리, 정지 자식 아래 Sleeping 손자, 실제 상태별 개수, 필터 변경 시
+CLI 실행 불변과 부모 정지 후 비활성 형제 제외를 검증했다.
+`output/sidebar-inactive-descendants-focused.log`에 초기 소스 검사 결과를 남겼다. 현재 표시·숨김 규칙과 1.8.1.96 배포 기록은 위 절과 릴리스 문서를 따른다.
 
 순수 트리·서버 렌더 검사와 실제 Electron 전체 앱 fixture에서 최초 생성자가 다른 세
 Shader 세션을 RnDHub 아래에 한 번씩 표시하고, 접기·펼치기·재시작 후 복원·프로젝트 목록과

@@ -13,6 +13,7 @@ import { nativeCodexModel } from '../electron/services/session-model-memory.mjs'
 import { TaskOrchestration } from '../electron/services/task-orchestration.mjs';
 import { HookService } from '../electron/services/hook-service.mjs';
 import { StartupAutomation, startupPrompt } from '../electron/services/startup-automation.mjs';
+import { WorkspaceManagement } from '../electron/services/workspace-management.mjs';
 
 // Installed Codex, temporary homes, fake credentials, loopback Responses fixture.
 // This never calls a live model or sends a prompt to an existing user session.
@@ -20,7 +21,7 @@ const binary = process.env.ACEDIA_CODEX_BINARY;
 assert.ok(binary && path.isAbsolute(binary) && fs.existsSync(binary), 'Set ACEDIA_CODEX_BINARY to the installed Codex executable.');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-task-native-')), calls = [], live = new Map([['a', { cwd: root }]]), workers = new Map();
 const model = { model: 'gpt-6.1-sol', effort: 'high' };
-const catalog = { projects: [{ id: 'p', folder: root }], agents: [{ id: 'a', projectId: 'p', aiToolId: 'codex' }] };
+const catalog = { projects: [{ id: 'p', folder: root }], agents: [{ id: 'a', projectId: 'p', aiToolId: 'codex' }], availableTools: [{ id: 'codex' }] };
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() };
 const pool = new AccountPool(path.join(root, 'pool'), { port: 0, safeStorage, fetchImpl: async (url, options) => {
   if (url.includes('/models')) return new Response('{"models":[]}', { headers: { 'content-type': 'application/json' } });
@@ -73,16 +74,16 @@ try {
         '-c', `model_reasoning_effort=${JSON.stringify(payload.modelSettings.effort)}`, '-c', 'features.daemon_auto_start=false', '-c', 'features.hooks=true', '-c', 'features.plugins=false', '-c', 'analytics.enabled=false'],
       { cwd: root, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
       const entry = { id: payload.id, cwd: root, aiToolId: 'codex', startedAt: Date.now(), lastInputAt: 0, process: terminal, filter };
-      live.set(payload.id, entry); workers.set(payload.id, { home, filter, terminal }); catalog.agents.push({ id: payload.id, projectId: 'p', aiToolId: 'codex' });
+      live.set(payload.id, entry); workers.set(payload.id, { home, filter, terminal }); catalog.agents.push({ id: payload.id, projectId: payload.projectId, aiToolId: 'codex', sessionHierarchy: payload.sessionHierarchy });
       terminal.onData(data => { const w = workers.get(payload.id); if (w) w.rawBytes = (w.rawBytes || 0) + Buffer.byteLength(data); if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
       terminal.onExit(() => { const worker = workers.get(payload.id); if (worker) worker.exited = true; });
       await until(() => startupPrompt(entry)?.startupKind === 'folder-trust', 'native untrusted folder screen');
       const writes = [];
       const automation = new StartupAutomation({ entry: id => live.get(id), allowedRoot: id => engine.startupTrustRoot(id),
         write: (_id, key) => { writes.push(key); terminal.write(key); } });
-      assert.equal(automation.check(payload.id), true, 'Configured project folder was not confirmed');
+      assert.equal(automation.check(payload.id), true, 'API-created project folder was not confirmed');
       assert.equal(automation.check(payload.id), false, 'Duplicate folder confirmation'); assert.deepEqual(writes, ['\r']);
-      console.log('TASK_STARTUP_INSTALLED_CODEX_PROJECT_FOLDER_AUTO_TRUST_ONCE_OK');
+      console.log('TASK_STARTUP_INSTALLED_CODEX_API_FOLDER_AUTO_TRUST_WITHOUT_OPT_IN_ONCE_OK');
       // These six hooks were generated above inside this disposable fixture.
       // Exercise their explicit startup review rather than bypassing trust.
       await until(() => /3\. Continue without trusting/.test(filter.viewportText()), 'fixture hook trust screen');
@@ -94,8 +95,10 @@ try {
       return { id: payload.id };
     },
   };
+  const workspace = new WorkspaceManagement({ catalog: () => catalog, isActive: id => live.has(id), create: options.createSession });
+  options.createSession = payload => workspace.createTaskSession(payload);
   engine = new TaskOrchestration(options);
-  await engine.handle({ operator: true, action: 'policy-save', body: { ownerId: 'a', revision: 0, autoTrustProjectFolders: true, policy: { light: model, normal: model, advanced: model } } });
+  assert.equal(engine.startupTrust('a').enabled, false, 'Manual-session project opt-in must remain off');
   polling = setInterval(async () => { for (const [id] of workers) deliveries.observe(id, live.get(id), await read(id)); await engine.tick(); }, 100);
   const planned = await engine.handle({ agentId: 'a', action: 'plan', body: { requestKey: 'native', title: 'Native Codex fixture', request: 'local fixture only', tasks: [{ id: 'native', title: 'Native worker', goal: 'Reply TASK_NATIVE_FIXTURE_OK. Do not call tools.', acceptance: 'native model and turn validated', dependsOn: [], writeScopes: [] }] } });
   await until(() => engine.data.runs[0].tasks[0].state === 'running', 'fresh worker first dispatch');

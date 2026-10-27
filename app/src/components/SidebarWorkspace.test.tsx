@@ -11,10 +11,41 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it('labels child sessions with their dedicated effective folder rather than a stale parent-project folder', () => {
+    const html = render([agent('parent'), agent('child', { folder: 'C:/stale', sessionHierarchy: { parentId: 'parent', inheritFolder: false, folderOverride: 'D:/AI2/PCGLab' } })]);
+    expect(html).toContain('title="D:/AI2/PCGLab"');
+    expect(html).toContain('.../AI2/PCGLab'); expect(html).not.toContain('C:/stale');
+    expect(html).toContain('상위 세션: parent');
+  });
+  it('defaults to hiding sleeping and stopped children in both Active lists while preserving active children and counts', () => {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'multiagent.sessionFilter.v1' ? 'active' : key === 'multiagent.sidebarExpandedProjects.v1' ? '["p"]' : null, setItem: vi.fn() });
+    const parent = agent('parent', { status: 'working', runtimeStatus: 'running' });
+    const sleeping = agent('sleep', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'parent' } });
+    const stopped = agent('stopped', { status: 'exited', runtimeStatus: 'exited', sessionHierarchy: { parentId: 'parent' } });
+    const active = agent('active', { status: 'working', runtimeStatus: 'running', sessionHierarchy: { parentId: 'parent' } });
+    const html = render([parent, sleeping, stopped, active]);
+    expect(html).not.toContain('data-sidebar-agent-id="sleep"'); expect(html).not.toContain('data-sidebar-agent-id="stopped"');
+    expect(html.match(/data-sidebar-agent-id="active"/g)).toHaveLength(2);
+    expect(html).toMatch(/data-session-filter="active" aria-pressed="true"[^]*?sidebar-session-filter-count">2</);
+    expect(html).toMatch(/data-session-filter="sleeping" aria-pressed="false"[^]*?sidebar-session-filter-count">1</);
+  });
+  it('keeps stopped children and their sleeping descendants visible in both Active trees without starting or counting them as active', () => {
+    const saved:Record<string,string>={'multiagent.sessionFilter.v1':'active','multiagent.sidebarExpandedProjects.v1':'["p"]'};
+    vi.stubGlobal('localStorage',{getItem:(key:string)=>saved[key]??null,setItem:vi.fn()});
+    const parent=agent('parent',{status:'working',runtimeStatus:'running',sidebarShowInactiveChildren:true});
+    const child=agent('stopped',{deferredStart:true,resumeEligible:false,sessionHierarchy:{parentId:parent.id}});
+    const sleeping=agent('sleep',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:child.id}});
+    const html=render([parent,child,sleeping,agent('unrelated')]);
+    for(const id of ['stopped','sleep']) expect(html.match(new RegExp(`data-sidebar-agent-id="${id}"`,'g'))).toHaveLength(2);
+    expect(html.match(/data-sidebar-parent-id="stopped"/g)).toHaveLength(2);
+    expect(html).not.toContain('data-sidebar-agent-id="unrelated"');
+    expect(html).toMatch(/data-session-filter="active" aria-pressed="true"[^]*?sidebar-session-filter-count">1</);
+    expect(html).toMatch(/data-session-filter="sleeping" aria-pressed="false"[^]*?sidebar-session-filter-count">1</);
+  });
   it('shows sleeping children of an active parent in both lists, keeping their status and runtime-only counts', () => {
     const saved:Record<string,string>={'multiagent.sessionFilter.v1':'active','multiagent.sidebarExpandedProjects.v1':'["p"]'};
     vi.stubGlobal('localStorage',{getItem:(key:string)=>saved[key]??null,setItem:vi.fn()});
-    const parent=agent('RnDHub',{status:'working',runtimeStatus:'running'});
+    const parent=agent('RnDHub',{status:'working',runtimeStatus:'running',sidebarShowInactiveChildren:true});
     const child=agent('Shader',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}});
     const unrelated=agent('unrelated',{deferredStart:true,resumeEligible:true});
     const html=render([parent,child,unrelated]);

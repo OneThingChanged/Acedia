@@ -131,6 +131,8 @@ const INVOKE_COMMANDS = Object.freeze([
   "complete_session_launch_settings",
   "validate_session_relocation",
   "complete_session_relocation",
+  "validate_session_registry_change",
+  "complete_session_registry_change",
   "restart_session_model",
   "get_session_model",
   "get_model_defaults",
@@ -202,6 +204,7 @@ const DELIVERED_EVENTS = Object.freeze([
   "remote:session-model",
   "remote:session-launch-settings",
   "remote:relocate-sessions",
+  "remote:session-registry-change",
   "chat:changed",
   "app:close-requested",
   "app:close-cancelled",
@@ -427,6 +430,7 @@ function assertInvokeRequest(command, rawArgs) {
       }
       break;
     case "validate_session_relocation":
+    case "validate_session_registry_change":
       for (const key of ["requestId", "id"]) {
         if (typeof args[key] !== 'string' || !SESSION_STORAGE_ID_RE.test(args[key])) throw new TypeError(`Electron relocation ${key} must be a UUID`);
       }
@@ -436,6 +440,7 @@ function assertInvokeRequest(command, rawArgs) {
     case "complete_remote_session_model":
     case "complete_session_launch_settings":
     case "complete_session_relocation":
+    case "complete_session_registry_change":
       for (const key of ["requestId", "id"]) {
         if (
           typeof args[key] !== "string" ||

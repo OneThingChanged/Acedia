@@ -9,7 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { invoke, listen } from "../platform/runtime";
-import type { Project } from "../types";
+import type { Agent, Project } from "../types";
+import { fileTreeWorkspace, fileTreeDocumentReference, fileTreeRepositoryPath } from '../lib/fileTreeWorkspace';
 import type { AppThemeId } from "../lib/appTheme";
 import type {
   DirectoryEntry,
@@ -22,6 +23,7 @@ import type {
 } from "../platform/ipcContract";
 import { loadDiffToolCommand } from "../lib/diffTool";
 import { useAppLanguage } from "../lib/appLanguage";
+import { PixelOfficeIcon } from './PixelOffice';
 
 // Lazy file explorer: one list_directory call per expanded folder,
 // cached in dirCache (key "" = project root). Expanded state persists per
@@ -274,23 +276,24 @@ function nativeAbsolutePath(folder: string, relativePath: string) {
   return `${folder.replace(/[\\/]+$/, "")}${sep}${rel}`;
 }
 
-function loadPinState(): { pinned: boolean; projectId: string | null } {
+function loadPinState(): { pinned: boolean; projectId: string | null; sessionId?: string | null } {
   try {
     const raw = localStorage.getItem(LS_TREE_PIN);
     if (!raw) return { pinned: false, projectId: null };
-    const parsed = JSON.parse(raw) as { pinned?: boolean; projectId?: string };
+    const parsed = JSON.parse(raw) as { pinned?: boolean; projectId?: string; sessionId?: string };
     return {
       pinned: !!parsed.pinned,
       projectId: typeof parsed.projectId === "string" ? parsed.projectId : null,
+      sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : null,
     };
   } catch {
     return { pinned: false, projectId: null };
   }
 }
 
-function savePinState(pinned: boolean, projectId: string | null) {
+function savePinState(pinned: boolean, projectId: string | null, sessionId?: string | null) {
   try {
-    localStorage.setItem(LS_TREE_PIN, JSON.stringify({ pinned, projectId }));
+    localStorage.setItem(LS_TREE_PIN, JSON.stringify({ pinned, projectId, ...(sessionId ? { sessionId } : {}) }));
   } catch {}
 }
 
@@ -355,28 +358,41 @@ export function shouldRefreshGitForHook(event?: string): boolean {
 export function FileTreePanel({
   projects,
   activeProject,
+  agents = [],
+  activeSessionId,
   width,
   theme,
   onOpenFile,
   onOpenGitHistory,
   onClose,
+  activeView,
+  onViewChange,
+  onOpenOffice,
 }: {
   projects: Project[];
   activeProject: Project | null;
+  agents?: Agent[];
+  activeSessionId?: string | null;
   width: number;
   theme: AppThemeId;
-  onOpenFile: (projectId: string, relativePath: string) => void;
+  onOpenFile: (projectId: string, relativePath: string, rootFolder?: string, sessionId?: string) => void;
   onOpenGitHistory: (
     projectId: string,
     relativePath?: string | null,
-    repositoryPath?: string | null
+    repositoryPath?: string | null,
+    sessionId?: string
   ) => void;
   onClose: () => void;
+  activeView?: 'files' | 'scm';
+  onViewChange?: (view: 'files' | 'scm') => void;
+  onOpenOffice?: () => void;
 }) {
   const { text } = useAppLanguage();
   // ---- Shown project: follows the active project unless pinned ----
   const initialPin = useRef(loadPinState());
   const [pinned, setPinned] = useState(initialPin.current.pinned);
+  const [pinnedSessionId, setPinnedSessionId] = useState(initialPin.current.sessionId || null);
+  const [followSession, setFollowSession] = useState(true);
   const [shownProjectId, setShownProjectId] = useState<string | null>(() => {
     const stored = initialPin.current;
     if (stored.pinned && stored.projectId) return stored.projectId;
@@ -390,8 +406,11 @@ export function FileTreePanel({
     [projects, shownProjectId]
   );
   const projectId = shownProject?.id ?? null;
-  const projectFolder =
-    shownProject && !shownProject.sshHostId ? shownProject.folder : "";
+  const target = useMemo(() => shownProject ? fileTreeWorkspace(shownProject, projects, agents,
+    pinned ? pinnedSessionId : followSession && shownProject.id === activeProject?.id ? activeSessionId : null) : null,
+    [shownProject, projects, agents, pinned, pinnedSessionId, followSession, activeProject?.id, activeSessionId]);
+  const projectFolder = target?.folder || '';
+  const rootKey = target?.cacheKey || null;
   const [scopeState, setScopeState] = useState<{
     projectId: string | null;
     relativePath: string;
@@ -399,25 +418,34 @@ export function FileTreePanel({
   const [submodules, setSubmodules] = useState<GitSubmoduleEntry[]>([]);
   const [submodulesLoading, setSubmodulesLoading] = useState(false);
   const scopePath =
-    scopeState.projectId === projectId ? scopeState.relativePath : "";
+    scopeState.projectId === rootKey ? scopeState.relativePath : "";
   const folder =
     projectFolder && scopePath
       ? nativeAbsolutePath(projectFolder, scopePath)
       : projectFolder;
-  const scopeStorageKey = projectId
+  const scopeStorageKey = rootKey
     ? scopePath
-      ? `${projectId}::${scopePath}`
-      : projectId
+      ? `${rootKey}::${scopePath}`
+      : rootKey
     : "";
   const toProjectRelative = useCallback(
     (relativePath: string) =>
       projectRelativeFromScope(scopePath, relativePath),
     [scopePath]
   );
+  const openFile = (path: string) => {
+    if (!shownProject || !projectFolder) return;
+    const ref = fileTreeDocumentReference(shownProject.folder, projectFolder, toProjectRelative(path));
+    onOpenFile(shownProject.id, ref.relativePath, ref.rootFolder, target?.session?.id);
+  };
+  const openHistory = (path?: string | null) => {
+    if (!shownProject || !folder) return;
+    onOpenGitHistory(shownProject.id, path ?? null, fileTreeRepositoryPath(shownProject.folder, folder), target?.session?.id);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    setScopeState({ projectId, relativePath: "" });
+    setScopeState({ projectId: rootKey, relativePath: "" });
     setSubmodules([]);
     if (!projectId || !projectFolder) {
       setSubmodulesLoading(false);
@@ -430,14 +458,14 @@ export function FileTreePanel({
       .then((entries) => {
         if (cancelled) return;
         setSubmodules(entries);
-        const storedScope = loadScopeFor(projectId);
+        const storedScope = loadScopeFor(rootKey!);
         if (
           entries.some(
             (entry) =>
               entry.initialized && entry.relative_path === storedScope
           )
         ) {
-          setScopeState({ projectId, relativePath: storedScope });
+          setScopeState({ projectId: rootKey, relativePath: storedScope });
         }
       })
       .catch(() => {
@@ -449,44 +477,47 @@ export function FileTreePanel({
     return () => {
       cancelled = true;
     };
-  }, [projectFolder, projectId]);
+  }, [projectFolder, projectId, rootKey]);
 
   const selectScope = useCallback(
     (relativePath: string) => {
-      if (!projectId) return;
-      setScopeState({ projectId, relativePath });
-      saveScopeFor(projectId, relativePath);
+      if (!rootKey) return;
+      setScopeState({ projectId: rootKey, relativePath });
+      saveScopeFor(rootKey, relativePath);
     },
-    [projectId]
+    [rootKey]
   );
 
   // Follow the active project when unpinned.
   useEffect(() => {
-    if (!pinned) setShownProjectId(activeProject?.id ?? null);
-  }, [activeProject?.id, pinned]);
+    if (!pinned) { setShownProjectId(activeProject?.id ?? null); setFollowSession(true); }
+  }, [activeProject?.id, activeSessionId, pinned]);
 
   // Shown project disappeared (deleted) → fall back to the active one.
   useEffect(() => {
-    if (shownProjectId && !projects.some((p) => p.id === shownProjectId)) {
+    if (shownProjectId && (!projects.some((p) => p.id === shownProjectId)
+      || (pinned && pinnedSessionId && !agents.some(a => a.id === pinnedSessionId && a.projectId === shownProjectId)))) {
       setShownProjectId(activeProject?.id ?? null);
       if (pinned) {
         setPinned(false);
+        setPinnedSessionId(null);
         savePinState(false, null);
       }
     }
-  }, [activeProject?.id, pinned, projects, shownProjectId]);
+  }, [activeProject?.id, pinned, pinnedSessionId, agents, projects, shownProjectId]);
 
   const togglePin = useCallback(() => {
-    setPinned((current) => {
-      const next = !current;
-      savePinState(next, next ? shownProjectId : null);
-      return next;
-    });
-  }, [shownProjectId]);
+    const next = !pinned;
+    const sessionId = next ? target?.session?.id || null : null;
+    setPinnedSessionId(sessionId); setPinned(next);
+    savePinState(next, next ? shownProjectId : null, sessionId);
+  }, [pinned, shownProjectId, target?.session?.id]);
 
   const selectProject = useCallback(
     (id: string) => {
       setShownProjectId(id);
+      setFollowSession(false);
+      setPinnedSessionId(null);
       setDropdownOpen(false);
       if (pinned) savePinState(true, id);
     },
@@ -566,7 +597,9 @@ export function FileTreePanel({
   const [editing, setEditing] = useState<TreeEditing | null>(null);
 
   // ---- View tab: Files / Source Control ----
-  const [view, setView] = useState<"files" | "scm">("files");
+  const [localView, setLocalView] = useState<"files" | "scm">("files");
+  const view = activeView ?? localView;
+  const setView = (next: 'files' | 'scm') => { setLocalView(next); onViewChange?.(next); };
 
   const showOpError = useCallback((err: unknown) => {
     setOpError(String(err));
@@ -586,6 +619,7 @@ export function FileTreePanel({
           folder,
           relative,
         });
+        if (gitFolderRef.current !== folder) return;
         setDirCache((current) => {
           const next = new Map(current);
           next.set(relative, entries.map(toEntry));
@@ -593,9 +627,9 @@ export function FileTreePanel({
         });
         if (relative === "") setError(null);
       } catch (err) {
-        if (relative === "") setError(String(err));
+        if (gitFolderRef.current === folder && relative === "") setError(String(err));
       } finally {
-        setLoadingDirs((current) => {
+        if (gitFolderRef.current === folder) setLoadingDirs((current) => {
           const next = new Set(current);
           next.delete(relative);
           return next;
@@ -659,6 +693,8 @@ export function FileTreePanel({
   // Reset + load root + restore expanded dirs whenever the shown folder changes.
   useEffect(() => {
     setDirCache(new Map());
+    dirCacheRef.current = new Map();
+    setLoadingDirs(new Set());
     setError(null);
     setOpError(null);
     setFilter("");
@@ -798,6 +834,7 @@ export function FileTreePanel({
           }
         }
       }
+      if (gitFolderRef.current !== folder) return;
       setDirCache(localCache);
       setExpanded(discovered);
     } finally {
@@ -1189,7 +1226,7 @@ export function FileTreePanel({
           }}
           onDoubleClick={() => {
             if (!entry.isDir && projectId) {
-              onOpenFile(projectId, toProjectRelative(entry.relativePath));
+              openFile(entry.relativePath);
             }
           }}
           onContextMenu={(event) => openCtxMenu(event, entry)}
@@ -1256,6 +1293,7 @@ export function FileTreePanel({
             )}
           </span>
         </button>
+        {onOpenOffice && <button className="file-tree-tab" onClick={onOpenOffice} title="Pixel Office" aria-label="Pixel Office"><PixelOfficeIcon/></button>}
       </div>
       <div className="file-tree-header">
         <div
@@ -1265,7 +1303,7 @@ export function FileTreePanel({
           title={folder || shownProject?.name || ""}
         >
           <span className="file-tree-project-name">
-            {shownProject ? shownProject.name : "Files"}
+            {target?.label || shownProject?.name || 'Files'}
           </span>
           <span className="file-tree-project-chev">▾</span>
           {dropdownOpen && (
@@ -1294,8 +1332,8 @@ export function FileTreePanel({
           onClick={togglePin}
           title={
             pinned
-              ? text(`${shownProject?.name ?? ""}에 고정됨 — 클릭하여 해제`, `Pinned to ${shownProject?.name ?? ""} — click to unpin`)
-              : text("트리를 이 프로젝트에 고정", "Pin the tree to this project")
+              ? text(`${target?.label || shownProject?.name || ''}에 고정됨 — 클릭하여 해제`, `Pinned to ${target?.label || shownProject?.name || ''} — click to unpin`)
+              : text("트리를 이 작업 폴더에 고정", "Pin the tree to this working folder")
           }
         >
           📌
@@ -1305,6 +1343,9 @@ export function FileTreePanel({
         </button>
       </div>
 
+      {shownProject && <div className="file-tree-working-folder" data-file-tree-session={target?.session?.id || ''} title={shownProject.sshHostId ? target?.remoteFolder : projectFolder}>
+        <span>{text('작업 폴더', 'Working folder')}</span><code>{shownProject.sshHostId ? target?.remoteFolder : projectFolder}</code>
+      </div>}
       {(submodulesLoading || submodules.length > 0) && (
         <label className="file-tree-scope">
           <span className="file-tree-scope-label">Repository</span>
@@ -1317,7 +1358,7 @@ export function FileTreePanel({
             <option value="">
               {submodulesLoading
                 ? text("저장소 확인 중…", "Checking repositories…")
-                : text(`프로젝트 · ${shownProject?.name ?? "Project"}`, `Project · ${shownProject?.name ?? "Project"}`)}
+                : target?.session ? text(`세션 · ${target.label}`, `Session · ${target.label}`) : text(`프로젝트 · ${shownProject?.name ?? "Project"}`, `Project · ${shownProject?.name ?? "Project"}`)}
             </option>
             {submodules.length > 0 && (
               <optgroup label={text("하위 Git 저장소", "Child Git repositories")}>
@@ -1427,14 +1468,8 @@ export function FileTreePanel({
           folder={folder}
           sshProject={!!shownProject?.sshHostId}
           refreshToken={scmRefreshToken}
-          onOpenFile={(rel) => {
-            if (projectId) onOpenFile(projectId, toProjectRelative(rel));
-          }}
-          onOpenHistory={(rel) => {
-            if (projectId) {
-              onOpenGitHistory(projectId, rel ?? null, scopePath || null);
-            }
-          }}
+          onOpenFile={openFile}
+          onOpenHistory={openHistory}
           onMutated={refreshTree}
           onError={showOpError}
         />
@@ -1506,10 +1541,7 @@ export function FileTreePanel({
                   style={{ paddingLeft: 8 }}
                   onClick={() => {
                     if (projectId) {
-                      onOpenFile(
-                        projectId,
-                        toProjectRelative(entry.relativePath)
-                      );
+                      openFile(entry.relativePath);
                     }
                   }}
                   onContextMenu={(event) => openCtxMenu(event, entry)}
@@ -1542,7 +1574,7 @@ export function FileTreePanel({
           onOpenDoc={(entry) => {
             setCtxMenu(null);
             if (projectId) {
-              onOpenFile(projectId, toProjectRelative(entry.relativePath));
+              openFile(entry.relativePath);
             }
           }}
           onOpenOs={(entry) => {
@@ -1573,11 +1605,7 @@ export function FileTreePanel({
           onOpenHistory={(entry) => {
             setCtxMenu(null);
             if (projectId) {
-              onOpenGitHistory(
-                projectId,
-                entry.relativePath,
-                scopePath || null
-              );
+              openHistory(entry.relativePath);
             }
           }}
         />

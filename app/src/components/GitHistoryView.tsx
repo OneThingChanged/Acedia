@@ -8,6 +8,7 @@ import type {
   GitLogResult,
 } from "../platform/ipcContract";
 import { parseGitHistoryTabId } from "../lib/gitHistoryTabs";
+import { isAbsoluteFsPath } from '../lib/path';
 import { useAppLanguage } from "../lib/appLanguage";
 
 const PAGE_SIZE = 50;
@@ -24,6 +25,7 @@ function parentDir(p: string): string {
 
 function scopedFolder(root: string, repositoryPath: string | null) {
   if (!root || !repositoryPath) return root;
+  if (isAbsoluteFsPath(repositoryPath)) return repositoryPath;
   const separator = root.includes("\\") ? "\\" : "/";
   const relative =
     separator === "\\"

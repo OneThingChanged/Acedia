@@ -132,6 +132,9 @@ describe("Electron IPC contract", () => {
     expect(contract.INVOKE_COMMANDS).toContain("complete_session_launch_settings");
     expect(contract.INVOKE_COMMANDS).toContain("validate_session_relocation");
     expect(contract.INVOKE_COMMANDS).toContain("complete_session_relocation");
+    expect(contract.INVOKE_COMMANDS).toContain("validate_session_registry_change");
+    expect(contract.INVOKE_COMMANDS).toContain("complete_session_registry_change");
+    expect(contract.DELIVERED_EVENTS).toContain("remote:session-registry-change");
     expect(contract.INVOKE_COMMANDS).toContain("open_store_product");
     expect(contract.INVOKE_COMMANDS).toContain("check_for_developer_update");
     expect(contract.INVOKE_COMMANDS).toContain("install_developer_update");

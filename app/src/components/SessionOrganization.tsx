@@ -9,6 +9,7 @@ import { canParentSession, layoutSessionHierarchy, normalizeSessionHierarchy, re
 import "./SessionOrganization.css";
 import { ProjectBoard, type ProjectBoardChange } from "./ProjectBoard";
 import { TaskFlow } from './TaskFlow';
+import { PixelOffice } from './PixelOffice';
 
 type Props = {
   agents: Agent[];
@@ -21,6 +22,10 @@ type Props = {
   onCreateChild: (id: string) => void;
   onUpdateHierarchy: (id: string, hierarchy: SessionHierarchy) => void;
   onUpdateProjects: (changes: ProjectBoardChange[]) => void;
+  officeOpen?: boolean;
+  onOfficeOpenChange?: (open: boolean) => void;
+  onDockOffice?: () => void;
+  onOpenNote?: (id: string) => void;
 };
 
 export function organizationAgents(agents: Agent[], activeOnly: boolean): Agent[] {
@@ -60,6 +65,8 @@ export function SessionOrganization(props: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [scope, setScope] = useState("all");
   const [taskView, setTaskView] = useState(false);
+  const [localOfficeOpen, setLocalOfficeOpen] = useState(false);
+  const setOfficeOpen = (open: boolean) => { setLocalOfficeOpen(open); props.onOfficeOpenChange?.(open); };
   const [activeOnly, setActiveOnly] = useState(true);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -93,9 +100,10 @@ export function SessionOrganization(props: Props) {
     else setInspectorCollapsed((current) => !current);
   }
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  if (props.officeOpen ?? localOfficeOpen) return <PixelOffice agents={catalog} projects={props.projects} activeProjectId={props.activeProjectId} selectedId={props.selectedId} onSelect={props.onSelect} onOpenSession={props.onOpenSession} onOpenNote={props.onOpenNote} onBack={() => setOfficeOpen(false)} onDock={props.onDockOffice}/>;
   if (taskView) return <section className="terminal-area task-flow-host"><button className="task-flow-return" onClick={() => setTaskView(false)}>← 세션 조직도</button><TaskFlow onOpenSession={props.onOpenSession}/></section>;
 
-  if (scope === "all") return <ProjectBoard onTaskFlow={() => setTaskView(true)} projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
+  if (scope === "all") return <ProjectBoard onOffice={() => setOfficeOpen(true)} onTaskFlow={() => setTaskView(true)} projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
     const agent = catalog.find(item => item.id === id);
     return agent ? <HierarchyInspector key={id} agent={agent} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={close}/> : null;
   }}/>;
@@ -104,6 +112,7 @@ export function SessionOrganization(props: Props) {
     <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1><NetworkIcon/>{text("세션 조직도", "Session organization")}</h1><p>{text("작업을 묶고, 필요한 설정을 이어받습니다.", "Group work and inherit the settings you need.")}</p></div><div className="org-header-actions"><button onClick={() => setTaskView(true)}>작업 흐름</button>
       <select aria-label={text("조직도 프로젝트", "Organization project")} value={scope} onChange={(event) => { setScope(event.target.value); setQuery(""); }}><option value="all">{text("전체 프로젝트", "All projects")}</option>{props.projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <button className="btn-primary" disabled={!selected} onClick={() => selected && props.onCreateChild(selected.id)}>＋ {text("자식 세션", "Child session")}</button><button className="org-icon-button" aria-label={text("세션 정보 패널 전환", "Toggle session inspector")} onClick={toggleInspector}>▥</button>
+      <button className="org-office-button" onClick={() => setOfficeOpen(true)}>Pixel Office</button>
     </div></header>
     <div className="org-toolbar"><div className="org-view-switch"><button aria-pressed={activeOnly} className={activeOnly ? "active" : ""} onClick={() => setActiveOnly(true)}>{text("활성 세션", "Active sessions")} <span>{activeCount}</span></button><button aria-pressed={!activeOnly} className={!activeOnly ? "active" : ""} onClick={() => setActiveOnly(false)}>{text("전체 세션", "All sessions")} <span>{catalog.length}</span></button></div><label className="org-search"><span aria-hidden="true">⌕</span><input value={query} aria-label={text("조직도 세션 검색", "Search organization sessions")} placeholder={text("세션 찾기", "Find a session")} onChange={(event) => { setQuery(event.target.value); if (event.target.value) setCollapsed(new Set()); }}/></label></div>
     <div className="org-body"><div className="org-map">

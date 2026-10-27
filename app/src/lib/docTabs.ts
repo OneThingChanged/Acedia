@@ -8,21 +8,24 @@ import { isGitHistoryTabId } from "./gitHistoryTabs";
 // so parsing splits at the first ":" after the prefix. The relative path may
 // itself contain ":" (e.g. absolute Windows fallback payloads) and stays intact.
 export const DOC_TAB_PREFIX = "doc:";
+const ROOTED_DOC_TAB_PREFIX = 'doc2:';
 const BROWSER_TAB_PROJECT_ID = "__browser__";
 
 export type DocTabRef = {
   projectId: string;
   relativePath: string;
+  rootFolder?: string;
 };
 
 export type DocKind = "markdown" | "html" | "image" | "text";
 
 export function isDocTabId(id: string): boolean {
-  return id.startsWith(DOC_TAB_PREFIX);
+  return id.startsWith(DOC_TAB_PREFIX) || id.startsWith(ROOTED_DOC_TAB_PREFIX);
 }
 
-export function makeDocTabId(projectId: string, relativePath: string): string {
+export function makeDocTabId(projectId: string, relativePath: string, rootFolder?: string | null): string {
   const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (rootFolder) return `${ROOTED_DOC_TAB_PREFIX}${[projectId, rootFolder, normalized].map(encodeURIComponent).join(':')}`;
   return `${DOC_TAB_PREFIX}${projectId}:${normalized}`;
 }
 
@@ -56,6 +59,15 @@ export function layoutTabIdsForClosedBrowser(
 }
 
 export function parseDocTabId(id: string): DocTabRef | null {
+  if (id.startsWith(ROOTED_DOC_TAB_PREFIX)) {
+    const parts = id.slice(ROOTED_DOC_TAB_PREFIX.length).split(':');
+    if (parts.length !== 3) return null;
+    try {
+      const [projectId, rootFolder, relativePath] = parts.map(decodeURIComponent);
+      return projectId && relativePath && /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(rootFolder) && !/[\x00-\x1f]/.test(rootFolder)
+        ? { projectId, relativePath, rootFolder } : null;
+    } catch { return null; }
+  }
   if (!isDocTabId(id)) return null;
   const payload = id.slice(DOC_TAB_PREFIX.length);
   const sep = payload.indexOf(":");

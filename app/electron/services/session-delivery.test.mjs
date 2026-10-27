@@ -41,6 +41,12 @@ it('reports actual sent, received and identified new-turn stages; keeps the orig
   expect(f.service.list('target')[0].deliveryId).toBe(f.service.list('caller')[0].deliveryId);
   expect(fs.readFileSync(f.options.file, 'utf8')).not.toContain('UI 초안');
 });
+it('keeps mailbox reference envelopes ASCII even when sender/project labels are Korean', async () => {
+  const f = fixture(); f.contexts.caller.name = '관리자'; f.contexts.caller.projectName = '한글 프로젝트';
+  const body = { ...f.body, message: 'Read acedia_session_message_receive for the original UTF-8 text.' };
+  await f.service.handle({ action: 'send', agentId: 'caller', body, asciiEnvelope: true });
+  expect(f.options.submit.mock.calls[0][2]).toMatch(/^[\x00-\x7f]+$/);
+});
 it('allows only the internal first-turn path with an empty composer and no previous turn', async () => {
   const f = fixture();
   f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: null, question: null });

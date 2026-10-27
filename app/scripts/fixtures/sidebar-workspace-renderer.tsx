@@ -41,6 +41,8 @@ declare global {
     sidebarFixturePolicyAllowed: boolean;
     sidebarFixtureNativeFailure: boolean;
     sidebarFixtureEmit: (name: string, payload: unknown) => void;
+    sidebarFixtureFileRoots?: Record<string, string[]>;
+    sidebarFixtureFileDelays?: Record<string, number>;
   }
 }
 window.sidebarFixtureInUse = [];
@@ -52,6 +54,19 @@ window.sidebarFixtureEmit = (name, payload) => listeners.get(name)?.forEach(call
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.layoutCalls.push({ command, args });
+    if (window.sidebarFixtureFileRoots) {
+      if (command === 'list_directory') {
+        const folder = String(args.folder);
+        const names = window.sidebarFixtureFileRoots[folder] || [];
+        if (window.sidebarFixtureFileDelays?.[folder]) await new Promise(resolve => setTimeout(resolve, window.sidebarFixtureFileDelays![folder]));
+        return names.map(name => ({ name, relative_path: name, is_dir: false }));
+      }
+      if (command === 'list_git_submodules') return [];
+      if (command === 'git_status') return { is_repo: true, entries: [] };
+      if (command === 'git_changes') return { is_repo: true, branch: 'main', upstream: null, ahead: 0, behind: 0, staged: [], unstaged: [], commits: [] };
+      if (command === 'git_log') return { commits: [], has_more: false };
+      if (command === 'read_markdown_file') return `# ${args.folder} / ${args.relativePath}`;
+    }
     if (command === "runtime_flags") return { build_variant: "standard", update_provider: "github", advanced_launch_options: true };
     if (command === "get_agent_window_usage") return { in_use_agent_ids: window.sidebarFixtureInUse, owned_agent_ids: window.sidebarFixtureOwned };
     if (command === "notification_policy_check") return window.sidebarFixturePolicyAllowed;
@@ -79,7 +94,7 @@ window.multiAgentElectron = {
     if (command === "remote_config_get") return {};
     if (command === "monitor_config_get") return { enabled: false, serverPort: 4421 };
     if (command === "remote_access_list") return { pending: [], approved: [] };
-    if (command === "list_project_files" || command === "list_directory" || command === "list_markdown_files") return [];
+    if (command === "list_project_files" || command === "list_directory" || command === "list_markdown_files" || command === 'list_git_submodules') return [];
     if (command === "session_web_servers" || command === "session_deliveries_get") return [];
     if (command === "get_system_resources") return null;
     if (command === "start_monitor_server") return { url: "http://127.0.0.1:4421" };

@@ -7,6 +7,7 @@ import * as pty from 'node-pty';
 import { AccountPool } from '../electron/services/account-pool.mjs';
 import { ActiveQuestions } from '../electron/services/active-questions.mjs';
 import { SessionDeliveries, deliveryComposerReady } from '../electron/services/session-delivery.mjs';
+import { SessionMessages } from '../electron/services/session-messages.mjs';
 import { WorkspaceManagement } from '../electron/services/workspace-management.mjs';
 import { HookService } from '../electron/services/hook-service.mjs';
 import { CodexScrollbackFilter } from '../electron/services/terminal-stream.mjs';
@@ -16,6 +17,7 @@ import { submitPtyMessage, encodeConptyUnicode } from '../electron/services/pty-
 // Installed native Codex, fake credentials, isolated profile and loopback model
 // fixtures only. This never sends work to a user's existing session/account.
 const binary = process.env.ACEDIA_CODEX_BINARY;
+const messageApi = process.env.ACEDIA_SESSION_MESSAGE_API === '1';
 assert.ok(binary && path.isAbsolute(binary) && fs.existsSync(binary), 'Set ACEDIA_CODEX_BINARY to the installed Codex executable.');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-delivery-cli-'));
 const home = path.join(root, 'cli'); fs.mkdirSync(home);
@@ -96,9 +98,14 @@ try {
     if (busy) return; busy = true;
     try { service.poll(); const result = await read(); if (result) service.observe(entry.id, entry, result); } finally { busy = false; }
   }, 100);
+  const catalog = () => ({ projects: [{ id: 'p', name: 'Fixture', folder: root }], agents: [{ id: 'caller', name: '한글 관리자', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: '수신자', projectId: 'p', aiToolId: 'codex' }] });
+  const messageOptions = { file: path.join(root, 'session-messages.json'), sessionFor: id => catalog().agents.find(a => a.id === id), context: options.context,
+    notify: (agentId, body) => service.handle({ action: 'send', agentId, body, asciiEnvelope: true }),
+    receipt: (agentId, requestKey) => service.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }) };
+  const messages = new SessionMessages(messageOptions);
   const workspace = new WorkspaceManagement({ catalog: () => ({ projects: [{ id: 'p', name: 'Fixture', folder: root }],
     agents: [{ id: 'caller', name: 'ProjectWitch', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: 'UI', projectId: 'p', aiToolId: 'codex' }] }),
-    isActive: id => ['caller', 'target'].includes(id), deliveries: service, sessionState: id => ({ conversationId: id === 'target' ? conversationId : null }) });
+    isActive: id => ['caller', 'target'].includes(id), deliveries: service, messages, sessionState: id => ({ conversationId: id === 'target' ? conversationId : null }) });
   hook = new HookService({ baseDir: path.join(root, 'hook'), workspaceProvider: request => workspace.handle(request) }); await hook.start();
   mcp = spawn(process.execPath, [path.resolve(import.meta.dirname, '../electron/services/browser-mcp-server.mjs')], { windowsHide: true,
     env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller' }, stdio: ['pipe', 'pipe', 'ignore'] });
@@ -113,6 +120,31 @@ try {
   await rpc('initialize');
   assert.ok((await rpc('tools/list')).tools.some(t => t.name === 'acedia_session_send'));
   const listed = await rpc('tools/call', { name: 'acedia_projects' }); assert.equal(listed.structuredContent.sessions[1].conversationId, conversationId);
+  if (messageApi) {
+    const message = '한글 작업 지시: 전용 폴더의 문서를 확인해 주세요. 🚀\n\t들여쓰기·따옴표·여러 줄도 그대로 보존합니다.';
+    const body = { sessionId: 'target', message, requestKey: 'native-utf8-1', waitMs: 10000 };
+    const sent = await rpc('tools/call', { name: 'acedia_session_message_send', arguments: body });
+    assert.ok(!sent.isError, JSON.stringify(sent)); const stored = sent.structuredContent;
+    assert.equal(stored.saved, true); assert.equal(stored.delivery.status, 'started'); assert.equal(stored.readAt, null);
+    await waitFor(async () => (await read())?.turn?.status === 'done', 'completed ASCII notification task');
+    const userRows = fs.readFileSync(transcript, 'utf8').split('\n').flatMap(line => { try { const r = JSON.parse(line); return r.type === 'response_item' && r.payload?.role === 'user' ? r.payload.content.map(c => c.text || '') : []; } catch { return []; } });
+    const reference = userRows.find(value => value.includes(stored.messageId));
+    assert.ok(reference); assert.match(reference, /^[\x00-\x7f]+$/); assert.ok(!reference.includes(message));
+    const headers = { authorization: 'Bearer ' + hook.token, 'x-acedia-agent-id': 'target', 'content-type': 'application/json; charset=utf-8' };
+    const response = await fetch(`http://127.0.0.1:${hook.port}/integration/v1/workspace/messages/receive`, { method: 'POST', headers, body: JSON.stringify({ messageId: stored.messageId, includeBase64: true }) });
+    assert.equal(response.status, 200); const original = (await response.json()).messages[0];
+    assert.equal(original.message, message); assert.equal(Buffer.from(original.messageBase64, 'base64').toString('utf8'), message); assert.ok(original.readAt);
+    const count = calls.length;
+    const again = await rpc('tools/call', { name: 'acedia_session_message_send', arguments: body });
+    assert.equal(again.structuredContent.messageId, stored.messageId); assert.ok(again.structuredContent.readAt);
+    await new SessionMessages(messageOptions).handle({ action: 'message-send', agentId: 'caller', body });
+    await wait(500); assert.equal(calls.length, count, 'Message replay notified the CLI twice');
+    const reply = await fetch(`http://127.0.0.1:${hook.port}/integration/v1/workspace/messages/send`, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'caller', message: '한글 답장도 정상입니다.', replyTo: stored.messageId, requestKey: 'reply-native', notify: false }) });
+    assert.equal(reply.status, 200);
+    const inbox = await rpc('tools/call', { name: 'acedia_session_message_receive', arguments: {} });
+    assert.equal(inbox.structuredContent.messages[0].message, '한글 답장도 정상입니다.');
+    console.log('SESSION_MESSAGE_REAL_CODEX_ASCII_NOTIFICATION_UTF8_INBOX_READ_REPLY_AND_NO_REPLAY_OK');
+  } else {
   const message = '노드 선택 UI 초안: 인벤토리·캐릭터·지도 A02 → 확인! 🚀\n1~3개 후보, 준비 중/실패 상태를 HTML로 보여 주세요. 원래 작업 문맥을 유지해 주세요.';
   const body = { sessionId: 'target', expectedConversationId: conversationId, message, requestKey: 'node-ui-1', waitMs: 10000 };
   assert.equal((await rpc('tools/call', { name: 'acedia_session_send', arguments: { ...body, message: 'tab\tinput', requestKey: 'invalid-tab' } })).isError, true);
@@ -139,6 +171,7 @@ try {
   assert.ok(transcriptResolutions > 0);
   console.log('SESSION_DELIVERY_WITHOUT_HOOK_PATH_OR_CHAT_OPEN_OK');
   console.log('SESSION_DELIVERY_REAL_MCP_CODEX_RECEIPT_START_UNICODE_CONTEXT_AND_NO_REPLAY_OK');
+  }
 } finally {
   clearInterval(polling); service?.dispose();
   if (mcp) { mcp.stdin.end(); mcp.kill(); }

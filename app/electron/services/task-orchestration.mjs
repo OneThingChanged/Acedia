@@ -96,7 +96,18 @@ export class TaskOrchestration {
     try { if (project && !project.sshHostId && !agent.sshHostId) folder = taskPath(project.folder, '.'); } catch { /* unavailable project */ }
     return { projectId: project?.id || null, folder, enabled: !!folder && this.data.startupTrust?.[project.id] === folder };
   }
-  startupTrustRoot(id) { if (this.unavailable || this.closed) return null; const setting = this.startupTrust(id); return setting.enabled ? setting.folder : null; }
+  startupTrustRoot(id) {
+    if (this.unavailable || this.closed) return null;
+    const agent = this.session(id);
+    if (agent?.aiToolId !== 'codex') return null;
+    const setting = this.startupTrust(id);
+    // Both workspace creation APIs and dedicated task workers persist their
+    // creator. User-created children only have parentId. Keep this provenance
+    // after restarts/reparenting, but always validate the current local project
+    // and the live CLI dialog/cwd before StartupAutomation sends its one key.
+    const apiCreated = text(agent.sessionHierarchy?.createdById, 200);
+    return setting.enabled || apiCreated ? setting.folder : null;
+  }
   session(id) { return (this.catalog().agents || []).find(a => a.id === id); }
   folderFor(id) {
     const agent = this.session(id), project = (this.catalog().projects || []).find(p => p.id === agent?.projectId);

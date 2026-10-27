@@ -3,14 +3,18 @@ import { StartupUpdatePrompt } from "./components/StartupUpdatePrompt";
 import { SessionNoteOverlay } from './components/SessionNotes';
 import { openSessionNotes, sessionNotes } from './lib/sessionNotes';
 import { viewedImagePaths } from './lib/viewedImagePath';
-import { LS_SIDEBAR_WIDTH, loadSidebarWidth } from "./lib/sidebarNavigation";
+import { LS_SIDEBAR_WIDTH, loadSidebarWidth, sidebarInactiveChildrenVisible } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
 import { isAbsoluteFsPath, joinFsPath, relativeIfInside } from "./lib/path";
 import { resolveSessionDocumentLink } from "./lib/sessionFileLinks";
 import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocation';
+import { organizeSessionRegistry } from './lib/sessionOrganization';
+import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
+import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
+import { loadRightPanelView, LS_RIGHT_PANEL_VIEW } from './lib/pixelOffice';
 import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { normalizeSessionModel, sessionModelArgs, type SessionModel } from "../electron/shared/session-model.mjs";
@@ -333,6 +337,7 @@ function storedAgentFromAgent(agent: Agent): StoredAgent {
     tabColor: agent.tabColor || undefined,
     sidebarPinned: agent.sidebarPinned || undefined,
     sidebarArchived: agent.sidebarArchived || undefined,
+    sidebarShowInactiveChildren: agent.sidebarShowInactiveChildren,
     lastOpenedAt: agent.lastOpenedAt,
     createdAt: agent.createdAt,
     codexAccountId: agent.codexAccountId,
@@ -480,6 +485,7 @@ function agentFromStored(
     tabColor: stored.tabColor || undefined,
     sidebarPinned: stored.sidebarPinned === true || undefined,
     sidebarArchived: stored.sidebarArchived === true || undefined,
+    sidebarShowInactiveChildren: typeof stored.sidebarShowInactiveChildren === 'boolean' ? stored.sidebarShowInactiveChildren : undefined,
     lastOpenedAt: typeof stored.lastOpenedAt === "number" && Number.isFinite(stored.lastOpenedAt) && stored.lastOpenedAt > 0 ? stored.lastOpenedAt : undefined,
     createdAt: stored.createdAt || existing?.createdAt || Date.now(),
     lastSessionId:
@@ -649,6 +655,9 @@ function App() {
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(loadFilesOpen);
+  const [rightPanelView, setRightPanelView] = useState(loadRightPanelView);
+  const [organizationOffice, setOrganizationOffice] = useState(false);
+  useEffect(() => { try { localStorage.setItem(LS_RIGHT_PANEL_VIEW, rightPanelView); } catch { /* optional preference */ } }, [rightPanelView]);
   const [standaloneNoteId, setStandaloneNoteId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const [sidebarNavWidth, setSidebarNavWidth] = useState(loadSidebarWidth);
@@ -2670,7 +2679,7 @@ function App() {
 
   // ---- Agent CRUD (side effects + layout via groupOps)
 
-  const createProject = useCallback(async (payload: NewProjectPayload, options: { projectId?: string; agentId?: string } = {}) => {
+  const createProject = useCallback(async (payload: NewProjectPayload, options: { projectId?: string; agentId?: string; background?: boolean } = {}) => {
     const machineKey = payload.sshHostId
       ? `ssh:${payload.sshHostId}`
       : "local";
@@ -2685,15 +2694,16 @@ function App() {
     });
     if (options.projectId) { project.id = options.projectId; agent.projectId = options.projectId; }
     if (options.agentId) agent.id = options.agentId;
+    if (options.background) Object.assign(agent, { deferredStart: true, resumeEligible: false, status: 'idle', runtimeStatus: 'idle' });
     const addProject = () => {
       projectsRef.current = [project, ...projectsRef.current];
       agentsRef.current = [...agentsRef.current, agent];
       setProjects(projectsRef.current);
       setAgents(agentsRef.current);
-      setActiveProjectId(project.id);
-      applyGroupOp((state) =>
-        groupOps.addNewAgent(state, agent.id, project.id)
-      );
+      if (!options.background) {
+        setActiveProjectId(project.id);
+        applyGroupOp((state) => groupOps.addNewAgent(state, agent.id, project.id));
+      }
     };
 
     if (!isElectronRuntime()) {
@@ -2940,8 +2950,9 @@ function App() {
                 ? payload.launchOptions : loadAgentDefaults(tool.id).launchOptions
             ) : undefined,
             useAltScreen: tool.id === "codex" ? payload.useAltScreen ?? loadAgentDefaults(tool.id).useAltScreen : undefined,
-            status: "starting",
-            runtimeStatus: "starting",
+            status: options.background ? "idle" : "starting",
+            runtimeStatus: options.background ? "idle" : "starting",
+            ...(options.background ? { deferredStart: true, resumeEligible: false } : {}),
             createdAt: Date.now(),
             sshHostId: project.sshHostId,
             remoteFolder: hierarchy?.inheritFolder !== false && inherited ? inherited.remoteFolder : hierarchy?.folderOverride && project.sshHostId ? hierarchy.folderOverride : project.remoteFolder,
@@ -3233,9 +3244,9 @@ function App() {
   // Re-clicking an already-open file focuses its existing tab: first in the
   // active Screen, otherwise openAsTab moves it here from any other group.
   const openDocTab = useCallback(
-    (projectId: string, relativePath: string, ownerAgentId?: string | null) => {
+    (projectId: string, relativePath: string, ownerAgentId?: string | null, rootFolder?: string | null) => {
       setWorkspaceMode("sessions");
-      const docId = makeDocTabId(projectId, relativePath);
+      const docId = makeDocTabId(projectId, relativePath, rootFolder);
       if (ownerAgentId) documentOwnerByTabRef.current.set(docId, ownerAgentId);
       // A mounted document otherwise receives no change when its file is reopened.
       window.dispatchEvent(new CustomEvent("acedia:document-reopen", { detail: docId }));
@@ -3266,7 +3277,8 @@ function App() {
     (
       projectId: string,
       relativePath?: string | null,
-      repositoryPath?: string | null
+      repositoryPath?: string | null,
+      ownerAgentId?: string | null
     ) => {
       setWorkspaceMode("sessions");
       const gitId = makeGitHistoryTabId(
@@ -3274,6 +3286,7 @@ function App() {
         relativePath ?? null,
         repositoryPath ?? null
       );
+      if (ownerAgentId) documentOwnerByTabRef.current.set(gitId, ownerAgentId);
       applyGroupOp((s) => {
         const group = s.groups.find((g) => g.id === s.activeGroupId);
         // Already open in the active screen → just focus it.
@@ -3757,6 +3770,14 @@ function App() {
     else if (action === 'note') { if (!openSessionNotes(id)) setStandaloneNoteId(id); }
     else if (action === "sidebar-pin") setSidebarPreference(id, "sidebarPinned");
     else if (action === "sidebar-archive") setSidebarPreference(id, "sidebarArchived");
+    else if (action === 'sidebar-toggle-inactive-children') {
+      setAgents(current => {
+        const parent = current.find(agent => agent.id === id);
+        if (!parent) return current;
+        const show = !sidebarInactiveChildrenVisible(parent, current);
+        return current.map(agent => agent.id === id ? { ...agent, sidebarShowInactiveChildren: show } : agent);
+      });
+    }
     else if (action === "pin-session") pinContextGroupSessions(id);
     else if (action === "clear-session-pin") clearContextGroupSessionPins(id);
     else if (action === "deactivate") void deactivateAgent(id);
@@ -3832,6 +3853,7 @@ function App() {
       sessionHierarchy?: SessionHierarchy;
       project?: { name: string; folder: string };
       workspaceManaged?: boolean;
+      start?: boolean;
       modelSettings?: SessionModel;
     }>("remote:create-session", (event) => {
       if (cancelled) return;
@@ -3877,7 +3899,7 @@ function App() {
       }
       const creation = payload.project ? createProject({
         ...payload.project, aiToolId: payload.aiToolId, dangerous: false,
-      }, { projectId: payload.projectId, agentId: payload.id }) : createAgent(
+      }, { projectId: payload.projectId, agentId: payload.id, background: payload.workspaceManaged }) : createAgent(
         {
           name,
           aiToolId: payload.aiToolId,
@@ -3903,6 +3925,7 @@ function App() {
         localStorage.setItem(LS_PROJECTS, storedProjects); storedProjectsJsonRef.current = storedProjects;
         localStorage.setItem(LS_AGENTS, storedAgents); storedAgentsJsonRef.current = storedAgents;
         await persistStorageSnapshot(true);
+        if (payload.start === false) return complete({ ok: true });
         const started = await spawnAgentInBackground(payload.id, { verifyActive: true });
         return complete({ ok: true, ...(started.ok ? {} : { startError: started.error }) });
       }).catch((reason) => complete({
@@ -3925,6 +3948,39 @@ function App() {
     }).then(track);
 
     let launchSettingsQueue = Promise.resolve();
+    listen<{ requestId: string; id: string; operation: 'organize' | 'stop' }>('remote:session-registry-change', event => {
+      const payload = event.payload;
+      if (cancelled || !payload?.requestId || !payload.id) return;
+      const complete = (result: { ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 }) => invoke('complete_session_registry_change', {
+        requestId: payload.requestId, id: payload.id, ...result,
+      }).catch(() => false);
+      launchSettingsQueue = launchSettingsQueue.catch(() => {}).then(async () => {
+        if (cancelled) throw Object.assign(new Error('작업창이 변경되었습니다.'), { statusCode: 503 });
+        const checked = await invoke('validate_session_registry_change', { requestId: payload.requestId, id: payload.id });
+        if (!checked.ok) { await complete({ ok: false, error: checked.error, statusCode: checked.statusCode || 409 }); return; }
+        let next: Agent[];
+        if (checked.operation === 'organize' && checked.changes) {
+          if (checked.changes.some(c => detachedAgentIdsRef.current.has(c.sessionId) || (c.parentSessionId && detachedAgentIdsRef.current.has(c.parentSessionId)))) throw Object.assign(new Error('기본 작업창의 세션을 선택하세요.'), { statusCode: 409 });
+          next = organizeSessionRegistry(agentsRef.current, projectsRef.current, checked.changes);
+        } else if (checked.operation === 'stop' && checked.sessionId) {
+          const id = checked.sessionId;
+          if (detachedAgentIdsRef.current.has(id) || !agentsRef.current.some(a => a.id === id)) throw Object.assign(new Error('기본 작업창의 세션을 선택하세요.'), { statusCode: 409 });
+          // Keep the pane and draft; pin standby before killing so a mounted
+          // terminal cannot respawn on the exit event.
+          const standby = (a: Agent) => a.id === id ? { ...applyAgentRuntimeStatus(a, 'idle'), deferredStart: true, resumeEligible: false } : a;
+          agentsRef.current = agentsRef.current.map(standby); setAgents(agentsRef.current);
+          await invoke('terminal_session_action', { id, action: 'sleep' });
+          next = agentsRef.current.map(standby);
+        } else throw new Error('세션 변경 요청이 올바르지 않습니다.');
+        const stored = mergeStoredByIdForWrite(next.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
+        const json = JSON.stringify(stored);
+        localStorage.setItem(LS_AGENTS, json); storedAgentsJsonRef.current = json;
+        agentsRef.current = next; setAgents(next);
+        await persistStorageSnapshot(true);
+        await complete({ ok: true });
+      }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: [400, 404, 409, 503].includes(error?.statusCode) ? error.statusCode : 500 }); });
+    }).then(track);
     listen<{ requestId: string; id: string; aiToolId: string; dangerous: boolean; expectedDangerous: boolean }>('remote:session-launch-settings', event => {
       const payload = event.payload;
       if (cancelled || !payload?.requestId || !payload.id) return;
@@ -4287,6 +4343,8 @@ function App() {
     const leaf = getAt(activeGroupLayout, activePath);
     return leaf && leaf.type === "leaf" ? activeAgentInLeaf(leaf) : null;
   }, [activeGroupLayout, activePath]);
+  const activeFileSessionId = useMemo(() => fileTreeSessionForTab(activeAgentId, agents, projects,
+    activeAgentId ? documentOwnerByTabRef.current.get(activeAgentId) : undefined), [activeAgentId, agents, projects]);
 
   useEffect(() => {
     if (!isElectronRuntime() || !runtimeFlags?.workspace_window) return;
@@ -4476,6 +4534,10 @@ function App() {
           projects={projects}
           activeProjectId={activeProjectId}
           selectedId={organizationSelectedId}
+          officeOpen={organizationOffice}
+          onOfficeOpenChange={setOrganizationOffice}
+          onDockOffice={() => { setRightPanelView('office'); setFilesOpen(true); setWorkspaceMode('sessions'); }}
+          onOpenNote={setStandaloneNoteId}
           onSelect={setOrganizationSelectedId}
           onOpenSession={requestSelectAgent}
           onOpenProperties={setPropertiesAgentId}
@@ -4534,21 +4596,35 @@ function App() {
         />
       )}
       {filesOpen && workspaceMode !== "organization" && (
-        <aside className="files-shell" style={{ width: filesWidth + 7 }}>
+        <aside className="files-shell" style={{ width: (rightPanelView === 'office' ? Math.max(320, filesWidth) : filesWidth) + 7 }}>
           <div
             className="files-resizer"
             onPointerDown={handleFilesResizeStart}
             title="Resize file tree"
           />
-          <FileTreePanel
+          {rightPanelView === 'office' ? <div className="office-sidebar-content" style={{ width: Math.max(320, filesWidth) }}>
+            <nav className="file-tree-tabs office-sidebar-tabs" aria-label={text('오른쪽 패널 보기', 'Right panel views')}>
+              <button className="file-tree-tab" title="Files" onClick={() => setRightPanelView('files')}>🗀</button>
+              <button className="file-tree-tab" title="Source Control" onClick={() => setRightPanelView('scm')}>⎇</button>
+              <button className="file-tree-tab file-tree-tab-active" title="Pixel Office" aria-label="Pixel Office" aria-current="page"><PixelOfficeIcon/></button>
+            </nav>
+            <PixelOffice mode="sidebar" agents={agents} projects={projects} activeProjectId={activeProjectId} selectedId={organizationSelectedId}
+              onSelect={setOrganizationSelectedId} onOpenSession={requestSelectAgent} onOpenNote={setStandaloneNoteId}
+              onClose={() => setFilesOpen(false)} onExpand={() => { setFilesOpen(false); setOrganizationOffice(true); setWorkspaceMode('organization'); }}/>
+          </div> : <FileTreePanel
             projects={projects}
             activeProject={activeProject}
+            agents={agents}
+            activeSessionId={activeFileSessionId}
             width={filesWidth}
             theme={appTheme}
-            onOpenFile={openDocTab}
+            onOpenFile={(projectId, path, rootFolder, ownerAgentId) => openDocTab(projectId, path, ownerAgentId, rootFolder)}
             onOpenGitHistory={openGitHistoryTab}
             onClose={() => setFilesOpen(false)}
-          />
+            activeView={rightPanelView}
+            onViewChange={setRightPanelView}
+            onOpenOffice={() => setRightPanelView('office')}
+          />}
         </aside>
       )}
       {isElectronRuntime() && showUsageBar && (
@@ -4839,6 +4915,9 @@ function App() {
           state={visibleContextMenu}
           sidebarPinned={!!agents.find(agent => agent.id === visibleContextMenu.agentId)?.sidebarPinned}
           sidebarArchived={!!agents.find(agent => agent.id === visibleContextMenu.agentId)?.sidebarArchived}
+          hasChildSessions={agents.some(agent => agent.sessionHierarchy?.parentId === visibleContextMenu.agentId
+            && !agent.sidebarArchived && agent.projectId === agents.find(parent => parent.id === visibleContextMenu.agentId)?.projectId)}
+          showInactiveChildren={(() => { const parent = agents.find(agent => agent.id === visibleContextMenu.agentId); return parent ? sidebarInactiveChildrenVisible(parent, agents) : false; })()}
           hasActive={!!activeGroupLayout && !!activePath}
           canPlaceInActive={canPlaceContextAgentInActiveGroup}
           isSessionLocked={!!contextGroup?.sessionLocked}

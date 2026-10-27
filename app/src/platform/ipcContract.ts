@@ -62,6 +62,7 @@ export type RuntimeCommand =
   | "sync_remote_view" | "sync_usage_catalog" | "sync_monitor_state"
   | "complete_remote_session_create" | "complete_remote_session_activation"
   | "complete_remote_session_model" | "complete_session_launch_settings" | "validate_session_relocation" | "complete_session_relocation" | "restart_session_model" | "get_session_model" | "set_session_model"
+  | "validate_session_registry_change" | "complete_session_registry_change"
   | "get_model_defaults" | "get_default_model_catalog" | "set_model_defaults"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
@@ -93,6 +94,7 @@ export type RuntimeEventName =
   | "remote:session-model"
   | "remote:session-launch-settings"
   | "remote:relocate-sessions"
+  | "remote:session-registry-change"
   | "chat:changed"
   | "app:close-requested" | "app:close-cancelled" | "agent:hook-event" | "session:notifications"
   | "session:notes"
@@ -433,6 +435,14 @@ export type RuntimeCommandContract = {
   validate_session_relocation: {
     args: { requestId: string; id: string };
     result: { ok: boolean; moves?: import('../lib/sessionRelocation').SessionMove[]; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+  };
+  validate_session_registry_change: {
+    args: { requestId: string; id: string };
+    result: { ok: boolean; operation?: 'organize' | 'stop'; sessionId?: string; changes?: import('../lib/sessionOrganization').SessionOrganizationChange[]; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+  };
+  complete_session_registry_change: {
+    args: { requestId: string; id: string; ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+    result: boolean;
   };
   complete_session_relocation: {
     args: { requestId: string; id: string; ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };

@@ -58,7 +58,7 @@ export function DocViewer({
 }) {
   const { text } = useAppLanguage();
   const ref = parseDocTabId(docId);
-  const folder = project?.folder ?? "";
+  const folder = ref?.rootFolder || project?.folder || "";
   const relativePath = ref?.relativePath ?? "";
   const [state, setState] = useState<DocViewerState>({ phase: "loading" });
   const [reloadKey, setReloadKey] = useState(0);

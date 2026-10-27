@@ -344,6 +344,15 @@ Sleeping means the steady blue, deferred session that can start or resume when
 selected; it has no active process. Never-started, explicitly deactivated,
 exited, and unreachable entries remain available in All.[^sidebar]
 
+In the 2026-10-27 source update, Active hides sleeping, stopped, exited and
+never-started descendants by default. Right-click a parent session and choose
+**Show sleeping and stopped children** or **Hide sleeping and stopped children**.
+The choice is saved per parent and applies to both project and recent trees;
+nested parents can override it. Active children and the ancestors needed to
+connect them remain visible. All, Sleeping and search retain their existing
+results. This changes visibility without starting or stopping a process or
+changing status counts. See [session organization](session-organization.md).
+
 Projects, virtual folders, and machines with no matching sessions are hidden
 under Active or Sleeping. An empty result offers a reset to All. The selected
 status survives reopening the app; the previous active-only preference migrates
@@ -1021,7 +1030,16 @@ See [EXE updates](exe-release-workflow.md) and the
 
 ## Files, Git, and documents
 
-The right sidebar selects the project root or a discovered child Git repository,
+The right sidebar follows the selected session's effective working folder,
+including custom child folders outside the registered project or on another
+drive. The header shows its session name and working path. Users can also select
+the registered project root or a discovered child Git repository. Folder pins
+retain their session target across selection changes and restarts; legacy project
+pins retain their project target. Tree caches, expansion and repository choices
+are separated by working folder. Files outside the project use a document tab
+with an explicit saved root, and document/history selection preserves the session
+folder context. See [session folder details](session-organization.md).
+The sidebar
 filters the file tree, opens the native Explorer location, and exposes Git
 changes/history. Filtered folders with no matching descendants are omitted.[^file-tree]
 

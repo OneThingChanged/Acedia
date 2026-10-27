@@ -8,6 +8,7 @@ import { HookService } from './hook-service.mjs';
 import { SessionLaunchSettings } from './session-launch-settings.mjs';
 import { SessionRelocation } from './session-relocation.mjs';
 import { SessionStart } from './session-start.mjs';
+import { SessionRegistry } from './session-registry.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -23,7 +24,7 @@ function fixture() {
     const id = 'session-' + create.mock.calls.length;
     if (payload.project) catalog.projects.push({ id: payload.projectId, ...payload.project });
     catalog.agents.push({ id, projectId: payload.projectId, name: payload.name, aiToolId: payload.aiToolId });
-    active.add(id); return { id };
+    if (payload.start !== false) active.add(id); return { id };
   });
   const service = new WorkspaceManagement({ catalog: () => catalog, create, isActive: id => active.has(id) });
   return { root, catalog, create, active, service, call: (action, body = {}) => service.handle({ agentId: 'caller', action, body }) };
@@ -62,6 +63,30 @@ it('records the caller and parents a created session only within its own project
   await f.call('create-session', { projectId: 'other', requestKey: 'peer' });
   expect(f.create.mock.calls[1][0].sessionHierarchy).toEqual({ createdById: 'caller' });
 });
+it('creates standby projects and children in an explicit folder under a chosen same-project parent', async () => {
+  const f = fixture();
+  const project = await f.call('create-project', { folder: f.root, start: false });
+  expect(project.active).toBe(false);
+  const folder = path.join(f.root, 'PCGLab'); fs.mkdirSync(folder);
+  const body = { projectId: project.projectId, parentSessionId: project.sessionId, folder, name: 'PCGLab', start: false, requestKey: 'standby' };
+  const child = await f.call('create-session', body);
+  expect(child).toMatchObject({ active: false, created: true });
+  expect(f.create.mock.lastCall[0]).toMatchObject({ start: false, sessionHierarchy: { parentId: project.sessionId, createdById: 'caller', inheritFolder: false, folderOverride: fs.realpathSync(folder) } });
+  expect(await f.call('create-session', body)).toMatchObject({ sessionId: child.sessionId, created: false, active: false });
+  await expect(f.call('create-session', { ...body, start: true })).rejects.toMatchObject({ statusCode: 409 });
+  await f.call('create-session', { ...body, parentSessionId: null, requestKey: 'independent' });
+  expect(f.create.mock.lastCall[0].sessionHierarchy.parentId).toBeUndefined();
+  expect(f.create.mock.lastCall[0].sessionHierarchy.createdById).toBe('caller');
+});
+it('rejects invalid start/parent/folder options without creating or launching a child', async () => {
+  const f = fixture(); const first = await f.call('create-project', { folder: f.root });
+  f.catalog.projects.push({ id: 'other', folder: f.root });
+  f.catalog.agents.push({ id: 'outside', projectId: 'other', aiToolId: 'codex' });
+  for (const extra of [{ start: 'false' }, { start: null }, { parentSessionId: false }, { parentSessionId: '' }, { parentSessionId: 'missing' }, { parentSessionId: 'outside' }, { folder: '.' }, { folder: path.join(f.root, 'missing') }, { folder: null }]) {
+    await expect(f.call('create-session', { projectId: first.projectId, requestKey: 'invalid', ...extra })).rejects.toThrow();
+  }
+  expect(f.create).toHaveBeenCalledTimes(1);
+});
 
 it('retains a timeout result so a retry cannot create another session, and reports registered sessions whose launch failed', async () => {
   const f = fixture(); const first = await f.call('create-project', { folder: f.root });
@@ -96,12 +121,14 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   });
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
-  expect((await rpc('tools/list')).tools.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_start', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
+  const exposed = (await rpc('tools/list')).tools;
+  expect(exposed.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_settings', 'acedia_session_start', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
+  expect(exposed.find(t => t.name === 'acedia_session_create').inputSchema.properties).toMatchObject({ start: { type: 'boolean' }, folder: { type: 'string' }, parentSessionId: { type: ['string', 'null'] } });
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
-  for (const action of ['send', 'delivery', 'session-settings', 'relocate-sessions', 'start']) {
+  for (const action of ['send', 'delivery', 'session-settings', 'relocate-sessions', 'start', 'stop', 'organize-sessions']) {
     const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
     expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
@@ -109,6 +136,18 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
     expect((await fetch(endpoint, { method: 'POST', headers, body: '{}' })).status).toBe(503);
   }
   const target = f.catalog.agents[0]; target.dangerous = false; f.active.delete(target.id);
+  const registry = new SessionRegistry({ catalog: () => f.catalog, active: id => f.active.has(id),
+    dispatch: payload => { queueMicrotask(() => void registry.complete({ ...payload, ok: true })); return true; },
+    verifySaved: async (operation, body) => {
+      if (operation === 'stop') { f.active.delete(body.sessionId); return { sessionId: body.sessionId, active: false }; }
+      for (const change of body.changes) { const a = f.catalog.agents.find(a => a.id === change.sessionId); if (change.name) a.name = change.name; }
+      return { sessions: body.changes };
+    } });
+  cleanups.push(() => registry.close()); f.service.registry = registry;
+  const renamed = await rpc('tools/call', { name: 'acedia_sessions_organize', arguments: { changes: [{ sessionId: target.id, name: 'Coordinator', expectedName: target.name }] } });
+  expect(renamed.structuredContent).toMatchObject({ saved: true, sessions: [{ sessionId: target.id, name: 'Coordinator' }] });
+  expect((await rpc('tools/call', { name: 'acedia_session_stop', arguments: { sessionId: target.id } })).structuredContent).toMatchObject({ saved: true, active: false });
+  expect((await rpc('tools/call', { name: 'acedia_session_stop', arguments: { sessionId: 'caller' } })).isError).toBe(true);
   const settings = new SessionLaunchSettings({ agentFor: id => f.catalog.agents.find(item => item.id === id), active: id => f.active.has(id),
     dispatch: payload => { queueMicrotask(() => void settings.complete({ ...payload, ok: true })); return true; },
     verifySaved: async payload => { target.dangerous = payload.dangerous; } });

@@ -2,12 +2,80 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
 import { loadStoredAgents, normalizeStoredGroups } from "./persistence";
 import type { Agent, Group, Project } from "../types";
-import { sidebarSessionFamilies, loadSidebarCollapsedFamilies, LS_SIDEBAR_COLLAPSED_FAMILIES } from './sidebarNavigation';
+import { sidebarSessionFamilies, sidebarInactiveChildrenVisible, loadSidebarCollapsedFamilies, LS_SIDEBAR_COLLAPSED_FAMILIES } from './sidebarNavigation';
 
 const projects: Project[] = [{ id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 }, { id: "ssh", name: "Server", folder: "", sshHostId: "server", remoteFolder: "/work/remote", createdAt: 1 }];
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: "C:/Acedia", aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
 
 describe("sidebar navigation", () => {
+  it('hides inactive branches by default while retaining active descendants and their required ancestors', () => {
+    const all = [agent('parent', { status: 'working' }),
+      agent('sleep', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'parent' } }),
+      agent('stopped', { deferredStart: true, resumeEligible: false, sessionHierarchy: { parentId: 'parent' } }),
+      agent('active', { status: 'working', sessionHierarchy: { parentId: 'stopped' } })];
+    const tree = sidebarSessionFamilies([all[0], all[3]], all, { includeDescendants: true, respectInactiveChildrenVisibility: true });
+    expect(tree.children.get('parent')?.map(a => a.id)).toEqual(['stopped']);
+    expect(tree.children.get('stopped')?.map(a => a.id)).toEqual(['active']);
+    expect(sidebarInactiveChildrenVisible(all[0], all)).toBe(false);
+    expect(all[1].resumeEligible).toBe(true);
+  });
+  it('uses each parent choice, inherits Show through inactive intermediates and honors explicit child Hide', () => {
+    const all = [agent('parent', { status: 'working', sidebarShowInactiveChildren: true }),
+      agent('child', { sessionHierarchy: { parentId: 'parent' } }),
+      agent('grandchild', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'child' } }),
+      agent('other', { status: 'working' }), agent('other-sleep', { sessionHierarchy: { parentId: 'other' } })];
+    const options = { includeDescendants: true, respectInactiveChildrenVisibility: true };
+    let tree = sidebarSessionFamilies([all[0], all[3]], all, options);
+    expect(tree.children.get('parent')?.map(a => a.id)).toEqual(['child']);
+    expect(tree.children.get('child')?.map(a => a.id)).toEqual(['grandchild']);
+    expect(tree.children.has('other')).toBe(false);
+    all[1].sidebarShowInactiveChildren = false;
+    tree = sidebarSessionFamilies([all[0], all[3]], all, options);
+    expect(tree.children.get('parent')?.map(a => a.id)).toEqual(['child']); expect(tree.children.has('child')).toBe(false);
+    expect(sidebarInactiveChildrenVisible(all[1], all)).toBe(false);
+  });
+  it('lets an inactive contextual parent opt in without hiding active children when it opts out', () => {
+    const parent = agent('parent', { sidebarShowInactiveChildren: true });
+    const active = agent('active', { status: 'working', sessionHierarchy: { parentId: 'parent' } });
+    const sleep = agent('sleep', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'parent' } });
+    const options = { includeDescendants: true, respectInactiveChildrenVisibility: true };
+    expect(new Set(sidebarSessionFamilies([active], [parent, active, sleep], options).children.get('parent')?.map(a => a.id))).toEqual(new Set(['active', 'sleep']));
+    parent.sidebarShowInactiveChildren = false;
+    expect(sidebarSessionFamilies([active], [parent, active, sleep], options).children.get('parent')?.map(a => a.id)).toEqual(['active']);
+  });
+  it('keeps All, Sleeping and search discoverable regardless of inactive-child visibility', () => {
+    const parent = agent('parent', { status: 'working', sidebarShowInactiveChildren: false });
+    const sleep = agent('sleep', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'parent' } });
+    const all = [parent, sleep];
+    expect(sidebarSessionFamilies(all, all, { respectInactiveChildrenVisibility: true }).children.get('parent')?.map(a => a.id)).toEqual(['sleep']);
+    expect(sidebarSessionFamilies([sleep], all, { respectInactiveChildrenVisibility: true }).children.get('parent')?.map(a => a.id)).toEqual(['sleep']);
+    expect(searchSidebarItems(all, projects, [], 'sleep').sessions.map(a => a.id)).toEqual(['sleep']);
+  });
+  it.each([true, false, undefined])('restores an explicit %s child-visibility choice without changing session state', choice => {
+    const restored = loadStoredAgents([{ id: 'a', name: 'A', projectId: 'p', folder: 'C:/Acedia', aiToolId: 'codex', createdAt: 1,
+      sidebarShowInactiveChildren: choice, lastSessionId: 'conversation', resumeEligible: true }], projects);
+    expect(restored[0]).toMatchObject({ lastSessionId: 'conversation', resumeEligible: true });
+    expect(restored[0].sidebarShowInactiveChildren).toBe(choice);
+  });
+  it('retains stopped, exited and never-started descendants below active parents and traverses inactive branches', () => {
+    const parent=agent('parent',{status:'working',runtimeStatus:'running'});
+    const stopped=agent('stopped',{deferredStart:true,resumeEligible:false,sessionHierarchy:{parentId:parent.id}});
+    const exited=agent('exited',{status:'exited',runtimeStatus:'exited',sessionHierarchy:{parentId:parent.id}});
+    const fresh=agent('fresh',{deferredStart:true,resumeEligible:false,sessionHierarchy:{parentId:parent.id}});
+    const grandchild=agent('grandchild',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:stopped.id}});
+    const leaf=agent('leaf',{status:'idle',sessionHierarchy:{parentId:grandchild.id}});
+    const all=[parent,stopped,exited,fresh,grandchild,leaf,agent('unrelated'),agent('archived',{sidebarArchived:true,sessionHierarchy:{parentId:parent.id}}),agent('other-project',{projectId:'ssh',sessionHierarchy:{parentId:parent.id}})];
+    const before=structuredClone(all);
+    const visible=recentSidebarSessions(all,projects,[],{projectId:'p',filter:'active',query:''});
+    const tree=sidebarSessionFamilies(visible,all,{includeDescendants:true});
+    expect(tree.roots.map(a=>a.id)).toEqual(['parent']);
+    expect(new Set(tree.children.get(parent.id)?.map(a=>a.id))).toEqual(new Set(['stopped','exited','fresh']));
+    expect(tree.children.get(stopped.id)?.map(a=>a.id)).toEqual(['grandchild']);
+    expect(tree.children.get(grandchild.id)?.map(a=>a.id)).toEqual(['leaf']);
+    expect(visible.map(a=>a.id)).toEqual(['parent']);
+    expect(all.filter(a=>matchesSidebarFilter(a,'sleeping')).map(a=>a.id)).toEqual(['grandchild']);
+    expect(all).toEqual(before);
+  });
   it('keeps sleeping descendants under an active parent without changing runtime, counts or unrelated sessions', () => {
     const parent=agent('parent',{status:'working',runtimeStatus:'running'});
     const sleeping=(id:string,parentId?:string,extra:Partial<Agent>={})=>agent(id,{deferredStart:true,resumeEligible:true,sessionHierarchy:parentId?{parentId}:undefined,...extra});
@@ -16,7 +84,7 @@ describe("sidebar navigation", () => {
     const before=structuredClone(all);
     const visible=recentSidebarSessions(all,projects,[],{projectId:'p',filter:'active',query:''});
     expect(visible.map(a=>a.id)).toEqual(['parent']);
-    const tree=sidebarSessionFamilies(visible,all,{includeSleepingDescendants:true});
+    const tree=sidebarSessionFamilies(visible,all,{includeDescendants:true});
     expect(tree.roots.map(a=>a.id)).toEqual(['parent']);
     expect(tree.children.get('parent')?.map(a=>a.id)).toEqual(['child']);
     expect(tree.children.get('child')?.map(a=>a.id)).toEqual(['grandchild']);
@@ -27,15 +95,16 @@ describe("sidebar navigation", () => {
   it('does not expose sleeping siblings through an inactive contextual parent and hides them when the parent stops', () => {
     const parent=agent('parent'),active=agent('active',{status:'working',sessionHierarchy:{parentId:'parent'}});
     const sleeping=agent('sleeping',{deferredStart:true,resumeEligible:true,sessionHierarchy:{parentId:'parent'}});
-    const tree=sidebarSessionFamilies([active],[parent,active,sleeping],{includeSleepingDescendants:true});
+    const stopped=agent('stopped',{deferredStart:true,resumeEligible:false,sessionHierarchy:{parentId:'parent'}});
+    const tree=sidebarSessionFamilies([active],[parent,active,sleeping,stopped],{includeDescendants:true});
     expect(tree.roots.map(a=>a.id)).toEqual(['parent']);expect(tree.children.get('parent')?.map(a=>a.id)).toEqual(['active']);
-    expect(sidebarSessionFamilies([],[parent,sleeping],{includeSleepingDescendants:true}).roots).toEqual([]);
+    expect(sidebarSessionFamilies([],[parent,sleeping,stopped],{includeDescendants:true}).roots).toEqual([]);
   });
   it('orders sleeping context by the same visits, pins and name preference as other tree children', () => {
     const parent=agent('parent',{status:'working'});
     const children=[agent('b',{deferredStart:true,resumeEligible:true,lastOpenedAt:20,sessionHierarchy:{parentId:'parent'}}),agent('a',{deferredStart:true,resumeEligible:true,lastOpenedAt:10,sessionHierarchy:{parentId:'parent'}})];
-    expect(sidebarSessionFamilies([parent],[parent,...children],{includeSleepingDescendants:true}).children.get('parent')?.map(a=>a.id)).toEqual(['b','a']);
-    expect(sidebarSessionFamilies([parent],[parent,...children],{includeSleepingDescendants:true,sortByName:true}).children.get('parent')?.map(a=>a.id)).toEqual(['a','b']);
+    expect(sidebarSessionFamilies([parent],[parent,...children],{includeDescendants:true}).children.get('parent')?.map(a=>a.id)).toEqual(['b','a']);
+    expect(sidebarSessionFamilies([parent],[parent,...children],{includeDescendants:true,sortByName:true}).children.get('parent')?.map(a=>a.id)).toEqual(['a','b']);
   });
   it('groups all organized children below the current parent, including manually organized sessions', () => {
     const parent = agent('A'), child = agent('worker', { sessionHierarchy: { parentId: 'A', createdById: 'A' } }), manual = agent('manual', { sessionHierarchy: { parentId: 'A' } });

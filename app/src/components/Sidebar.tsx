@@ -9,6 +9,8 @@ import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
 import { SidebarIcon } from "./SidebarIcon";
 import { ProviderLogo } from "./ProviderLogo";
+import { resolveSessionSettings } from '../lib/sessionHierarchy';
+import { folderTail } from '../lib/path';
 import "./Sidebar.css";
 import { useTaskSessionNavigation } from '../hooks/useTaskSessionNavigation';
 
@@ -131,10 +133,14 @@ function WorkspaceSidebar(props: SidebarProps) {
   const scoped = useMemo(() => navigable.filter(agent => !scope || agent.projectId === scope), [navigable, scope]);
   const counts = { all: scoped.length, active: scoped.filter(agent => matchesSidebarFilter(agent, "active")).length, sleeping: scoped.filter(agent => matchesSidebarFilter(agent, "sleeping")).length };
   const recent = useMemo(() => recentSidebarSessions(agents, projects, projectFolders, { projectId: scope, filter, query: "", sortByName }), [agents, projects, projectFolders, scope, filter, sortByName]);
-  const families = useMemo(() => sidebarSessionFamilies(recent, navigable, { includeSleepingDescendants: filter === 'active', sortByName }), [recent, navigable, filter, sortByName]);
+  const families = useMemo(() => sidebarSessionFamilies(recent, navigable, { includeDescendants: filter === 'active', respectInactiveChildrenVisibility: true, sortByName }), [recent, navigable, filter, sortByName]);
   const searchResults = useMemo(() => searchSidebarItems(agents, projects, projectFolders, searchQuery), [agents, projects, projectFolders, searchQuery]);
   const screens = useMemo(() => sidebarScreens(props.groups, agents, projects, activeAgentId), [props.groups, agents, projects, activeAgentId]);
   const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects]);
+  const sessionFolders = useMemo(() => new Map(navigable.map(agent => {
+    const settings = resolveSessionSettings(agent, navigable, projects);
+    return [agent.id, agent.sshHostId ? settings.remoteFolder || '' : settings.folder];
+  })), [navigable, projects]);
   const screenByAgent = new Map(screens.flatMap((screen, index) => screen.members.map(agent => [agent.id, { number: index + 1, groupId: screen.group.id, color: SCREEN_COLORS[index % SCREEN_COLORS.length] }] as const)));
   const labels: Record<SidebarDateGroup, string> = { pinned: text("고정", "Pinned"), today: text("오늘", "Today"), yesterday: text("어제", "Yesterday"), week: text("이번 주", "This week"), older: text("이전 대화", "Earlier") };
   const clearFilters = () => { setScope(null); setFilter("all"); };
@@ -214,6 +220,10 @@ function WorkspaceSidebar(props: SidebarProps) {
     const detached = props.detachedAgentIds.has(agent.id);
     const unread = props.unreadCompletedAgentIds.has(agent.id);
     const project = projectById.get(agent.projectId);
+    const workingFolder = sessionFolders.get(agent.id) || agent.remoteFolder || agent.folder;
+    const projectFolder = project?.sshHostId ? project.remoteFolder || '' : project?.folder || '';
+    const dedicatedFolder = !!agent.sessionHierarchy?.parentId && workingFolder.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase() !== projectFolder.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+    const locationLabel = dedicatedFolder ? folderTail(workingFolder) : project?.name || text('미분류', 'Uncategorized');
     const screen = screenByAgent.get(agent.id);
     const task = taskSessions[agent.id];
     const parent = agent.sessionHierarchy?.parentId ? agentById.get(agent.sessionHierarchy.parentId) : undefined;
@@ -227,13 +237,13 @@ function WorkspaceSidebar(props: SidebarProps) {
     return <li key={agent.id} data-sidebar-agent-id={agent.id} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
       aria-label={unread ? `${agent.name} · ${text('읽지 않은 작업 완료', 'Unread completion')}` : undefined}
-      title={`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${agent.remoteFolder || project.remoteFolder}` : agent.folder}\n${statusTitle}`}
+      title={`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder}\n${statusTitle}`}
       onPointerDown={event => startPointer(agent, event, fromSearch)}
       onKeyDown={event => { if (event.target !== event.currentTarget || detached || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAgent(agent.id, fromSearch); } }}
       onContextMenu={event => { if (detached) return; event.preventDefault(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, event.clientX, event.clientY); }}>
       <span className={`status status-${sleeping ? "sleeping" : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
       <ProviderLogo toolId={agent.aiToolId} />
-      <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={project?.folder}>{fromSearch ? highlight(project?.name || text("미분류", "Uncategorized")) : project?.name || text("미분류", "Uncategorized")}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}</span>}{parent && <span className="sidebar-session-task-meta" title={`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`}><span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>{task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}</span>}</div>
+      <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{!nested && <span className="sidebar-session-meta"><span title={workingFolder}>{fromSearch ? highlight(locationLabel) : locationLabel}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}</span>}{parent && <span className="sidebar-session-task-meta" title={`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`}><span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>{task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}</span>}</div>
       {familyToggle}
       <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
@@ -251,7 +261,7 @@ function WorkspaceSidebar(props: SidebarProps) {
     const children = tree.children.get(agent.id) || [];
     return <Fragment key={agent.id}>{renderAgent(agent, nested, false, children)}{!collapsedFamilies.has(agent.id) && children.length > 0 && <li className="sidebar-session-children" data-sidebar-parent-id={agent.id} role="presentation"><ul id={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} className="sidebar-recent-list">{children.map(child => renderFamily(child, nested, tree))}</ul></li>}</Fragment>;
   };
-  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable, { includeSleepingDescendants: filter === 'active', sortByName }); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
+  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable, { includeDescendants: filter === 'active', respectInactiveChildrenVisibility: true, sortByName }); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
 
   return <>
     <aside ref={sidebarRef} className={`sidebar sidebar-workspace${collapsed ? " sidebar-workspace-collapsed" : ""}`} aria-label={text("작업 공간 탐색", "Workspace navigation")} onKeyDownCapture={searchKeyDown}>

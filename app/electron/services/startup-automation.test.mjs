@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { StartupAutomation, startupPrompt } from './startup-automation.mjs';
 import { CodexScrollbackFilter } from './terminal-stream.mjs';
 import { readTerminalStartupScreen } from '../shared/terminal-startup-prompt.mjs';
+import { TaskOrchestration } from './task-orchestration.mjs';
+import { WorkspaceManagement } from './workspace-management.mjs';
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true }); });
 function fixture() {
@@ -21,6 +23,35 @@ it('confirms only the exact project and repository scope once, without a window 
   expect(f.entry.startupTrustConfirmation).toMatchObject({ at: expect.any(Number) }); expect(f.publish).toHaveBeenCalledTimes(1);
   expect(f.automation.check('child')).toBe(false); expect(f.write).toHaveBeenCalledTimes(1);
   f.replace({ ...f.entry }); expect(f.automation.check('child')).toBe(true); // Actual restart, distinct PTY.
+});
+it('confirms ordinary and task API creations without project opt-in, including after coordinator metadata arrives', async () => {
+  const f = fixture(), catalog = { projects: [{ id: 'p', folder: f.root }],
+    agents: [{ id: 'owner', projectId: 'p', aiToolId: 'codex' }], availableTools: [{ id: 'codex' }] };
+  const engine = new TaskOrchestration({ file: path.join(f.root, 'tasks.json'), catalog: () => catalog });
+  const entries = new Map(), writes = vi.fn();
+  const automation = new StartupAutomation({ entry: id => entries.get(id),
+    allowedRoot: id => engine.startupTrustRoot(id), write: writes });
+  let serial = 0;
+  const create = vi.fn(async payload => {
+    const id = payload.id || `api-${++serial}`;
+    if (payload.project) catalog.projects.push({ id: payload.projectId, ...payload.project });
+    entries.set(id, { ...f.entry, filter: { viewportText: () => f.screen(f.child, payload.project ? f.child : f.root) } });
+    expect(automation.check(id)).toBe(false); // A PTY alone cannot identify a project.
+    catalog.agents.push({ ...payload, id });
+    expect(automation.check(id)).toBe(true);
+    expect(automation.check(id)).toBe(false);
+    return { id };
+  });
+  const workspace = new WorkspaceManagement({ catalog: () => catalog, create, isActive: () => true });
+  try {
+    await workspace.handle({ action: 'create-session', agentId: 'owner',
+      body: { projectId: 'p', requestKey: 'child' } });
+    await workspace.createTaskSession({ id: 'task-child', ownerId: 'owner', projectId: 'p', folder: f.child, name: 'Task' });
+    await workspace.handle({ action: 'create-project', agentId: 'owner', body: { folder: f.child } });
+    expect(writes.mock.calls).toEqual([['api-1', '\r'], ['task-child', '\r'], ['api-2', '\r']]);
+    expect(engine.data.startupTrust).toEqual({});
+    expect(create.mock.calls.every(([p]) => p.dangerous === false)).toBe(true);
+  } finally { engine.close(); }
 });
 it('leaves disabled, out-of-scope, unknown-root, wrong-folder and SSH prompts untouched', () => {
   for (const change of [f => f.allow(null), f => f.allow(f.child),

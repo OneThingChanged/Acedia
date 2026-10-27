@@ -37,6 +37,20 @@ async function fixture() {
 }
 
 describe("git command runner", () => {
+  it('returns child-cwd-relative changes and stats without including sibling-folder files', async () => {
+    const { repo } = await fixture();
+    const child = path.join(repo, 'PCGLab'); await mkdir(child);
+    await writeFile(path.join(child, 'report.md'), 'before\n');
+    await runGit(repo, ['add', 'PCGLab/report.md']);
+    await runGit(repo, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '--no-gpg-sign', '-m', 'child']);
+    await writeFile(path.join(child, 'report.md'), 'after\nextra\n');
+    await writeFile(path.join(repo, 'tracked.txt'), 'outside\n');
+    await runGit(repo, ['config', 'status.relativePaths', 'false']);
+    const result = await gitChanges(child);
+    expect(result.unstaged).toEqual([{ relative_path: 'report.md', status: 'M', additions: 2, deletions: 1 }]);
+    await runGit(child, ['add', '--', result.unstaged[0].relative_path]);
+    expect((await gitChanges(child)).staged[0].relative_path).toBe('report.md');
+  });
   it("uses a bounded 30 second default", () => {
     expect(GIT_COMMAND_TIMEOUT_MS).toBe(30_000);
   });
@@ -109,7 +123,7 @@ describe("git command runner", () => {
     const result = await gitChanges(path.join(worktree, "Source"));
     expect(result.is_repo).toBe(true);
     expect(result.branch).toBe("worktree-fixture");
-    expect(result.unstaged.some(entry => entry.relative_path === "Source/" || entry.relative_path === "Source/new.txt")).toBe(true);
+    expect(result.unstaged.some(entry => entry.relative_path === './' || entry.relative_path === 'new.txt')).toBe(true);
   });
 
   it.runIf(process.platform === "win32")("reads long Unreal-style paths when Git is absent from PATH", async () => {

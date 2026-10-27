@@ -375,6 +375,8 @@ export function ContextMenu({
   onAction,
   sidebarPinned = false,
   sidebarArchived = false,
+  hasChildSessions = false,
+  showInactiveChildren = false,
 }: {
   state: ContextMenuState;
   hasActive: boolean;
@@ -389,6 +391,8 @@ export function ContextMenu({
   ) => void;
   sidebarPinned?: boolean;
   sidebarArchived?: boolean;
+  hasChildSessions?: boolean;
+  showInactiveChildren?: boolean;
 }) {
   const { ref, pos } = useClampedMenuPosition(state.x, state.y);
   const { text } = useAppLanguage();
@@ -447,6 +451,9 @@ export function ContextMenu({
         <button className="ctx-item" onClick={() => onAction("sidebar-archive")}>
           {sidebarArchived ? text("대화 보관 해제", "Restore conversation") : text("대화 보관", "Archive conversation")}
         </button>
+        {hasChildSessions && <button className="ctx-item" data-session-action="sidebar-toggle-inactive-children" onClick={() => onAction('sidebar-toggle-inactive-children')}>
+          {showInactiveChildren ? text('휴면·정지 하위 세션 숨기기', 'Hide sleeping and stopped children') : text('휴면·정지 하위 세션 표시', 'Show sleeping and stopped children')}
+        </button>}
         <button
           className="ctx-item"
           onClick={() => onAction("deactivate")}

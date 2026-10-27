@@ -1,0 +1,19 @@
+Pixel Agents visual assets used by Acedia Pixel Office
+
+Upstream: https://github.com/pixel-agents-hq/pixel-agents
+Revision: b1bafd02896d90d83457266575a1e8e5011ce997
+Original paths: webview-ui/public/assets/{characters,furniture,floors}/
+The selected PNG files are included unchanged. See LICENSE.txt for the full
+Pixel Agents MIT license, Copyright (c) 2026 Pablo De Lucca.
+
+Character artwork is based on MetroCity by JIK-A-4 (CC0):
+https://jik-a-4.itch.io/metrocity-free-topdown-character-pack
+Upstream character animation format: 112 x 96, seven 16 x 32 frames per
+direction, rows down/up/right; frames 3-4 type, frames 5-6 read.
+
+Furniture is from Pixel Agents' open-source bundle introduced in PR #117:
+https://github.com/pixel-agents-hq/pixel-agents/pull/117
+No proprietary Donarg tileset or Star Office UI assets are included.
+
+Acedia provides its own host-state adapter, automatic room layout and renderer.
+The upstream CLI, terminal, hook installer and agent server are not bundled.
