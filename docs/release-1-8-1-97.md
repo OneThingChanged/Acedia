@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.1.97
-status: preparing
+status: published
 last_updated: 2026-10-29
 ---
 
@@ -32,7 +32,10 @@ This Standard EXE reuses the existing signed Android **1.8.1.39/code 21** artifa
 - 실제 Electron 조직도·세션 사용량·터미널 링크·Pixel Office·native PTY 검사를 통과했다. 원격 PWA와 로컬 Dashboard는 각각 1280/390px에서 기본 ON·명시적 OFF·브라우저 기억값을 검사했고, 320/360/390/430px 모바일 화면과 기존 대화·큐·모델·파일 동작도 통과했다. `output/exe-release-1.8.1.97/followup-checks-direct.json`.
 - 신규·프로젝트 생성 UI의 18개 배치와 실제 main/App의 Dangerous 기본값 검증은 아래 기록을 재사용했다. 해당 코드와 테스트 산출물은 이후 검토에서도 유지했다. 기존 하위 세션의 sandbox 실행 실패는 보존하고 정상 권한 검증 결과와 구분한다.
 
-고정 소스 EXE 빌드·packaged 검사와 공개 다운로드 검증은 게시 기록에 추가한다.
+- 고정 소스에서 TypeScript·Vite·NSIS 설치 파일·blockmap·EXE manifest를 생성했다. `output/exe-release-1.8.1.97/build-direct.log`.
+- packaged bridge·내장 Git·문서 브라우저 재사용·Dashboard·보안·종료·트레이 검사를 통과했다. 두 실행의 종료 코드는 0이며, 정리 단계의 기존 native helper `AttachConsole failed` 출력은 기능 assertion 실패와 구분했다. `packaged-direct.log`, `lifecycle-direct.log`.
+- FileVersion **1.8.1.97**, ProductVersion **1.8.1**, Authenticode **NotSigned**를 확인했다. 런타임·렌더러 362개와 Pixel Office 자산·라이선스 20개가 고정 소스와 일치한다. `windows-verification.json`, `local-verification.json`.
+- 공개 업데이터에서 **1.8.1.96·1.8.1.95 → 1.8.1.97** 감지를 확인하고 설치 파일 전체를 실제 다운로드했다. 세 자산의 공식 URL·크기·SHA-256·최신 안정 릴리스와 소스 태그를 검증했다. `public-verification-direct.log`.
 
 기능 개발 검증은 관련 7개 파일·79개 검사와 TypeScript/Vite build, 격리된 실제 App의 16부서·117직원 검사를 통과했다. 별도 검증은 숨김 창의 CDP focus emulation으로 보드·우측 합계 Tab 40회, Shift+Tab 2회, Enter 2회를 확인했다. 실제 OS 창 활성화나 사용자 세션을 사용하지 않았다. 기존 기록은 `output/pixel-office-shared-floor/`와 `output/pixel-office-shared-floor-review/`에 보관한다.
 
@@ -48,8 +51,18 @@ workspace API 프로젝트 첫 세션·추가 세션·작업 세션 factory payl
 15개 파일의 SHA-256은 작업 전후 일치했다. 이후 직접 검토에서 원격 대시보드 생성 API도
 권한 생략 시 coordinator의 기본값을 따르도록 보완했다. 명시적 boolean은 그대로 전달하고
 잘못된 자료형은 거부한다. 원격 생성 창은 기본 ON, 브라우저별 명시적 OFF 기억을 지원하며
-service worker 캐시를 갱신한다. 추가 HTTP·실제 원격 UI 검증은 아래 배포 결과에 기록한다.
+service worker 캐시를 갱신한다. 추가 HTTP·실제 원격 UI 검증도 통과했으며 위 검증 항목에 기록했다.
 
 ## 배포 기록
 
-게시 전이다. Store·Company·새 APK 빌드와 사용자 설치본의 설치·재시작은 이번 작업 범위에 포함하지 않는다.
+- 공개 게시: **2026-10-29 13:17:00 KST**. [GitHub Release v1.8.1.97](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.97).
+- 공개 다운로드 검증 완료: **2026-10-29 13:17:44 KST**.
+- 고정 제품 소스·태그: `cd712e3c705c2d320779666509e792cff7c33152`.
+- 기존 서명 검증 APK **1.8.1.39/code 21**을 재사용했다. 새 APK·Store·Company 배포는 실행하지 않았다.
+- 현재 설치된 1.8.1.96 앱과 실제 사용자 세션은 교체·재시작하지 않았다. 설정의 **Check → Update**로 설치형 업데이트를 적용한다. 기본 권한 변경은 새로 만드는 세션에 적용되며 기존 명시적 설정과 저장 세션은 유지한다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.97-x64.exe | 156224298 | `a4cf8cb65d5e8da9b1903b853f2cdb53a0509a6015088bfafae8d8126281ce7e` |
+| Acedia-Setup-1.8.1.97-x64.exe.blockmap | 163260 | `8e002331f3c0180755dfbbcac9e99c8c795dd84bbe42a192730e87fe3a0451cb` |
+| latest-exe.json | 256 | `5518cc1a434bd6116e3063c4ca921e7ca40bb16676d6c9d77878e592e66b12ef` |

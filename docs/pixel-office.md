@@ -17,7 +17,7 @@ sources:
 
 # Pixel Office
 
-Standard EXE 1.8.1.97의 공유 사무실 변경이다. 검증·공개 배포 상태는 [릴리스 기록](release-1-8-1-97.md)을 따른다. 최초 Pixel Office는 1.8.1.96에 포함됐다.
+공유 사무실 변경은 Standard EXE 1.8.1.97에 포함됐다. 검증·공개 배포 상태는 [릴리스 기록](release-1-8-1-97.md)을 따른다. 최초 Pixel Office는 1.8.1.96에 포함됐다.
 
 ## 하나의 공유 사무실 (1.8.1.97)
 
