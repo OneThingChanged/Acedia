@@ -6,6 +6,7 @@ import { viewedImagePaths } from './lib/viewedImagePath';
 import { LS_SIDEBAR_WIDTH, loadSidebarWidth, sidebarInactiveChildrenVisible } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
+import { newSessionDangerous } from "./lib/newSessionPreferences";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
 import { isAbsoluteFsPath, joinFsPath, relativeIfInside } from "./lib/path";
 import { resolveSessionDocumentLink } from "./lib/sessionFileLinks";
@@ -3848,7 +3849,7 @@ function App() {
       projectId: string;
       name: string;
       aiToolId: string;
-      dangerous: boolean;
+      dangerous?: boolean;
       codexPoolAccountId?: string;
       sessionHierarchy?: SessionHierarchy;
       project?: { name: string; folder: string };
@@ -3898,12 +3899,12 @@ function App() {
         return;
       }
       const creation = payload.project ? createProject({
-        ...payload.project, aiToolId: payload.aiToolId, dangerous: false,
+        ...payload.project, aiToolId: payload.aiToolId, dangerous: newSessionDangerous(payload.aiToolId, payload.dangerous),
       }, { projectId: payload.projectId, agentId: payload.id, background: payload.workspaceManaged }) : createAgent(
         {
           name,
           aiToolId: payload.aiToolId,
-          dangerous: Boolean(payload.dangerous),
+          dangerous: newSessionDangerous(payload.aiToolId, payload.dangerous),
           codexPoolAccountId: payload.codexPoolAccountId,
           sessionHierarchy: payload.sessionHierarchy,
         },

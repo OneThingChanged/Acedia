@@ -20,7 +20,7 @@ describe("per-tool new session defaults", () => {
     saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerousDefaultMode: "on" });
     expect(loadAgentDefaults("codex")).toMatchObject({ dangerousDefaultMode: "on", dangerous: true });
     expect(loadAgentDefaults("claude")).toMatchObject({ dangerousDefaultMode: "remember", dangerous: false });
-    expect(normalizeAgentDefaults("codex", { dangerousDefaultMode: "invalid" }).dangerousDefaultMode).toBe("remember");
+    expect(normalizeAgentDefaults("codex", { dangerousDefaultMode: "invalid" }).dangerousDefaultMode).toBe("on");
     for (const toolId of ["cline", "none", "unknown"]) {
       expect(normalizeAgentDefaults(toolId, { dangerous: true, dangerousDefaultMode: "on" }))
         .toMatchObject({ dangerousDefaultMode: "off", dangerous: false });
@@ -54,7 +54,7 @@ describe("per-tool new session defaults", () => {
   });
   it("persists Antigravity launch defaults and keeps unsupported integrations disabled", () => {
     storage();
-    expect(loadAgentDefaults("agy").dangerous).toBe(false);
+    expect(loadAgentDefaults("agy").dangerous).toBe(true);
     saveAgentDefaults("agy", { ...loadAgentDefaults("agy"), dangerous: true, useAltScreen: true });
     expect(loadAgentDefaults("agy")).toMatchObject({ dangerous: true, useAltScreen: false });
     const { agent } = buildNewProjectWithFirstAgent({ name: "Antigravity", folder: "project", aiToolId: "agy", dangerous: false });
@@ -98,27 +98,36 @@ describe("per-tool new session defaults", () => {
   });
   it("retains existing defaults on missing or corrupt preferences", () => {
     const data = storage();
-    expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default" });
+    expect(loadAgentDefaults("codex")).toMatchObject({ dangerousDefaultMode: "on", dangerous: true, useAltScreen: false, codexAccountId: "default" });
     data.set(AGENT_DEFAULTS_KEY, "bad JSON");
-    expect(loadAgentDefaults("claude").dangerous).toBe(false);
+    expect(loadAgentDefaults("claude").dangerous).toBe(true);
   });
   it("persists launch defaults and isolates tool settings", () => {
     storage();
     saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerous: true, useAltScreen: true });
-    saveAgentDefaults("claude", { ...loadAgentDefaults("claude"), dangerous: false });
+    saveAgentDefaults("claude", { ...loadAgentDefaults("claude"), dangerousDefaultMode: "off" });
     expect(loadAgentDefaults("codex")).toMatchObject({ dangerous: true, useAltScreen: true });
     expect(loadAgentDefaults("claude").dangerous).toBe(false);
   });
   it("ignores unsupported fields and malformed account identifiers", () => {
     expect(normalizeAgentDefaults("cline", { dangerous: true, useAltScreen: true, codexAccountId: "../bad" })).toMatchObject({ dangerous: false, useAltScreen: false, codexAccountId: "default" });
-    expect(normalizeAgentDefaults("codex", { dangerous: "true" }).dangerous).toBe(false);
+    expect(normalizeAgentDefaults("codex", { dangerous: "true" }).dangerous).toBe(true);
   });
   it("keeps explicit creation overrides", () => {
     storage();
     saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), useAltScreen: true });
     const { agent } = buildNewProjectWithFirstAgent({ name: "P", folder: "project", aiToolId: "codex", dangerous: false, useAltScreen: false }, { createId: () => "id" });
     expect(agent.useAltScreen).toBe(false);
+    expect(agent.dangerous).toBe(false);
     expect(agent).not.toHaveProperty("workerSettings");
+  });
+  it("does not apply new defaults to restored session permissions", () => {
+    storage();
+    const { project, agent } = buildNewProjectWithFirstAgent({ name: "P", folder: "project", aiToolId: "codex", dangerous: false });
+    const saved = [agent, { ...agent, id: "legacy", dangerous: undefined }, { ...agent, id: "enabled", dangerous: true }];
+    expect(loadAgentDefaults("codex").dangerous).toBe(true);
+    expect(loadStoredAgents(saved, [project]).map(item => item.dangerous)).toEqual([false, false, true]);
+    expect(agent.dangerous).toBe(false);
   });
   it("drops retired worker settings while preserving saved accounts and launch options", () => {
     const data = storage();

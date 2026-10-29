@@ -31,11 +31,19 @@ it('renders duplicate project folders as one team and distinguishes same-name se
   expect(html).toContain('Manager #1'); expect(html).toContain('Manager #2');
   expect(agents.map(a => a.name)).toEqual(['Manager', 'Manager']);
 });
-it('bounds the rendered sprites to a page without hiding the total or changing the host catalog', () => {
+it('keeps all employees in one continuous scene with fit, zoom and department navigation', () => {
   const agents = Array.from({ length: 70 }, (_, n) => ({ ...root, id: `session-${n}` }));
   const html = renderToStaticMarkup(<PixelOffice agents={agents} projects={projects} activeProjectId="p" onOpenSession={() => {}}/>);
-  expect((html.match(/data-office-agent=/g) || []).length).toBe(24);
-  expect(html).toContain('1 / 3'); expect(html).toContain('70'); expect(agents).toHaveLength(70);
+  expect((html.match(/data-office-agent=/g) || []).length).toBe(70);
+  expect((html.match(/<canvas/g) || []).length).toBe(1);
+  expect(html).toContain('data-office-fit'); expect(html).toContain('data-office-readable');
+  expect(html).toContain('po-world'); expect(html).not.toContain('po-room-stage'); expect(agents).toHaveLength(70);
+});
+it('uses one canvas for multiple named departments instead of overlapping room articles', () => {
+  const html = renderToStaticMarkup(<PixelOffice agents={[root, { ...root, id: 'other', projectId: 'q' }]} projects={[...projects, { ...projects[0], id: 'q', folder: 'C:/Other', name: 'Other' }]} activeProjectId="p" onOpenSession={() => {}}/>);
+  expect((html.match(/<canvas/g) || []).length).toBe(1);
+  expect((html.match(/data-office-project=/g) || []).length).toBe(2);
+  expect(html).not.toContain('<article');
 });
 it('renders a useful empty state without manufacturing demo sessions', () => {
   const html = renderToStaticMarkup(<PixelOffice agents={[]} projects={[]} activeProjectId={null} onOpenSession={() => {}}/>);

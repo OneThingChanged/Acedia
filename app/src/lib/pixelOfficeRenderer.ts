@@ -1,4 +1,4 @@
-import { OFFICE_COLORS, OFFICE_ROLE_COLORS, officeAvatar, officeState, type OfficeSeat } from './pixelOffice';
+import { OFFICE_COLORS, OFFICE_ROLE_COLORS, officeAvatar, officeState, type OfficeSeat, type OfficeScene, type OfficeViewport } from './pixelOffice';
 
 // Pixel Agents assets, pinned and licensed in public/pixel-agents/NOTICE.txt.
 // Native 16x32 character frames: down/up/right rows; type=3,4; read=5,6.
@@ -26,29 +26,45 @@ function sprite(ctx: CanvasRenderingContext2D, images: OfficeImages, key: string
   const image = images.get(key);
   if (image) ctx.drawImage(image, Math.round(x), Math.round(y), image.width * scale, image.height * scale);
 }
-export function officeBackground(width: number, height: number, seats: OfficeSeat[], images: OfficeImages): HTMLCanvasElement {
-  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+export function officeBackground(scene: OfficeScene, images: OfficeImages, view: OfficeViewport): HTMLCanvasElement {
+  // Allocate only viewport pixels, even for thousands of desks. Never create a
+  // canvas as large as the office world or resize a layout from a canvas size.
+  const canvas = document.createElement('canvas'); canvas.width = view.width; canvas.height = view.height;
   const ctx = canvas.getContext('2d')!; ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#77573f'; ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#111f26'; ctx.fillRect(0, 0, view.width, view.height);
+  ctx.translate(view.x, view.y); ctx.scale(view.zoom, view.zoom);
+  const { width, height, seats } = scene;
+  ctx.fillStyle = '#82674d'; ctx.fillRect(0, 0, width, height);
+  const left = Math.max(0, Math.floor(-view.x / view.zoom / 32) * 32), top = Math.max(48, Math.floor(-view.y / view.zoom / 32) * 32);
+  const right = Math.min(width, (view.width - view.x) / view.zoom), bottom = Math.min(height, (view.height - view.y) / view.zoom);
   const tile = images.get('floor');
   if (tile) {
-    ctx.globalAlpha = .17;
-    for (let y = 48; y < height; y += 32) for (let x = 0; x < width; x += 32) ctx.drawImage(tile, x, y, 32, 32);
-    ctx.globalAlpha = 1;
+    const pattern = ctx.createPattern(tile, 'repeat');
+    if (pattern) { ctx.globalAlpha = .12; ctx.fillStyle = pattern; ctx.fillRect(left, top, right - left, bottom - top); ctx.globalAlpha = 1; }
   }
-  ctx.strokeStyle = '#614632'; ctx.lineWidth = 1;
-  for (let y = 48; y < height; y += 16) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+  ctx.strokeStyle = '#72563f'; ctx.lineWidth = 1;
+  if (view.zoom >= .1) for (let y = top; y < bottom; y += 32) { ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); }
+  // A single perimeter wall. Departments are colored floor zones, with open
+  // corridors between them; they never paint wall strips over employees.
   ctx.fillStyle = '#253b49'; ctx.fillRect(0, 0, width, 47);
   ctx.fillStyle = '#1b2e3c';
   for (let x = 0; x < width; x += 32) ctx.fillRect(x, 0, 2, 47);
   ctx.fillStyle = '#b08b60'; ctx.fillRect(0, 47, width, 5);
   sprite(ctx, images, 'shelf', 16, 7, 1.5); sprite(ctx, images, 'board', width / 2 - 32, 2, 1.5);
-  sprite(ctx, images, 'clock', width - 38, 7, 1.5); sprite(ctx, images, 'plant', 5, height - 44, 1.5);
+  sprite(ctx, images, 'clock', width - 38, 7, 1.5); sprite(ctx, images, 'plant', 5, height - 54, 1.5);
   sprite(ctx, images, 'sofa', width - 92, height - 37, 1.5);
+  for (const department of scene.departments) {
+    if (department.x > right || department.x + department.width < left || department.y > bottom || department.y + department.height < top) continue;
+    ctx.fillStyle = department.color + '22'; ctx.fillRect(department.x, department.y, department.width, department.height);
+    ctx.strokeStyle = department.color + '88'; ctx.lineWidth = 2;
+    ctx.strokeRect(department.x, department.y, department.width, department.height);
+    sprite(ctx, images, 'plant', department.x + department.width - 36, department.y + 10, 1);
+  }
   // Organization links represent real parentId, not creation provenance.
   const byId = new Map(seats.map(seat => [seat.agent.id, seat]));
   ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
   for (const seat of seats) {
+    if (!officeSeatVisible(seat, view)) continue;
     if (seat.role === 'lead' || seat.role === 'manager') {
       ctx.globalAlpha = 1;
       ctx.fillStyle = OFFICE_ROLE_COLORS[seat.role] + '33'; ctx.fillRect(seat.x + 5, seat.y + 13, 114, 90);
@@ -62,6 +78,7 @@ export function officeBackground(width: number, height: number, seats: OfficeSea
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
   for (const seat of seats) {
+    if (!officeSeatVisible(seat, view)) continue;
     ctx.fillStyle = '#0003'; ctx.fillRect(seat.x + 13, seat.y + 80, 99, 14);
     sprite(ctx, images, 'chair', seat.x + 46, seat.y + 68);
     sprite(ctx, images, 'desk', seat.x + 14, seat.y + 18);
@@ -69,9 +86,14 @@ export function officeBackground(width: number, height: number, seats: OfficeSea
   return canvas;
 }
 
-export function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvasElement, images: OfficeImages, seats: OfficeSeat[], elapsed: number, reducedMotion: boolean, now = Date.now()) {
+export function officeSeatVisible(seat: OfficeSeat, view: OfficeViewport) {
+  return seat.x + 124 >= -view.x / view.zoom && seat.x <= (view.width - view.x) / view.zoom && seat.y + 154 >= -view.y / view.zoom && seat.y <= (view.height - view.y) / view.zoom;
+}
+export function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvasElement, images: OfficeImages, seats: OfficeSeat[], elapsed: number, reducedMotion: boolean, view: OfficeViewport, now = Date.now()) {
   ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, background.width, background.height); ctx.drawImage(background, 0, 0);
+  ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.zoom, view.zoom);
   for (const seat of seats) {
+    if (!officeSeatVisible(seat, view)) continue;
     const state = officeState(seat.agent, now), avatar = officeAvatar(seat.agent.id);
     const inactive = ['sleeping', 'stopped', 'disconnected'].includes(state);
     const frame = reducedMotion ? 0 : Math.floor(elapsed / 400 + avatar);
@@ -99,4 +121,5 @@ export function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvas
       ctx.fillText(state === 'sleeping' ? 'zZ' : state === 'done' ? '✓' : state === 'blocked' ? '!' : '?', seat.x + 94, seat.y + 37);
     }
   }
+  ctx.restore();
 }

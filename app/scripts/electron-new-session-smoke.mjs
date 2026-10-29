@@ -48,6 +48,7 @@ async function exerciseUI() {
   await change(accounts[0], "11111111-1111-4111-8111-111111111111");
   await change(accounts[1], "22222222-2222-4222-8222-222222222222");
   const checks = document.querySelectorAll(".new-session-execution input");
+  check(checks[0].checked, "Unconfigured supported session did not default Dangerous ON");
   checks[1].click(); await wait(); button().click(); await wait();
   const payload = window.fixtureCreated;
   check(payload.name === "Plugin flow" && payload.aiToolId === "codex", "Lost name or provider");
@@ -96,11 +97,15 @@ async function exerciseUI() {
   await change(projectAccounts[0], "11111111-1111-4111-8111-111111111111");
   await change(projectAccounts[1], "22222222-2222-4222-8222-222222222222");
   check(!document.querySelector(".session-worker-disclosure"), "Retired project workers are visible");
+  check(document.querySelector('.new-session-execution input[type="checkbox"]').checked, "Unconfigured first project session did not default Dangerous ON");
   button().click(); await wait();
   check(window.fixtureCreated.name === "Compact project" && window.fixtureCreated.folder === "C:/fixture/browsed-project", "Lost project basics");
   check(window.fixtureCreated.projectFolderId === "local-folder", "Lost sidebar folder");
   check(window.fixtureCreated.codexAccountId === projectAccounts[0].value && window.fixtureCreated.codexPoolAccountId === projectAccounts[1].value, "Lost first-session accounts");
   check(!Object.hasOwn(window.fixtureCreated, "workerSettings"), "Retired project worker settings were submitted");
+  check(window.fixtureCreated.dangerous, "Project lost default Dangerous ON");
+  document.querySelector('.new-session-execution input[type="checkbox"]').click(); await wait(); button().click(); await wait();
+  check(!window.fixtureCreated.dangerous, "Project ignored explicit checkbox OFF");
   const projectAdvanced = document.querySelector(".advanced-launch-options details");
   projectAdvanced.open = true; await wait();
   [...projectAdvanced.querySelectorAll("button")].find(control => control.textContent === "직접 지정").click(); await wait();
@@ -134,6 +139,9 @@ async function exerciseUI() {
   await wait(); check(!dialog() && document.activeElement.id === "fixture-open", "Project Escape did not restore focus");
 
   const dangerous = () => document.querySelector('.new-session-execution input[type="checkbox"]');
+  // Explicit remember mode retains last-choice behavior independently of the new ON default.
+  localStorage.setItem('multiagent.agentDefaults.v1', JSON.stringify({ codex: { dangerousDefaultMode: 'remember', dangerous: true }, claude: { dangerousDefaultMode: 'remember', dangerous: false } }));
+  localStorage.removeItem('multiagent.newSessionPreferences.v1');
   await showCodex();
   if (dangerous().checked) { dangerous().click(); await wait(); }
   button().click(); await wait();
@@ -247,7 +255,7 @@ function runElectronUI(temporary, artifacts) {
 }
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-new-session-ui-"));
-const artifacts = path.resolve(appRoot, "../.acedia/new-session-ui");
+const artifacts = path.resolve(process.env.ACEDIA_NEW_SESSION_ARTIFACTS || path.resolve(appRoot, "../.acedia/new-session-ui"));
 try {
   await build({ entryPoints: [path.join(appRoot, "scripts/fixtures/new-session-renderer.tsx")], bundle: true, jsx: "automatic", define: { "import.meta.env": "{}" }, outfile: path.join(temporary, "renderer.js") });
   await fs.writeFile(path.join(temporary, "index.html"), '<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="renderer.css"><div id="root"></div><script src="renderer.js"></script>');

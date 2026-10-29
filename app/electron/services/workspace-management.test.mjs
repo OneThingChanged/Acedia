@@ -33,17 +33,32 @@ it('registers a folder once, creates its first session and supports idempotent a
   const f = fixture();
   const first = await f.call('create-project', { folder: f.root });
   expect(first).toMatchObject({ created: true, sessionId: 'session-1', active: true });
-  expect(f.create.mock.calls[0][0]).toMatchObject({ project: { folder: fs.realpathSync(f.root) }, aiToolId: 'codex', dangerous: false, workspaceManaged: true });
+  expect(f.create.mock.calls[0][0]).toMatchObject({ project: { folder: fs.realpathSync(f.root) }, aiToolId: 'codex', workspaceManaged: true });
+  expect(f.create.mock.calls[0][0]).not.toHaveProperty('dangerous');
   expect(await f.call('create-project', { folder: path.join(f.root, '.') })).toMatchObject({ created: false, projectId: first.projectId });
   const body = { projectId: first.projectId, name: 'Second', requestKey: 'second' };
   const [second, retried] = await Promise.all([f.call('create-session', body), f.call('create-session', body)]);
   expect(second).toMatchObject({ created: true, sessionId: 'session-2', active: true });
   expect(retried).toMatchObject({ created: false, sessionId: second.sessionId });
   expect(f.create).toHaveBeenCalledTimes(2);
+  expect(f.create.mock.calls[1][0]).not.toHaveProperty('dangerous');
   f.active.delete(second.sessionId);
   expect((await f.call('create-session', body)).active).toBe(false);
   await expect(f.call('create-session', { ...body, name: 'Different' })).rejects.toMatchObject({ statusCode: 409 });
   expect((await f.call('list')).sessions).toHaveLength(2);
+});
+it.each([false, true])('defers new task permissions to coordinator defaults without inheriting or editing owner Dangerous=%s', async dangerous => {
+  const f = fixture();
+  f.catalog.projects.push({ id: 'own', name: 'Own', folder: f.root });
+  const owner = { id: 'caller', projectId: 'own', aiToolId: 'codex', dangerous };
+  f.catalog.agents.push(owner);
+  const before = structuredClone(owner);
+  const modelSettings = { model: 'fixture-model', effort: 'high' };
+  await f.service.createTaskSession({ id: 'worker', ownerId: 'caller', projectId: 'own', folder: f.root, name: 'Worker', modelSettings });
+  expect(f.create.mock.lastCall[0]).toMatchObject({ id: 'worker', aiToolId: 'codex', modelSettings, workspaceManaged: true, sessionHierarchy: { parentId: 'caller', createdById: 'caller', inheritModel: false } });
+  expect(f.create.mock.lastCall[0]).not.toHaveProperty('dangerous');
+  expect(owner).toEqual(before);
+  expect(f.active.has('caller')).toBe(true);
 });
 it('rejects missing folders, relative paths, unsupported tools, stale callers and unsafe extra options', async () => {
   const f = fixture();

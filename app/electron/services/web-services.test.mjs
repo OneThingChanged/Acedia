@@ -18,6 +18,32 @@ afterEach(async () => {
 });
 
 describe("Electron dashboard server", () => {
+  it.each(["remote", "dashboard"])("preserves new-session permission defaults and explicit choices on %s", async surface => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-permission-default-api-")); roots.push(root);
+    const creations = [];
+    const createSession = async payload => { creations.push(payload); return { id: `new-${creations.length}` }; };
+    const service = surface === "remote" ? new RemoteDashboardService({ baseDir: root, createSession })
+      : new LocalDashboardService({ title: "Defaults", defaultPort: 0, baseDir: root, configName: "defaults.json", providers: { createSession } });
+    const view = { projects: [{ id: "p", name: "Project" }], agents: [], availableTools: [
+      { id: "codex", supportsDangerous: true }, { id: "cline", supportsDangerous: false },
+    ] };
+    if (surface === "remote") { service.config.server_port = 0; service.syncView(view); } else service.sync({ view });
+    services.push(service); const status = await service.start();
+    const request = patch => fetch(`${status.url}/api/session/create`, { method: "POST",
+      headers: { "content-type": "application/json", origin: status.url },
+      body: JSON.stringify({ projectId: "p", name: "New", aiToolId: "codex", ...patch }) });
+    expect((await request({})).status).toBe(201);
+    expect(creations.at(-1)).not.toHaveProperty("dangerous");
+    for (const dangerous of [false, true]) {
+      expect((await request({ dangerous })).status).toBe(201);
+      expect(creations.at(-1).dangerous).toBe(dangerous);
+    }
+    expect((await request({ aiToolId: "cline", dangerous: true })).status).toBe(201);
+    expect(creations.at(-1).dangerous).toBe(false);
+    for (const dangerous of ["true", 1, null]) expect((await request({ dangerous })).status).toBe(400);
+    expect(creations).toHaveLength(4);
+  });
+
   it.each(["remote", "dashboard"])("distinguishes explicit Restart from activation on %s", async surface => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-restart-api-")); roots.push(root);
     const calls = [];
@@ -420,7 +446,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v103');
+    expect(workerBody).toContain('multiagent-remote-v104');
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');

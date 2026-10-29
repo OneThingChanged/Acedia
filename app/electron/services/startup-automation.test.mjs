@@ -50,7 +50,9 @@ it('confirms ordinary and task API creations without project opt-in, including a
     await workspace.handle({ action: 'create-project', agentId: 'owner', body: { folder: f.child } });
     expect(writes.mock.calls).toEqual([['api-1', '\r'], ['task-child', '\r'], ['api-2', '\r']]);
     expect(engine.data.startupTrust).toEqual({});
-    expect(create.mock.calls.every(([p]) => p.dangerous === false)).toBe(true);
+    // Folder trust is independent of permissions. New creations defer their
+    // permission choice to the coordinator rather than forcing an OFF value.
+    for (const [payload] of create.mock.calls) expect(payload).not.toHaveProperty('dangerous');
   } finally { engine.close(); }
 });
 it('leaves disabled, out-of-scope, unknown-root, wrong-folder and SSH prompts untouched', () => {

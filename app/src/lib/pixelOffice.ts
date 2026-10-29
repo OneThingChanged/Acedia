@@ -10,7 +10,6 @@ export const OFFICE_COLORS: Record<OfficeState, string> = {
   working: '#67cfb2', reading: '#7fb7ff', waiting: '#f5c76b', blocked: '#ee8d90',
   done: '#8cd68b', sleeping: '#9ca5b8', stopped: '#89909e', starting: '#b59cf0', idle: '#a6b6c8', disconnected: '#ee8d90',
 };
-export const OFFICE_PAGE_SIZE = 24;
 export type RightPanelView = 'files' | 'scm' | 'office';
 export const LS_RIGHT_PANEL_VIEW = 'multiagent.rightPanelView.v1';
 export function loadRightPanelView(): RightPanelView {
@@ -125,3 +124,43 @@ export function layoutOfficeSeats(agents: Agent[], width: number, roles = office
   }
   return { seats, height: 88 + (row + (column ? 1 : 0)) * 170 };
 }
+
+export type OfficeDepartment = { room: OfficeRoomData; x: number; y: number; width: number; height: number; color: string };
+export type OfficeScene = { width: number; height: number; seats: OfficeSeat[]; departments: OfficeDepartment[] };
+export type OfficeViewport = { width: number; height: number; x: number; y: number; zoom: number };
+const DEPARTMENT_COLORS = ['#8abca6', '#8caecc', '#c9b184', '#b39ecb', '#c68f94', '#85b9bb'];
+
+// One world for both placements. Department rugs share the same floor and
+// corridors; viewport resizing never reshuffles an employee's desk.
+export function layoutOfficeScene(rooms: OfficeRoomData[]): OfficeScene {
+  const width = 560, gap = 48, margin = 40;
+  const layouts = rooms.map(room => layoutOfficeSeats(room.sessions, width - 32, room.roles));
+  const averageHeight = layouts.reduce((sum, layout) => sum + layout.height + 20, 0) / Math.max(1, layouts.length);
+  const columns = Math.max(1, Math.min(rooms.length, Math.round(Math.sqrt(rooms.length * averageHeight / width * 1.65))));
+  const departments: OfficeDepartment[] = [], seats: OfficeSeat[] = [];
+  let x = margin, y = 76, rowHeight = 0, sceneWidth = 0;
+  rooms.forEach((room, index) => {
+    const local = layouts[index];
+    const height = local.height + 20;
+    if (index && index % columns === 0) { x = margin; y += rowHeight + gap; rowHeight = 0; }
+    departments.push({ room, x, y, width, height, color: DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length] });
+    seats.push(...local.seats.map(seat => ({ ...seat, x: seat.x + x + 16, y: seat.y + y })));
+    rowHeight = Math.max(rowHeight, height); sceneWidth = Math.max(sceneWidth, x + width + margin); x += width + gap;
+  });
+  return { width: Math.max(640, sceneWidth), height: Math.max(360, y + rowHeight + margin), departments, seats };
+}
+
+export function fitOfficeViewport(scene: Pick<OfficeScene, 'width' | 'height'>, width: number, height: number): OfficeViewport {
+  const zoom = Math.min(1, Math.max(Number.EPSILON, Math.min(Math.max(1, width - 32) / scene.width, Math.max(1, height - 32) / scene.height)));
+  return { width, height, zoom, x: (width - scene.width * zoom) / 2, y: (height - scene.height * zoom) / 2 };
+}
+export function constrainOfficeViewport(scene: Pick<OfficeScene, 'width' | 'height'>, view: OfficeViewport): OfficeViewport {
+  const axis = (offset: number, extent: number, viewport: number) => extent <= viewport - 32 ? (viewport - extent) / 2 : Math.max(24 - extent, Math.min(viewport - 24, offset));
+  return { ...view, x: axis(view.x, scene.width * view.zoom, view.width), y: axis(view.y, scene.height * view.zoom, view.height) };
+}
+export function zoomOfficeViewport(scene: Pick<OfficeScene, 'width' | 'height'>, view: OfficeViewport, zoom: number, anchorX = view.width / 2, anchorY = view.height / 2): OfficeViewport {
+  const next = Math.max(fitOfficeViewport(scene, view.width, view.height).zoom, Math.min(2, zoom));
+  const ratio = next / view.zoom;
+  return constrainOfficeViewport(scene, { ...view, zoom: next, x: anchorX - (anchorX - view.x) * ratio, y: anchorY - (anchorY - view.y) * ratio });
+}
+export function officeWorldPoint(view: OfficeViewport, x: number, y: number) { return { x: (x - view.x) / view.zoom, y: (y - view.y) / view.zoom }; }

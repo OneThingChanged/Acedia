@@ -17,11 +17,11 @@ it("uses enabled tool defaults until a session has been created", () => {
   expect(newSessionToolId(["claude"])).toBe("codex");
   saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerous: true });
   expect(newSessionDangerous("codex")).toBe(true);
-  expect(newSessionDangerous("claude")).toBe(false);
+  expect(newSessionDangerous("claude")).toBe(true);
 });
 
 it("restores the latest provider and each provider's explicit on/off choice without changing Settings", () => {
-  saveAgentDefaults("codex", { ...loadAgentDefaults("codex"), dangerous: true });
+  for (const toolId of ["codex", "claude"]) saveAgentDefaults(toolId, { ...loadAgentDefaults(toolId), dangerousDefaultMode: "remember", dangerous: true });
   const defaults = stored.get(AGENT_DEFAULTS_KEY);
   rememberNewSession("codex", false);
   expect(newSessionToolId([])).toBe("codex");
@@ -76,10 +76,26 @@ it("ignores corrupt preferences and rejects retired tools or nonboolean permissi
   for (const raw of ["bad JSON", "null", "[]", '{"aiToolId":"gemini","dangerousByTool":{"codex":"true"}}']) {
     stored.set(NEW_SESSION_PREFERENCES_KEY, raw);
     expect(newSessionToolId([])).toBe("claude");
-    expect(newSessionDangerous("codex")).toBe(false);
+    expect(newSessionDangerous("codex")).toBe(true);
   }
   rememberNewSession("codex", true);
   const before = stored.get(NEW_SESSION_PREFERENCES_KEY);
   rememberNewSession("retired-provider", true);
   expect(stored.get(NEW_SESSION_PREFERENCES_KEY)).toBe(before);
+});
+
+it.each(["codex", "claude", "qwen", "agy"])("starts unconfigured %s ON without mutating storage and honors a creation override", toolId => {
+  const before = [...stored.entries()];
+  expect(loadAgentDefaults(toolId)).toMatchObject({ dangerousDefaultMode: "on", dangerous: true });
+  expect(newSessionDangerous(toolId)).toBe(true);
+  expect(newSessionDangerous(toolId, false)).toBe(false);
+  expect([...stored.entries()]).toEqual(before);
+  saveAgentDefaults(toolId, { ...loadAgentDefaults(toolId), dangerousDefaultMode: "off" });
+  expect(newSessionDangerous(toolId)).toBe(false);
+  expect(newSessionDangerous(toolId, true)).toBe(true);
+});
+
+it.each(["none", "cline", "unknown"])("keeps unsupported %s OFF even for an explicit ON choice", toolId => {
+  expect(newSessionDangerous(toolId)).toBe(false);
+  expect(newSessionDangerous(toolId, true)).toBe(false);
 });

@@ -26,8 +26,9 @@ function readPreferences(): NewSessionPreferences {
   }
 }
 
-export function newSessionDangerous(toolId: string): boolean {
+export function newSessionDangerous(toolId: string, explicitChoice?: boolean): boolean {
   if (!toolForId(toolId).dangerousFlag) return false;
+  if (typeof explicitChoice === "boolean") return explicitChoice;
   const defaults = loadAgentDefaults(toolId);
   return defaults.dangerousDefaultMode === "remember"
     ? readPreferences().dangerousByTool[toolId] ?? defaults.dangerous

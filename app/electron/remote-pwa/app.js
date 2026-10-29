@@ -3319,6 +3319,11 @@ function syncSessionEditorDangerous() {
   if (!supported) ui.sessionEditorDangerous.checked = false;
 }
 
+function sessionEditorDangerousDefault(toolId) {
+  const remembered = launchPreferences().dangerous?.[toolId];
+  return typeof remembered === "boolean" ? remembered : true;
+}
+
 function syncSessionEditorPool() {
   const project = remoteState.view?.projects?.find(item => item.id === ui.sessionEditorProject.value);
   ui.sessionEditorPoolField.hidden = sessionEditorMode !== "create" || ui.sessionEditorTool.value !== "codex"
@@ -3401,7 +3406,7 @@ function openCreateSessionEditor() {
     syncSessionEditorPool();
   }).catch(() => {});
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
-  ui.sessionEditorDangerous.checked = preferences.dangerous?.[ui.sessionEditorTool.value] === true;
+  ui.sessionEditorDangerous.checked = sessionEditorDangerousDefault(ui.sessionEditorTool.value);
   syncSessionEditorDangerous();
   ui.sessionEditorOverlay.hidden = false;
   ui.sessionEditorName.focus();
@@ -5980,7 +5985,7 @@ ui.sessionEditorProject.addEventListener("change", () => {
   ui.sessionEditorName.value = nextRemoteSessionName(ui.sessionEditorProject.value);
   syncSessionEditorPool();
 });
-ui.sessionEditorTool.addEventListener("change", () => { ui.sessionEditorDangerous.checked = launchPreferences().dangerous?.[ui.sessionEditorTool.value] === true; syncSessionEditorDangerous(); syncSessionEditorPool(); });
+ui.sessionEditorTool.addEventListener("change", () => { ui.sessionEditorDangerous.checked = sessionEditorDangerousDefault(ui.sessionEditorTool.value); syncSessionEditorDangerous(); syncSessionEditorPool(); });
 ui.sessionEditorForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void submitSessionEditor();

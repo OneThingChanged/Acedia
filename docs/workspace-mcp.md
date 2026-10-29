@@ -87,8 +87,32 @@ PC에 이미 있어야 하며, 폴더 자체를 새로 만들지는 않는다.
 
 인증된 loopback 통합 API만 사용하며 브라우저 Origin과 실행 종료된 호출 세션을 거부한다.
 기존 coordinator 창의 프로젝트·세션 생성, 창 소유권, 기본 실행 설정을 재사용한다.
-생성 도구에서는 위험 모드를 요청할 수 없다. 기존 세션의 변경은 아래 설정 도구를 사용한다. 생성 도구는 프롬프트를 보내지 않으며 작업 전달은 아래
+생성 도구에는 별도 Dangerous 인수가 없으며 아래 신규 세션 정책을 사용한다. 기존 세션의 변경은 아래 설정 도구를 사용한다. 생성 도구는 프롬프트를 보내지 않으며 작업 전달은 아래
 별도 도구를 사용한다.
+
+### 신규 세션 Dangerous 기본값 (1.8.1.97)
+
+설정이 없는 지원 도구(Codex·Claude·Qwen·Antigravity)의 신규 세션은 Dangerous가 기본 ON이다.
+일반 생성 창, 프로젝트 첫 세션, 위 MCP·loopback workspace API와 작업 분담 전용 Codex 생성은
+coordinator의 같은 새 세션 정책을 사용한다. Cline·Shell 등 미지원 도구는 OFF다.
+
+설정의 명시적 ON/OFF가 마지막 생성 선택보다 우선한다. `remember`는 도구별 마지막 성공한
+생성 선택을 사용하며, 선택 기록이 없으면 기존 설정의 boolean 값을 사용한다. 모드 없이 저장된
+이전 boolean 설정도 `remember`로 유지한다. 생성 창에서 직접 바꾼 체크박스는 해당 세션에
+우선 적용하며 설정의 고정 ON/OFF를 덮어쓰지 않는다.
+
+기존 저장 세션의 권한, 실행 중인 CLI와 사용자 프로필은 자동 변경하지 않는다. 부모의 권한도
+복사하지 않는다. 이 기본 정책 변경은 승인·질문에 답을 보내거나 대기 중인 승인을 처리하지 않는다.
+원격 대시보드 `/api/session/create`도 권한 필드가 생략되면 coordinator의 기본값을 사용한다.
+명시적 boolean은 보존하고 잘못된 자료형은 거부한다. 원격 생성 창은 브라우저의 기억값이
+없으면 ON이며, 브라우저별 명시적 OFF 선택과 체크 해제를 유지한다.
+
+검증은 `output/dangerous-defaults/`에 기록한다. `electron:new-session-smoke`는 실제 생성 창의
+기본 ON·체크 해제·고정 ON/OFF·remember와 재로딩을 확인한다.
+`node app/scripts/electron-workspace-mcp-smoke.mjs --dangerous-defaults`는 숨김 실제 main/App과
+임시 프로필·모의 CLI에서 프로젝트 첫 세션·추가 API 세션·작업 세션 factory payload의
+저장값과 실제 실행 인수를 확인한다. 작업 payload는 fixture가 직접 전달하며, 전체 작업 실행·모델
+검증·결과 회수의 실서비스 검사를 대체하지 않는다. 기존 OFF 세션·CLI·포커스 보존도 검사한다.
 
 ## 한글 원문 전송·수신 API (2026-10-27, 1.8.1.96)
 

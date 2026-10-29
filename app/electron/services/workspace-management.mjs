@@ -32,7 +32,9 @@ export class WorkspaceManagement {
     if (!this.isActive(ownerId) || caller?.projectId !== projectId || caller.aiToolId !== 'codex'
       || !snapshot.projects.some(p => p.id === projectId && p.local)
       || !snapshot.availableTools.some(t => t.id === 'codex') || snapshot.sessions.some(s => s.id === id)) throw fail('전용 작업 세션을 생성할 수 없습니다.', 409);
-    return this.create({ id, projectId, name, aiToolId: 'codex', dangerous: false, workspaceManaged: true, modelSettings,
+    // Leave permission selection to the coordinator's shared new-session policy.
+    // Do not copy the owner's stored or running permission policy.
+    return this.create({ id, projectId, name, aiToolId: 'codex', workspaceManaged: true, modelSettings,
       sessionHierarchy: { createdById: ownerId, parentId: ownerId, inheritFolder: false, folderOverride: folder, inheritInstructions: true, inheritModel: false } });
   }
   handle({ action, body = {}, agentId }) {
@@ -107,7 +109,7 @@ export class WorkspaceManagement {
     if (!this.snapshot().availableTools.some(t => t.id === aiToolId) || aiToolId === 'none') throw fail('사용 가능한 AI 도구를 선택하세요.', 409);
     // Retain an uncertain/failed acknowledgement too: retrying a timeout must
     // not silently create a second session. The list operation can reconcile it.
-    const promise = Promise.resolve().then(() => this.create({ projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, dangerous: false, workspaceManaged: true, start: body.start !== false,
+    const promise = Promise.resolve().then(() => this.create({ projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, workspaceManaged: true, start: body.start !== false,
       sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: parent.aiToolId === aiToolId } : {}), ...(folder ? { inheritFolder: false, folderOverride: folder } : {}) },
     }))
       .then(result => ({ created: true, projectId, sessionId: result.id, active: this.isActive(result.id), ...(result.startError ? { startError: result.startError } : {}) }));

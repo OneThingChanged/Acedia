@@ -17,10 +17,11 @@ export type AgentDefaults = {
 export function normalizeAgentDefaults(toolId: string, raw: unknown): AgentDefaults {
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const codex = toolId === "codex";
-  // Legacy settings keep remembering the last creation choice until a fixed
-  // default is explicitly selected. Unsupported tools can never enable it.
+  // Unconfigured supported tools start ON. Preserve explicit modes and legacy
+  // boolean preferences; only new creations consume these defaults.
   const dangerousDefaultMode: DangerousDefaultMode = !toolForId(toolId).dangerousFlag ? "off"
-    : value.dangerousDefaultMode === "on" || value.dangerousDefaultMode === "off" ? value.dangerousDefaultMode : "remember";
+    : value.dangerousDefaultMode === "on" || value.dangerousDefaultMode === "off" || value.dangerousDefaultMode === "remember" ? value.dangerousDefaultMode
+    : typeof value.dangerous === "boolean" ? "remember" : "on";
   return {
     launchOptions: toolForId(toolId).command ? normalizeLaunchOptions(value.launchOptions) : undefined,
     dangerous: dangerousDefaultMode === "on" || (dangerousDefaultMode === "remember" && value.dangerous === true),

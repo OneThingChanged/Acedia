@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutOfficeSeats, officeAvatar, officeRooms, officeState, officeTeamKey, officeRoles } from './pixelOffice';
+import { layoutOfficeSeats, layoutOfficeScene, fitOfficeViewport, zoomOfficeViewport, constrainOfficeViewport, officeWorldPoint, officeAvatar, officeRooms, officeState, officeTeamKey, officeRoles } from './pixelOffice';
 import { AGENT_ACTIVITY_STALE_AFTER_MS } from './agentActivity';
 import type { Agent, Project } from '../types';
 
@@ -103,5 +103,46 @@ describe('Pixel Office host projection', () => {
   it.each([240, 320, 480, 950])('keeps every page hit target inside the %i px scene', width => {
     const layout = layoutOfficeSeats(Array.from({ length: 24 }, (_, n) => agent(String(n))), width);
     expect(layout.seats.every(seat => seat.x >= 0 && seat.x + 124 <= width && seat.y + 139 < layout.height)).toBe(true);
+  });
+});
+
+describe('shared office geometry', () => {
+  const catalog = Array.from({ length: 16 }, (_, n) => ({ ...projects[0], id: `p${n}`, name: `Department ${n}`, folder: `C:/office/${n}` }));
+  const employees = catalog.flatMap((project, n) => Array.from({ length: 8 }, (_, m) => agent(`${n}-${m}`, { projectId: project.id, createdAt: m, ...(m ? { sessionHierarchy: { parentId: `${n}-${m === 1 ? 0 : 1}` } } : {}) })));
+  it('packs 16 departments and 128 employees without overlapping regions or lost sessions', () => {
+    const scene = layoutOfficeScene(officeRooms(employees, catalog));
+    expect(scene.seats).toHaveLength(128); expect(new Set(scene.seats.map(s => s.agent.id)).size).toBe(128);
+    expect(scene.departments).toHaveLength(16);
+    for (const d of scene.departments) {
+      const seats = scene.seats.filter(s => s.agent.projectId === d.room.project.id);
+      expect(seats.every(s => s.x >= d.x && s.x + 124 <= d.x + d.width && s.y >= d.y + 64 && s.y + 154 <= d.y + d.height)).toBe(true);
+      expect(seats.find(s => s.role === 'lead')!.y).toBeLessThan(seats.find(s => s.role === 'manager')!.y);
+      expect(seats.find(s => s.role === 'manager')!.y).toBeLessThan(seats.find(s => s.role === 'member')!.y);
+      for (const other of scene.departments) if (other !== d) expect(d.x + d.width <= other.x || other.x + other.width <= d.x || d.y + d.height <= other.y || other.y + other.height <= d.y).toBe(true);
+    }
+  });
+  it.each([[1300, 650], [980, 600], [340, 350]])('fits every department into a %ix%i viewport with a single invertible transform', (width, height) => {
+    const scene = layoutOfficeScene(officeRooms(employees, catalog)), view = fitOfficeViewport(scene, width, height);
+    expect(view.x).toBeGreaterThanOrEqual(0); expect(view.y).toBeGreaterThanOrEqual(0);
+    expect(view.x + scene.width * view.zoom).toBeLessThanOrEqual(width);
+    expect(view.y + scene.height * view.zoom).toBeLessThanOrEqual(height);
+    const point = officeWorldPoint(view, view.x + scene.seats[77].x * view.zoom, view.y + scene.seats[77].y * view.zoom);
+    expect(point.x).toBeCloseTo(scene.seats[77].x); expect(point.y).toBeCloseTo(scene.seats[77].y);
+    const zoomed = zoomOfficeViewport(scene, view, 1, width / 2, height / 2);
+    const beforeAnchor = officeWorldPoint(view, width / 2, height / 2), afterAnchor = officeWorldPoint(zoomed, width / 2, height / 2);
+    expect(afterAnchor.x).toBeCloseTo(beforeAnchor.x); expect(afterAnchor.y).toBeCloseTo(beforeAnchor.y);
+    const panned = constrainOfficeViewport(scene, { ...zoomed, x: 1e9, y: -1e9 });
+    expect(panned.x).toBeLessThan(width); expect(panned.y + scene.height * panned.zoom).toBeGreaterThan(0);
+  });
+  it('keeps world geometry stable across activity updates and viewport sizes', () => {
+    const positions = (source: Agent[]) => layoutOfficeScene(officeRooms(source, catalog)).seats.map(({ agent: a, x, y, role }) => ({ id: a.id, x, y, role }));
+    expect(positions(employees.map(a => ({ ...a, activity: activity('working') })))).toEqual(positions(employees));
+  });
+  it('fits a very large department without a minimum zoom that crops employees', () => {
+    const scene = layoutOfficeScene(officeRooms(Array.from({ length: 1500 }, (_, n) => agent(`large-${n}`)), projects));
+    const view = fitOfficeViewport(scene, 340, 400);
+    expect(view.zoom).toBeLessThan(.01); expect(view.zoom).toBeGreaterThan(0);
+    expect(view.y + scene.height * view.zoom).toBeLessThanOrEqual(400);
+    expect(scene.seats).toHaveLength(1500);
   });
 });

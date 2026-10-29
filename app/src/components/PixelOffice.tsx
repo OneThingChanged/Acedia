@@ -3,7 +3,7 @@ import type { Agent, Project } from '../types';
 import { toolForId } from '../types';
 import { useAppLanguage } from '../lib/appLanguage';
 import { resolveSessionSettings } from '../lib/sessionHierarchy';
-import { layoutOfficeSeats, officeRooms, officeState, OFFICE_COLORS, OFFICE_PAGE_SIZE, OFFICE_ROLE_COLORS, type OfficeState, type OfficeRole, type OfficeRoomData } from '../lib/pixelOffice';
+import { layoutOfficeScene, fitOfficeViewport, constrainOfficeViewport, zoomOfficeViewport, officeRooms, officeState, OFFICE_COLORS, OFFICE_ROLE_COLORS, type OfficeState, type OfficeRole, type OfficeRoomData, type OfficeViewport } from '../lib/pixelOffice';
 import { drawOffice, loadOfficeAssets, officeBackground, OFFICE_ASSETS } from '../lib/pixelOfficeRenderer';
 import { ProviderLogo } from './ProviderLogo';
 import './PixelOffice.css';
@@ -32,26 +32,45 @@ function StateLabel({ agent }: { agent: Agent }) {
   return <span className="po-status" style={{ '--po-state': OFFICE_COLORS[state] } as CSSProperties}><i/>{text(...labels[state])}</span>;
 }
 
-function OfficeRoom({ room, selectedId, onSelect }: { room: OfficeRoomData; selectedId: string | null; onSelect: (id: string) => void }) {
+function SharedOffice({ rooms, selectedId, onSelect }: { rooms: OfficeRoomData[]; selectedId: string | null; onSelect: (id: string) => void }) {
   const { text } = useAppLanguage();
-  const { project, sessions: agents, roles } = room;
-  const stage = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null);
-  const [width, setWidth] = useState(400), [page, setPage] = useState(0), [missingAssets, setMissingAssets] = useState(false);
-  const pages = Math.ceil(agents.length / OFFICE_PAGE_SIZE), currentPage = Math.min(page, pages - 1);
-  const members = agents.slice(currentPage * OFFICE_PAGE_SIZE, (currentPage + 1) * OFFICE_PAGE_SIZE);
-  const layout = useMemo(() => layoutOfficeSeats(members, width, roles), [width, members.map(a => `${a.id}:${a.sessionHierarchy?.parentId || ''}:${roles.get(a.id)?.role}`).join('|')]);
-  const latest = useRef(members); latest.current = members;
-  // Observe the room, not each character. Far-away rooms have no animation timer.
+  const viewport = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState({ width: 800, height: 600 }), [customView, setCustomView] = useState<OfficeViewport | null>(null);
+  const [missingAssets, setMissingAssets] = useState(false);
+  const geometryKey = rooms.map(room => `${room.teamKey}:${room.sessions.map(a => `${a.id}/${a.sessionHierarchy?.parentId || ''}/${room.roles.get(a.id)?.role}`).join(',')}`).join('|');
+  const scene = useMemo(() => layoutOfficeScene(rooms), [geometryKey]);
+  const view = useMemo(() => customView ? constrainOfficeViewport(scene, { ...customView, ...size, x: customView.x + (size.width - customView.width) / 2, y: customView.y + (size.height - customView.height) / 2 }) : fitOfficeViewport(scene, size.width, size.height), [scene, size, customView]);
+  const viewRef = useRef(view); viewRef.current = view;
+  const metadata = useMemo(() => {
+    const agents = new Map<string, Agent>(), byId = new Map<string, { room: OfficeRoomData; ordinal: number }>(), byTeam = new Map<string, OfficeRoomData>();
+    for (const room of rooms) {
+      byTeam.set(room.teamKey, room);
+      const names = new Map<string, Agent[]>();
+      for (const agent of room.allSessions) { agents.set(agent.id, agent); const peers = names.get(agent.name) || []; peers.push(agent); names.set(agent.name, peers); }
+      for (const peers of names.values()) peers.forEach((agent, index) => byId.set(agent.id, { room, ordinal: peers.length > 1 ? index + 1 : 0 }));
+    }
+    return { agents, byId, byTeam };
+  }, [rooms]);
+  const latest = useRef(metadata.agents); latest.current = metadata.agents;
+  useEffect(() => setCustomView(null), [scene]);
   useEffect(() => {
-    const node = stage.current; if (!node) return;
-    const resize = () => setWidth(Math.max(220, Math.floor(node.clientWidth)));
+    const node = viewport.current; if (!node) return;
+    const resize = () => { const width = Math.max(1, Math.floor(node.clientWidth)), height = Math.max(1, Math.floor(node.clientHeight)); setSize(previous => previous.width === width && previous.height === height ? previous : { width, height }); };
     resize(); const observer = new ResizeObserver(resize); observer.observe(node);
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    const node = stage.current, target = canvas.current;
-    if (!node || !target) return;
-    let disposed = false, visible = false, timer: number | undefined, repaint: (() => void) | undefined;
+    const node = viewport.current; if (!node) return;
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault(); const rect = node.getBoundingClientRect(), current = viewRef.current;
+      setCustomView(zoomOfficeViewport(scene, current, current.zoom * Math.exp(-event.deltaY * .002), event.clientX - rect.left, event.clientY - rect.top));
+    };
+    node.addEventListener('wheel', wheel, { passive: false });
+    return () => node.removeEventListener('wheel', wheel);
+  }, [scene]);
+  useEffect(() => {
+    const node = viewport.current, target = canvas.current; if (!node || !target) return;
+    let disposed = false, visible = false, timer: number | undefined;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     let animate = () => {};
     const stop = () => { if (timer !== undefined) window.clearTimeout(timer); timer = undefined; };
@@ -61,47 +80,61 @@ function OfficeRoom({ room, selectedId, onSelect }: { room: OfficeRoomData; sele
     void loadOfficeAssets().then(images => {
       if (disposed) return;
       setMissingAssets(images.size !== Object.keys(OFFICE_ASSETS).length);
-      const background = officeBackground(width, layout.height, layout.seats, images), context = target.getContext('2d');
-      if (!context) return;
+      const background = officeBackground(scene, images, view), context = target.getContext('2d'); if (!context) return;
       const scale = Math.min(2, window.devicePixelRatio || 1);
-      target.width = Math.round(width * scale); target.height = Math.round(layout.height * scale);
-      context.setTransform(scale, 0, 0, scale, 0, 0);
+      target.width = Math.round(view.width * scale); target.height = Math.round(view.height * scale); context.setTransform(scale, 0, 0, scale, 0, 0);
       const started = performance.now();
-      repaint = () => {
-        const byId = new Map(latest.current.map(agent => [agent.id, agent]));
-        drawOffice(context, background, images, layout.seats.map(seat => ({ ...seat, agent: byId.get(seat.agent.id) || seat.agent })), performance.now() - started, reduced.matches);
-      };
       animate = () => {
-        repaint?.();
-        // Four frames/second is sufficient for two-frame pixel animations.
-        // Reduced motion still receives host-state/staleness updates, once/sec.
+        drawOffice(context, background, images, scene.seats.map(seat => ({ ...seat, agent: latest.current.get(seat.agent.id) || seat.agent })), performance.now() - started, reduced.matches, view);
+        // Four frames/second; reduced motion keeps fresh host-state poses at 1Hz.
         timer = window.setTimeout(() => { if (!disposed && visible && !document.hidden) animate(); }, reduced.matches ? 1000 : 250);
       };
       resume();
     });
     return () => { disposed = true; stop(); observer.disconnect(); document.removeEventListener('visibilitychange', resume); reduced.removeEventListener('change', resume); };
-  }, [width, layout]);
-  const lookup = new Map(room.allSessions.map(agent => [agent.id, agent]));
-  const leaders = [...roles.values()].filter(info => info.role === 'lead').length;
-  const managers = [...roles.values()].filter(info => info.role === 'manager').length;
-  return <article className="po-room" data-office-project={project.id} data-office-team={room.teamKey}>
-    <header><div><span className="po-room-light"/><strong title={project.remoteFolder || project.folder}>{project.name} <em>{text('팀', 'team')}</em></strong></div><span className="po-team-count">{room.active} {text('활성', 'active')} / {room.total}<small>{text('팀장', 'Leads')} {leaders}{managers ? ` · ${text('중간 관리자', 'Managers')} ${managers}` : ''}</small></span></header>
-    <div className="po-room-stage" ref={stage} style={{ height: layout.height }}>
+  }, [scene, view]);
+  const drag = useRef<{ id: number; x: number; y: number; view: OfficeViewport } | null>(null);
+  const zoom = (amount: number) => setCustomView(zoomOfficeViewport(scene, view, amount));
+  const focusRegion = (region: { x: number; y: number; width: number; height: number }, keepZoom = false) => {
+    const scale = Math.min(1, (size.width - 32) / region.width, (size.height - 32) / region.height);
+    const zoom = Math.max(fitOfficeViewport(scene, size.width, size.height).zoom, keepZoom ? Math.max(view.zoom, scale) : scale);
+    setCustomView(constrainOfficeViewport(scene, { ...size, zoom, x: size.width / 2 - (region.x + region.width / 2) * zoom, y: size.height / 2 - (region.y + region.height / 2) * zoom }));
+  };
+  return <div className="po-office-map">
+    <div className="po-map-tools"><span>{rooms.length} {text('부서', 'departments')} · {scene.seats.length} {text('직원', 'employees')}</span><div>
+      <button data-office-fit onClick={() => setCustomView(null)}>{text('전체 보기', 'Fit office')}</button><button aria-label={text('축소', 'Zoom out')} onClick={() => zoom(view.zoom / 1.3)}>−</button><output aria-label={text('확대 비율', 'Office zoom')}>{Math.round(view.zoom * 100)}%</output><button aria-label={text('확대', 'Zoom in')} onClick={() => zoom(view.zoom * 1.3)}>+</button><button data-office-readable onClick={() => zoom(1)}>100%</button>
+    </div></div>
+    <nav className="po-departments" aria-label={text('프로젝트 부서 이동', 'Project department navigation')}>{scene.departments.map(department => {
+      const room = metadata.byTeam.get(department.room.teamKey)!;
+      return <button key={room.teamKey} onClick={() => focusRegion(department)} style={{ '--po-department': department.color } as CSSProperties} title={room.project.remoteFolder || room.project.folder}>{room.project.name}<small>{room.sessions.length}</small></button>;
+    })}</nav>
+    <div className="po-map-viewport" ref={viewport} tabIndex={0} role="region" aria-label={text('공유 사무실 · 드래그 이동, 휠 확대, 화살표 이동, 0 전체 보기', 'Shared office · drag to pan, wheel to zoom, arrow keys to pan, 0 to fit')}
+      data-office-zoom={view.zoom} data-office-x={view.x} data-office-y={view.y} data-office-world-width={scene.width} data-office-world-height={scene.height}
+      onPointerDown={event => { if (event.button !== 0 && event.button !== 1 || event.button === 0 && (event.target as HTMLElement).closest('button')) return; event.preventDefault(); viewport.current?.focus(); drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, view }; event.currentTarget.setPointerCapture(event.pointerId); }}
+      onPointerMove={event => { const start = drag.current; if (!start || start.id !== event.pointerId) return; setCustomView(constrainOfficeViewport(scene, { ...start.view, x: start.view.x + event.clientX - start.x, y: start.view.y + event.clientY - start.y })); }}
+      onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
+      onKeyDown={event => { if (event.target !== event.currentTarget) return; const delta: Record<string, [number, number]> = { ArrowLeft: [70, 0], ArrowRight: [-70, 0], ArrowUp: [0, 70], ArrowDown: [0, -70] }; if (delta[event.key]) { event.preventDefault(); const [x, y] = delta[event.key]; setCustomView(constrainOfficeViewport(scene, { ...view, x: view.x + x, y: view.y + y })); } else if (event.key === '0') setCustomView(null); else if (event.key === '+' || event.key === '=') zoom(view.zoom * 1.3); else if (event.key === '-') zoom(view.zoom / 1.3); }}>
       <canvas ref={canvas} aria-hidden="true"/>
-      {layout.seats.map(seat => {
-        const agent = lookup.get(seat.agent.id) || seat.agent, state = officeState(agent), parent = agent.sessionHierarchy?.parentId && lookup.get(agent.sessionHierarchy.parentId);
-        const namesakes = room.allSessions.filter(a => a.name === agent.name), ordinal = namesakes.length > 1 ? namesakes.findIndex(a => a.id === agent.id) + 1 : 0;
-        return <button key={agent.id} className={`po-seat${selectedId === agent.id ? ' selected' : ''}`} data-office-agent={agent.id} data-office-state={state} data-office-role={seat.role} aria-pressed={selectedId === agent.id}
-          aria-label={`${agent.name}${ordinal ? ` #${ordinal}` : ''} · ${text(...roleLabels[seat.role])} · ${text(...labels[state])}`} title={`${agent.name}\n${text(...roleLabels[seat.role])}${roles.get(agent.id)?.reports ? ` · ${roles.get(agent.id)!.reports} ${text('직속 직원', 'direct reports')}` : ''}\n${parent ? `${text('상위', 'Parent')}: ${parent.name}\n` : ''}${text(...labels[state])}`}
-          onClick={() => onSelect(agent.id)} style={{ left: seat.x, top: seat.y, '--po-state': OFFICE_COLORS[state] } as CSSProperties}>
-          <RoleBadge role={seat.role}/><span className="po-seat-name"><ProviderLogo toolId={agent.aiToolId}/><strong>{agent.name}{ordinal ? ` #${ordinal}` : ''}</strong></span><StateLabel agent={agent}/>
-          {parent && <small className="po-seat-parent">↳ {parent.name}</small>}
-        </button>;
-      })}
+      <div className="po-world" style={{ width: scene.width, height: scene.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
+        {scene.departments.map(department => {
+          const room = metadata.byTeam.get(department.room.teamKey)!;
+          return <div key={room.teamKey} className="po-department-label" data-office-project={room.project.id} data-office-team={room.teamKey} style={{ left: department.x + 12, top: department.y + 12, width: department.width - 60, color: department.color, fontSize: Math.min(view.zoom < .45 ? 42 : 28, 13 / view.zoom) }}><strong>{room.project.name}</strong>{view.zoom >= .45 && <small>{room.active} {text('활성', 'active')} / {room.total}</small>}</div>;
+        })}
+        {scene.seats.map(seat => {
+          const agent = latest.current.get(seat.agent.id) || seat.agent, { room, ordinal } = metadata.byId.get(seat.agent.id)!;
+          const state = officeState(agent), parent = seat.parentId ? latest.current.get(seat.parentId) : undefined;
+          return <button key={agent.id} className={`po-seat${selectedId === agent.id ? ' selected' : ''}`} data-office-agent={agent.id} data-office-state={state} data-office-role={seat.role} aria-pressed={selectedId === agent.id}
+            aria-label={`${agent.name}${ordinal ? ` #${ordinal}` : ''} · ${room.project.name} · ${text(...roleLabels[seat.role])} · ${text(...labels[state])}`} title={`${agent.name}\n${text(...roleLabels[seat.role])}${room.roles.get(agent.id)?.reports ? ` · ${room.roles.get(agent.id)!.reports} ${text('직속 직원', 'direct reports')}` : ''}\n${parent ? `${text('상위', 'Parent')}: ${parent.name}\n` : ''}${text(...labels[state])}`}
+            onClick={() => onSelect(agent.id)} onFocus={() => { const x = view.x + seat.x * view.zoom, y = view.y + seat.y * view.zoom; if (x < 0 || y < 0 || x + 124 * view.zoom > view.width || y + 154 * view.zoom > view.height) focusRegion({ ...seat, width: 124, height: 154 }, true); }} style={{ left: seat.x, top: seat.y, '--po-state': OFFICE_COLORS[state] } as CSSProperties}>
+            <RoleBadge role={seat.role}/><span className="po-seat-name"><ProviderLogo toolId={agent.aiToolId}/><strong>{agent.name}{ordinal ? ` #${ordinal}` : ''}</strong></span><StateLabel agent={agent}/>{parent && <small className="po-seat-parent">↳ {parent.name}</small>}
+          </button>;
+        })}
+      </div>
+      {!rooms.length && <div className="po-empty"><PixelOfficeIcon/><h3>{text('표시할 세션이 없습니다', 'No sessions to display')}</h3><p>{text('프로젝트·검색·활성 팀 필터를 확인해 주세요.', 'Check the project, search and active teams filter.')}</p></div>}
     </div>
-    {pages > 1 && <nav className="po-pages" aria-label={text('사무실 세션 페이지', 'Office session pages')}><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>←</button><span>{currentPage + 1} / {pages} · {agents.length} {text('세션', 'sessions')}</span><button disabled={currentPage + 1 === pages} onClick={() => setPage(currentPage + 1)}>→</button></nav>}
+    <div className="po-map-hint">{text('한 사무실 · 부서명을 눌러 이동 · 드래그 이동 · 휠 확대', 'One shared office · choose a department · drag to pan · wheel to zoom')}</div>
     {missingAssets && <p className="po-asset-error" role="status">{text('일부 사무실 이미지를 불러오지 못했습니다. 세션 상태는 계속 표시합니다.', 'Some office images are unavailable. Session status remains visible.')}</p>}
-  </article>;
+  </div>;
 }
 
 export function PixelOffice({ agents, projects, activeProjectId, mode = 'board', selectedId: selectedProp, onSelect, onOpenSession, onOpenNote, onBack, onDock, onExpand, onClose }: Props) {
@@ -135,10 +168,7 @@ export function PixelOffice({ agents, projects, activeProjectId, mode = 'board',
     <div className="po-toolbar"><select aria-label={text('Office 프로젝트', 'Office project')} value={scope === 'follow' || scope === 'all' ? scope : teamOptions.find(room => room.projectIds.includes(scope))?.project.id || scope} onChange={e => setScope(e.target.value)}>
       {mode === 'sidebar' && <option value="follow">{text('현재 프로젝트 따라가기', 'Follow current project')}</option>}<option value="all">{text('전체 팀', 'All teams')}</option>{teamOptions.map(({ project: p }) => <option value={p.id} key={p.id}>{p.name}</option>)}
     </select><input aria-label={text('Office 세션 검색', 'Search Office sessions')} placeholder={text('세션·프로젝트 찾기', 'Find a session or project')} value={query} onChange={e => setQuery(e.target.value)}/><label><input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}/>{text('활성 팀', 'Active teams')}</label></div>
-    <div className="po-body"><div className="po-rooms">
-      {rooms.map(room => <OfficeRoom key={room.teamKey} room={room} selectedId={selectedId || null} onSelect={choose}/>)}
-      {!rooms.length && <div className="po-empty"><PixelOfficeIcon/><h3>{text('표시할 세션이 없습니다', 'No sessions to display')}</h3><p>{text('프로젝트·검색·활성 팀 필터를 확인해 주세요.', 'Check the project, search and active teams filter.')}</p></div>}
-    </div>{selected && inspectorOpen && <aside className="po-inspector" aria-label={text('Office 세션 정보', 'Office session info')}>
+    <div className="po-body"><SharedOffice rooms={rooms} selectedId={selectedId || null} onSelect={choose}/>{selected && inspectorOpen && <aside className="po-inspector" aria-label={text('Office 세션 정보', 'Office session info')}>
       <div className="po-inspector-title"><ProviderLogo toolId={selected.aiToolId}/><strong>{selected.name}</strong><button className="po-inspector-close" aria-label={text('세션 정보 접기', 'Collapse session info')} onClick={() => setInspectorOpen(false)}>×</button><StateLabel agent={selected}/></div>
       <p>{projects.find(p => p.id === selected.projectId)?.name} · {toolForId(selected.aiToolId).label}</p>
       {selectedRole && <div className="po-role-info"><RoleBadge role={selectedRole.role}/>{selectedRole.reports > 0 && <span>{text('직속 직원', 'Direct reports')} {selectedRole.reports}</span>}</div>}

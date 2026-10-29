@@ -586,6 +586,11 @@ function remoteCreateSessionPayload(snapshot, body) {
     error.statusCode = 400;
     throw error;
   }
+  if (Object.hasOwn(body, "dangerous") && typeof body.dangerous !== "boolean") {
+    const error = new Error("dangerous must be a boolean");
+    error.statusCode = 400;
+    throw error;
+  }
   const codexPoolAccountId = body?.codexPoolAccountId || undefined;
   if (codexPoolAccountId && (aiToolId !== "codex" || typeof codexPoolAccountId !== "string"
     || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(codexPoolAccountId))) {
@@ -597,7 +602,10 @@ function remoteCreateSessionPayload(snapshot, body) {
     projectId,
     name: remoteSessionName(body?.name),
     aiToolId,
-    dangerous: tool.supportsDangerous && body?.dangerous === true,
+    // Omission follows the coordinator's new-session policy; an explicit
+    // checkbox choice is preserved. Unsupported tools always remain OFF.
+    ...(!tool.supportsDangerous ? { dangerous: false }
+      : typeof body?.dangerous === "boolean" ? { dangerous: body.dangerous } : {}),
     ...(codexPoolAccountId ? { codexPoolAccountId } : {}),
   };
 }

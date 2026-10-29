@@ -4,7 +4,6 @@ import { NewAgentModal } from "../../src/components/NewAgentModal";
 import { NewProjectModal } from "../../src/components/NewProjectModal";
 import { AgentsSettings } from "../../src/components/AgentsSettings";
 import { AppLanguageProvider } from "../../src/lib/appLanguage";
-import { AGENT_DEFAULTS_KEY, saveAgentDefaults } from "../../src/lib/agentDefaults";
 import { saveSshHosts } from "../../src/lib/sshHosts";
 import "../../src/App.css";
 
@@ -30,7 +29,6 @@ window.multiAgentElectron = {
   showOpenDialog: async () => "C:/fixture/browsed-project",
 };
 localStorage.setItem("multiagent.appLanguage.v1", "ko");
-if (!localStorage.getItem(AGENT_DEFAULTS_KEY)) saveAgentDefaults("codex", { dangerous: true });
 saveSshHosts([{ id: "fixture-ssh", label: "Fixture server", host: "fixture.invalid", user: "fixture", port: 22 }]);
 
 function Harness() {

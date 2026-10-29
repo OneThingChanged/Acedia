@@ -12,13 +12,14 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const trustOnly = process.argv.includes('--folder-trust') || process.env.ACEDIA_WORKSPACE_AUTO_TRUST_FIXTURE === '1';
 const organizationOnly = process.argv.includes('--organization') || process.env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE === '1';
 const messagesOnly = process.argv.includes('--messages') || process.env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE === '1';
+const dangerousOnly = process.argv.includes('--dangerous-defaults') || process.env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE === '1';
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.on('browser-window-created', (_event, win) => win.on('show', () => win.hide()));
   void (async () => {
   const root = process.env.ACEDIA_WORKSPACE_MCP_FIXTURE;
   assert.ok(root && path.basename(root).startsWith('acedia-workspace-mcp-smoke-'));
-  const timeout = setTimeout(() => { console.error('Workspace MCP smoke timeout'); app.exit(1); }, 60000);
+  const timeout = setTimeout(() => { console.error('Workspace MCP smoke timeout'); app.exit(1); }, dangerousOnly ? 120000 : 60000);
   let window;
   try {
     await import('../electron/main.mjs');
@@ -73,6 +74,11 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
       const data = await response.json(); assert.equal(response.status, 200, JSON.stringify(data)); return data;
     };
     for (let i = 0; i < 100; i++) { if ((await call('/projects')).availableTools.some(t => t.id === 'codex')) break; await wait(100); }
+    if (dangerousOnly) {
+      const { exerciseDangerousDefaults } = await import('./fixtures/dangerous-defaults-workspace.mjs');
+      await exerciseDangerousDefaults({ root, window, invoke, call, executable, wait });
+      clearTimeout(timeout); app.quit(); return;
+    }
     const projectFolder = path.join(root, 'PixelDev'); fs.mkdirSync(projectFolder);
     const first = await call('/projects', { folder: projectFolder, name: 'PixelDev', aiToolId: 'codex' });
     console.log('WORKSPACE_FIXTURE_PROJECT_CREATED');
@@ -341,16 +347,21 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
     ACEDIA_WORKSPACE_AUTO_TRUST_FIXTURE: trustOnly ? '1' : '0' };
   env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE = organizationOnly ? '1' : '0';
   env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE = messagesOnly ? '1' : '0';
+  env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE = dangerousOnly ? '1' : '0';
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { env, cwd: appRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', chunk => { output = (output + chunk).slice(-16000); });
     child.stderr.on('data', chunk => { output = (output + chunk).slice(-16000); });
-    const timer = setTimeout(() => child.kill(), 75000);
+    const timer = setTimeout(() => child.kill(), dangerousOnly ? 135000 : 75000);
     const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); }).finally(() => clearTimeout(timer));
     assert.equal(code, 0, output);
-    if (messagesOnly) {
+    if (dangerousOnly) {
+      for (const label of ['unset=true', 'on=true', 'off=false', 'remember-off=false', 'remember-on=true', 'legacy-off=false']) assert.ok(output.includes('DANGEROUS_DEFAULT_MAIN_RENDERER_PROJECT_API_TASK_OK ' + label), output);
+      assert.ok(output.includes('DANGEROUS_DEFAULT_UNSUPPORTED_OFF_EXISTING_SESSION_CLI_AND_FOCUS_UNCHANGED_OK'), output);
+      console.log(output.split('\n').filter(line => line.startsWith('DANGEROUS_DEFAULT_')).join('\n'));
+    } else if (messagesOnly) {
       const marker = 'ACEDIA_SESSION_MESSAGES_MAIN_PROCESS_UTF8_READ_REPLY_DURABLE_NO_FOCUS_OK';
       assert.ok(output.includes(marker), output); console.log(marker);
     } else if (organizationOnly) {

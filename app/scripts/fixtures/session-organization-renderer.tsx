@@ -19,6 +19,24 @@ if (!localStorage.getItem("organization-fixture-seeded")) {
   store("multiagent.agentDefaults.v1", { codex: { dangerous: false } });
   store("multiagent.groups.v1", [{ id: "screen", projectId: "project", layout: { type: "leaf", id: "leaf-root", tabs: ["root"], activeIndex: 0 } }]);
   store("multiagent.view.v1", { activeProjectId: "project", activeGroupId: "screen", activePath: [] });
+  // Opt-in synthetic scale case for the actual-App Pixel Office smoke. The
+  // organization fixture's ordinary four-session catalog remains unchanged.
+  if (new URLSearchParams(location.search).has("shared-office")) {
+    const projects = JSON.parse(localStorage.getItem("multiagent.projects.v1")!);
+    const agents = JSON.parse(localStorage.getItem("multiagent.agents.v1")!);
+    const departmentNames = ["Platform", "Design", "Research", "Rendering", "Audio", "World tools", "Build systems", "Quality", "Networking", "Animation", "Data", "Mobile", "Documentation", "Automation"];
+    departmentNames.forEach((name, n) => {
+      const projectId = `department-${n}`, folder = `C:/fixture/department-${n}`;
+      projects.push({ id: projectId, name, folder, createdAt: n + 10 });
+      for (let m = 0; m < 8; m++) agents.push({ ...base, projectId, folder, createdAt: n * 10 + m + 10, id: `dept-${n}-${m}`, name: `${name} ${m === 0 ? "lead" : m === 1 ? "manager" : `staff ${m - 1}`}`, lastSessionId: `fixture-chat-${n}-${m}`,
+        ...(m ? { sessionHierarchy: { parentId: `dept-${n}-${m === 1 ? 0 : 1}`, ...(m === 2 ? { folderOverride: `${folder}/child` } : {}) } } : {}),
+        ...(m === 6 ? { deferredStart: true, resumeEligible: true } : {}) });
+    });
+    // Duplicate Windows registration and a manager with a sleeping report.
+    projects.push({ id: "project-alias", name: "Duplicate registration", folder: "c:\\FIXTURE\\", createdAt: 99 });
+    agents.push({ ...base, id: "intern", folder: "C:/fixture/child", name: "Sleeping intern", deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: "ui", folderOverride: "C:/fixture/child" } });
+    store("multiagent.projects.v1", projects); store("multiagent.agents.v1", agents);
+  }
 }
 window.organizationCalls = [];
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
