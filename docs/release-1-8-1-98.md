@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.1.98
-status: preparing
+status: published
 last_updated: 2026-10-29
 ---
 
@@ -29,8 +29,21 @@ This Standard EXE reuses the existing signed Android **1.8.1.39/code 21** artifa
 - 큰 Project Board의 전체 117세션 보기, 이미지 캐시·4fps·모션 감소·숨김 정지·해제 시 정리도 통과했다. 실제 사용자 프로필·세션·창 포커스를 사용하지 않았다.
 - 신규 세션 UI 18개 배치·조직도·세션 사용량·터미널 링크·native PTY 검사를 통과했다. 원격 PWA와 로컬 Dashboard는 각각 1280/390px 및 320/360/390/430px 모바일 화면에서도 기존 대화·큐·파일 동작을 통과했다. Office 검증과 합쳐 7개 실행 기록은 `output/exe-release-1.8.1.98/followup-checks-direct.json`에 있다.
 
-빌드·설치 파일·공개 다운로드 결과는 검증 후 아래 게시 기록과 함께 갱신한다.
+- 고정 소스에서 TypeScript·Vite·NSIS 설치 파일·blockmap·EXE manifest를 생성했다. `output/exe-release-1.8.1.98/build-direct.log`.
+- packaged bridge·내장 Git·문서 브라우저 재사용·Dashboard·보안·종료·트레이 검사를 통과했다. 두 실행의 종료 코드는 0이며, 정리 단계의 기존 native helper `AttachConsole failed` 출력은 기능 assertion 실패와 구분했다. `packaged-direct.log`, `lifecycle-direct.log`.
+- FileVersion **1.8.1.98**, ProductVersion **1.8.1**, Authenticode **NotSigned**를 확인했다. 런타임·렌더러 362개와 Pixel Office 자산·라이선스 20개가 고정 소스와 일치한다. `windows-verification.json`, `local-verification.json`.
+- 공개 업데이터에서 **1.8.1.97·1.8.1.96 → 1.8.1.98** 감지를 확인하고 설치 파일 전체를 실제 다운로드했다. 세 자산의 공식 URL·크기·SHA-256·최신 안정 릴리스와 소스 태그를 검증했다. `public-verification-direct.log`.
 
 ## 배포 기록
 
-게시 전이다. Microsoft Store·Company·새 APK 빌드와 사용자 앱의 설치·재시작은 이번 범위에 포함하지 않는다.
+- 공개 게시: **2026-10-29 18:38:16 KST**. [GitHub Release v1.8.1.98](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.1.98).
+- 공개 다운로드 검증 완료: **2026-10-29 18:38:58 KST**.
+- 고정 제품 소스·태그: `d13bfb45885894a93a1e8dc5b9d8deae3a974256`.
+- 기존 서명 검증 APK **1.8.1.39/code 21**을 재사용했다. 새 APK·Store·Company 배포는 실행하지 않았다.
+- 현재 설치된 1.8.1.96 앱과 실제 사용자 세션은 교체·재시작하지 않았다. 설정의 **Check → Update**로 설치형 업데이트를 적용한다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.1.98-x64.exe | 156224223 | `8370dd19525a46f2e4cfe1e20b6e72efdb7f9a8d41e678252dca50e9bb1aed1b` |
+| Acedia-Setup-1.8.1.98-x64.exe.blockmap | 163236 | `b9e45893055a74b098ae9a081aabf3226fd0530df5ff1a0d65a50ef417228530` |
+| latest-exe.json | 256 | `b70409641108000ad8cd7899baf08a48e297c35fcd17f147a2010b936771fe92` |
