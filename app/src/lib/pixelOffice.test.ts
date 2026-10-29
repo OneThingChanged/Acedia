@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { layoutOfficeSeats, layoutOfficeScene, fitOfficeViewport, zoomOfficeViewport, constrainOfficeViewport, officeWorldPoint, officeAvatar, officeRooms, officeState, officeTeamKey, officeRoles } from './pixelOffice';
 import { AGENT_ACTIVITY_STALE_AFTER_MS } from './agentActivity';
 import type { Agent, Project } from '../types';
+import { matchesSidebarFilter } from './sidebarNavigation';
 
 const now = 100000000;
 const agent = (id: string, patch: Partial<Agent> = {}): Agent => ({ id, name: id, aiToolId: 'codex', aiLabel: 'Codex', dangerous: false, projectId: 'p', folder: 'C:/RnDHub', createdAt: 1, status: 'running', ...patch });
@@ -85,6 +86,32 @@ describe('Pixel Office host projection', () => {
     expect(source).toEqual(before);
     source[0].status = 'exited'; source.push(agent('active-child', { sessionHierarchy: { parentId: 'parent' } }));
     expect(officeRooms(source, projects, { activeOnly: true }).flatMap(r => r.sessions.map(a => a.id))).toEqual(['parent', 'active-child']);
+  });
+  it('projects only the left Active predicate and required ancestors without inactive descendants in the dock', () => {
+    const source = [agent('root', { sidebarShowInactiveChildren: true }),
+      agent('sleeping', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'root' } }),
+      agent('stopped', { status: 'exited', sessionHierarchy: { parentId: 'root' } }),
+      agent('unstarted', { deferredStart: true, resumeEligible: false, sessionHierarchy: { parentId: 'root' } }),
+      agent('grand', { status: 'exited' }),
+      agent('middle', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'grand' } }),
+      agent('leaf', { sessionHierarchy: { parentId: 'middle' } }),
+      agent('idle'), agent('done', { activity: activity('done') }), agent('waiting', { status: 'question' }),
+      agent('starting', { status: 'starting', runtimeStatus: 'starting' }),
+      agent('unrelated', { status: 'exited' }), agent('archived', { sidebarArchived: true }),
+      agent('cross', { projectId: 'q', status: 'exited', sessionHierarchy: { parentId: 'root' } })];
+    const before = structuredClone(source);
+    const rooms = officeRooms(source, projects, { activeSessionsOnly: true });
+    const shown = rooms.flatMap(room => room.sessions.map(a => a.id));
+    const active = source.filter(a => !a.sidebarArchived && matchesSidebarFilter(a, 'active')).map(a => a.id);
+    expect(shown.sort()).toEqual([...active, 'grand', 'middle'].sort());
+    expect(new Set(shown).size).toBe(shown.length);
+    expect(rooms[0].active).toBe(active.length);
+    expect(rooms[0].roles.get('grand')?.role).toBe('lead');
+    expect(rooms[0].roles.get('middle')?.role).toBe('manager');
+    expect(source).toEqual(before);
+    expect(officeRooms(source, projects, { activeSessionsOnly: true, query: 'leaf' })[0].sessions.map(a => a.id)).toEqual(['grand', 'middle', 'leaf']);
+    expect(officeRooms(source, projects, { activeSessionsOnly: true, query: 'sleeping' })).toEqual([]);
+    expect(officeRooms(source, projects, { activeSessionsOnly: true, projectId: 'q' })).toEqual([]);
   });
   it('searches metadata and paths and groups by current project without fetching conversation history', () => {
     const source = [agent('SwarmLab', { folder: 'G:\\AI\\RnDHub\\SwarmLab' }), agent('Other', { projectId: 'q' })];

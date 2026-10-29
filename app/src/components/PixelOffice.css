@@ -34,6 +34,7 @@
 .pixel-office .po-toolbar>input { width:210px; }
 .pixel-office .po-toolbar label { display:flex; align-items:center; white-space:nowrap; gap:5px; font-size:11px; color:var(--app-muted,#91a0b1); }
 .pixel-office .po-toolbar input[type=checkbox] { accent-color:#78bda6; }
+.pixel-office .po-active-scope { font-size:11px; color:var(--app-muted,#91a0b1); }
 .pixel-office .po-body { display:flex; flex:1; min-height:0; min-width:0; }
 .pixel-office .po-team-count { text-align:right; }
 .pixel-office .po-team-count small { display:block; font-size:9px; color:#d0c5a5; margin-top:3px; }

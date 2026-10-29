@@ -69,7 +69,7 @@ export function officeRoles(agents: Agent[]): Map<string, OfficeRoleInfo> {
   }));
 }
 
-export function officeRooms(agents: Agent[], projects: Project[], options: { projectId?: string | null; activeOnly?: boolean; query?: string } = {}) {
+export function officeRooms(agents: Agent[], projects: Project[], options: { projectId?: string | null; activeOnly?: boolean; activeSessionsOnly?: boolean; query?: string } = {}) {
   const groups = new Map<string, { project: Project; projectIds: string[] }>();
   const projectGroup = new Map<string, string>();
   for (const project of projects) {
@@ -80,16 +80,24 @@ export function officeRooms(agents: Agent[], projects: Project[], options: { pro
   // Only the view projection merges duplicate registrations. The user's
   // project/session records, inheritance, folders and launch IDs stay intact.
   const catalog = repairSessionHierarchy(agents.filter(a => !a.sidebarArchived && projectGroup.has(a.projectId)).map(a => ({ ...a, projectId: projectGroup.get(a.projectId)! })));
-  const visible = options.activeOnly ? catalog.filter(a => matchesSidebarFilter(a, 'active')) : catalog;
-  const families = sidebarSessionFamilies(visible, catalog, { includeDescendants: !!options.activeOnly });
+  const query = normalizeSessionSearch(options.query || '');
+  const projectById = new Map([...groups.values()].map(group => [group.project.id, group.project]));
+  const matchesQuery = (agent: Agent) => {
+    const project = projectById.get(agent.projectId)!;
+    return !query || matchesSessionSearch(query, agent.name, agent.folder, agent.remoteFolder, project.name, project.folder);
+  };
+  // The dock follows the left Active predicate, adding only required ancestors.
+  // Board "Active teams" retains its existing whole-family projection.
+  const visible = catalog.filter(a => (!(options.activeOnly || options.activeSessionsOnly) || matchesSidebarFilter(a, 'active'))
+    && (!options.activeSessionsOnly || matchesQuery(a)));
+  const families = sidebarSessionFamilies(visible, catalog, { includeDescendants: !!options.activeOnly && !options.activeSessionsOnly });
   const ordered: Agent[] = [];
   const visit = (a: Agent) => { ordered.push(a); [...(families.children.get(a.id) || [])].sort(stableOrder).forEach(visit); };
   [...families.roots].sort(stableOrder).forEach(visit);
-  const query = normalizeSessionSearch(options.query || '');
   return [...groups.values()].filter(group => !options.projectId || group.projectIds.includes(options.projectId)).map(({ project, projectIds }) => {
     const all = catalog.filter(a => a.projectId === project.id), roles = officeRoles(all);
     return { project, projectIds, teamKey: officeTeamKey(project), roles, allSessions: all.map(a => ({ ...originals.get(a.id)!, sessionHierarchy: a.sessionHierarchy })), total: all.length, active: all.filter(a => matchesSidebarFilter(a, 'active')).length,
-      sessions: ordered.filter(a => a.projectId === project.id && (!query || matchesSessionSearch(query, a.name, a.folder, a.remoteFolder, project.name, project.folder)))
+      sessions: ordered.filter(a => a.projectId === project.id && (options.activeSessionsOnly || matchesQuery(a)))
         .map(a => ({ ...originals.get(a.id)!, sessionHierarchy: a.sessionHierarchy })),
     };
   }).filter(room => room.sessions.length > 0);

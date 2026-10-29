@@ -8,10 +8,12 @@ const root = { id: 'root', name: 'Manager', aiToolId: 'codex', projectId: 'p', f
 const sleeping = { ...root, id: 'sleep', name: 'Sleeping child', deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: root.id } };
 
 it('exposes real keyboard-selectable sessions and separate explicit conversation opening in both placements', () => {
+  const parent = { ...root, deferredStart: true, resumeEligible: true };
+  const child = { ...root, id: 'live', name: 'Active child', sessionHierarchy: { parentId: root.id } };
   for (const mode of ['board', 'sidebar'] as const) {
-    const html = renderToStaticMarkup(<PixelOffice mode={mode} agents={[root, sleeping]} projects={projects} activeProjectId="p" selectedId="sleep" onOpenSession={() => {}}/>);
+    const html = renderToStaticMarkup(<PixelOffice mode={mode} agents={[parent, child]} projects={projects} activeProjectId="p" selectedId="live" onOpenSession={() => {}}/>);
     expect(html).toContain(`po-${mode}`);
-    expect(html).toContain('data-office-agent="sleep"');
+    expect(html).toContain('data-office-agent="live"');
     expect(html).toContain('data-office-state="sleeping"');
     expect(html).toContain('data-office-role="lead"');
     expect(html).toContain('data-office-role="member"');
@@ -21,6 +23,21 @@ it('exposes real keyboard-selectable sessions and separate explicit conversation
     expect(html).toContain('Pixel Agents · MIT');
     expect(html).not.toContain('spawn_pty');
   }
+});
+it('restricts the dock to active sessions across projects while preserving the board controls and full catalog', () => {
+  const other = { ...root, id: 'other', projectId: 'q' };
+  const catalog = [...projects, { ...projects[0], id: 'q', name: 'Other', folder: 'C:/Other' }];
+  const agents = [root, sleeping, other];
+  const sidebar = renderToStaticMarkup(<PixelOffice mode="sidebar" agents={agents} projects={catalog} activeProjectId="p" onOpenSession={() => {}}/>);
+  expect(sidebar).toContain('data-office-agent="root"');
+  expect(sidebar).toContain('data-office-agent="other"');
+  expect(sidebar).not.toContain('data-office-agent="sleep"');
+  expect(sidebar).toContain('<option value="all" selected="">');
+  expect(sidebar).toContain('po-active-scope');
+  expect(sidebar).not.toContain('type="checkbox"');
+  const board = renderToStaticMarkup(<PixelOffice agents={agents} projects={catalog} activeProjectId="p" onOpenSession={() => {}}/>);
+  expect(board).toContain('data-office-agent="sleep"');
+  expect(board).toContain('type="checkbox"');
 });
 it('renders duplicate project folders as one team and distinguishes same-name sessions without renaming them', () => {
   const aliases = [...projects, { ...projects[0], id: 'alias', folder: 'c:\\rndhub\\' }];

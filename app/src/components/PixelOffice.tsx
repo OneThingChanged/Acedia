@@ -139,7 +139,7 @@ function SharedOffice({ rooms, selectedId, onSelect }: { rooms: OfficeRoomData[]
 
 export function PixelOffice({ agents, projects, activeProjectId, mode = 'board', selectedId: selectedProp, onSelect, onOpenSession, onOpenNote, onBack, onDock, onExpand, onClose }: Props) {
   const { text } = useAppLanguage();
-  const [scope, setScope] = useState(mode === 'sidebar' ? 'follow' : 'all'), [query, setQuery] = useState(''), [activeOnly, setActiveOnly] = useState(false);
+  const [scope, setScope] = useState('all'), [query, setQuery] = useState(''), [activeOnly, setActiveOnly] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [, setClock] = useState(0);
@@ -151,7 +151,7 @@ export function PixelOffice({ agents, projects, activeProjectId, mode = 'board',
   }, []);
   const projectId = scope === 'follow' ? activeProjectId : scope === 'all' ? null : scope;
   const teamOptions = useMemo(() => officeRooms(agents, projects), [agents, projects]);
-  const rooms = useMemo(() => officeRooms(agents, projects, { projectId, query, activeOnly }), [agents, projects, projectId, query, activeOnly]);
+  const rooms = useMemo(() => officeRooms(agents, projects, { projectId, query, activeOnly, activeSessionsOnly: mode === 'sidebar' }), [agents, projects, projectId, query, activeOnly, mode]);
   const selectedId = selectedProp === undefined ? selection : selectedProp;
   const selected = rooms.flatMap(room => room.sessions).find(a => a.id === selectedId);
   const selectedRoom = rooms.find(room => room.sessions.some(a => a.id === selectedId));
@@ -167,7 +167,9 @@ export function PixelOffice({ agents, projects, activeProjectId, mode = 'board',
     </div></header>
     <div className="po-toolbar"><select aria-label={text('Office 프로젝트', 'Office project')} value={scope === 'follow' || scope === 'all' ? scope : teamOptions.find(room => room.projectIds.includes(scope))?.project.id || scope} onChange={e => setScope(e.target.value)}>
       {mode === 'sidebar' && <option value="follow">{text('현재 프로젝트 따라가기', 'Follow current project')}</option>}<option value="all">{text('전체 팀', 'All teams')}</option>{teamOptions.map(({ project: p }) => <option value={p.id} key={p.id}>{p.name}</option>)}
-    </select><input aria-label={text('Office 세션 검색', 'Search Office sessions')} placeholder={text('세션·프로젝트 찾기', 'Find a session or project')} value={query} onChange={e => setQuery(e.target.value)}/><label><input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}/>{text('활성 팀', 'Active teams')}</label></div>
+    </select><input aria-label={text('Office 세션 검색', 'Search Office sessions')} placeholder={text('세션·프로젝트 찾기', 'Find a session or project')} value={query} onChange={e => setQuery(e.target.value)}/>{mode === 'sidebar'
+      ? <span className="po-active-scope" title={text('왼쪽 Active와 같은 활성 세션 및 필요한 상위 세션만 표시합니다.', 'Shows the same active sessions as the left Active list and their required ancestors.')}>{text('Active · 상위 세션 포함', 'Active · parents included')}</span>
+      : <label><input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)}/>{text('활성 팀', 'Active teams')}</label>}</div>
     <div className="po-body"><SharedOffice rooms={rooms} selectedId={selectedId || null} onSelect={choose}/>{selected && inspectorOpen && <aside className="po-inspector" aria-label={text('Office 세션 정보', 'Office session info')}>
       <div className="po-inspector-title"><ProviderLogo toolId={selected.aiToolId}/><strong>{selected.name}</strong><button className="po-inspector-close" aria-label={text('세션 정보 접기', 'Collapse session info')} onClick={() => setInspectorOpen(false)}>×</button><StateLabel agent={selected}/></div>
       <p>{projects.find(p => p.id === selected.projectId)?.name} · {toolForId(selected.aiToolId).label}</p>
