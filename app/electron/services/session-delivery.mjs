@@ -150,13 +150,17 @@ export class SessionDeliveries {
       const unbound = freshSession && body.expectedConversationId == null && target.conversationId == null;
       if (!unbound && target.conversationId !== body.expectedConversationId) throw fail('Receiving conversation changed; refresh acedia_projects');
       const entry = target.entry, inputAt = entry.lastInputAt;
-      const current = await this.read(body.sessionId) || (freshSession ? this.freshRead(body.sessionId) : null);
-      // Only a host-reserved new task session can use the pre-first-turn path.
-      // The normal HTTP/MCP send contract cannot request it. An empty native
-      // composer and no previous turn remain mandatory, alongside model checks.
-      const firstTurn = freshSession && !current?.turn;
+      const observed = await this.read(body.sessionId);
+      const fresh = freshSession ? this.freshRead(body.sessionId) : null;
+      const current = observed || fresh;
+      // Only host-verified fresh launches can use the pre-first-turn path.
+      // External callers cannot set this flag. Existing transcripts, resumed
+      // conversations, drafts, questions and managed worker model checks stay
+      // authoritative even when no conversation has been published yet.
+      const firstTurn = !!fresh && fresh.sessionId === target.conversationId && !current?.turn;
       const blocked = !current ? 'transcript-unavailable'
         : current.sessionId !== target.conversationId ? 'conversation-changed'
+        : unbound && !firstTurn ? 'first-message-not-ready'
         : current.question ? 'question-pending'
         : current.lifecycle === 'working' && !firstTurn ? 'turn-working'
         : !this.ready(target, { freshSession: firstTurn }) ? 'composer-or-runtime-not-ready'

@@ -106,7 +106,15 @@ export class TaskOrchestration {
     // after restarts/reparenting, but always validate the current local project
     // and the live CLI dialog/cwd before StartupAutomation sends its one key.
     const apiCreated = text(agent.sessionHierarchy?.createdById, 200);
-    return setting.enabled || apiCreated ? setting.folder : null;
+    if (!apiCreated) return setting.enabled ? setting.folder : null;
+    if (!setting.folder) return null;
+    // A workspace API may explicitly register a dedicated folder outside the
+    // project's tree. Keep the project scope for in-tree children (Git trust
+    // may apply at its root); otherwise grant only that exact working folder.
+    try {
+      const folder = agent.folder ? taskPath(agent.folder, '.') : setting.folder;
+      return folder === setting.folder || folder.startsWith(setting.folder + path.sep) ? setting.folder : folder;
+    } catch { return null; }
   }
   session(id) { return (this.catalog().agents || []).find(a => a.id === id); }
   folderFor(id) {

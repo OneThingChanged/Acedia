@@ -187,9 +187,12 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
       const original = win[name]; originalMethods.push(() => { win[name] = original; });
       win[name] = () => { nativeCalls.push(name); };
     }
-    const second = await call('/sessions', { projectId: first.projectId, name: 'Additional session', requestKey: 'additional' });
+    const externalFolder=path.join(root,'dedicated-external');
+    if(trustOnly)fs.mkdirSync(externalFolder);
+    const secondBody={ projectId: first.projectId, name: 'Additional session', requestKey: 'additional',...(trustOnly?{folder:externalFolder}:{}) };
+    const second = await call('/sessions', secondBody);
     assert.equal(second.created, true); assert.equal(second.active, true, JSON.stringify(second));
-    const retried = await call('/sessions', { projectId: first.projectId, name: 'Additional session', requestKey: 'additional' });
+    const retried = await call('/sessions', secondBody);
     assert.equal(retried.sessionId, second.sessionId); assert.equal(retried.created, false);
     const stored = await invoke('storage_snapshot_get');
     assert.ok(JSON.stringify(stored).includes(first.projectId) && JSON.stringify(stored).includes(second.sessionId), 'Created items were not persisted');
@@ -207,6 +210,7 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
       }
       const policy = await invoke('task_orchestration', { action: 'policy', body: { ownerId: first.sessionId } });
       assert.equal(policy.startupTrust.enabled, false);
+      assert.equal(ui.agents.find(a=>a.id===second.sessionId).folder,externalFolder);
       assert.deepEqual(await readTrustUi(), trustUi, 'Folder confirmation changed selection, focus or draft');
       assert.deepEqual(nativeCalls, [], 'Folder confirmation activated a window');
       originalMethods.forEach(restore => restore());

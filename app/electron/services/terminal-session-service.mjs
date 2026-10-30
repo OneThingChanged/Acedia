@@ -63,6 +63,7 @@ export class TerminalSessionService {
     entry.released = false;
     entry.startedAt = Date.now();
     entry.lastInputAt = entry.lastOutputAt = entry.lastViewedAt = entry.startedAt;
+    entry.firstMessageInput = entry.firstMessageSubmitted = false;
     const bellParser = new TerminalBellParser();
 
     if (!this.isSpawnCurrent(id, generation) || this.sessions.has(id)) {
@@ -139,7 +140,7 @@ export class TerminalSessionService {
     const entry = this.sessions.get(id);
     if (!entry) throw new Error("활성 PTY를 찾을 수 없습니다.");
     const value = String(data ?? "");
-    this.onInput(id);
+    this.onInput(id, value);
     entry.lastInputAt = Date.now();
     entry.process.write(value);
   }

@@ -13,15 +13,28 @@ import { HookService } from '../electron/services/hook-service.mjs';
 import { CodexScrollbackFilter } from '../electron/services/terminal-stream.mjs';
 import { codexRetryPromptReady } from '../electron/services/codex-capacity-retry.mjs';
 import { submitPtyMessage, encodeConptyUnicode } from '../electron/services/pty-submit.mjs';
+import { firstMessageSession, noteFirstMessageInput } from '../electron/services/session-first-message.mjs';
+import { StartupAutomation, startupPrompt } from '../electron/services/startup-automation.mjs';
+import { TaskOrchestration } from '../electron/services/task-orchestration.mjs';
 
 // Installed native Codex, fake credentials, isolated profile and loopback model
 // fixtures only. This never sends work to a user's existing session/account.
 const binary = process.env.ACEDIA_CODEX_BINARY;
 const messageApi = process.env.ACEDIA_SESSION_MESSAGE_API === '1';
+const firstMessage = process.env.ACEDIA_DELIVERY_FIRST_MESSAGE === '1';
+assert.ok(!firstMessage || messageApi, 'First-message fixture uses the Unicode mailbox API.');
 assert.ok(binary && path.isAbsolute(binary) && fs.existsSync(binary), 'Set ACEDIA_CODEX_BINARY to the installed Codex executable.');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-delivery-cli-'));
 const home = path.join(root, 'cli'); fs.mkdirSync(home);
-fs.writeFileSync(path.join(home, 'config.toml'), `[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
+const projectFolder=firstMessage?path.join(root,'registered-project'):root;
+const workingFolder=firstMessage?path.join(root,'dedicated-folder'):root;
+if(firstMessage){
+  fs.mkdirSync(projectFolder);fs.mkdirSync(workingFolder);
+  fs.mkdirSync(path.join(workingFolder,'.codex'));
+  fs.writeFileSync(path.join(workingFolder,'.codex/config.toml'),'[features]\nhooks=false\n');
+}
+fs.writeFileSync(path.join(home, 'config.toml'), firstMessage?'[windows]\nsandbox="unelevated"\n':`[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
+const catalog = () => ({ projects: [{ id: 'p', name: 'Fixture', folder: projectFolder }], agents: [{ id: 'caller', name: '한글 관리자', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: '수신자', folder:workingFolder, projectId: 'p', aiToolId: 'codex', sessionHierarchy:{createdById:'caller'} }] });
 const calls = [], updates = [];
 let terminal, service, hook, mcp, transcript, conversationId, polling;
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() };
@@ -58,10 +71,11 @@ try {
   for (const key of Object.keys(env)) if (/^(OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN)$/i.test(key)) delete env[key];
   terminal = pty.spawn(binary, ['--no-alt-screen', '-m', 'gpt-6.1-sol', ...launch.args, '-c', 'model_reasoning_effort="high"',
     '-c', 'features.daemon_auto_start=false', '-c', 'features.hooks=false', '-c', 'features.plugins=false', '-c', 'analytics.enabled=false'],
-    { cwd: root, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
-  const entry = { id: 'target', aiToolId: 'codex', startedAt: Date.now(), lastInputAt: 0, process: terminal, filter }, caller = {};
+    { cwd: workingFolder, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
+  const entry = { id: 'target', cwd:workingFolder, aiToolId: 'codex', startedAt: Date.now(), lastInputAt: 0, process: terminal, filter }, caller = {};
   terminal.onData(data => { if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
   const read = async () => {
+    if(firstMessage&&!calls.length)return null; // Host has no published conversation identity before the first prompt.
     if (!transcript) {
       const folder = path.join(home, 'sessions'); if (!fs.existsSync(folder)) return null;
       const file = fs.readdirSync(folder, { recursive: true }).find(file => file.endsWith('.jsonl')); if (!file) return null;
@@ -71,9 +85,22 @@ try {
     // knows the conversation ID but has never populated the hook path map.
     return questions.read({ id: entry.id, tool: 'codex', root: path.join(home, 'sessions'), sessionId: conversationId, startedAt: entry.startedAt });
   };
+  if(firstMessage){
+    await waitFor(()=>startupPrompt(entry)?.startupKind==='folder-trust','initial native folder trust');
+    const policy=new TaskOrchestration({file:path.join(root,'trust-policy.json'),catalog});
+    const writes=[];
+    try{
+      assert.equal(policy.startupTrustRoot('target'),process.platform==='win32'?workingFolder.toLowerCase():workingFolder);
+      const automation=new StartupAutomation({entry:()=>entry,allowedRoot:id=>policy.startupTrustRoot(id),write:(_id,key)=>{writes.push(key);noteFirstMessageInput(entry,key);terminal.write(key);}});
+      assert.equal(automation.check('target'),true);assert.equal(automation.check('target'),false);assert.deepEqual(writes,['\r']);
+    }finally{policy.close();}
+    console.log('SESSION_MESSAGE_NATIVE_EXTERNAL_FOLDER_TRUST_ONCE_OK');
+  }
   await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'initial composer');
-  await submitPtyMessage({ ptyProcess: terminal, message: 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.' });
-  await waitFor(async () => (await read())?.turn?.status === 'done' && deliveryComposerReady(entry), 'completed native composer');
+  if(!firstMessage){
+    await submitPtyMessage({ ptyProcess: terminal, message: 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.' });
+    await waitFor(async () => (await read())?.turn?.status === 'done' && deliveryComposerReady(entry), 'completed native composer');
+  }else{assert.equal(calls.length,0);assert.equal(conversationId,undefined);}
   if (process.env.ACEDIA_DELIVERY_RESUME === '1') {
     const stopped = new Promise(resolve => terminal.onExit(resolve)); terminal.kill(); await stopped;
     filter.dispose(); filter = new CodexScrollbackFilter(34, 140);
@@ -88,24 +115,24 @@ try {
     console.log('RESUMED_DELIVERY_READINESS', JSON.stringify({ composer: deliveryComposerReady(entry), transcript: await read() }));
   }
   const options = { file: path.join(root, 'deliveries.json'), read,
+    freshRead:()=>firstMessageSession({entry,agent:catalog().agents[1],conversationId:conversationId??null}),
     context: id => id === 'caller' ? { entry: caller, name: 'ProjectWitch', projectName: 'Fixture' }
-      : id === 'target' ? { entry, name: 'UI', conversationId } : null,
+      : id === 'target' ? { entry, name: 'UI', conversationId:conversationId??null } : null,
     ready: () => deliveryComposerReady(entry), publish: payload => updates.push(payload),
-    submit: (_id, _entry, message, isCurrent) => submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode }) };
+    submit: (_id, _entry, message, isCurrent) => {entry.firstMessageSubmitted=true;return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode });} };
   service = new SessionDeliveries(options);
   let busy = false;
   polling = setInterval(async () => {
     if (busy) return; busy = true;
     try { service.poll(); const result = await read(); if (result) service.observe(entry.id, entry, result); } finally { busy = false; }
   }, 100);
-  const catalog = () => ({ projects: [{ id: 'p', name: 'Fixture', folder: root }], agents: [{ id: 'caller', name: '한글 관리자', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: '수신자', projectId: 'p', aiToolId: 'codex' }] });
   const messageOptions = { file: path.join(root, 'session-messages.json'), sessionFor: id => catalog().agents.find(a => a.id === id), context: options.context,
-    notify: (agentId, body) => service.handle({ action: 'send', agentId, body, asciiEnvelope: true }),
+    notify: (agentId, body) => service.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession:true }),
     receipt: (agentId, requestKey) => service.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }) };
   const messages = new SessionMessages(messageOptions);
   const workspace = new WorkspaceManagement({ catalog: () => ({ projects: [{ id: 'p', name: 'Fixture', folder: root }],
     agents: [{ id: 'caller', name: 'ProjectWitch', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: 'UI', projectId: 'p', aiToolId: 'codex' }] }),
-    isActive: id => ['caller', 'target'].includes(id), deliveries: service, messages, sessionState: id => ({ conversationId: id === 'target' ? conversationId : null }) });
+    isActive: id => ['caller', 'target'].includes(id), deliveries: service, messages, sessionState: id => ({ conversationId: id === 'target' ? conversationId??null : null }) });
   hook = new HookService({ baseDir: path.join(root, 'hook'), workspaceProvider: request => workspace.handle(request) }); await hook.start();
   mcp = spawn(process.execPath, [path.resolve(import.meta.dirname, '../electron/services/browser-mcp-server.mjs')], { windowsHide: true,
     env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller' }, stdio: ['pipe', 'pipe', 'ignore'] });
@@ -119,13 +146,18 @@ try {
   });
   await rpc('initialize');
   assert.ok((await rpc('tools/list')).tools.some(t => t.name === 'acedia_session_send'));
-  const listed = await rpc('tools/call', { name: 'acedia_projects' }); assert.equal(listed.structuredContent.sessions[1].conversationId, conversationId);
+  const listed = await rpc('tools/call', { name: 'acedia_projects' }); assert.equal(listed.structuredContent.sessions[1].conversationId, conversationId??null);
   if (messageApi) {
     const message = '한글 작업 지시: 전용 폴더의 문서를 확인해 주세요. 🚀\n\t들여쓰기·따옴표·여러 줄도 그대로 보존합니다.';
     const body = { sessionId: 'target', message, requestKey: 'native-utf8-1', waitMs: 10000 };
     const sent = await rpc('tools/call', { name: 'acedia_session_message_send', arguments: body });
-    assert.ok(!sent.isError, JSON.stringify(sent)); const stored = sent.structuredContent;
+    assert.ok(!sent.isError, JSON.stringify(sent)); let stored = sent.structuredContent;
+    if(firstMessage&&stored.delivery.status!=='started'){
+      console.log('FIRST_MESSAGE_INITIAL_RECEIPT',JSON.stringify({stored,evidence:await read(),updates,calls:calls.length,screen:filter.viewportText()}));
+      await waitFor(async()=>{const response=await rpc('tools/call',{name:'acedia_session_message_send',arguments:{...body,waitMs:0}});assert.ok(!response.isError,JSON.stringify(response));stored=response.structuredContent;return stored.delivery.status==='started';},'first notification exact started receipt');
+    }
     assert.equal(stored.saved, true); assert.equal(stored.delivery.status, 'started'); assert.equal(stored.readAt, null);
+    if(firstMessage){assert.ok(stored.delivery.conversationId);assert.ok(stored.delivery.turnId);console.log('SESSION_MESSAGE_NATIVE_FIRST_CONVERSATION_BOUND_TO_EXACT_NOTIFICATION_OK');}
     await waitFor(async () => (await read())?.turn?.status === 'done', 'completed ASCII notification task');
     const userRows = fs.readFileSync(transcript, 'utf8').split('\n').flatMap(line => { try { const r = JSON.parse(line); return r.type === 'response_item' && r.payload?.role === 'user' ? r.payload.content.map(c => c.text || '') : []; } catch { return []; } });
     const reference = userRows.find(value => value.includes(stored.messageId));

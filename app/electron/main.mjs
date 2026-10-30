@@ -70,6 +70,7 @@ import { SessionNotes } from './services/session-notes.mjs';
 import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs";
 import { createChatMessageSubmitter } from './services/chat-message-submission.mjs';
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
+import { firstMessageSession, noteFirstMessageInput } from './services/session-first-message.mjs';
 import { StartupAutomation, startupPrompt } from './services/startup-automation.mjs';
 import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
@@ -284,7 +285,7 @@ let sessionModelMemory;
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
   onBeforeClose: entry => { commandApprovals.forget(entry.id); sessionModelMemory.remember(entry); },
-  onInput: id => capacityRetry.cancel(id),
+  onInput: (id, data) => { capacityRetry.cancel(id); noteFirstMessageInput(ptys.get(id), data); },
   onBell(id) {
     const now = Date.now();
     if (now - (bellTimes.get(id) ?? 0) < 3000) return;
@@ -1049,12 +1050,13 @@ function deliveryContext(id) {
     state: state?.state, reason: state?.reason };
 }
 const sessionDeliveries = new SessionDeliveries({
-  freshRead: freshTaskSession,
+  freshRead: freshDeliverySession,
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
   ready: (target, { freshSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
     && (freshSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
   submit: (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
+    entry.firstMessageSubmitted = true;
     return submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
       encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined });
   },
@@ -1064,7 +1066,7 @@ const sessionMessages = new SessionMessages({
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
-  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true }),
+  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession: true }),
   receipt: (agentId, requestKey) => sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }),
 });
 const sessionLaunchSettings = new SessionLaunchSettings({
@@ -1391,6 +1393,12 @@ async function readTaskSession(id) {
     transcriptPath: agentTranscripts.get(id), sessionId: result.sessionId, startedAt: entry.startedAt });
   return ptys.get(id) === entry && transcript?.sessionId === result.sessionId ? { ...transcript, ...result } : result;
 }
+function freshDeliverySession(id) {
+  // Task workers retain their creation acknowledgement and model policy gates.
+  if (taskOrchestration.worker(id)) return freshTaskSession(id);
+  const entry = ptys.get(id), agent = entry && sessionModelAgent(id);
+  return firstMessageSession({ entry, agent, conversationId: agent && miraControlProviderSessionId(agent), hook: monitorHooks.get(id) });
+}
 function freshTaskSession(id) {
   const worker = taskOrchestration.worker(id), attempt = worker?.task.attempts.at(-1);
   const entry = ptys.get(id), hook = monitorHooks.get(id);
@@ -1398,7 +1406,7 @@ function freshTaskSession(id) {
   const freshIdentity = !conversationId && !entry?.resumeContext && !agent?.lastSessionId;
   const startedIdentity = conversationId && hook?.event === 'session-start' && hook.session_id === conversationId && Number.isFinite(hook.lastTs) && hook.lastTs >= entry?.startedAt;
   if (attempt?.sessionId !== id || !attempt.creationAcknowledged || attempt.turnId || worker.task.state !== 'dispatching'
-    || !entry || !(freshIdentity || startedIdentity)
+    || !entry || entry.firstMessageInput || entry.firstMessageSubmitted || !(freshIdentity || startedIdentity)
     || !deliveryComposerReady(entry) || !(entry.runtimeModelSettings || nativeCodexModel(entry))) return null;
   return { sessionId: conversationId || null, turn: null, question: null, lifecycle: 'idle', startupTrust: entry.startupTrustConfirmation };
 }

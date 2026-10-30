@@ -103,6 +103,15 @@ describe('durable independent Codex task orchestration', () => {
     delete f.catalog.projects[0].sshHostId;
     child.projectId = 'missing'; expect(restored.startupTrustRoot(child.id)).toBe(null);
   });
+  it('scopes API-created external working folders to that exact folder, preserving in-project Git roots',()=>{
+    const f=fixture(),project=path.join(f.root,'registered'),dedicated=path.join(f.root,'dedicated');
+    fs.mkdirSync(project);fs.mkdirSync(dedicated);f.catalog.projects[0].folder=project;
+    const child={id:'api-folder',projectId:'p',aiToolId:'codex',folder:dedicated,sessionHierarchy:{createdById:'a'}};
+    f.catalog.agents.push(child);expect(f.engine.startupTrustRoot(child.id)).toBe(taskPath(dedicated,'.'));
+    child.folder=path.join(project,'inside');fs.mkdirSync(child.folder);
+    expect(f.engine.startupTrustRoot(child.id)).toBe(taskPath(project,'.'));
+    delete child.sessionHierarchy.createdById;expect(f.engine.startupTrustRoot(child.id)).toBe(null);
+  });
   it('starts two independent workers and gates a dependent task on reviewed results', async () => {
     const f = fixture(), { run } = await f.plan([task('one', ['a.ts']), task('two', ['b.ts']), task('verify', [], ['one', 'two'])]);
     await until(() => f.engine.data.runs[0].tasks.slice(0, 2).every(t => t.state === 'running'));

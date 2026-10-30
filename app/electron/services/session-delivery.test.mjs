@@ -51,6 +51,8 @@ it('allows only the internal first-turn path with an empty composer and no previ
   const f = fixture();
   f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: null, question: null });
   await expect(f.send()).rejects.toThrow('turn-working');
+  await expect(f.service.handle({ action: 'send', agentId: 'caller', body: f.body, freshSession: true })).rejects.toThrow('turn-working');
+  f.service.freshRead = () => ({ sessionId: 'conversation', lifecycle: 'idle', turn: null, question: null });
   expect(await f.service.handle({ action: 'send', agentId: 'caller', body: f.body, freshSession: true })).toMatchObject({ status: 'sent' });
   const g = fixture();
   g.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working', turn: { id: 'existing-turn' } });

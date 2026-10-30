@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { PassThroughTerminalFilter, SynchronizedTerminalFilter } from "./terminal-stream.mjs";
 import { TerminalSessionService } from "./terminal-session-service.mjs";
+import { noteFirstMessageInput } from './session-first-message.mjs';
 
 function fakePty() {
   let onData = () => {};
@@ -116,6 +117,14 @@ it('reports manual input and quit before writing so an automatic retry can be ca
   expect(inputs).toEqual(['agent-1', 'agent-1']);
   expect(process.write.mock.calls.map(([data]) => data)).toEqual(['manual prompt', '/quit\r']);
   service.closeAll();
+});
+it('closes the pre-first-message path on manual input and resets it only for a new PTY generation',()=>{
+  const service=new TerminalSessionService({onInput:(id,value)=>noteFirstMessageInput(service.get(id),value)});
+  register(service,'new',fakePty(),{aiToolId:'codex'});
+  expect(service.get('new').firstMessageInput).toBe(false);service.write('new','draft');
+  expect(service.get('new').firstMessageInput).toBe(true);service.write('new','\x7f');
+  expect(service.get('new').firstMessageInput).toBe(true);service.close('new');
+  register(service,'new',fakePty(),{aiToolId:'codex'});expect(service.get('new').firstMessageInput).toBe(false);service.closeAll();
 });
 
 it("moves a view without losing or duplicating output", () => {

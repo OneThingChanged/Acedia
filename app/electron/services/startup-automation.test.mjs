@@ -64,6 +64,18 @@ it('leaves disabled, out-of-scope, unknown-root, wrong-folder and SSH prompts un
     const f = fixture(); change(f); expect(f.automation.check('child')).toBe(false); expect(f.write).not.toHaveBeenCalled();
   }
 });
+it('confirms an API dedicated folder outside the project but never its broader repository',()=>{
+  const f=fixture(),folder=path.join(f.root,'dedicated');fs.mkdirSync(folder);
+  const catalog={projects:[{id:'p',folder:f.child}],agents:[{id:'external',projectId:'p',aiToolId:'codex',folder,sessionHierarchy:{createdById:'owner'}}]};
+  const engine=new TaskOrchestration({file:path.join(f.root,'tasks-external.json'),catalog:()=>catalog});
+  let entry={...f.entry,cwd:folder,filter:{viewportText:()=>f.screen(folder,folder)}};
+  const write=vi.fn(),automation=new StartupAutomation({entry:()=>entry,allowedRoot:id=>engine.startupTrustRoot(id),write});
+  try{
+    expect(automation.check('external')).toBe(true);expect(write).toHaveBeenCalledExactlyOnceWith('external','\r');
+    entry={...entry,filter:{viewportText:()=>f.screen(folder,f.root)}};
+    expect(automation.check('external')).toBe(false);expect(write).toHaveBeenCalledTimes(1);
+  }finally{engine.close();}
+});
 it('does not approve hook execution, a user-selected Quit, partial screens or transcript prose', () => {
   const f = fixture();
   for (const value of [f.screen().replace('› 1.', '  1.').replace('  2.', '› 2.'), f.screen().replace('enter continue · esc quit', ''), 'Assistant says:\n' + f.screen(),

@@ -49,6 +49,17 @@ it('preserves the same message ID and one notification across concurrent sends, 
   expect(again.messageId).toBe(a.messageId); expect(f.notify).toHaveBeenCalledOnce();
   await expect(f.call('message-send', { ...body, message: '다른 본문' })).rejects.toMatchObject({ statusCode: 409 });
 });
+it('can notify a live pre-first-conversation session without guessing its conversation ID',async()=>{
+  const f=fixture();f.service.context=id=>f.active.has(id)?{entry:{aiToolId:'codex'},conversationId:null}:null;
+  const body={sessionId:'receiver',message:text,requestKey:'first'};
+  const result=await f.call('message-send',body);
+  expect(result).toMatchObject({saved:true,delivery:{status:'started'}});
+  expect(f.notify.mock.calls[0][1]).toMatchObject({expectedConversationId:null});
+  await f.call('message-send',body);expect(f.notify).toHaveBeenCalledOnce();
+  await expect(f.call('message-send',{...body,requestKey:'stale',expectedConversationId:'old'})).rejects.toMatchObject({statusCode:409});
+  f.active.delete('receiver');
+  await expect(f.call('message-send',{...body,requestKey:'offline-first'})).rejects.toMatchObject({statusCode:409});
+});
 it('reconciles a crash between notification acceptance and mailbox receipt persistence without sending again', async () => {
   const f = fixture(), body = { sessionId: 'receiver', message: text, requestKey: 'crash' };
   await f.call('message-send', body);
