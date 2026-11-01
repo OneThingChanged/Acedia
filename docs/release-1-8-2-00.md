@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.00
-status: preparing
+status: published
 last_updated: 2026-11-02
 ---
 
@@ -31,8 +31,21 @@ This Standard EXE reuses the existing signed Android **1.8.1.39/code 21** artifa
 
 - 재점검한 실행 의존성은 npm audit **0개**다. 전체 감사에는 새 [minimatch 경고 GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)와 빌드 도구의 전이 영향으로 **Moderate 15개**, High·Critical 0개가 보고됐다. 수정은 11.0.1부터지만 현재 공식 app-builder-lib의 의존 범위도 `^10.2.5`라 범위 밖 강제 교체·자동 대규모 다운그레이드는 적용하지 않았다. 앞선 0개 기록과 이번 결과를 구분한다. `output/exe-release-1.8.2.00/audit-production.log`, `audit-all-direct.log`.
 
-빌드·공개 다운로드 결과는 게시 기록과 함께 갱신한다.
+- 버전 전환 13개 검사와 신규 세션 UI 18개 배치·native PTY 검사를 통과했다. 완료한 설정·실제 main 시작 검사와 함께 `output/exe-release-1.8.2.00/followup-checks-direct.json`에 기록했다.
+- 고정 소스에서 TypeScript·Vite·NSIS 설치 파일·blockmap·EXE manifest를 생성했다. packaged bridge·내장 Git·Dashboard·브라우저 재사용·보안·종료·트레이 검사를 통과했다. `build-direct.log`, `packaged-direct.log`, `lifecycle-direct.log`. 두 검사의 종료 코드는 0이며 기존 정리 단계 native helper 출력은 assertion 실패와 구분한다.
+- Windows FileVersion **1.8.2.00**, ProductVersion **1.8.2**, Authenticode **NotSigned**를 확인했다. 제품·태그·설치 파일·manifest는 **1.8.2.00**으로 일치하고 Windows 숫자 버전은 끝자리 00과 0을 같은 값으로 비교한다. 앱 시작 모듈을 포함한 런타임·렌더러 관련 파일 **366개**와 Pixel Office 자산·라이선스 20개가 소스와 일치한다. 빌드 도구용 minimatch는 패키지에 포함하지 않았다. `local-verification.json`.
+- 공개 업데이터에서 **1.8.1.99·1.8.1.98·1.8.1.96 → 1.8.2.00** 감지와 설치 파일 전체 다운로드를 확인했다. 세 자산의 공식 URL·크기·SHA-256·최신 안정 릴리스·소스 태그를 검증했다. `public-verification-direct.log`.
 
 ## 배포 기록
 
-게시 전이다. Microsoft Store·Company·새 APK 빌드와 사용자 앱 설치·재시작은 이번 범위에 포함하지 않는다.
+- 공개 게시: **2026-11-02 02:26:31 KST**. [GitHub Release v1.8.2.00](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.00).
+- 공개 다운로드 검증 완료: **2026-11-02 02:27:18 KST**.
+- 고정 제품 소스·태그: `3dce5e0918284f97a05412666e0016ca6cd65b64`.
+- 기존 서명 검증 APK **1.8.1.39/code 21**을 재사용했다. 새 APK·Store·Company 배포는 실행하지 않았다.
+- 사용자 앱과 실제 세션은 교체·재시작하지 않았다. 설정의 **Check → Update**로 적용하며 새 자동 시작 항목의 기본값은 OFF다.
+
+| 공개 자산 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| Acedia-Setup-1.8.2.00-x64.exe | 156232168 | `a9d139dfe7eef271bef8440890b3b29764364438cb6bd28dbc19d1c1d8b9b5b1` |
+| Acedia-Setup-1.8.2.00-x64.exe.blockmap | 163154 | `3a5195f505992505bbece742cfd33f8554e24e60a66a8286947272d0defbbe9d` |
+| latest-exe.json | 256 | `7f4893cac7849bb093faa097766e8b8ebe53270458ce099323589f227fd4200b` |

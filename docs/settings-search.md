@@ -73,7 +73,7 @@ StartupTask 연동은 아직 지원하지 않는다. 명령에는 실행 경로�
 Run 항목을 정리한다. OS API는 [현재 Electron 버전의 공식 문서](https://github.com/electron/electron/blob/v43.8.3/docs/api/app.md#appsetloginitemsettingssettings)를 따른다.
 
 Remote 설정은 [Remote 자동 시작](remote-service.md)을 따른다. 이 변경은 소스에 반영했으며
-공개 배포 전이며 다음 배포 목표는 **1.8.2.00**이다. 사용자 PC의 실제 시작 프로그램이나 실행 중 Remote는 테스트로 변경하지 않는다.
+Standard EXE **1.8.2.00**에 포함됐다. 게시·검증 기록은 [릴리스 문서](release-1-8-2-00.md)를 따른다. 사용자 PC의 실제 시작 프로그램이나 실행 중 Remote는 테스트로 변경하지 않는다.
 
 검증은 전체 **215개 파일·1,722개 검사**, 취소 처리 보완 후 관련 **4개 파일·74개 검사**,
 TypeScript·Vite production build를 통과했다. 숨김 Electron 설정 화면에서 124개 검색 대상과
