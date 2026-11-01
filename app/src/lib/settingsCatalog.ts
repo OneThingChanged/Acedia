@@ -27,6 +27,7 @@ export const SETTING_SCOPES = {
   saved: { label: ["저장 버튼으로 적용", "Apply with Save"], detail: ["이 화면에서 저장해야 반영됩니다. 검색·이동만으로 저장하지 않습니다.", "Changes apply after saving in this panel. Search and navigation do not save changes."] },
   nextService: { label: ["저장 후 · 서버 시작", "Save · next server start"], detail: ["저장한 포트를 다음 서버 시작부터 사용합니다. 실행 중인 서버를 자동 재시작하지 않습니다.", "The saved port is used the next time the server starts, without automatically restarting it."] },
   nextApp: { label: ["저장 후 · 앱 시작", "Save · next app start"], detail: ["저장한 자동 시작 설정은 다음 앱 실행부터 적용합니다.", "The saved autostart setting applies the next time the app starts."] },
+  windowsLogin: { label: ["즉시 등록 · 다음 Windows 로그인", "Register now · next Windows sign-in"], detail: ["체크 변경을 Windows 시작 프로그램에 즉시 반영하며 다음 로그인부터 적용합니다.", "Changes the Windows startup registration immediately, taking effect at the next sign-in."] },
   projectHost: { label: ["SSH 프로젝트", "SSH projects"], detail: ["저장한 호스트를 원격 프로젝트에서 선택합니다. 현재 실행 중인 터미널은 바뀌지 않습니다.", "Choose the saved host in remote projects. Active terminals are unchanged."] },
   action: { label: ["직접 실행", "Run explicitly"], detail: ["이동한 항목에서 버튼을 눌러 실행합니다. 검색 결과를 여는 것만으로 실행하지 않습니다.", "Run using the button in this panel. Opening a search result does not run the action."] },
 } satisfies Record<string, { label: Copy; detail: Copy }>;
@@ -61,6 +62,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("browser.links", "browser", "웹 링크 열기", "Open web links", "saved", "내부 외부 internal external"),
   entry("browser.compatibility", "browser", "웹사이트 호환성", "Website compatibility", "saved", "인증 로그인 캡차 captcha verification login chromium"),
   entry("general.theme", "general", "테마", "Theme", "app", "모양 appearance soft warm light"),
+  entry("general.startup", "general", "Windows 로그인 시 자동 실행", "Launch at Windows sign-in", "windowsLogin", "윈도우 부팅 켜기 시작 프로그램 auto start boot startup login"),
   entry("general.sound", "general", "알림음", "Notification sound", "app", "소리 sound TTS 음성 custom 파일 메시지 message"),
   entry("general.notifications", "general", "Windows 알림 표시", "Show Windows notifications", "app", "notification 알림 배너"),
   entry("general.completion", "general", "완료 알림", "Completion alerts", "saved", "notification done"),
@@ -112,6 +114,8 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("dashboard.server", "dashboard", "대시보드 서버", "Dashboard server", "action", "로컬 모니터링 시작 중지 local monitor"),
   entry("dashboard.port", "dashboard", "대시보드 포트", "Local dashboard port", "nextService", "서버 server"),
   entry("dashboard.autostart", "dashboard", "대시보드 자동 시작", "Start dashboard when Acedia starts", "nextApp", "autostart startup"),
+  entry("remote.autostart", "remote", "앱 시작 시 Remote 자동 활성화", "Start Remote when Acedia starts", "nextApp", "리모트 자동 실행 autostart startup"),
+  entry("remote.autostartTunnel", "remote", "저장된 외부 터널 자동 연결", "Connect the saved external tunnel automatically", "nextApp", "remote tunnel cloudflare 시작 자동"),
   entry("dashboard.lan", "dashboard", "LAN 접속 허용", "Allow LAN access", "action", "로컬 네트워크 공유기 다른 컴퓨터 연결 코드 내부망 local network router connection code"),
   entry("dashboard.usage", "dashboard", "사용량 데이터", "Usage data", "action", "토큰 통계 재수집 rescan ingest tokens"),
   ...[

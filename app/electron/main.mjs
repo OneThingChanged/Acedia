@@ -119,6 +119,7 @@ import { DiagnosticsService } from "./services/diagnostics-service.mjs";
 import { UpdaterLifecycle } from "./services/updater-lifecycle.mjs";
 import { GithubExeUpdateService } from "./services/github-exe-update.mjs";
 import { StartupUpdateService } from "./services/startup-update.mjs";
+import { WindowsLoginStartup, RemoteAppStartup } from './services/app-startup.mjs';
 import { LocalDeveloperUpdateService } from "./services/local-developer-update.mjs";
 import { cleanupLegacyElectronShortcuts } from "./services/windows-shortcut-cleanup.mjs";
 import { discoverGitSubmodules } from "./services/git-submodules.mjs";
@@ -1594,6 +1595,15 @@ const tunnelService = new TunnelService({
   getConfig: () => remoteService.config,
   getLocalUrl: () => remoteService.status().url,
   allowDownload: !isStoreBuild,
+});
+const loginStartup = new WindowsLoginStartup({ app, variant: runtimeVariant, windowsStore: process.windowsStore === true,
+  isolated: !!userDataOverride || !!process.env.MULTIAGENT_LOCAL_DATA || !!devUrl || bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke });
+const remoteStartup = new RemoteAppStartup({
+  enabled: runtimeVariant.remoteEnabled && !(bridgeSmoke || closeSmoke || workspaceSmoke || securitySmoke || singleInstanceSmoke),
+  config: () => remoteService.config,
+  validate: assertRemoteConfigured,
+  startServer: () => remoteService.start(),
+  startTunnel: () => tunnelService.start(),
 });
 const { autoUpdater } = electronUpdater;
 autoUpdater.autoDownload = false;
@@ -6285,24 +6295,33 @@ async function invokeCommand(event, command, rawArgs) {
       return usageIndex.getRateLimits(args.refresh === true);
     case "usage_profile_visibility_set":
       return usageIndex.setProfileVisibility(args.profileKey, args.hidden);
+    case 'app_startup_get': return loginStartup.read();
+    case 'app_startup_set': return loginStartup.set(args.enabled);
     case "remote_config_get":
       return remoteService.config;
     case "remote_config_set":
       return remoteService.setConfig(asObject(args.config));
     case "remote_server_status":
-      return remoteService.status();
+      return { ...remoteService.status(), startup: remoteStartup.status() };
     case "start_remote_server":
+      remoteStartup.clear();
       assertRemoteConfigured(remoteService.config);
       return remoteService.start();
-    case "stop_remote_server":
+    case "stop_remote_server": {
+      const wasStarting = remoteStartup.status().phase === 'starting';
+      remoteStartup.cancel();
+      if (wasStarting) await tunnelService.stop();
       return remoteService.stop();
+    }
     case "tunnel_status":
       return tunnelService.status();
     case "start_tunnel":
+      remoteStartup.clear();
       tunnelService.validateConfiguration();
       if (!remoteService.status().running) await remoteService.start();
       return tunnelService.start();
     case "stop_tunnel":
+      remoteStartup.cancel();
       return tunnelService.stop();
     case "remote_access_list":
       return remoteService.accessList();
@@ -6495,6 +6514,7 @@ app.on("before-quit", (event) => {
   usageIndex.close();
   if (centralCollector) { const collector = centralCollector; centralCollector = null; void collector.stop(); }
   conversationStoreManager.close();
+  remoteStartup.cancel();
   void remoteService.stop();
   void tunnelService.stop();
 });
@@ -6579,6 +6599,9 @@ if (singleInstanceLockAcquired) void app.whenReady().then(async () => {
   console.log(
     `[electron] workspace window created id=${initialWindow.id} workspace=${lastWorkspaceWindowId}`
   );
+  // Do not await a network connection before showing the app. Stored opt-in is
+  // independent from Windows registration and manual Remote Start/Stop.
+  void remoteStartup.run();
   void (async () => {
     try {
       const settings = browserSettings.get();

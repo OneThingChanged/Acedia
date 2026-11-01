@@ -13,6 +13,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "task_orchestration",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
+  "app_startup_get", "app_startup_set",
   "codex_accounts_switch",
   "claude_accounts_switch",
   "codex_accounts_list",
@@ -284,6 +285,15 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case 'app_startup_get':
+    case 'app_startup_set':
+      if (Object.keys(args).some(key => command === 'app_startup_get' || key !== 'enabled')
+        || command === 'app_startup_set' && typeof args.enabled !== 'boolean') throw new TypeError('Invalid app startup setting');
+      break;
+    case 'remote_config_set':
+      if (!args.config || typeof args.config !== 'object' || Array.isArray(args.config)
+        || ['auto_start', 'auto_start_tunnel'].some(key => args.config[key] !== undefined && typeof args.config[key] !== 'boolean')) throw new TypeError('Invalid Remote startup setting');
+      break;
     case "get_model_defaults":
     case "get_default_model_catalog":
     case "set_model_defaults":

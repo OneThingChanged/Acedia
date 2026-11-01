@@ -25,6 +25,8 @@ describe("settings search catalog", () => {
     expect(results[0].id).toBe("terminal.cursorStyle");
   });
   it("filters unavailable channels without hiding disabled tools", () => {
+    expect(searchSettings('윈도우 부팅',context).some(item=>item.id==='general.startup')).toBe(true);
+    expect(searchSettings('remote autostart',context).some(item=>item.id==='remote.autostart')).toBe(true);
     expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.category === "remote")).toBe(false);
     expect(availableSettings({ ...context, buildVariant: "company" }).some(item => item.id === "dashboard.lan")).toBe(false);
     expect(searchSettings("LAN", context).some(item => item.id === "dashboard.lan")).toBe(true);

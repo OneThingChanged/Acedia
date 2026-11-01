@@ -46,7 +46,7 @@ async function exercise() {
     await open(item.id);
   }
   check(JSON.stringify(localStorage) === storage && !window.fixtureMutation, "Search changed persisted settings");
-  const allowed = new Set(["get_model_defaults", "get_default_model_catalog", "idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
+  const allowed = new Set(["app_startup_get", "get_model_defaults", "get_default_model_catalog", "idle_preferences_get", "notification_preferences_get", "power_policy_status", "saved_commands_get","browser_preferences_get","check_tools", "codex_accounts_list", "claude_accounts_list", "qwen_region_get", "conversation_storage_get",
     "get_developer_update_settings", "get_ssh_public_key", "remote_config_get", "monitor_config_get",
     "remote_access_list", "remote_server_status", "monitor_server_status", "tunnel_status", "account_pool_choices", "browser_extensions_list", "collector_status", "collector_sources"]);
   check(window.fixtureCalls.every(call => allowed.has(call.command)), "Navigation invoked an action: " + window.fixtureCalls.filter(call => !allowed.has(call.command)).map(call => call.command));
@@ -97,6 +97,44 @@ async function exercise() {
   document.querySelector(".app-topbar button").click(); await wait();
   await query("환경변수");
   return "SETTINGS_SEARCH_UI_OK " + catalog.length + " targets";
+}
+
+async function exerciseAppStartup() {
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms||80));
+  const check=(ok,label)=>{if(!ok)throw Error(label);};
+  const open=async(id,query)=>{
+    const input=document.querySelector('.app-settings-search input');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,query);
+    input.dispatchEvent(new Event('input',{bubbles:true}));await wait();
+    const result=document.querySelector(`[data-setting-result="${id}"]`);check(result,'startup search result missing');result.click();await wait();
+  };
+  await open('general.startup','Windows 로그인');
+  const toggle=()=>document.querySelector('[data-setting-id="general.startup"] input');
+  check(toggle()&&!toggle().checked&&!toggle().disabled,'startup default state wrong');
+  const count=window.fixtureCalls.filter(c=>c.command==='app_startup_set').length;
+  toggle().click();await wait();check(toggle().checked&&window.fixtureStartup.enabled,'startup enable was not applied');
+  toggle().click();await wait();check(!toggle().checked&&!window.fixtureStartup.enabled,'startup disable was not applied');
+  window.fixtureStartupError=true;toggle().click();await wait();
+  check(!toggle().checked&&document.querySelector('[role="alert"]'),'startup save failure was hidden');window.fixtureStartupError=false;
+  check(window.fixtureCalls.filter(c=>c.command==='app_startup_set').length===count+3,'startup toggles replayed');
+  window.fixtureStartup={...window.fixtureStartup,registered:true,windowsDisabled:true};window.dispatchEvent(new Event('focus'));await wait();
+  check(!toggle().checked&&document.querySelector('.app-settings-body').textContent.includes('Windows에서 시작 앱이 비활성화'),'Windows-disabled startup was not reflected');
+  window.fixtureStartup={...window.fixtureStartup,supported:false,reason:'store'};window.dispatchEvent(new Event('focus'));await wait();
+  check(toggle().disabled,'unsupported startup remained editable');
+  window.fixtureStartup={supported:true,enabled:false,registered:false,windowsDisabled:false,reason:null};window.dispatchEvent(new Event('focus'));await wait();
+  await open('remote.autostart','Remote 자동');
+  const remote=()=>document.querySelector('[data-setting-id="remote.autostart"] input');
+  const tunnel=()=>document.querySelector('[data-setting-id="remote.autostartTunnel"] input');
+  const starts=window.fixtureCalls.filter(c=>['start_remote_server','start_tunnel'].includes(c.command)).length;
+  remote().click();await wait();check(remote().checked&&!tunnel().disabled,'remote startup choice missing');
+  check(window.fixtureRemoteConfig.auto_start!==true,'remote choice saved without Save');
+  document.querySelector('[data-remote-config-save]').click();await wait();
+  check(window.fixtureRemoteConfig.auto_start===true,'remote autostart not persisted');
+  tunnel().click();await wait();
+  document.querySelector('[data-remote-config-save]').click();await wait();
+  check(window.fixtureRemoteConfig.auto_start_tunnel===true,'tunnel autostart not persisted');
+  check(window.fixtureCalls.filter(c=>['start_remote_server','start_tunnel'].includes(c.command)).length===starts,'saving startup options started a service immediately');
+  return 'APP_STARTUP_WINDOWS_TOGGLE_FAILURE_REMOTE_SAVE_ONLY_UI_OK';
 }
 
 async function exerciseModelDefaults() {
@@ -322,6 +360,13 @@ if (process.versions.electron) {
     console.log(await win.webContents.executeJavaScript("(" + exercisePolicies.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseAccountLaunchDefaults.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseTunnelConfiguration.toString() + ")()"));
+    console.log(await win.webContents.executeJavaScript("(" + exerciseAppStartup.toString() + ")()"));
+    if(process.env.ACEDIA_STARTUP_SETTINGS_SCREENSHOT)await fs.writeFile(process.env.ACEDIA_STARTUP_SETTINGS_SCREENSHOT,(await win.webContents.capturePage()).toPNG());
+    if(process.env.ACEDIA_WINDOWS_STARTUP_SCREENSHOT){
+      await win.webContents.executeJavaScript(`{const input=document.querySelector('.app-settings-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Windows 로그인');input.dispatchEvent(new Event('input',{bubbles:true}));}`);
+      await new Promise(resolve=>setTimeout(resolve,100));await win.webContents.executeJavaScript(`document.querySelector('[data-setting-result="general.startup"]').click()`);
+      await new Promise(resolve=>setTimeout(resolve,100));await fs.writeFile(process.env.ACEDIA_WINDOWS_STARTUP_SCREENSHOT,(await win.webContents.capturePage()).toPNG());
+    }
     console.log(await win.webContents.executeJavaScript("(" + exerciseModelDefaults.toString() + ")()"));
     console.log(await win.webContents.executeJavaScript("(" + exerciseStatusBar.toString() + ")()"));
     const peer = new BrowserWindow({show:false,width:800,height:640,webPreferences:{offscreen:true,backgroundThrottling:false}});

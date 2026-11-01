@@ -8,8 +8,8 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-10-23
-stale_after: 2026-10-31
+last_updated: 2026-11-02
+stale_after: 2026-12-02
 sources:
   - id: web-services
     resource: ../app/electron/services/web-services.mjs
@@ -185,6 +185,35 @@ sources:
 ---
 
 # Remote service
+
+## 앱 시작 시 자동 활성화 (2026-11-02, 소스 구현)
+
+**설정 → Remote → Acedia 시작 시 Remote 자동 활성화**를 체크하고 **Save**로 저장하면
+다음 앱 실행에서 기존 GitHub Client ID·Owner·포트로 서버를 시작한다. 기본은 OFF이며
+기존 config나 예전 클라이언트가 이 항목을 보내지 않으면 저장값을 유지한다. 저장하거나
+설정을 검색하는 것만으로 현재 서버를 켜거나 끄지 않는다. 수동 Stop도 다음 실행의
+자동 시작 선택을 지우지 않는다. Windows 로그인 시 앱 실행은 일반 설정의 별도 항목이다.
+
+**저장된 외부 터널도 자동 연결**은 독립 선택이며 Remote 자동 시작을 켰을 때 편집한다.
+named tunnel의 토큰·호스트 이름·고정 포트가 필요하다. 비어 있는 토큰으로 부팅 때마다
+새 quick tunnel을 만들지 않는다. 기존 수동 quick tunnel 시작 동작은 유지한다.
+
+서버·네트워크 연결은 앱 창 생성 뒤 백그라운드에서 한 번 시도한다. 설정 오류·포트 충돌·
+터널 연결 실패가 앱 창을 막지 않으며, Remote 화면에 진행·실패를 표시하고 Start로
+재시도한다. 오류 표시에는 토큰이나 공급자 원문을 넣지 않는다. 중복 Start는 한 서버만
+만들고 Stop·앱 종료 중 준비되던 터널은 뒤늦게 실행하지 않는다. Company 채널과 기존
+packaged smoke에서는 자동 실행하지 않는다.
+
+소스 구현·검증 단계이며 **1.8.2.00** 공개 배포를 준비한다. 실제 사용자 계정이나 Remote 설정을 켜지 않고
+격리 프로필의 OFF·ON·잘못된 설정으로 실제 main 시작과 loopback 로그인 응답을 검사한다.
+Windows 시작 프로그램 등록은 모의 OS 어댑터로 검증하며 실제 부팅·로그인 검증은 포함하지 않는다.
+
+실제 main/coordinator의 격리 시작 검사에서 기본 OFF, 정상 ON, 잘못된 GitHub 설정을
+각각 확인했다. ON에서는 loopback `/login` 응답과 중복 Start의 동일 포트 재사용, Stop 후
+자동 시작 저장값 유지도 확인했다. 세 경우 모두 살아 있는 사용자 CLI 0개와 Windows 등록
+호출 0회를 확인했다. `npm run electron:app-startup-smoke`와 `output/app-startup/main-electron-final.log`.
+외부 Cloudflare의 실제 연결은 이 검증에 포함하지 않으며, named tunnel의 선택·검증·
+실패 처리·다운로드 중 취소는 모의 서비스와 단위 검사로 확인했다.
 
 Remote is an authenticated external projection of the same sessions owned by
 the Electron desktop process. It reuses the web-service core and static client

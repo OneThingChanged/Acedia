@@ -24,6 +24,7 @@ configuration that supports it.
 
 ## Settings and review
 
+* [Acedia 1.8.2.00](release-1-8-2-00.md) - Windows 로그인 자동 실행·Remote 자동 활성화; Standard EXE 배포 검증 기록.
 * [Acedia 1.8.1.99](release-1-8-1-99.md) - 전용 폴더 Trust와 첫 대화 전 메시지 전달; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [Acedia 1.8.1.98](release-1-8-1-98.md) - 우측 Office 활성 세션과 필요한 부모만 표시; 안정 EXE 게시·공개 다운로드 검증 완료.
 * [Acedia 1.8.1.97](release-1-8-1-97.md) - 공유 사무실·부서 이동·키보드 접근과 신규 Dangerous 기본 ON; 안정 EXE 게시·공개 다운로드 검증 완료.

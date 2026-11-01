@@ -9,6 +9,7 @@ import { defaultCommandShortcuts } from "../../src/lib/commandRegistry";
 import "../../src/App.css";
 
 window.fixtureCalls = [];
+window.fixtureStartup = { supported: true, enabled: false, registered: false, windowsDisabled: false, reason: null };
 window.fixtureRemoteConfig = { client_id: "private-fixture", owner: "", client_secret: "", tunnel_token: "", public_hostname: "", server_port: 0 };
 window.fixtureIdleConfig = {revision:0,enabled:false,minutes:30};
 window.fixtureNotificationConfig = {revision:0,completion:true,bell:false,suppressFocused:false,powerMode:"off"};
@@ -21,6 +22,12 @@ if (!localStorage.getItem("multiagent.appLanguage.v1")) localStorage.setItem("mu
 window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.fixtureCalls.push({ command, args });
+    if (command === 'app_startup_get') return structuredClone(window.fixtureStartup);
+    if (command === 'app_startup_set') {
+      if (window.fixtureStartupError) throw new Error('Fixture Windows startup rejected');
+      window.fixtureStartup = { ...window.fixtureStartup, enabled: args.enabled, registered: args.enabled, windowsDisabled: false };
+      return structuredClone(window.fixtureStartup);
+    }
     if (command === "get_model_defaults") return structuredClone(window.fixtureModelDefaults[args.provider]);
     if (command === "get_default_model_catalog") {
       if (window.fixtureModelCatalogDelay && args.provider === "codex") await new Promise(resolve => setTimeout(resolve, 400));

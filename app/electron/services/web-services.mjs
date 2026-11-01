@@ -1169,13 +1169,15 @@ export class RemoteDashboardService {
     this.mobileAuthTickets = new Map();
     this.htmlPreviews = new Map();
     this.secret = crypto.randomBytes(32);
-    this.config = { client_id: "", owner: "", tunnel_token: "", public_hostname: "", server_port: 18800, client_secret: "" };
+    this.config = { client_id: "", owner: "", tunnel_token: "", public_hostname: "", server_port: 18800, client_secret: "", auto_start: false, auto_start_tunnel: false };
     this.access = { pending: [], approved: [] };
     this.load();
   }
 
   load() {
     try { this.config = { ...this.config, ...JSON.parse(fs.readFileSync(this.configPath, "utf8")) }; } catch {}
+    this.config.auto_start = this.config.auto_start === true;
+    this.config.auto_start_tunnel = this.config.auto_start_tunnel === true;
     try { this.access = { ...this.access, ...JSON.parse(fs.readFileSync(this.accessPath, "utf8")) }; } catch {}
   }
 
@@ -1185,9 +1187,13 @@ export class RemoteDashboardService {
   }
 
   async setConfig(config) {
+    if (['auto_start', 'auto_start_tunnel'].some(key => config[key] !== undefined && typeof config[key] !== 'boolean')) throw new TypeError('Invalid Remote startup setting');
+    const next = { ...this.config, ...config };
+    if (next.auto_start && next.auto_start_tunnel && (!String(next.tunnel_token || '').trim() || !String(next.public_hostname || '').trim()
+      || !Number.isInteger(Number(next.server_port)) || Number(next.server_port) < 1 || Number(next.server_port) > 65535)) throw new Error('Save a named tunnel token, hostname and fixed server port before enabling automatic tunnel connection.');
     const previousOwner = String(this.config.owner || "").trim();
-    this.config = { ...this.config, ...config };
-    await this.save(this.configPath, this.config);
+    await this.save(this.configPath, next);
+    this.config = next;
     const nextOwner = String(this.config.owner || "").trim();
     if (
       previousOwner &&
@@ -1570,6 +1576,12 @@ export class RemoteDashboardService {
   }
 
   async start() {
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.startOnce().finally(() => { this.startPromise = null; });
+    return this.startPromise;
+  }
+
+  async startOnce() {
     if (this.server?.listening) return this.status();
     this.server = http.createServer(async (request, response) => {
       try {
@@ -1983,6 +1995,7 @@ export class RemoteDashboardService {
   }
 
   async stop() {
+    if (this.startPromise) await this.startPromise.catch(() => {});
     const server = this.server; this.server = null; this.port = null;
     this.htmlPreviews.clear();
     this.hosting.tickets.clear();
@@ -2018,6 +2031,7 @@ export class TunnelService {
     this.publicUrl = null;
     this.downloadPromise = null;
     this.startPromise = null;
+    this.startEpoch = 0;
   }
   status() { return { running: Boolean(this.child && !this.child.killed), publicUrl: this.publicUrl }; }
   validateConfiguration() { assertTunnelConfigured(this.getConfig()); }
@@ -2071,9 +2085,11 @@ export class TunnelService {
     if (this.startPromise) return this.startPromise;
     if (this.child && !this.child.killed && this.publicUrl) return this.status();
     this.validateConfiguration();
+    const epoch = this.startEpoch;
     this.startPromise = (async () => {
       const config = this.getConfig();
       const executable = await this.ensureExecutable();
+      if (epoch !== this.startEpoch) throw new Error('Tunnel startup cancelled');
       const named = Boolean(String(config.tunnel_token || "").trim());
       const localUrl = this.getLocalUrl();
       if (!named && !localUrl) throw new Error("Remote PWA 서버가 실행 중이 아닙니다.");
@@ -2100,6 +2116,7 @@ export class TunnelService {
           } else resolve(this.status());
         };
         const inspect = (chunk) => {
+          if (epoch !== this.startEpoch) { finish(new Error('Tunnel startup cancelled')); return; }
           recent = `${recent}${String(chunk)}`.slice(-8192);
           if (named && recent.includes("Registered tunnel connection")) {
             this.publicUrl = config.public_hostname ? `https://${config.public_hostname}` : null;
@@ -2131,6 +2148,7 @@ export class TunnelService {
     return this.startPromise;
   }
   async stop() {
+    this.startEpoch++;
     if (this.child) this.child.kill();
     this.child = null;
     this.publicUrl = null;

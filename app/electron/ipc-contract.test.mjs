@@ -6,6 +6,14 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('bounds Windows startup to explicit booleans with no caller-controlled executable or registry name',()=>{
+    expect(contract.assertInvokeRequest('app_startup_get',{})).toEqual({});
+    expect(contract.assertInvokeRequest('app_startup_set',{enabled:true})).toEqual({enabled:true});
+    for(const args of [{},{enabled:'yes'},{enabled:true,path:'C:/other.exe'},{enabled:false,name:'other'}])expect(()=>contract.assertInvokeRequest('app_startup_set',args)).toThrow();
+    expect(()=>contract.assertInvokeRequest('app_startup_get',{enabled:true})).toThrow();
+    expect(contract.assertInvokeRequest('remote_config_set',{config:{auto_start:true,auto_start_tunnel:false}})).toBeTruthy();
+    for(const config of [null,[],{auto_start:'yes'},{auto_start_tunnel:1}])expect(()=>contract.assertInvokeRequest('remote_config_set',{config})).toThrow();
+  });
   it('bounds human notes by UTF-8 bytes and revision, separate from chat submissions', () => {
     const args={id:'a',text:'사람이 참고할 메모\n',revision:0};
     expect(contract.assertInvokeRequest('session_notes_get',{id:'a'})).toEqual({id:'a'});

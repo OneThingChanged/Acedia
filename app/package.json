@@ -3,8 +3,8 @@
   "description": "Acedia desktop terminal workspace",
   "author": "Acedia",
   "private": true,
-  "version": "1.8.1",
-  "multiAgentReleaseVersion": "1.8.1.99",
+  "version": "1.8.2",
+  "multiAgentReleaseVersion": "1.8.2.00",
   "multiAgentVariant": "standard",
   "type": "module",
   "engines": {
@@ -73,6 +73,7 @@
     "electron:chat-files-smoke": "node scripts/electron-chat-files-smoke.mjs",
     "electron:capacity-retry-smoke": "node scripts/electron-capacity-retry-smoke.mjs",
     "electron:startup-update-smoke": "node scripts/electron-startup-update-smoke.mjs",
+    "electron:app-startup-smoke": "node scripts/electron-app-startup-smoke.mjs",
     "codex:capacity-retry-smoke": "node scripts/codex-capacity-retry-smoke.mjs",
     "codex:session-delivery-smoke": "node scripts/codex-session-delivery-smoke.mjs",
     "codex:chat-submit-smoke": "node scripts/codex-chat-submit-smoke.mjs",
@@ -174,9 +175,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.1.99-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.2.00-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.1.99",
+      "uninstallDisplayName": "Acedia 1.8.2.00",
       "include": "electron/installer.nsh"
     },
     "publish": [

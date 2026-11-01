@@ -21,7 +21,10 @@ function parseVersion(version: string) {
 
 export function formatProductVersion(version: string) {
   const parsed = parseVersion(version);
-  return parsed ? parsed.join(".") : version;
+  // Keep an explicitly padded release revision in labels (e.g. 1.8.2.00).
+  // Numeric comparisons and Windows file versions still treat 00 as zero.
+  const revision = version.trim().match(/^v?\d+\.\d+\.\d+\.(\d+)/i)?.[1] || "0";
+  return parsed ? [...parsed.slice(0, 3), revision].join(".") : version;
 }
 
 export function compareVersions(a: string, b: string) {

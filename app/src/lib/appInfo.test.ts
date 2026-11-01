@@ -17,5 +17,8 @@ describe("appInfo version helpers", () => {
     expect(formatProductVersion("1.0.0")).toBe("1.0.0.0");
     expect(formatProductVersion("1.0.0.0")).toBe("1.0.0.0");
     expect(compareVersions("1.0.0", "1.0.0.0")).toBe(0);
+    expect(formatProductVersion("1.8.2.00")).toBe("1.8.2.00");
+    expect(compareVersions("1.8.2.00", "1.8.2.0")).toBe(0);
+    expect(isNewerVersion("1.8.2.00", "1.8.1.99")).toBe(true);
   });
 });

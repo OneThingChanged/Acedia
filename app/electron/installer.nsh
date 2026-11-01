@@ -7,3 +7,10 @@
     StrCpy $INSTDIR "$LocalAppData\Programs\${PRODUCT_FILENAME}"
   ${EndIf}
 !macroend
+
+!macro customUnInstall
+  ; Remove only this installation channel's opt-in login entry.
+  ${ifNot} ${isUpdated}
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${APP_ID}"
+  ${endIf}
+!macroend

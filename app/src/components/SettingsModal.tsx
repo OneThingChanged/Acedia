@@ -1,4 +1,5 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
+import { StartupSettingsPanel } from './StartupSettingsPanel';
 import { tunnelConfigurationIssue } from "../../electron/shared/tunnel-config.mjs";
 import { DashboardLanPanel, type DashboardStatus } from "./DashboardLanPanel";
 import { UsageCollectorPanel } from './UsageCollectorPanel';
@@ -103,6 +104,7 @@ type RemoteStatus = {
   running: boolean;
   url: string | null;
   port: number | null;
+  startup?: { phase: string; error: string | null };
 };
 
 type TunnelStatus = {
@@ -116,6 +118,8 @@ type AccessList = {
 };
 
 type RemoteConfig = {
+  auto_start?: boolean;
+  auto_start_tunnel?: boolean;
   client_id: string;
   owner: string;
   tunnel_token: string;
@@ -663,7 +667,7 @@ export function SettingsModal({
         setConfigSaved(true);
         setTimeout(() => setConfigSaved(false), 1500);
       })
-      .catch(() => {});
+      .catch(err => setRemoteError(String(err)));
   };
 
   useEffect(() => {
@@ -686,6 +690,14 @@ export function SettingsModal({
     const interval = setInterval(loadAccess, 4000);
     return () => clearInterval(interval);
   }, []);
+  useEffect(() => {
+    if (tab !== 'remote' || IS_COMPANY_BUILD) return;
+    const timer = setInterval(() => {
+      void invoke<RemoteStatus>('remote_server_status').then(setRemote).catch(() => {});
+      void invoke<TunnelStatus>('tunnel_status').then(setTunnel).catch(() => {});
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [tab]);
 
   const handleApprove = (login: string) => {
     if (IS_COMPANY_BUILD) return;
@@ -1234,6 +1246,7 @@ export function SettingsModal({
 
         {tab === "general" && (
         <>
+        <StartupSettingsPanel/>
         <div className="app-settings-section">
           <div className="field-label" {...settingTarget("general.theme")}>{text("테마", "Theme")}<SettingScope id="general.theme" /></div>
           <div className="app-theme-options">
@@ -1719,8 +1732,12 @@ export function SettingsModal({
                 </button>
               </div>
             )}
-            <div className={`app-update-message ${remoteError ? "app-update-error" : ""}`} role={remoteError ? "alert" : undefined}>
-              {remoteError || (remote.running
+            <div className={`app-update-message ${remoteError || remote.startup?.phase === 'failed' ? "app-update-error" : ""}`} role={remoteError || remote.startup?.phase === 'failed' ? "alert" : undefined}>
+              {remoteError || (remote.startup?.phase === 'failed'
+                ? text('Remote 자동 시작에 실패했습니다. 저장된 GitHub 설정·포트·터널 연결을 확인하고 Start로 다시 시도하세요.', 'Remote automatic startup failed. Check saved GitHub settings, port and tunnel connection, then use Start to retry.')
+                : remote.startup?.phase === 'starting'
+                ? text('저장된 설정으로 Remote를 자동 시작하고 있습니다.', 'Starting Remote automatically with saved settings.')
+                : remote.running
                 ? text("모바일 리모컨 서버가 준비됐습니다. 위 주소는 이 PC에서 확인할 때 사용하고, 휴대폰에서는 아래 HTTPS 터널 주소를 사용하세요.", "The mobile remote server is ready. Use the address above on this PC and the HTTPS tunnel address below on your phone.")
                 : text("GitHub Client ID와 Owner를 입력하고 Save로 저장한 뒤 시작하세요.", "Enter GitHub Client ID and Owner, then click Save before starting."))}
             </div>
@@ -1879,6 +1896,15 @@ export function SettingsModal({
                 }
               />
             </label>
+            <label className="app-checkbox-row" {...settingTarget('remote.autostart')}>
+              <input type="checkbox" checked={remoteConfig.auto_start === true} onChange={event => setRemoteConfig(config => ({ ...config, auto_start: event.target.checked }))}/>
+              <span>{text('Acedia 시작 시 Remote 자동 활성화', 'Start Remote when Acedia starts')}</span><SettingScope id="remote.autostart"/>
+            </label>
+            <label className="app-checkbox-row" {...settingTarget('remote.autostartTunnel')}>
+              <input type="checkbox" checked={remoteConfig.auto_start_tunnel === true} disabled={!remoteConfig.auto_start} onChange={event => setRemoteConfig(config => ({ ...config, auto_start_tunnel: event.target.checked }))}/>
+              <span>{text('저장된 외부 터널도 자동 연결', 'Also connect the saved external tunnel')}</span><SettingScope id="remote.autostartTunnel"/>
+            </label>
+            <p className="app-update-message">{text('Save로 저장하면 다음 앱 실행부터 적용합니다. 외부 자동 연결에는 named tunnel 토큰·호스트 이름·고정 포트가 필요합니다. Windows 로그인 자동 실행은 일반 설정에서 따로 선택합니다.', 'Save to apply at the next app start. Automatic external connection requires a named tunnel token, hostname and fixed port. Choose Windows sign-in startup separately in General.')}</p>
             <div className="app-update-message">
               {text(
                 "Cloudflare Zero Trust → Networks → Tunnels에서 만든 토큰을 입력하면 고정 도메인으로 서비스됩니다. 대시보드의 Public hostname service는 여기 설정한 포트의 http://localhost를 가리켜야 합니다.",
@@ -1888,6 +1914,7 @@ export function SettingsModal({
             <div className="app-update-actions">
               <button
                 className="btn-secondary app-update-btn"
+                data-remote-config-save
                 onClick={handleSaveRemoteConfig}
               >
                 {configSaved ? "Saved!" : "Save"}

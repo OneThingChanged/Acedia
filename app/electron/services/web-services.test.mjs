@@ -18,6 +18,29 @@ afterEach(async () => {
 });
 
 describe("Electron dashboard server", () => {
+  it('cancels a pending tunnel download without starting a late background process',async()=>{
+    const service=new TunnelService({baseDir:'unused',getConfig:()=>({client_id:'fake',owner:'fixture',tunnel_token:'fake',public_hostname:'fixture.example.com',server_port:18800}),getLocalUrl:()=>null,spawnImpl:()=>{throw Error('Late tunnel spawn');}});
+    let downloaded;service.ensureExecutable=()=>new Promise(resolve=>{downloaded=resolve;});
+    const pending=service.start();const rejected=expect(pending).rejects.toThrow('cancelled');
+    await service.stop();downloaded('fake-cloudflared.exe');await rejected;
+    expect(service.status().running).toBe(false);
+  });
+  it('persists Remote startup opt-ins independently from the running server and older clients',async()=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'multiagent-remote-startup-'));roots.push(root);
+    const service=new RemoteDashboardService({baseDir:root});services.push(service);
+    expect(service.config).toMatchObject({auto_start:false,auto_start_tunnel:false});
+    await service.setConfig({auto_start:true,server_port:0});expect(service.status().running).toBe(false);
+    const restored=new RemoteDashboardService({baseDir:root});services.push(restored);expect(restored.config.auto_start).toBe(true);
+    await restored.setConfig({owner:'changed'});expect(restored.config.auto_start).toBe(true);
+    await expect(restored.setConfig({auto_start:'yes'})).rejects.toThrow();
+    await expect(restored.setConfig({auto_start_tunnel:true})).rejects.toThrow('named tunnel');
+    expect(restored.config.auto_start_tunnel).toBe(false);
+    await restored.setConfig({auto_start_tunnel:true,tunnel_token:'fake-token',public_hostname:'fixture.example.com',server_port:18800});
+    expect(restored.config.auto_start_tunnel).toBe(true);
+    await restored.setConfig({auto_start:false,tunnel_token:''});expect(restored.config.auto_start).toBe(false);
+    const [a,b]=await Promise.all([service.start(),service.start()]);expect(a).toEqual(b);expect(a.running).toBe(true);
+    await service.stop();expect(service.config.auto_start).toBe(true);
+  });
   it.each(["remote", "dashboard"])("preserves new-session permission defaults and explicit choices on %s", async surface => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-permission-default-api-")); roots.push(root);
     const creations = [];
