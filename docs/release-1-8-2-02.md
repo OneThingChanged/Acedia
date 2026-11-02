@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.02
-status: preparing
+status: published
 last_updated: 2026-11-02
 ---
 
@@ -23,4 +23,19 @@ last_updated: 2026-11-02
 - 손상 발생 시점은 이전 설치 파일 생성 과정으로 좁혀졌으며 구체적인 하드웨어·압축기 원인은 확정하지 않았다.
 - 전체 219개 파일·1,758개 테스트와 TypeScript/Vite 빌드를 통과했다.
 - 새 EXE의 내부 CRC `9c2ebaf4`, 압축 파일 전체 검사, 실제 Windows NSIS 시작 검증을 통과했다. 검증 모드는 코드 73으로 종료했고 기존 Acedia 프로세스 6개는 유지됐다. 기존 설치본의 제거 프로그램 CRC도 정상이다.
-- 공개 다운로드 검증 결과는 게시 후 기록한다.
+- packaged bridge/Dashboard 및 lifecycle 검증을 통과했다. ASAR 소스·렌더러 파일 371개와 Pixel Office 자산·라이선스가 일치한다.
+- 공개 다운로드에서도 CRC·압축 파일 전체·실제 NSIS 시작 검증을 통과했다. 기존 앱을 덮어쓰는 설치 자체는 실행하지 않았다. Windows FileVersion은 `1.8.2.02`, 기존 채널과 같은 미서명(`NotSigned`) 상태다.
+
+## 공개 배포 기록
+
+- 공개 릴리스: [v1.8.2.02](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.02).
+- 게시: **2026-11-02 20:59:28 KST**. 공개 전체 다운로드 및 설치 프로그램 시작 검증: **21:01:37 KST**.
+- 제품 소스: `0fb9ab57f8a63ca1e77e14632fb95c725fbab4c7`.
+- 실제 업데이터로 **1.8.2.01 / 1.8.2.00 / 1.8.1.96 → 1.8.2.02** 감지를 확인했다. 태그·manifest·공개 세 자산의 크기·SHA-256이 빌드와 일치한다.
+- 1.8.2.01은 설치 오류 안내와 함께 prerelease로 전환해 자동 업데이트 대상에서 제외했다. 이전 태그·자산은 보존했다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.02-x64.exe` | 156238952 | `8c450d7b046d03f7211dc647ac847ec462a62c3cd37c2e9191049fcd1daf16a7` |
+| `Acedia-Setup-1.8.2.02-x64.exe.blockmap` | 163382 | `6cdb5895eabb0122c936c90e0ac5d3ccef830caaafcafd7c22bd9ba7a120ceec` |
+| `latest-exe.json` | 256 | `da86deb25952b9aff3eb8428ae9372e24ca2bbc30b278294dfcdd3677e2e2cc9` |
