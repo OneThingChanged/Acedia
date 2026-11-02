@@ -57,6 +57,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Producer log lookup failed.' }
           $buildLog = $buildLog -join "`n"
           if (-not $buildLog.Contains("Product source: $sourceCommit / $version")) { throw 'Build source attestation differs from the product source.' }
+          if (-not $buildLog.Contains('[installer-integrity]') -or
+              -not $buildLog.Contains('"payload":"verified","nativeStartup":true')) {
+            throw 'Producer did not verify NSIS CRC, compressed payload and native installer startup.'
+          }
           $installerName = "Acedia-Setup-$version-x64.exe"
           $expectedNames = @($installerName, "$installerName.blockmap", 'latest-exe.json')
           $drafts = @(Read-GithubJson "repos/$repository/releases?per_page=100" | Where-Object tag_name -eq "v$version")

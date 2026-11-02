@@ -66,6 +66,11 @@ npm 호환 버전은 세 자리로 유지한다. EXE 업데이트에는 별도 `
    `latest-exe.json`의 `bundledMobileVersion`에 기록한다. 새 APK는 생성하지 않는다.
    데스크톱과 모바일을 함께 갱신할 때는 새 APK를 준비하고 옵션 없이 빌드한다.
 3. packaged smoke와 lifecycle smoke, 설치 파일 버전 및 해시를 확인한다.
+   Standard 빌드와 게시 스크립트는 NSIS 자체 CRC, 내부 압축 파일 전체, Windows의 실제
+   설치 프로그램 시작을 추가로 검사한다. `/S /ACEDIA_VERIFY_INSTALLER`는 NSIS의
+   정상 CRC 검사를 통과한 뒤 설치·기존 앱 종료·레지스트리 변경 전에 코드 73으로
+   종료한다. 검증 우회 옵션 `/NCRC`는 사용하지 않는다. 공개 다운로드도
+   `node app/scripts/verify-nsis-installer.mjs <내려받은 EXE>`로 다시 검사한다.
 4. 변경을 커밋·푸시하고 그 커밋에 대응하는 `vX.Y.Z.R` GitHub Release를 초안으로 만든다.
 5. `Acedia-Setup-X.Y.Z.R-x64.exe`, 해당 `.blockmap`, `latest-exe.json`을 업로드하고
    검증 후 안정 릴리스로 게시한다. 원본 인증값·개인 경로·빌드 로그는 첨부하지 않는다.

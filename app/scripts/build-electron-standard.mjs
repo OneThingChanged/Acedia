@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { verifyNsisInstaller } from "./verify-nsis-installer.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -107,6 +108,8 @@ writeFileSync(
 
 if (!process.argv.includes("--dir")) {
   const fileName = `Acedia-Setup-${releaseVersion}-x64.exe`;
+  const integrity = await verifyNsisInstaller(join(appDir, "electron-dist", fileName));
+  console.log(`[installer-integrity] ${JSON.stringify(integrity)}`);
   const bytes = readFileSync(join(appDir, "electron-dist", fileName));
   writeFileSync(join(appDir, "electron-dist", "latest-exe.json"), JSON.stringify({
     schemaVersion: 1, channel: "exe", version: releaseVersion, fileName,

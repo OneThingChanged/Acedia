@@ -28,6 +28,8 @@ $blockmapPath = "$installerPath.blockmap"
 if ((Get-Item -LiteralPath $blockmapPath).Length -le 0) { throw 'Installer blockmap is empty.' }
 $assets = @($installerPath, $blockmapPath, $manifestPath)
 $signature = Get-AuthenticodeSignature -LiteralPath $installerPath
+& node (Join-Path $PSScriptRoot 'verify-nsis-installer.mjs') $installerPath
+if ($LASTEXITCODE -ne 0) { throw 'NSIS installer integrity or startup verification failed.' }
 Write-Output "Verified $installerName ($($installer.Length) bytes, SHA-256 $installerHash, Authenticode $($signature.Status))."
 if ($VerifyOnly) { return }
 if ($SourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'The exact source commit is required for publication.' }

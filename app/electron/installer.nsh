@@ -1,3 +1,17 @@
+!macro preInit
+  !ifndef BUILD_UNINSTALLER
+    ; Let release checks run the real NSIS CRC/header loader without installing
+    ; or touching an existing Acedia process, profile or uninstall registration.
+    ${GetParameters} $R8
+    ClearErrors
+    ${GetOptions} $R8 "/ACEDIA_VERIFY_INSTALLER" $R9
+    ${IfNot} ${Errors}
+      SetErrorLevel 73
+      Quit
+    ${EndIf}
+  !endif
+!macroend
+
 !macro customInit
   ; Preserve the registered location during an update. Fresh installs used to
   ; inherit package.json's internal name (`app`) and landed in Programs\app.
