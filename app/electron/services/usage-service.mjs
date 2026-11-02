@@ -819,13 +819,33 @@ export class UsageService {
       return Number.isFinite(parsed) ? parsed : null;
     };
     const window = (source, windowMinutes) => {
-      const usedPercent = optionalNumber(source?.utilization ?? source?.percent);
+      const percent = source?.utilization ?? source?.percent;
+      if (source?.is_active === false || percent == null
+        || !["number", "string"].includes(typeof percent)
+        || (typeof percent === "string" && !percent.trim())) return null;
+      const usedPercent = optionalNumber(percent);
       if (usedPercent === null) return null;
       return { usedPercent, windowMinutes, resetsAt: resets(source?.resets_at) };
     };
+    // The current limits[] response is authoritative, including an absent
+    // session limit for verified Ultra accounts. Do not restore a removed
+    // five-hour ceiling from legacy compatibility fields or infer it from a plan.
+    const entries = Array.isArray(usage.limits) ? usage.limits : null;
+    const hasAccountEntries = entries?.some(value => ['session', 'weekly_all'].includes(value?.kind));
+    const accountWindow = (kind, legacy, windowMinutes) => {
+      // Older responses use limits[] only for model ceilings. Keep their
+      // legacy account windows until account-scoped entries are present.
+      if (!hasAccountEntries) return window(legacy, windowMinutes);
+      const entry = entries.find(value => value?.kind === kind && !value?.scope?.model);
+      const result = window(entry, windowMinutes);
+      // Transitional responses can omit a reset on the structured entry while
+      // still supplying it on the matching legacy window.
+      if (result && result.resetsAt === null) result.resetsAt = resets(legacy?.resets_at);
+      return result;
+    };
     const snapshots = [];
-    const primary = window(usage.five_hour, FIVE_HOUR_MINUTES);
-    const secondary = window(usage.seven_day, SEVEN_DAY_MINUTES);
+    const primary = accountWindow("session", usage.five_hour, FIVE_HOUR_MINUTES);
+    const secondary = accountWindow("weekly_all", usage.seven_day, SEVEN_DAY_MINUTES);
     if (primary || secondary) {
       snapshots.push({
         limitId: "claude",
@@ -842,7 +862,7 @@ export class UsageService {
     }
     // Model-scoped weekly ceilings (e.g. Opus/Fable) surface as their own rows,
     // mirroring how Codex shows an extra row per model limit.
-    for (const entry of Array.isArray(usage.limits) ? usage.limits : []) {
+    for (const entry of entries ?? []) {
       const displayName = typeof entry?.scope?.model?.display_name === "string"
         ? entry.scope.model.display_name.trim()
         : "";

@@ -10,11 +10,13 @@ import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml } from "./chat-markup.js";
 import { providerLogo, screenColor, searchText, reconcileChat } from './workspace-ui.js';
+import { buildSessionFamilies } from './session-tree.js';
+import { createChatRequests } from './chat-requests.js';
 import { filesForTurn, renderStoredImages } from './chat-files.js';
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { loadVideoPreview, cancelVideoPreview } from './video-preview.js';
 import { mergeChatPages, rawChatKey } from "./chat-history.js";
-import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, selectChatTurns, touchChatCache } from './chat-pagination.js';
+import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, CHAT_CACHED_SESSIONS, selectChatTurns, touchChatCache } from './chat-pagination.js';
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus } from "./session-state.js";
@@ -243,6 +245,9 @@ const SESSION_FILTER_KEY = "multiagent.remote.sessionFilter.v1";
 function storedList(key) { try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.slice(-500) : []; } catch { return []; } }
 function launchPreferences() { try { const value = JSON.parse(localStorage.getItem(launchPreferenceKey) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
 const projectFolds = new Set(storedList('multiagent.remote.projectFolds.v1').filter(id => typeof id === 'string'));
+const sessionFamilyFolds = new Set(storedList('multiagent.remote.sessionFamilyFolds.v1').filter(id => typeof id === 'string'));
+let sessionFamilyRevealKey = '';
+const rememberSessionFamilyFolds = () => { try { localStorage.setItem('multiagent.remote.sessionFamilyFolds.v1', JSON.stringify([...sessionFamilyFolds])); } catch {} };
 const completedUnread = new Map(storedList('multiagent.remote.completedUnread.v1').filter(row => Array.isArray(row) && row.length === 2));
 const completionSeen = new Map(storedList('multiagent.remote.completionSeen.v1').filter(row => Array.isArray(row) && row.length === 2));
 const deliveryModes = new Map();
@@ -696,14 +701,17 @@ function matchesQuery(agent, query) {
     .some((value) => searchText(value).includes(searchText(query)));
 }
 
-function visibleAgents() {
-  const query = ui.searchInput.value.trim().toLowerCase();
-  return allAgents().sort((left, right) => {
+function navigationAgents() {
+  return allAgents().filter(agent => !agent.sidebarArchived).sort((left, right) => {
     const projectDifference = projectName(left).localeCompare(projectName(right), getLanguage());
-    if (projectDifference !== 0) return projectDifference;
-    return text(left.name || left.id).localeCompare(text(right.name || right.id), getLanguage());
-  }).filter((agent) => {
-    return matchesSessionFilter(agent, activeFilter) && matchesQuery(agent, query);
+    return projectDifference || text(left.name || left.id).localeCompare(text(right.name || right.id), getLanguage());
+  });
+}
+
+function visibleAgents(catalog = navigationAgents()) {
+  const query = ui.searchInput.value.trim().toLowerCase();
+  return catalog.filter((agent) => {
+    return (!!query || matchesSessionFilter(agent, activeFilter)) && matchesQuery(agent, query);
   });
 }
 
@@ -815,7 +823,8 @@ const sessionModelEditor = createSessionModelEditor({
 
 function renderNavigation() {
   sessionModelEditor.update();
-  const counts = sessionFilterCounts(allAgents());
+  const catalog = navigationAgents();
+  const counts = sessionFilterCounts(catalog);
   for (const button of ui.filters.querySelectorAll("[data-filter]")) {
     const filter = button.dataset.filter;
     button.querySelector(".session-filter-count").textContent = String(counts[filter]);
@@ -847,13 +856,27 @@ function renderNavigation() {
   if (screens.length === 0) screenFragment.appendChild(make("p", "empty-state", query ? t("검색된 Screen이 없습니다.") : t("분할 Screen이 없습니다.")));
   ui.screenList.replaceChildren(screenFragment);
 
-  const agents = visibleAgents();
+  const families = buildSessionFamilies(visibleAgents(catalog), catalog, { includeDescendants: activeFilter === 'active' && !query });
+  const agents = families.agents;
+  const selected = selection.type === 'session' ? catalog.find(agent => agent.id === selection.id) : null;
+  const ancestors = [];
+  for (let parent = selected && families.parentById.get(selected.id); parent; parent = families.parentById.get(parent)) ancestors.push(parent);
+  const revealKey = JSON.stringify([selected?.id, ancestors]);
+  if (revealKey !== sessionFamilyRevealKey) {
+    sessionFamilyRevealKey = revealKey;
+    let changed = false;
+    for (const id of ancestors) changed = sessionFamilyFolds.delete(id) || changed;
+    if (changed) rememberSessionFamilyFolds();
+    if (selected && projectFolds.delete(selected.projectId)) {
+      try { localStorage.setItem('multiagent.remote.projectFolds.v1', JSON.stringify([...projectFolds])); } catch {}
+    }
+  }
   ui.visibleSessionCount.textContent = String(agents.length);
   const memberships = new Map();
   for (const screen of screenGroups()) for (const id of screen.memberIds) memberships.set(id, screen);
   const projects = new Map((remoteState.view?.projects || []).map(project => [project.id, project]));
   for (const agent of agents) if (!projects.has(agent.projectId)) projects.set(agent.projectId, { id: agent.projectId, name: projectName(agent) });
-  const structureKey = JSON.stringify([agents.map(agent => [agent.id, agent.projectId, agent.aiToolId]), [...projectFolds], query,
+  const structureKey = JSON.stringify([agents.map(agent => [agent.id, agent.projectId, agent.aiToolId, families.parentById.get(agent.id)]), [...projectFolds], [...sessionFamilyFolds], query,
     [...projects.values()].map(project => [project.id, project.name]), [...memberships].map(([id, screen]) => [id, screen.number])]);
   if (structureKey !== sessionNavigationStructureKey) {
     sessionNavigationStructureKey = structureKey;
@@ -867,8 +890,27 @@ function renderNavigation() {
       heading.addEventListener('click', () => { projectFolds.has(project.id) ? projectFolds.delete(project.id) : projectFolds.add(project.id); try { localStorage.setItem('multiagent.remote.projectFolds.v1', JSON.stringify([...projectFolds])); } catch {} sessionNavigationStructureKey = ''; renderNavigation(); });
       fragment.append(heading);
       if (!expanded) continue;
-      for (const agent of members) {
+      const renderFamily = (agent, depth = 0) => {
+        const family = make('div', 'session-family'); family.dataset.familyId = agent.id;
+        const children = families.children.get(agent.id) || [];
+        const expanded = !!query || !sessionFamilyFolds.has(agent.id);
         const row = make('div', 'session-row'); row.dataset.agentId = agent.id;
+        row.dataset.depth = String(depth);
+        if (families.parentById.has(agent.id)) row.dataset.parentId = families.parentById.get(agent.id);
+        if (children.length) {
+          const toggle = make('button', 'session-family-toggle', expanded ? '▾' : '▸');
+          toggle.type = 'button'; toggle.setAttribute('aria-expanded', String(expanded));
+          toggle.disabled = !!query;
+          toggle.setAttribute('aria-controls', `session-children-${encodeURIComponent(agent.id)}`);
+          toggle.setAttribute('aria-label', `${expanded ? t('하위 세션 접기') : t('하위 세션 펼치기')} · ${agent.name || agent.id} · ${children.length}`);
+          toggle.title = toggle.getAttribute('aria-label');
+          toggle.addEventListener('click', () => {
+            sessionFamilyFolds.has(agent.id) ? sessionFamilyFolds.delete(agent.id) : sessionFamilyFolds.add(agent.id);
+            rememberSessionFamilyFolds(); renderNavigation();
+            [...ui.sessionList.querySelectorAll('.session-row')].find(item => item.dataset.agentId === agent.id)?.querySelector('.session-family-toggle')?.focus({ preventScroll: true });
+          });
+          row.append(toggle);
+        } else row.append(make('span', 'session-family-spacer'));
         const button = make('button', 'session-select'); button.type = 'button';
         const dot = make('span', 'status-dot'); dot.setAttribute('aria-hidden', 'true');
         const copy = make('span', 'session-copy'); copy.append(make('strong', ''), make('small', ''));
@@ -878,9 +920,18 @@ function renderNavigation() {
         if (screen) { row.style.setProperty('--screen-color', screenColor(screen.number)); row.classList.add('has-screen'); actions.append(make('span', 'session-screen-badge', 'S' + screen.number)); }
         const close = make('button', 'session-close', '×'); close.type = 'button'; close.setAttribute('aria-label', t('세션 닫기') + ' · ' + agent.name);
         close.addEventListener('click', () => { void closeRemoteSession(agent.id); }); actions.append(close);
-        row.append(button, make('span', 'session-status'), actions); fragment.append(row);
+        row.append(button, make('span', 'session-status'), actions); family.append(row);
         row.addEventListener('click', event => { if (!event.target.closest('button')) selectSession(agent.id); });
-      }
+        if (children.length) {
+          const group = make('div', 'session-family-children');
+          group.id = `session-children-${encodeURIComponent(agent.id)}`; group.setAttribute('role', 'group');
+          group.setAttribute('aria-label', agent.name || agent.id); group.hidden = !expanded;
+          if (expanded) for (const child of children) group.append(renderFamily(child, depth + 1));
+          family.append(group);
+        }
+        return family;
+      };
+      for (const agent of families.roots.filter(agent => agent.projectId === project.id)) fragment.append(renderFamily(agent));
     }
     ui.sessionList.replaceChildren(fragment);
   }
@@ -5170,7 +5221,30 @@ function renderChat(data) {
 let lastChatKey = "";
 let lastChatFetch = { id: null, at: 0 };
 let chatAgent = null;
-async function fetchChat(agentId, { beforeSequence = null, prepend = false, latest = false } = {}) {
+const chatRequests = createChatRequests();
+const chatFileRefreshes = new Map();
+function refreshDeferredChatFiles(agentId, data) {
+  const previous = chatFileRefreshes.get(agentId);
+  if (!data.artifactsPending) {
+    if (data.blocks?.length && previous) { clearTimeout(previous.timer); chatFileRefreshes.delete(agentId); }
+    return;
+  }
+  const key = `${data.sessionId}:${data.lastSequence}`;
+  let job = previous;
+  if (job?.key !== key) { clearTimeout(job?.timer); job = { key, attempts: 0, timer: null }; chatFileRefreshes.set(agentId, job); }
+  if (job.timer || job.attempts >= 5) return;
+  job.timer = setTimeout(() => {
+    job.timer = null;
+    if (chatAgent !== agentId || lastChatData?.sessionId !== data.sessionId || lastChatData?.newerWindow) return;
+    job.attempts++; void fetchChat(agentId, { refreshFiles: true });
+  }, 750);
+  while (chatFileRefreshes.size > CHAT_CACHED_SESSIONS) { const id = chatFileRefreshes.keys().next().value; clearTimeout(chatFileRefreshes.get(id).timer); chatFileRefreshes.delete(id); }
+}
+function fetchChat(agentId, options = {}) {
+  if (!agentId || !nativePageActive) return Promise.resolve();
+  return chatRequests.run(agentId, options, (request, signal) => fetchChatPage(agentId, { ...request, signal }));
+}
+async function fetchChatPage(agentId, { beforeSequence = null, prepend = false, latest = false, refreshFiles = false, signal } = {}) {
   if (!agentId || !nativePageActive) return;
   if (!prepend && agentId !== chatAgent) {
     latest ||= chatHistoryStore.get(agentId)?.data?.newerWindow === true;
@@ -5188,13 +5262,14 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false, late
   if (prepend) { chatOlderLoading = true; chatOlderError = false; }
   try {
     const query = new URLSearchParams({ id: agentId, limit: '400', turns: String(CHAT_TURNS_PER_PAGE) });
+    if (!prepend) query.set('files', 'defer');
     if (beforeData?.conversationId) query.set('conversation', beforeData.conversationId);
-    if (!prepend && !latest && beforeData?.lastSequence && beforeData?.conversationId)
+    if (!prepend && !latest && !refreshFiles && beforeData?.lastSequence && beforeData?.conversationId)
       query.set('after', String(beforeData.lastSequence));
     if (Number.isSafeInteger(Number(beforeSequence)) && Number(beforeSequence) > 0) {
       query.set("before", String(beforeSequence));
     }
-    const response = await fetch(`/api/chat?${query}`, { credentials: "same-origin" });
+    const response = await fetch(`/api/chat?${query}`, { credentials: "same-origin", signal });
     let data = await response.json().catch(() => ({ blocks: [] }));
     if (!response.ok) data = { blocks: [], error: true };
     if (chatAgent !== agentId || seq !== (prepend ? chatOlderRequestSeq : chatRequestSeq)
@@ -5262,8 +5337,9 @@ async function fetchChat(agentId, { beforeSequence = null, prepend = false, late
       touchChatCache(chatHistoryStore, agentId, { sessionId: data.sessionId, data });
     }
     const last = blocks[blocks.length - 1];
+    if (!prepend) refreshDeferredChatFiles(agentId, data);
     // Skip re-render when nothing changed so opened tool/▸ details stay open.
-    const key = `${data.contentKey || JSON.stringify([blocks, data?.artifacts])}|${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}`;
+    const key = `${data.contentKey || JSON.stringify([blocks, data?.artifacts])}|${JSON.stringify(data?.pendingQuestion ?? null)}|${agentId}|${data?.sessionId || ""}|${blocks.length}|${String(last?.text ?? last?.output ?? "").length}|${data?.firstSequence || ""}|${data?.hasOlder ? 1 : 0}|${data?.lifecycle || ""}|${data?.unsupported ? 1 : 0}|${data?.missing ? 1 : 0}|${data?.error ? 1 : 0}|${data?.artifactsPending ? 1 : 0}`;
     if (key === lastChatKey) { updateWorking(); return; }
     lastChatKey = key;
     renderChat(data);
@@ -5295,6 +5371,7 @@ function syncSessionView() {
   renderComposerAttachments();
   const chat = sessionViewMode === "chat";
   const browser = sessionViewMode === "browser";
+  if (!chat) chatRequests.cancel();
   ui.appShell.dataset.sessionMode = sessionViewMode;
   if (ui.chatView) ui.chatView.hidden = !chat;
   if (ui.outputPanel) ui.outputPanel.hidden = sessionViewMode !== "term";
@@ -6360,6 +6437,7 @@ addEventListener("multiagent:native-visibility", (event) => {
     if (pollTimer) clearTimeout(pollTimer);
     pollTimer = null;
     chatRequestSeq += 1;
+    chatRequests.cancel();
     stopRemoteBrowser();
     syncTerminal();
     return;

@@ -1,6 +1,8 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['하위 세션 접기', 'Collapse child sessions', '折叠子会话', '摺疊子工作階段', '子セッションを折りたたむ', 'Contraer sesiones secundarias'],
+  ['하위 세션 펼치기', 'Expand child sessions', '展开子会话', '展開子工作階段', '子セッションを展開', 'Expandir sesiones secundarias'],
   ['작업 흐름', 'Task flow'],
   ['세션 도구 더 보기', 'More session tools'],
   ['세션 도구', 'Session tools'],

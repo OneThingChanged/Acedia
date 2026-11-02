@@ -172,6 +172,18 @@ limits are fetched from the local Claude Code OAuth usage endpoint only when a
 usable local credential exists. These percentages describe provider reset
 windows, not “tokens remaining” in the local history database.[^usage-service][^status-bar]
 
+As checked on 2026-11-02, Anthropic renamed Max 20x to Ultra. Verified Ultra
+accounts have no five-hour limit; weekly and model-specific weekly limits still
+apply. Accounts awaiting verification can retain a temporary session limit.
+See Anthropic's [Ultra plan and account verification guidance](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan).
+Acedia follows the returned windows rather than inferring verification from a
+subscription name. The structured `limits[]` response supplies the account's
+`session` and `weekly_all` windows; legacy `five_hour`/`seven_day` responses remain
+supported. If the server omits the session ceiling, the next successful refresh
+clears the stored five-hour window and the status bar uses the weekly percentage.
+This does not mark the entire account unlimited. Desktop, Dashboard and Remote
+share the same quota snapshot, and a failed refresh preserves the last known data.
+
 Managed Claude profiles use their own credential files for usage refresh. Each
 account has separately keyed overall/model windows labeled with its profile name;
 the default login retains its existing keys. Unavailable profiles preserve their

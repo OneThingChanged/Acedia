@@ -3857,14 +3857,14 @@ function conversationMetadataForAgent(agentId) {
   };
 }
 
-async function storedChatBlocks({ id, sessionId, tool, beforeSequence, afterSequence, conversationId, turnLimit, limit }) {
+async function storedChatBlocks({ id, sessionId, tool, beforeSequence, afterSequence, conversationId, turnLimit, limit, deferFiles }) {
   if (!sessionId || !['codex','claude','qwen'].includes(tool)) return null;
   return conversationStoreManager.listBlocks({
     agentId: id,
     sessionId,
     provider: tool,
     beforeSequence,
-    afterSequence, conversationId, turnLimit,
+    afterSequence, conversationId, turnLimit, deferFiles,
     limit,
   });
 }

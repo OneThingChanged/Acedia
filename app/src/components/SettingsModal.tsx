@@ -1,6 +1,6 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
 import { StartupSettingsPanel } from './StartupSettingsPanel';
-import { tunnelConfigurationIssue } from "../../electron/shared/tunnel-config.mjs";
+import { tunnelConfigurationIssue, validGitHubOwner } from "../../electron/shared/tunnel-config.mjs";
 import { DashboardLanPanel, type DashboardStatus } from "./DashboardLanPanel";
 import { UsageCollectorPanel } from './UsageCollectorPanel';
 import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
@@ -1823,10 +1823,12 @@ export function SettingsModal({
               <input
                 value={remoteConfig.owner}
                 placeholder="my-github-id"
+                aria-invalid={!!remoteConfig.owner.trim() && !validGitHubOwner(remoteConfig.owner)}
                 onChange={(e) =>
                   setRemoteConfig((c) => ({ ...c, owner: e.target.value }))
                 }
               />
+              <small className="property-note">{text("이메일이 아닌 GitHub 프로필의 아이디를 입력하세요. 프로젝트 밖 결과 파일은 이 소유자 계정으로 로그인해야 열 수 있습니다.", "Enter your GitHub username, not your email. Sign in as this owner to open exported files outside projects.")}</small>
             </label>
             <label className="field app-remote-field" {...settingTarget("remote.clientSecret")}>
               <span className="field-label">

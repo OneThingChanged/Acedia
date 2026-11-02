@@ -125,6 +125,20 @@ if (process.versions.electron) {
       await desktop.webContents.executeJavaScript("document.querySelector('.usage-manage-accounts').click()");
       for (let n = 0; n < 30 && !openedUrl; n++) await new Promise(resolve => setTimeout(resolve, 80));
       check(openedUrl === `${url}/?usage=1&accounts=1`, 'Management button opened a different account surface');
+      // Exercise an existing account moving from a temporary session ceiling
+      // to verified Ultra, without real credentials or a model request.
+      let claudeUsage = { five_hour: { utilization: 99 }, seven_day: { utilization: 26 } };
+      usage.claudeAccounts = () => [{ id: 'default' }];
+      usage.claudeUsageFetcher = async () => ({ subscriptionType: 'ultra', usage: claudeUsage });
+      await usage.refreshClaudeRateLimits(true);
+      desktop.webContents.send('multiagent:event', 'usage:changed', {});
+      await until(desktop, "document.querySelector('.usage-account-card[data-profile-key=claude]')?.textContent.includes('5시간 한도')");
+      claudeUsage = { limits: [{ kind: 'weekly_all', group: 'weekly', percent: 26, resets_at: '2026-11-06T14:00:00Z' }] };
+      await usage.refreshClaudeRateLimits(true);
+      desktop.webContents.send('multiagent:event', 'usage:changed', {});
+      await until(desktop, `(() => { const card = document.querySelector('.usage-account-card[data-profile-key=claude]'); return card?.textContent.includes('주간 한도') && !card.textContent.includes('5시간 한도') && !card.textContent.includes('99%'); })()`);
+      await desktop.webContents.executeJavaScript("document.querySelector('input[value=claude]').click()");
+      await until(desktop, "[...document.querySelectorAll('.usage-status-provider')].some(el => el.textContent.includes('Claude') && el.textContent.includes('26%'))");
       const output = path.resolve(root, '../output'); await fs.mkdir(output, { recursive: true });
       await fs.writeFile(path.join(output, 'unified-usage-desktop.png'), (await desktop.webContents.capturePage()).toPNG());
       for (const [server, width, name] of [[dashboard, 1100, 'dashboard'], [remote, 390, 'remote']]) {
@@ -132,8 +146,9 @@ if (process.versions.electron) {
         await win.loadURL(`${server.status().url}/?usage=1&accounts=1`);
         await until(win, "document.querySelectorAll('.pool-card').length === 2");
         await win.webContents.executeJavaScript("document.querySelectorAll('.pool-tabs button')[0].click()");
-        await until(win, "document.querySelector('.pool-panel').hidden && document.querySelectorAll('.usage-provider-card').length === 2");
+        await until(win, "document.querySelector('.pool-panel').hidden && document.querySelectorAll('.usage-provider-card').length === 3");
         check(await win.webContents.executeJavaScript("document.querySelector('#usageProviderGrid').textContent.includes('Work') && document.querySelector('#usageProviderGrid').textContent.includes('Personal') && !!document.querySelector('[data-routing=excluded]')"), 'Usage list differs from routing list');
+        check(await win.webContents.executeJavaScript(`(() => { const card = [...document.querySelectorAll('.usage-provider-card')].find(el => el.textContent.includes('Claude')); return card?.textContent.includes('26%') && card.textContent.includes('주간 한도') && !card.textContent.includes('5시간 한도') && !card.textContent.includes('99%'); })()`), `${name}: Claude weekly-only quota was not rendered correctly`);
         check(await win.webContents.executeJavaScript("document.documentElement.scrollWidth <= innerWidth + 1"), 'Usage layout overflow');
         await win.webContents.executeJavaScript("document.querySelector('#usageProviderGrid').scrollIntoView()");
         await new Promise(resolve => setTimeout(resolve, 250));
@@ -148,6 +163,7 @@ if (process.versions.electron) {
       console.log('UNIFIED_USAGE_DESKTOP_DASHBOARD_REMOTE_SELECTION_RENAME_AND_MANAGEMENT_OK');
       console.log('UNIFIED_USAGE_ROUTED_QUOTA_AUTO_UPDATE_WITHOUT_REFRESH_OR_FOCUS_OK');
       console.log('UNIFIED_USAGE_ROLLING_UPDATE_DURING_MANUAL_REFRESH_OK');
+      console.log('CLAUDE_ULTRA_WEEKLY_ONLY_DESKTOP_DASHBOARD_REMOTE_OK');
     } catch (error) { console.error(error); exitCode = 1; }
     finally {
       for (const win of windows) if (!win.isDestroyed()) win.destroy();

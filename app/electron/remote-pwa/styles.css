@@ -1199,6 +1199,15 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .provider-logo { width: 19px; height: 19px; flex: 0 0 19px; color: #cbd5e1; }
 .session-row { display: flex; align-items: center; gap: 5px; }
 .session-row .session-select { flex: 1; }
+.session-family { min-width: 0; }
+.session-family + .session-family { margin-top: 5px; }
+.session-family-children { margin: 5px 0 0 10px; padding-left: 7px; border-left: 1px solid var(--line-strong); }
+.session-family-toggle, .session-family-spacer { flex: 0 0 22px; width: 22px; }
+.session-family-toggle { align-self: stretch; min-height: 40px; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font: inherit; cursor: pointer; }
+.session-family-toggle:hover, .session-family-toggle:focus-visible { color: var(--cyan); background: rgba(80, 223, 208, 0.1); }
+.session-family-toggle:disabled { opacity: .55; cursor: default; }
+.session-family-children .session-row { padding-left: 4px; padding-right: 5px; gap: 3px; }
+@media (hover: none) { .session-family-toggle { flex-basis: 44px; width: 44px; min-height: 44px; } }
 .session-row .session-status[hidden] { display: none; }
 .session-select { display: grid; grid-template-columns: 7px 19px minmax(0,1fr); align-items: center; gap: 7px; min-width: 0; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .session-row.has-screen { border-left: 2px solid var(--screen-color); }
@@ -2063,6 +2072,10 @@ html[data-native-app="true"] .android-download-button { display: none !important
 
 .remote-video { width: 100%; max-height: 75vh; background: #000; object-fit: contain; }
 .remote-video[hidden] { display: none; }
+/* The modal body excludes its header and can be shorter than 75vh. Size the
+   player to that space so native controls stay above its clipped bottom edge. */
+.file-preview-body > .remote-video { height: 100%; max-height: 100%; }
+.file-preview-body > .remote-video:not([hidden]) { display: block; }
 
 :root { --question-color: #22d3ee; }
 .status-dot.question, .status-lane[data-status="question"] .lane-title i { background: var(--question-color); box-shadow: 0 0 7px #22d3ee55; }

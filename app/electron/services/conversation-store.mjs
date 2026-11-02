@@ -453,7 +453,7 @@ export class ConversationStore {
     return { conversationId, inserted };
   }
 
-  async listBlocks({ agentId, sessionId, provider, beforeSequence = null, afterSequence = null, conversationId: expectedId = null, turnLimit = null, limit = 400 }) {
+  async listBlocks({ agentId, sessionId, provider, beforeSequence = null, afterSequence = null, conversationId: expectedId = null, turnLimit = null, limit = 400, deferFiles = false }) {
     const conversation = this.db().prepare(`SELECT id,project_path projectPath FROM conversations
       WHERE agent_id=? AND provider=? AND provider_session_id=?`).get(
       String(agentId || "").trim(),
@@ -525,7 +525,7 @@ export class ConversationStore {
     let cursor = 0;
     // File checks on network/mapped drives must never block Electron's main
     // thread. Deduplicate per path and cap outstanding I/O, including misses.
-    await Promise.all(Array.from({ length: Math.min(8, unique.length) }, async () => {
+    const fileChecks = Promise.all(Array.from({ length: Math.min(8, unique.length) }, async () => {
       while (cursor < unique.length) {
         const file = unique[cursor++];
         let cached = this.fileStats.get(file.path);
@@ -539,6 +539,14 @@ export class ConversationStore {
         stats.set(file.path, await cached.promise);
       }
     }));
+    let filesReady = true;
+    if (deferFiles && !older) {
+      // Text is ready already. A slow export/share must not hold the whole
+      // conversation response; the next bounded file refresh reuses these reads.
+      let timer;
+      try { filesReady = await Promise.race([fileChecks.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 150); })]); }
+      finally { clearTimeout(timer); }
+    } else await fileChecks;
     const artifacts = candidates.flatMap(file => {
       const stat = stats.get(file.path);
       if (!stat?.isFile() && file.change?.operation !== "delete") return [];
@@ -551,6 +559,7 @@ export class ConversationStore {
       conversationId: String(conversation.id),
       blocks: pagedTurns ? compactChatBlocks(blocks) : blocks,
       artifacts,
+      ...(deferFiles ? { artifactsPending: !filesReady } : {}),
       hasOlder,
       firstSequence,
       lastSequence: blocks.at(-1)?.sequence ?? (delta ? after : null),

@@ -1,5 +1,5 @@
 import { RemoteHosting } from './remote-hosting.mjs';
-import { assertTunnelConfigured } from "../shared/tunnel-config.mjs";
+import { assertTunnelConfigured, validGitHubOwner } from "../shared/tunnel-config.mjs";
 import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes } from "../shared/remote-attachments.mjs";
@@ -141,6 +141,8 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/account-pool.js", { file: "account-pool.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/usage-sessions.js", { file: "usage-sessions.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-state.js", { file: "../shared/session-state.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/session-tree.js", { file: "session-tree.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/chat-requests.js", { file: "chat-requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/attachments.js", { file: "../shared/remote-attachments.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -501,6 +503,10 @@ function chatPageOptions(url) {
     options[key] = value;
   }
   if (options.beforeSequence && options.afterSequence) throw new TypeError('Conflicting chat cursors');
+  if (url.searchParams.has('files')) {
+    if (url.searchParams.get('files') !== 'defer') throw new TypeError('Invalid chat file mode');
+    options.deferFiles = true;
+  }
   if (url.searchParams.has('conversation')) {
     const id = url.searchParams.get('conversation');
     if (!id || id.length > 200) throw new TypeError('Invalid conversation identity');
@@ -1188,7 +1194,9 @@ export class RemoteDashboardService {
 
   async setConfig(config) {
     if (['auto_start', 'auto_start_tunnel'].some(key => config[key] !== undefined && typeof config[key] !== 'boolean')) throw new TypeError('Invalid Remote startup setting');
+    if (config.owner !== undefined && (typeof config.owner !== 'string' || (config.owner.trim() && !validGitHubOwner(config.owner)))) throw new TypeError('Owner must be a GitHub username, not an email address or profile URL.');
     const next = { ...this.config, ...config };
+    if (typeof next.owner === 'string') next.owner = next.owner.trim();
     if (next.auto_start && next.auto_start_tunnel && (!String(next.tunnel_token || '').trim() || !String(next.public_hostname || '').trim()
       || !Number.isInteger(Number(next.server_port)) || Number(next.server_port) < 1 || Number(next.server_port) > 65535)) throw new Error('Save a named tunnel token, hostname and fixed server port before enabling automatic tunnel connection.');
     const previousOwner = String(this.config.owner || "").trim();

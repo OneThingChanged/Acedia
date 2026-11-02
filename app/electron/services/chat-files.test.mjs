@@ -5,6 +5,33 @@ import { collectConversationFiles } from "./chat-files.mjs";
 import { parseChatTranscript } from "./chat-transcript.mjs";
 import { changesFromToolCall } from "./chat-file-changes.mjs";
 
+it('decodes nested tool JSON before discovering files instead of probing escaped CR/LF as UNC shares', () => {
+  const reads = [];
+  const real = path.resolve('C:/Project/result.png');
+  const output = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ output: '\r\n\r\nNode.js\r\nC:\\Project\\result.png\r\n', exit_code: 0 }) }] });
+  const files = collectConversationFiles([{ sequence: 1, role: 'tool', kind: 'tool-result', output }], {
+    projectPath: path.resolve('project'), statFile: file => { reads.push(file); return file === real ? { isFile: () => true, size: 1, mtimeMs: 0 } : null; },
+  });
+  expect(files.map(file => file.path)).toContain(real);
+  expect(reads.some(file => file.startsWith('\\\\'))).toBe(false);
+});
+
+it('keeps explicit network file references usable', () => {
+  const target = path.resolve('\\\\server\\share\\preview.png');
+  const files = collectConversationFiles([{ sequence: 1, role: 'assistant', kind: 'tool-call', name: 'Read', input: { file_path: target } }], {
+    projectPath: path.resolve('project'), statFile: () => ({ isFile: () => true, size: 1, mtimeMs: 0 }),
+  });
+  expect(files[0].path).toBe(target);
+});
+
+it('rejects repeatedly escaped line separators from clipped tool envelopes', () => {
+  const reads = [];
+  collectConversationFiles([{ sequence: 1, role: 'tool', kind: 'tool-result', output: 'clipped output \\\\r\\\\n\\\\r\\\\nNode.js \\\\r\\\\nsys.path.insert' }], {
+    projectPath: path.resolve('project'), statFile: file => { reads.push(file); return null; },
+  });
+  expect(reads.some(file => file.startsWith('\\\\'))).toBe(false);
+});
+
 const projectPath = path.resolve("project");
 const collect = blocks => collectConversationFiles(blocks, { projectPath, statFile: target => target.includes("missing") ? null : { isFile: () => true, size: 20, mtimeMs: 1000 } });
 const call = (sequence, name, input, callId) => ({ sequence, role: "assistant", kind: "tool-call", name, input, ...(callId ? { callId } : {}) });

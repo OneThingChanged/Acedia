@@ -1144,6 +1144,63 @@ Original media and user sessions were unchanged. These changes share the
 **v100** cache with the ZIP and Claude answer fixes in [1.8.1.83](release-1-8-1-83.md).
 [^video-ui-smoke]
 
+### Portrait video controls (2026-11-02 source, publication pending)
+
+Chat's video player now fills the preview body below the header rather than
+using the browser's viewport height. Portrait media keeps its aspect ratio with
+letterboxing, and native playback, seeking and fullscreen controls remain within
+the visible dialog. This also applies to Dashboard. Inline Documents videos keep
+their existing sizing. The Remote static cache advances to **v105**.
+
+`node app/scripts/electron-portrait-video-smoke.mjs` generates isolated portrait
+and landscape WebM fixtures in Chromium. It verifies playback, the player bounds,
+pointer access at the control edge and source release on close across Remote and
+Dashboard at five desktop, phone and tablet sizes (20 cases). Related video and
+web-service tests pass 31 assertions across three files.
+
+### Session families in navigation (2026-11-02 source, publication pending)
+
+Remote and Dashboard group each project's sessions by the editable
+`sessionHierarchy.parentId`, including grandchildren. The disclosure buttons
+collapse or expand a family without starting or closing sessions; collapsed
+families are remembered in this browser. Opening a linked child reveals its
+ancestor path. A search temporarily expands matching paths, including matches
+outside the current lifecycle filter, and clearing it restores the saved folds.
+
+Active keeps the required parents of running children even when those parents
+are sleeping or stopped. Additional inactive children follow the desktop's
+`sidebarShowInactiveChildren` preference (hidden by default, inherited from the
+nearest explicit parent choice). All and Sleeping remain discoverable, archived
+sessions stay hidden, and missing, cross-project or cyclic parents cannot hide
+their children. Creation provenance does not override a later parent change.
+Navigation counts describe session lifecycles; contextual parents can add rows
+to an Active result. The new module shares the pending **v105** static cache.
+
+Validation: 64 related tests in four files, TypeScript checking, and
+`node app/scripts/electron-remote-session-tree-smoke.mjs`. The latter covers
+Remote and Dashboard at 1100px, 390px and 820px, with nested selection, remembered
+folds, filtered search, inactive ancestor/child visibility and live reparenting.
+
+### Slow chat responses and external export access (1.8.2.01)
+
+One latest read per session remains in flight while ordinary state polls reuse it.
+Explicit latest/file refreshes coalesce into one follow-up; session changes and
+hidden native pages abort superseded requests. Each network read has a 20-second
+deadline. Slow responses are no longer repeatedly discarded by newer poll IDs.
+
+Remote pages request `files=defer`. Indexed text and compact tool summaries wait
+at most 150ms for file metadata; outstanding checks continue in the existing
+eight-worker queue and reuse per-path promises. Bounded follow-up reads supplement
+file cards without resetting the loaded history window. Older-page loading keeps
+its existing scroll-anchor behavior. Tool JSON envelopes are decoded before path
+discovery so escaped CR/LF fragments do not become accidental UNC shares.
+
+Owner is a GitHub username, compared with OAuth's verified `login`. Email addresses,
+profile URLs and invalid username syntax are rejected before saving and before
+Remote/tunnel startup. Explicit exports outside projects still require the owner;
+approved guests do not acquire this access. A corrected saved owner takes effect
+at the next app start when applying the setting through an offline configuration.
+
 
 [^web-services]: Dashboard and Remote server
 [^web-tests]: Remote authentication and endpoint tests

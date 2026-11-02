@@ -13,20 +13,35 @@ function cleanPath(value, encoded = false) {
   return candidate.replace(/^\/(?=[a-z]:[\\/])/i, "").replace(/\\([ ()])/g, "$1");
 }
 
+function outputTexts(value, depth = 0) {
+  if (depth > 6) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length <= 1024 * 1024 && /^[\[{]/.test(trimmed)) {
+      try { return outputTexts(JSON.parse(trimmed), depth + 1); } catch {}
+    }
+    return [value];
+  }
+  if (!value || typeof value !== 'object') return [];
+  return (Array.isArray(value) ? value : Object.values(value)).slice(0, 256).flatMap(part => outputTexts(part, depth + 1));
+}
+
 // Read only paths mentioned in a block. Never enumerate the project directory.
 export function conversationFileCandidates(block) {
   if (block.role === "user" || block.kind === "reasoning") return [];
   const candidates = new Map();
-  const add = (value, encoded = false) => {
+  const add = (value, encoded = false, trustedPath = false) => {
     const candidate = String(value ?? "").trim();
-    if (candidate && candidate.length <= 2048 && candidates.size < 256) candidates.set(`${encoded}:${candidate}`, { path: candidate, encoded });
+    if (candidate && candidate.length <= 2048 && candidates.size < 256) candidates.set(`${encoded}:${candidate}`, { path: candidate, encoded, ...(trustedPath ? { trustedPath: true } : {}) });
   };
   if (block.input && typeof block.input === "object") {
     for (const key of ["file_path", "path", "filePath", "output_path", "relativePath", "notebook_path"]) {
-      if (typeof block.input[key] === "string") add(block.input[key]);
+      if (typeof block.input[key] === "string") add(block.input[key], false, true);
     }
   }
-  for (const value of [block.text, block.output]) {
+  // Tool envelopes contain JSON-escaped CR/LF. Decode their string values
+  // before tokenizing; otherwise "\\r\\nNode.js" becomes a Windows UNC path.
+  for (const value of [block.text, ...outputTexts(block.output)]) {
     if (typeof value !== "string") continue;
     // Process links and code spans first so surrounding Markdown isn't part of a path.
     const plain = value.replace(/\]\((<[^>]+>|[^)\r\n]+)\)/g, (_, target) => { add(target.replace(/\s+["'][^"']*["']$/, ""), true); return " "; })
@@ -81,6 +96,7 @@ export function conversationFileAssociations(blocks, { projectPath }) {
   const add = (candidate, block, usage, change) => {
     const cleaned = typeof candidate === "string" ? cleanPath(candidate) : cleanPath(candidate.path, candidate.encoded);
     if (!cleaned || !Number.isSafeInteger(block.sequence)) return;
+    if (typeof candidate !== 'string' && !candidate.trustedPath && /^(?:\\+[rnt]){2,}/.test(cleaned)) return;
     const resolved = path.isAbsolute(cleaned) ? path.resolve(cleaned) : projectPath ? path.resolve(projectPath, cleaned) : null;
     if (!resolved) return;
     const key = `${block.sequence}:${process.platform === "win32" ? resolved.toLowerCase() : resolved}`;

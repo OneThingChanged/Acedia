@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.01](release-1-8-2-01.md) - Remote 대화 로딩, 소유자 검증, 세션 트리, 세로 영상 컨트롤 및 Claude 계정 한도 개선.
+
 * [Product overview](product-overview.md) - Product goals, runtime shape, capabilities, and variants.
 * [System architecture](system-architecture.md) - Electron boundaries, workspace model, layout invariants, and IPC rules.
 * [Shared user data](shared-user-data.md) - EXE/Store common profile, migration, and single active channel.

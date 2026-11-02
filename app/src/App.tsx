@@ -1287,6 +1287,8 @@ function App() {
         sshHostId: a.sshHostId ?? null,
         dangerous: a.dangerous,
         modelSettings: a.modelSettings,
+        sidebarArchived: a.sidebarArchived,
+        sidebarShowInactiveChildren: a.sidebarShowInactiveChildren,
         sessionHierarchy: a.sessionHierarchy ? {
           parentId: a.sessionHierarchy.parentId,
           createdById: a.sessionHierarchy.createdById,

@@ -349,6 +349,88 @@ describe("Electron usage index", () => {
     expect((await service.getRateLimits(true)).limits).toEqual([]);
     service.close();
   });
+
+  it.each([
+    ["legacy weekly-only", {
+      five_hour: null, seven_day: { utilization: 25, resets_at: "2026-11-06T14:00:00Z" },
+    }],
+    ["structured weekly-only", {
+      limits: [{ kind: "weekly_all", group: "weekly", percent: 25, resets_at: "2026-11-06T14:00:00Z" }],
+    }],
+    ["removed structured session with an old compatibility field", {
+      five_hour: { utilization: 99, resets_at: "2026-11-02T14:00:00Z" },
+      limits: [{ kind: "weekly_all", group: "weekly", percent: 25, resets_at: "2026-11-06T14:00:00Z" }],
+    }],
+    ["inactive structured session", {
+      limits: [
+        { kind: "session", group: "session", percent: 99, is_active: false },
+        { kind: "weekly_all", group: "weekly", percent: 25, resets_at: "2026-11-06T14:00:00Z" },
+      ],
+    }],
+  ])("displays %s Claude usage without inventing a five-hour limit", async (_name, usage) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-usage-ultra-")); roots.push(root);
+    const service = new UsageService(path.join(root, "usage.db"), { scan: async () => [] }, {
+      claudeUsageFetcher: async () => ({ usage, subscriptionType: "ultra" }),
+    });
+    try {
+      const base = (await service.getRateLimits(true)).limits.find(limit => limit.limitId === "claude");
+      expect(base).toMatchObject({
+        planType: "ultra", primary: null,
+        secondary: { usedPercent: 25, windowMinutes: 10_080, resetsAt: Date.parse("2026-11-06T14:00:00Z") / 1000 },
+        credits: { unlimited: false },
+      });
+    } finally { service.close(); }
+  });
+
+  it.each(["pro", "max", "ultra"])("preserves a server-reported session limit for %s", async subscriptionType => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-usage-session-limit-")); roots.push(root);
+    const service = new UsageService(path.join(root, "usage.db"), { scan: async () => [] }, {
+      claudeUsageFetcher: async () => ({ subscriptionType, usage: { limits: [
+        { kind: "session", group: "session", percent: 0, resets_at: "2026-11-02T14:00:00Z" },
+        { kind: "weekly_all", group: "weekly", percent: 11 },
+        { kind: "weekly_scoped", group: "weekly", percent: 42, scope: { model: { display_name: "Fable" } } },
+      ] } }),
+    });
+    try {
+      const limits = (await service.getRateLimits(true)).limits;
+      expect(limits.find(limit => limit.limitId === "claude")).toMatchObject({
+        planType: subscriptionType,
+        primary: { usedPercent: 0, windowMinutes: 300 }, secondary: { usedPercent: 11, windowMinutes: 10_080 },
+      });
+      expect(limits.find(limit => limit.limitId === "claude:weekly_scoped:fable")).toMatchObject({
+        primary: { usedPercent: 42, windowMinutes: 10_080 },
+      });
+    } finally { service.close(); }
+  });
+
+  it("clears a previously stored Claude session ceiling when the same account becomes weekly-only", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-usage-ultra-upgrade-")); roots.push(root);
+    let usage = { five_hour: { utilization: 99 }, seven_day: { utilization: 12 } };
+    const service = new UsageService(path.join(root, "usage.db"), { scan: async () => [] }, {
+      claudeUsageFetcher: async () => ({ usage, subscriptionType: "max" }),
+    });
+    try {
+      expect((await service.getRateLimits(true)).limits[0].primary.usedPercent).toBe(99);
+      usage = { limits: [{ kind: "weekly_all", group: "weekly", percent: 26 }] };
+      expect((await service.getRateLimits(true)).limits[0]).toMatchObject({
+        primary: null, secondary: { usedPercent: 26, windowMinutes: 10_080 },
+      });
+      expect(service.rateLimitSummary().limits[0].primary).toBeNull();
+      service.claudeUsageFetcher = async () => ({ status: "timeout" });
+      expect((await service.getRateLimits(true)).limits[0]).toMatchObject({ primary: null, secondary: { usedPercent: 26 } });
+    } finally { service.close(); }
+  });
+
+  it.each([null, "", " ", false, {}, "not-a-number"])("does not render an unknown session percent as zero: %j", value => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagent-usage-unknown-percent-")); roots.push(root);
+    const service = new UsageService(path.join(root, "usage.db"), {});
+    try {
+      const snapshots = service.claudeRateLimitSnapshots({ limits: [
+        { kind: "session", percent: value }, { kind: "weekly_all", percent: 25 },
+      ] }, "ultra", 1);
+      expect(snapshots[0]).toMatchObject({ primary: null, secondary: { usedPercent: 25 } });
+    } finally { service.close(); }
+  });
 });
 
 

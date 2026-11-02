@@ -8,6 +8,7 @@ import {
   formatUsageWindow,
   groupUsageProviders,
   groupUsageProfiles,
+  primaryUsageWindow,
   usageLimitShortName,
   usageProviderKey,
   usageTone,
@@ -27,6 +28,12 @@ function limitOf(limitId: string, limitName: string | null): UsageRateLimit {
 }
 
 describe("usage rate limit formatting", () => {
+  it("uses the weekly window when Claude does not report a session ceiling", () => {
+    const limit = { ...limitOf("claude", "Claude"), planType: "ultra", primary: null,
+      secondary: { usedPercent: 26, windowMinutes: 10_080, resetsAt: 1_799_000_000 } };
+    expect(primaryUsageWindow(limit)).toBe(limit.secondary);
+    expect(formatUsageWindow(primaryUsageWindow(limit)!.windowMinutes)).toBe("주간 한도");
+  });
   it("uses the selected locale for usage units and relative time", () => {
     expect(formatUsageWindow(300, "es")).toBe("5 horas · Límite de uso");
     expect(formatUsageWindow(10080, "zh-TW")).toBe("每週額度");

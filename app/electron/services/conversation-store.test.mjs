@@ -33,6 +33,30 @@ afterEach(async () => {
 });
 
 describe("ConversationStoreManager", () => {
+  it('returns ready text while file metadata is slow and reuses the pending check on refresh', async () => {
+    const root = await tempRoot();
+    const manager = new ConversationStoreManager({ configDir: path.join(root, 'config'), defaultRoot: path.join(root, 'store') });
+    const file = path.join(root, 'export.png'), transcriptPath = path.join(root, 'session.jsonl');
+    let release;
+    try {
+      await fsPromises.writeFile(file, 'image');
+      await fsPromises.writeFile(transcriptPath, codexLine('user', 'Show the result') + '\n' + codexLine('assistant', '`export.png`') + '\n');
+      const input = { agentId: 'a', sessionId: 's', provider: 'codex', projectPath: root, transcriptPath };
+      await manager.ingestTranscript(input);
+      const original = fsPromises.stat.bind(fsPromises);
+      const pending = new Promise(resolve => { release = resolve; });
+      const spy = vi.spyOn(fsPromises, 'stat').mockImplementation((target, ...args) => target === file ? pending : original(target, ...args));
+      const first = await manager.listBlocks({ ...input, turnLimit: 5, deferFiles: true });
+      expect(first.blocks.at(-1).text).toBe('`export.png`');
+      expect(first.artifactsPending).toBe(true);
+      expect(first.artifacts).toEqual([]);
+      release(await original(file));
+      const refreshed = await manager.listBlocks({ ...input, turnLimit: 5, deferFiles: true });
+      expect(refreshed.artifactsPending).toBe(false);
+      expect(refreshed.artifacts[0].path).toBe(file);
+      expect(spy.mock.calls.filter(([target]) => target === file)).toHaveLength(1);
+    } finally { release?.(null); vi.restoreAllMocks(); manager.close(); }
+  });
   it('pages whole replies, transmits compact work, and polls only new records without repeating file checks', async () => {
     const root = await tempRoot();
     const manager = new ConversationStoreManager({configDir:path.join(root,'config'),defaultRoot:path.join(root,'store')});
