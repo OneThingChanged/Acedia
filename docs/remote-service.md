@@ -1144,7 +1144,7 @@ Original media and user sessions were unchanged. These changes share the
 **v100** cache with the ZIP and Claude answer fixes in [1.8.1.83](release-1-8-1-83.md).
 [^video-ui-smoke]
 
-### Portrait video controls (2026-11-02 source, publication pending)
+### Portrait video controls (1.8.2.01)
 
 Chat's video player now fills the preview body below the header rather than
 using the browser's viewport height. Portrait media keeps its aspect ratio with
@@ -1158,7 +1158,7 @@ pointer access at the control edge and source release on close across Remote and
 Dashboard at five desktop, phone and tablet sizes (20 cases). Related video and
 web-service tests pass 31 assertions across three files.
 
-### Session families in navigation (2026-11-02 source, publication pending)
+### Session families in navigation (1.8.2.01)
 
 Remote and Dashboard group each project's sessions by the editable
 `sessionHierarchy.parentId`, including grandchildren. The disclosure buttons
@@ -1174,7 +1174,8 @@ nearest explicit parent choice). All and Sleeping remain discoverable, archived
 sessions stay hidden, and missing, cross-project or cyclic parents cannot hide
 their children. Creation provenance does not override a later parent change.
 Navigation counts describe session lifecycles; contextual parents can add rows
-to an Active result. The new module shares the pending **v105** static cache.
+to an Active result. The new module ships in the **v105** static cache with
+[1.8.2.01](release-1-8-2-01.md).
 
 Validation: 64 related tests in four files, TypeScript checking, and
 `node app/scripts/electron-remote-session-tree-smoke.mjs`. The latter covers

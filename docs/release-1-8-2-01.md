@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.01
-status: prepared
+status: published
 last_updated: 2026-11-02
 ---
 
@@ -31,4 +31,17 @@ last_updated: 2026-11-02
 - 소유자 설정 오류를 재현한 격리 서버에서 외부 PNG의 403 차단과 올바른 소유자 설정 후 200 응답을 확인했다.
 - 실행 의존성 취약점 0개. 빌드·개발 도구에는 이전 릴리스와 같은 minimatch 관련 Moderate 15개가 남아 있다. 강제 major override는 적용하지 않으며 배포 ASAR에 해당 모듈이 들어가지 않는지 별도로 검증한다. [공식 보안 권고](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 
-EXE 빌드·packaged/lifecycle 검사 및 공개 다운로드 결과는 완료 후 기록한다. 릴리스 범위는 Standard EXE·GitHub다.
+EXE 빌드와 packaged bridge/Dashboard·lifecycle 검사를 통과했다. ASAR 내 소스·렌더러 관련 파일 371개와 Pixel Office 자산·라이선스가 소스와 일치하며 minimatch는 포함되지 않았다. 설치 파일의 Windows FileVersion은 `1.8.2.01`, ProductVersion은 `1.8.2`다. 설치 파일은 기존 EXE 채널과 같은 미서명(`NotSigned`) 상태다.
+
+## 공개 배포 기록
+
+- 공개 릴리스: [v1.8.2.01](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.01)
+- 게시: **2026-11-02 17:58:03 KST**. 공개 다운로드 검증: **17:59:24 KST**.
+- 제품 소스 커밋: `ccf7abd36182cd67ce1dc5070f87dc2270a76eb0`.
+- 실제 업데이터로 **1.8.2.00 / 1.8.1.99 / 1.8.1.96 → 1.8.2.01** 감지를 확인했다. 공개 EXE 전체와 blockmap·manifest를 내려받아 크기·SHA-256·태그·설치 파일/manifest 일치를 검증했다. 사용자 PC의 설치 프로그램 실행은 이 검증에 포함하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.01-x64.exe` | 156238153 | `365cab51a854767b1bc39aa2fe980789d9d3e016543b6e3f5a6b3a918231b2dd` |
+| `Acedia-Setup-1.8.2.01-x64.exe.blockmap` | 163266 | `32d419084c6bfad6881295ed491b8e91a752f7f454475f12cdbee134bc40d7ea` |
+| `latest-exe.json` | 256 | `57bf9c52e3401038a0e807612d7b93c2895c414d6d138318adb0af5efdf7d9b0` |
