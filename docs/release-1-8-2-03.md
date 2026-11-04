@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.03
-status: preparing
+status: published
 last_updated: 2026-11-04
 ---
 
@@ -26,4 +26,19 @@ last_updated: 2026-11-04
 - 전체 221개 파일·1,773개 테스트와 TypeScript/Vite 빌드를 통과했다.
 - 실제 패키지의 Electron Node 런타임에서 ASAR 모듈을 불러와 Remote/Dashboard의 이미지·MD·HTML·ZIP 업로드 및 중복 없는 전달, 출처 차단, 서비스 종료·재시작, 번들 Git 및 native PTY를 확인했다. GUI 자동화와 운영 중인 세션 입력은 사용하지 않았다. 데스크톱 창의 UI 회귀 검사는 이번 검증 범위에 포함하지 않는다.
 - EXE의 NSIS CRC `ba182072`, 압축 파일 전체 검사 및 설치 전 검증 모드의 실제 시작을 확인했다. 검증 모드는 기존 앱·설치 위치·사용자 데이터를 변경하지 않는다.
-- 공개 다운로드 검증 결과는 배포 후 기록한다.
+- 공개 다운로드에서도 해시·NSIS CRC·압축 파일 전체·실제 설치 전 검증 모드가 통과했다. 기존 설치를 덮어쓰는 작업은 수행하지 않았다. 설치 파일은 기존 EXE 채널과 같은 미서명(`NotSigned`) 상태다.
+
+## 공개 배포 기록
+
+- 공개 릴리스: [v1.8.2.03](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.03).
+- 게시: **2026-11-04 18:31:58 KST**. 공개 다운로드·설치 프로그램 시작 검증: **18:33:06 KST**.
+- 제품 소스 커밋: `9fa635cb8ae1fff3fb9a55f11046413a4a163d3d`.
+- **1.8.2.02 / 1.8.2.00 / 1.8.1.96 → 1.8.2.03** 업데이트 감지를 실제 업데이터로 확인했다. 공개 세 자산의 크기·SHA-256·태그와 manifest가 빌드 원본과 일치한다.
+- ASAR 내 소스·렌더러 파일 373개와 Pixel Office 자산·라이선스가 일치한다. 빌드용 minimatch는 런타임 패키지에 없다. 기존 서명 APK 1.8.1.39를 포함한다.
+- Acedia 업데이트·재시작 후 Remote 페이지를 새로고침하면 새 첨부 지원과 캐시 v106이 적용된다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.03-x64.exe` | 156241004 | `835c8e385fec556c853ebc4382dcf0131212d02be31091e67b24d7d46a48dbf3` |
+| `Acedia-Setup-1.8.2.03-x64.exe.blockmap` | 163421 | `5ea07e96f69aea19d7d0491148751a119fba911f62b4568a6f053ebda4eba93b` |
+| `latest-exe.json` | 256 | `4cc24657cb149a9cc4eb2e0ee6008a37bdc837c26fa3f599afe509d9f7663adf` |
