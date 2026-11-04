@@ -49,7 +49,7 @@ sources:
     title: "Native model repaint reconciliation and restart memory regression checks"
   - id: remote-attachments
     resource: ../app/electron/shared/remote-attachments.mjs
-    title: "Shared image and ZIP attachment classification, limits and message paths"
+    title: "Shared image, document and ZIP attachment classification, limits and message paths"
   - id: remote-attachments-smoke
     resource: ../app/scripts/electron-remote-attachments-smoke.mjs
     title: "Real Remote and Dashboard attachment selection, upload and submission"
@@ -235,7 +235,7 @@ the extracted modules have these responsibilities:
 | `remote-pwa/chat-render.js` | User/assistant turns, tool details and diffs |
 | `remote-pwa/chat-history.js` | Pure sequence deduplication, ordering and overlapping-page merging |
 | `remote-pwa/i18n.js`, `remote-pwa/translations.js` | App-language messages, trusted initial-shell bindings and locale-aware usage dates |
-| `shared/remote-attachments.mjs` (served as `/pwa/attachments.js`) | Shared image/ZIP MIME classification, per-file limits and quoted attachment-path messages |
+| `shared/remote-attachments.mjs` (served as `/pwa/attachments.js`) | Shared image/MD/HTML/ZIP MIME classification, per-file limits and quoted attachment-path messages |
 | `services/remote-documents.mjs` | Project-root checks, bounded document/image reads, original file downloads, HTML capabilities and one shared document API dispatcher |
 | `services/remote-http.mjs` | JSON headers, body length and response serialization |
 | `services/web-services.mjs` | Server lifecycle, authentication, session APIs, static asset allowlist and tunnel orchestration |
@@ -699,14 +699,18 @@ collapses only when the user uses its toggle; the mobile drawer still closes
 after selection so the conversation is visible.
 
 The shared composer accepts PNG, JPEG, GIF, WebP and BMP images up to **8 MiB**,
+Markdown (`.md`, `.markdown`) and HTML (`.html`, `.htm`) documents up to **8 MiB**,
 and ZIP archives up to **32 MiB**, with **four files** per draft. Selection, file
 drop and browser-provided clipboard files use the same upload path. Images show
-thumbnails; archives show a ZIP badge and their original name. An empty or generic
-browser MIME and Windows' `application/x-zip-compressed` are normalized for ZIPs.
-The host verifies the content signature and size, then saves the original bytes
-under a generated filename in its private `remote-attachments` directory. Image
-paths retain the image section of the message; ZIP paths are sent in a separate
-file section to the selected session. Uploading keeps Send disabled. Failed
+thumbnails; documents and archives show MD/HTML/ZIP badges and their original names.
+Empty, generic and common browser MIME aliases are normalized using supported
+extensions. Text documents must contain valid UTF-8 or BOM-marked UTF-16; empty
+documents are accepted and original bytes are preserved. The host verifies image
+and ZIP signatures, text encoding and size, then saves the original bytes under a
+generated filename in its private `remote-attachments` directory. Uploading HTML
+does not execute it, and ZIPs are not extracted. Image paths retain the image
+section of the message; document and ZIP paths are sent in a separate file
+section to the selected session. Uploading keeps Send disabled. Failed
 uploads remain removable, and unsupported or oversized files show an error.
 SSH sessions retain their existing attachment restriction.[^remote-attachments][^remote-client][^web-services]
 
@@ -714,7 +718,8 @@ ZIP support is part of [EXE 1.8.1.65](release-1-8-1-65.md). The earlier picker, 
 validation and server allowed images only. The server now bounds the JSON request
 for a 32 MiB base64 payload, while preserving the 8 MiB image limit, Remote login
 and same-origin checks. The shared module is allowlisted and included in the
-PWA's network-first app-shell cache (v93).[^web-tests]
+PWA's network-first app-shell cache (v93). Document uploads use cache **v106**;
+Remote and Dashboard share the same validation and authenticated upload APIs.[^web-tests]
 
 2026-10-08 validation passed **1,193 tests in 177 files**, including the HTTP
 regressions for Remote and Dashboard. `npm run electron:remote-attachments-smoke`

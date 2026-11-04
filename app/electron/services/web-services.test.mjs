@@ -297,7 +297,7 @@ describe("Electron dashboard server", () => {
     expect(pageBody).toContain("/pwa/terminal-touch.js");
     expect(pageBody).toContain('id="attachmentButton"');
     expect(pageBody).toContain('id="attachmentInput"');
-    expect(pageBody).toContain('aria-label="이미지 또는 ZIP 첨부, 붙여넣기 또는 드래그 앤 드롭"');
+    expect(pageBody).toContain('aria-label="이미지, MD, HTML 또는 ZIP 첨부, 붙여넣기 또는 드래그 앤 드롭"');
     expect(pageBody).toContain('id="filePreviewOverlay"');
     expect(pageBody).toContain('id="filePreviewMarkdown"');
     expect(pageBody).not.toContain('id="filePreviewHtml"');
@@ -469,7 +469,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v105');
+    expect(workerBody).toContain('multiagent-remote-v106');
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');

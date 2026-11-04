@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.03](release-1-8-2-03.md) - Remote/Dashboard MD·HTML 첨부, 원본 바이트 보존 및 세션 파일 전달.
+
 * [Acedia 1.8.2.02](release-1-8-2-02.md) - NSIS 설치 파일 오류 복구와 내부 CRC·압축 파일·실제 시작 검증.
 
 * [Acedia 1.8.2.01](release-1-8-2-01.md) - Remote 대화 로딩, 소유자 검증, 세션 트리, 세로 영상 컨트롤 및 Claude 계정 한도 개선.

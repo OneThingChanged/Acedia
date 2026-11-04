@@ -20,7 +20,7 @@ import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, CHAT_CACHED_SESSIONS, selectCha
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus } from "./session-state.js";
-import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage } from "./attachments.js";
+import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage, remoteAttachmentIsText, remoteAttachmentSizeError } from "./attachments.js";
 
 bindShellTranslations(document);
 
@@ -3656,6 +3656,8 @@ const ATTACHMENT_EXTENSIONS = new Map([
   ["image/webp", "webp"],
   ["image/bmp", "bmp"],
   ["application/zip", "zip"],
+  ["text/markdown", "md"],
+  ["text/html", "html"],
 ]);
 
 function currentAttachments() {
@@ -3698,7 +3700,7 @@ function updateComposerSendState() {
       ? initializingTerminal
         ? t("세션 초기화가 끝나면 첨부할 수 있습니다")
         : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : t("이미지 또는 ZIP 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
+    : t("이미지, MD, HTML 또는 ZIP 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
 }
 
 function resizeComposerInput() {
@@ -3729,8 +3731,8 @@ function renderComposerAttachments() {
   ui.composerAttachments.hidden = attachments.length === 0;
   attachments.forEach((attachment) => {
     const item = make("div", `composer-attachment${attachment.error ? " error" : ""}`);
-    const icon = attachment.type === "application/zip"
-      ? make("span", "composer-attachment-file", "ZIP") : document.createElement("img");
+    const icon = attachment.type.startsWith("image/") ? document.createElement("img")
+      : make("span", "composer-attachment-file", (ATTACHMENT_EXTENSIONS.get(attachment.type) || "file").toUpperCase());
     if (attachment.preview) { icon.src = attachment.preview; icon.alt = ""; }
     else if (icon.tagName === "IMG") icon.hidden = true;
     else icon.setAttribute("aria-hidden", "true");
@@ -3794,7 +3796,7 @@ function attachmentFileName(file, source, index) {
   const name = String(file?.name || "").trim();
   if (name) return name;
   const extension = ATTACHMENT_EXTENSIONS.get(remoteAttachmentType(file)) || "png";
-  const kind = extension === "zip" ? "file" : "image";
+  const kind = remoteAttachmentType(file).startsWith("image/") ? "image" : "file";
   return source === "clipboard"
     ? `clipboard-${kind}-${Date.now()}-${index + 1}.${extension}`
     : `${kind}-${Date.now()}-${index + 1}.${extension}`;
@@ -3826,11 +3828,11 @@ function addAttachments(files, { source = "picker" } = {}) {
     }
     const type = remoteAttachmentType(file);
     if (!type) {
-      showToast(t("{0}: 이미지 또는 ZIP 파일만 첨부할 수 있습니다.", [file.name]));
+      showToast(t("{0}: 이미지, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.", [file.name]));
       continue;
     }
-    if (!file.size || file.size > remoteAttachmentMaxBytes(type)) {
-      showToast(t(type === "application/zip" ? "{0}: ZIP 파일은 32MB 이하여야 합니다." : "{0}: 이미지는 8MB 이하여야 합니다.", [file.name]));
+    if ((!file.size && !remoteAttachmentIsText(type)) || file.size > remoteAttachmentMaxBytes(type)) {
+      showToast(`${file.name}: ${t(remoteAttachmentSizeError(type))}`);
       continue;
     }
     const attachment = {

@@ -2,7 +2,7 @@ import { RemoteHosting } from './remote-hosting.mjs';
 import { assertTunnelConfigured, validGitHubOwner } from "../shared/tunnel-config.mjs";
 import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
-import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes } from "../shared/remote-attachments.mjs";
+import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentIsText, remoteAttachmentSizeError } from "../shared/remote-attachments.mjs";
 import { sendJson } from "./remote-http.mjs";
 import { serveRemoteWorkspaceApi, remoteSubmitOptions } from './remote-workspace-api.mjs';
 import { serveRemoteDocumentApi, RemoteDocumentError, sendRemoteHtmlPreview } from "./remote-documents.mjs";
@@ -106,7 +106,20 @@ const REMOTE_SESSION_TOOLS = new Map([
 const REMOTE_PROFILE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const MOBILE_AUTH_TICKET_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 const MOBILE_AUTH_TICKET_TTL_MS = 2 * 60_000;
+function validRemoteText(buffer) {
+  // Preserve original bytes, including BOMs, but reject binary data disguised
+  // as a document. Documents are stored only; uploading never executes HTML.
+  const encoding = buffer[0] === 0xff && buffer[1] === 0xfe ? "utf-16le"
+    : buffer[0] === 0xfe && buffer[1] === 0xff ? "utf-16be" : "utf-8";
+  try {
+    const text = new TextDecoder(encoding, { fatal: true }).decode(buffer);
+    return !/[\u0000-\u0008\u000b\u000e-\u001f\u007f]/.test(text);
+  } catch { return false; }
+}
+
 const REMOTE_ATTACHMENT_TYPES = new Map([
+  ["text/markdown", { extension: ".md", signature: validRemoteText }],
+  ["text/html", { extension: ".html", signature: validRemoteText }],
   ["image/png", { extension: ".png", signature: (buffer) => buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) }],
   ["image/jpeg", { extension: ".jpg", signature: (buffer) => buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff }],
   ["image/gif", { extension: ".gif", signature: (buffer) => ["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii")) }],
@@ -652,7 +665,7 @@ async function saveRemoteAttachment(request, baseDir) {
     body = await readJson(request, MAX_REMOTE_ATTACHMENT_REQUEST_BYTES);
   } catch (error) {
     if (error?.message === "request too large") {
-      throw new RemoteDocumentError(413, "첨부 요청이 너무 큽니다. 이미지는 8MB, ZIP은 32MB 이하여야 합니다.");
+      throw new RemoteDocumentError(413, "첨부 요청이 너무 큽니다. 이미지·문서는 8MB, ZIP은 32MB 이하여야 합니다.");
     }
     throw new RemoteDocumentError(400, "올바른 첨부 파일 요청이 아닙니다.");
   }
@@ -662,18 +675,18 @@ async function saveRemoteAttachment(request, baseDir) {
   const id = String(body.id || "").trim();
   const name = String(body.name || "").trim();
   const declaredType = remoteAttachmentType({ name, type: body.type });
-  const match = String(body.data || "").match(/^data:([^;,]*);base64,([a-z0-9+/]+={0,2})$/i);
+  const match = String(body.data || "").match(/^data:([^;,]*)(?:;charset=[^;,]+)?;base64,([a-z0-9+/]*={0,2})$/i);
   const mime = match ? remoteAttachmentType({ name, type: match[1] }) : "";
   const encoded = match?.[2] || "";
   const attachmentType = REMOTE_ATTACHMENT_TYPES.get(mime);
   if (!id || !attachmentType || declaredType !== mime || encoded.length % 4 !== 0) {
-    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지 또는 ZIP 파일만 첨부할 수 있습니다.");
+    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.");
   }
   const maxBytes = remoteAttachmentMaxBytes(mime);
-  const sizeError = mime === "application/zip" ? "ZIP 파일은 32MB 이하여야 합니다." : "이미지는 8MB 이하여야 합니다.";
+  const sizeError = remoteAttachmentSizeError(mime);
   if (encoded.length > Math.ceil(maxBytes / 3) * 4) throw new RemoteDocumentError(413, sizeError);
   const content = Buffer.from(encoded, "base64");
-  if (!content.length || content.length > maxBytes) {
+  if ((!content.length && !remoteAttachmentIsText(mime)) || content.length > maxBytes) {
     throw new RemoteDocumentError(413, sizeError);
   }
   if (!attachmentType.signature(content)) {
