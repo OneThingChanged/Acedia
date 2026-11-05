@@ -206,6 +206,12 @@ describe("Electron IPC contract", () => {
       })
     ).toThrow(/requestId/);
   });
+  it("validates read-only restart request checks without accepting another request kind", () => {
+    const args = { requestId: "11111111-1111-4111-8111-111111111111", id: "22222222-2222-4222-8222-222222222222", kind: "activation" };
+    expect(contract.assertInvokeRequest("session_restart_request_pending", args)).toMatchObject(args);
+    expect(() => contract.assertInvokeRequest("session_restart_request_pending", { ...args, kind: "delete" })).toThrow(/kind/);
+    expect(() => contract.assertInvokeRequest("session_restart_request_pending", { ...args, requestId: "bad" })).toThrow(/UUID/);
+  });
 
   it('validates session launch-settings acknowledgements', () => {
     const result = { requestId: '11111111-1111-4111-8111-111111111111', id: '22222222-2222-4222-8222-222222222222', ok: true };

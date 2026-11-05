@@ -28,6 +28,7 @@ type SessionLifecycleOptions = {
   afterDeleteSettled?: () => void;
   onDeleteBlocked?: () => void;
   beforeRestart?: (agentId: string) => void;
+  prepareRestart?: (agentId: string) => Promise<boolean>;
   pinnedSessionId?: (agentId: string) => string | undefined;
 };
 
@@ -54,6 +55,7 @@ export function useSessionLifecycleActions({
   afterDeleteSettled,
   onDeleteBlocked,
   beforeRestart,
+  prepareRestart,
   pinnedSessionId,
 }: SessionLifecycleOptions) {
   const [pendingDeletion, setPendingDeletion] = useState<Agent | null>(null);
@@ -62,7 +64,7 @@ export function useSessionLifecycleActions({
   const [restartingAgentIds, setRestartingAgentIds] = useState<Set<string>>(new Set());
   const restartAgent = useCallback(async (agentId: string, spawn: (id: string, options: {
     recovering: boolean; resumeSessionId?: string; poolResumeOwnerId?: string;
-  }) => Promise<{ ok: boolean; error?: string }>) => {
+  }) => Promise<{ ok: boolean; error?: string }>, isCurrent?: () => Promise<boolean>) => {
     const agent = agentsRef.current.find(candidate => candidate.id === agentId);
     if (!agent || detachedAgentIdsRef.current.has(agentId)) throw new Error("Session is unavailable or belongs to another window.");
     if (restartingRef.current.has(agentId) || ["starting", "recovering"].includes(agent.runtimeStatus || agent.status)) {
@@ -70,6 +72,13 @@ export function useSessionLifecycleActions({
     }
     restartingRef.current.add(agentId); setRestartingAgentIds(new Set(restartingRef.current));
     try {
+      // Ask before stopping the running CLI. Cancellation preserves its PTY,
+      // transcript, scrollback and pane; the chosen account is saved for spawn.
+      if (prepareRestart && !await prepareRestart(agentId)) return false;
+      if (isCurrent && !await isCurrent()) return false;
+      if (!agentsRef.current.some(candidate => candidate.id === agentId) || detachedAgentIdsRef.current.has(agentId)) {
+        throw new Error("Session changed while choosing a restart account.");
+      }
       let result: { sessionId: string | null; poolResumeOwnerId?: string } = { sessionId: null };
       if (isElectronRuntime() && !agent.sshHostId && ["codex", "claude"].includes(agent.aiToolId)) {
         result = await invoke("restart_session_model", { id: agentId,
@@ -98,10 +107,11 @@ export function useSessionLifecycleActions({
       const started = await spawn(agentId, { recovering: true,
         resumeSessionId: result.sessionId || undefined, poolResumeOwnerId: result.poolResumeOwnerId });
       if (!started.ok) throw new Error(started.error || "Session restart failed.");
+      return true;
     } finally {
       restartingRef.current.delete(agentId); setRestartingAgentIds(new Set(restartingRef.current));
     }
-  }, [agentsRef, beforeRestart, detachedAgentIdsRef, pinnedSessionId, setAgents, termsRef]);
+  }, [agentsRef, beforeRestart, detachedAgentIdsRef, pinnedSessionId, prepareRestart, setAgents, termsRef]);
   const recoverExitedAgent = useCallback(async (agentId: string) => {
     const wasIdle =
       agentsRef.current.find((agent) => agent.id === agentId)?.status === "idle";

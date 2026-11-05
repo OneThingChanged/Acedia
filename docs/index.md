@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.05](release-1-8-2-05.md) - 수동 Codex 계정 선택을 재시작에도 적용하고 취소 시 기존 세션 유지.
+
 * [Acedia 1.8.2.04](release-1-8-2-04.md) - 새 세션 준비 상태 API, 첫 메시지 전 입력 준비 대기 및 시작 결과 구분.
 
 * [Acedia 1.8.2.03](release-1-8-2-03.md) - Remote/Dashboard MD·HTML 첨부, 원본 바이트 보존 및 세션 파일 전달.

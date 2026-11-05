@@ -128,6 +128,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "sync_monitor_state",
   "complete_remote_session_create",
   "complete_remote_session_activation",
+  "session_restart_request_pending",
   "complete_remote_session_model",
   "complete_session_launch_settings",
   "validate_session_relocation",
@@ -444,6 +445,12 @@ function assertInvokeRequest(command, rawArgs) {
       for (const key of ["requestId", "id"]) {
         if (typeof args[key] !== 'string' || !SESSION_STORAGE_ID_RE.test(args[key])) throw new TypeError(`Electron relocation ${key} must be a UUID`);
       }
+      break;
+    case "session_restart_request_pending":
+      for (const key of ["requestId", "id"]) {
+        if (typeof args[key] !== "string" || !SESSION_STORAGE_ID_RE.test(args[key])) throw new TypeError(`Electron restart ${key} must be a UUID`);
+      }
+      if (!["activation", "model"].includes(args.kind)) throw new TypeError("Invalid restart request kind");
       break;
     case "complete_remote_session_create":
     case "complete_remote_session_activation":

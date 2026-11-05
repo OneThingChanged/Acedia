@@ -2236,33 +2236,7 @@ function App() {
 
   const pinnedSessionIdForRestart = useCallback((agentId: string) =>
     groupsRef.current.find(group => collectAgentIds(group.layout).has(agentId))?.sessionPins?.[agentId], []);
-  const {
-    restartAgent,
-    restartingAgentIds,
-    recoverExitedAgent,
-    deactivateAgent,
-    setAgentStatus,
-    setAgentSessionId,
-    removeAgent,
-    pendingDeletion,
-    confirmDeletion,
-    cancelDeletion,
-  } = useSessionLifecycleActions({
-    agentsRef,
-    detachedAgentIdsRef,
-    removedAgentIdsRef,
-    termsRef,
-    setAgents,
-    applyGroupOp,
-    beforeRestart: clearAgentStartupReadyTimer,
-    pinnedSessionId: pinnedSessionIdForRestart,
-    beforeDeleteConfirm: flushTransientInteractionState,
-    afterDeleteSettled: settleSessionDeletionUi,
-    onDeleteBlocked: () => { void catalogConfirmation.confirm({
-      title: text("삭제할 수 없습니다", "Cannot delete"), confirmLabel: text("확인", "OK"), hideCancel: true,
-      message: text("다른 작업창에서 사용 중인 세션입니다. 해당 창에서 먼저 비활성화해 주세요.", "This session is in use in another window. Deactivate it there first."),
-    }); },
-  });
+
 
   const commitGroupState = useCallback((next: groupOps.GroupState) => {
     groupsRef.current = next.groups;
@@ -2345,6 +2319,38 @@ function App() {
     }
     pending.resolve(accountId !== null);
   }, []);
+
+  const prepareSessionRestart = useCallback((agentId: string) =>
+    chooseSessionAccountBeforeLaunch(agentId, true), [chooseSessionAccountBeforeLaunch]);
+
+  const {
+    restartAgent,
+    restartingAgentIds,
+    recoverExitedAgent,
+    deactivateAgent,
+    setAgentStatus,
+    setAgentSessionId,
+    removeAgent,
+    pendingDeletion,
+    confirmDeletion,
+    cancelDeletion,
+  } = useSessionLifecycleActions({
+    agentsRef,
+    detachedAgentIdsRef,
+    removedAgentIdsRef,
+    termsRef,
+    setAgents,
+    applyGroupOp,
+    beforeRestart: clearAgentStartupReadyTimer,
+    prepareRestart: prepareSessionRestart,
+    pinnedSessionId: pinnedSessionIdForRestart,
+    beforeDeleteConfirm: flushTransientInteractionState,
+    afterDeleteSettled: settleSessionDeletionUi,
+    onDeleteBlocked: () => { void catalogConfirmation.confirm({
+      title: text("삭제할 수 없습니다", "Cannot delete"), confirmLabel: text("확인", "OK"), hideCancel: true,
+      message: text("다른 작업창에서 사용 중인 세션입니다. 해당 창에서 먼저 비활성화해 주세요.", "This session is in use in another window. Deactivate it there first."),
+    }); },
+  });
 
   const recoverSessionWithAccountChoice = useCallback(async (agentId: string) => {
     if (!await chooseSessionAccountBeforeLaunch(agentId, true)) return;
@@ -3785,7 +3791,8 @@ function App() {
     else if (action === "clear-session-pin") clearContextGroupSessionPins(id);
     else if (action === "deactivate") void deactivateAgent(id);
     else if (action === "restart") {
-      void restartAgent(id, spawnAgentInBackground).then(() => {
+      void restartAgent(id, spawnAgentInBackground).then(restarted => {
+        if (!restarted) return;
         const agent = agentsRef.current.find(item => item.id === id);
         if (agent) pushToast(id, agent.name, text("세션을 다시 시작했습니다.", "Session restarted."));
       }).catch(error => {
@@ -3832,7 +3839,10 @@ function App() {
         return;
       }
       if (payload.restart) {
-        void restartAgent(payload.id, spawnAgentInBackground).then(() => complete({ ok: true }))
+        void restartAgent(payload.id, spawnAgentInBackground, () => invoke("session_restart_request_pending", {
+          requestId: payload.requestId, id: payload.id, kind: "activation",
+        })).then(restarted => complete(restarted ? { ok: true }
+          : { ok: false, error: text("계정 선택을 취소했습니다. 기존 세션을 유지합니다.", "Account selection cancelled. The existing session is unchanged."), statusCode: 409 }))
           .catch(reason => complete({ ok: false, error: String(reason), statusCode: 409 }));
         return;
       }
@@ -4068,6 +4078,9 @@ function App() {
         await persistStorageSnapshot(true);
         if (!payload.restart) return complete({ ok: true });
         try {
+          if (!await chooseSessionAccountBeforeLaunch(agent.id, true)) return complete({ ok: false, statusCode: 409,
+            error: text("모델 설정은 저장했습니다. 계정 선택을 취소해 기존 세션을 유지합니다.", "Model settings saved. Account selection cancelled; the existing session is unchanged.") });
+          if (!await invoke("session_restart_request_pending", { requestId: payload.requestId, id: payload.id, kind: "model" })) return;
           const group = groupsRef.current.find(item => collectAgentIds(item.layout).has(agent.id));
           const restart = await invoke("restart_session_model", { id: agent.id, expectedSessionId: group?.sessionPins?.[agent.id] });
           clearAgentStartupReadyTimer(agent.id);
@@ -4104,6 +4117,7 @@ function App() {
     renameAgent,
     spawnAgentInBackground,
     restartAgent,
+    chooseSessionAccountBeforeLaunch,
     clearAgentStartupReadyTimer,
     text,
     workspace.groupsKey,

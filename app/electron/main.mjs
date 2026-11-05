@@ -6167,6 +6167,15 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return remoteSessionCreateBroker.complete(args);
     }
+    case "session_restart_request_pending": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) {
+        throw new Error("재시작 요청은 coordinator 창에서만 확인할 수 있습니다.");
+      }
+      const broker = args.kind === 'model' ? remoteSessionModelBroker : remoteSessionActivationBroker;
+      const pending = broker.pending.get(args.requestId);
+      return !!pending && pending.id === args.id;
+    }
     case "complete_remote_session_activation": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (

@@ -61,7 +61,7 @@ export type RuntimeCommand =
   | "show_native_notification"
   | "resolve_cli_session" | "resolve_cline_session" | "relink_cli_session" | "sync_remote_agents"
   | "sync_remote_view" | "sync_usage_catalog" | "sync_monitor_state"
-  | "complete_remote_session_create" | "complete_remote_session_activation"
+  | "complete_remote_session_create" | "complete_remote_session_activation" | "session_restart_request_pending"
   | "complete_remote_session_model" | "complete_session_launch_settings" | "validate_session_relocation" | "complete_session_relocation" | "restart_session_model" | "get_session_model" | "set_session_model"
   | "validate_session_registry_change" | "complete_session_registry_change"
   | "get_model_defaults" | "get_default_model_catalog" | "set_model_defaults"
@@ -413,6 +413,10 @@ export type RuntimeCommandContract = {
       startError?: string;
       statusCode?: 400 | 404 | 409 | 500 | 503;
     };
+    result: boolean;
+  };
+  session_restart_request_pending: {
+    args: { requestId: string; id: string; kind: "activation" | "model" };
     result: boolean;
   };
   complete_remote_session_activation: {
