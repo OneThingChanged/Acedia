@@ -24,6 +24,38 @@ function fixture() {
   const service = new SessionMessages(options), call = (action, body, agentId = 'sender') => service.handle({ action, body, agentId });
   return { root, options, service, call, active, agents, notify, receipt };
 }
+it('waits for startup once, captures the first bound conversation and never replays the notification', async () => {
+  const f = fixture(), entry = { aiToolId: 'codex' };
+  let conversationId = null;
+  f.service.context = () => ({ entry, conversationId });
+  let release;
+  const prepared = new Promise(resolve => { release = resolve; });
+  f.service.prepare = vi.fn(async () => { await prepared; conversationId = 'new-conversation'; return { ready: true, firstMessageReady: true }; });
+  const body = { sessionId: 'receiver', message: text, requestKey: 'startup-once', waitMs: 1000 };
+  const a = f.call('message-send', body), b = f.call('message-send', body);
+  await vi.waitFor(() => expect(f.service.prepare).toHaveBeenCalledOnce());
+  expect(f.notify).not.toHaveBeenCalled(); release();
+  const [one, two] = await Promise.all([a, b]);
+  expect(one.messageId).toBe(two.messageId);
+  expect(f.notify).toHaveBeenCalledExactlyOnceWith('sender', expect.objectContaining({ expectedConversationId: 'new-conversation' }));
+  await f.call('message-send', body); expect(f.notify).toHaveBeenCalledOnce();
+});
+it('does not notify after preparation times out or another runtime/conversation takes over', async () => {
+  for (const change of ['timeout', 'runtime', 'conversation']) {
+    const f = fixture(), entry = { aiToolId: 'codex' }; let current = { entry, conversationId: null };
+    f.service.context = () => current;
+    f.service.prepare = async () => {
+      if (change === 'runtime') current = { entry: {}, conversationId: null };
+      if (change === 'conversation') current = { entry, conversationId: 'someone-elses-turn' };
+      return { ready: change !== 'timeout', reason: 'folder-trust', firstMessageReady: false };
+    };
+    const body = { sessionId: 'receiver', message: text, requestKey: 'not-sent' };
+    const result = await f.call('message-send', body);
+    expect(result.saved).toBe(true); expect(result.delivery.status).toBe('notification-error');
+    expect(f.notify).not.toHaveBeenCalled();
+    await f.call('message-send', body); expect(f.notify).not.toHaveBeenCalled();
+  }
+});
 it('keeps Unicode verbatim in durable storage and sends only an ASCII reference to the native terminal', async () => {
   const f = fixture(), result = await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'ko-1' });
   expect(result).toMatchObject({ saved: true, sha256: hash(text), bytes: Buffer.byteLength(text), readAt: null, delivery: { status: 'started' } });

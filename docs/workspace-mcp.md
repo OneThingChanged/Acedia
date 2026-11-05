@@ -42,6 +42,7 @@ MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 부모·작업 폴더를 지정한 추가 세션 생성. `start: false`로 실행 없이 등록 가능 |
 | `acedia_session_start` | 기존 비활성 로컬 세션을 화면·창 활성화 없이 백그라운드에서 시작. 실행 중이면 유지 |
+| `acedia_session_status` | Acedia 세션 ID로 첫 대화 전에도 CLI 준비·Trust·질문·작업 상태 조회. `waitMs`로 신규 세션 준비를 최대 10초 대기 |
 | `acedia_session_stop` | 기존 로컬 세션 프로세스를 종료하고 대기로 저장. 대화·설정·화면 배치 유지 |
 | `acedia_sessions_organize` | 기존 세션들의 이름 변경과 부모 지정·변경·해제를 한 번에 저장. 실행·비활성 모두 지원 |
 | `acedia_session_settings` | 기존 세션의 Dangerous 조회·저장. OFFLINE 대상 지원, 다음 실행부터 반영 |
@@ -293,6 +294,44 @@ CLI의 현재 폴더·실제 확인 화면·신뢰가 적용될 Git 루트를 �
 남으면 프로젝트 범위와 실제 확인 화면을 점검하며 새 세션·새 전달 키를 만들지 않는다.
 사람이 직접 만든 세션은 기존 프로젝트 자동 확인 옵션을 켠 경우에만 처리한다.
 자세한 조건은 [세션 시작 자동화](session-organization.md#api-생성-세션의-폴더-신뢰-자동-확인-2026-10-27-배포-전-소스)를 참고한다. 아직 EXE 배포 전이다.
+
+## 첫 대화 전 준비 조회와 알림 대기 (2026-11-05, Standard EXE 1.8.2.04)
+
+`sessionId`는 Acedia의 등록 ID이고 `conversationId`는 Codex의 대화 ID다. 새 CLI가
+아직 transcript나 대화 ID를 만들지 않았어도 등록 ID로 상태를 조회하고 시작할 수 있다.
+세션 생성의 `active:true`는 터미널 실행만 뜻하므로 실제 입력 준비와 구분한다.
+
+```json
+{"sessionId":"Acedia 등록 ID","waitMs":10000}
+```
+
+위 인수는 `acedia_session_status` 및 `acedia_session_start`에서 받는다. status는
+프로세스 시작·창 활성화·입력·승인 없이 `phase`, `reason`, `ready`, `firstMessageReady`,
+`conversationId`를 반환한다. phase는 `offline`, `starting`, `folder-trust`, `hook-review`,
+`question`, `working`, `ready`, `blocked`, `changed`, `unsupported`를 구분한다.
+준비 조회는 인증된 `POST /integration/v1/workspace/session-status`로도 제공한다.
+start는 기존 결과와 함께 `startup`에 같은 상태를 반환한다. Codex 외 제공자의 시작은
+기존대로 지원하지만 해당 CLI의 준비 판정을 이 API가 보장하지는 않는다.
+
+첫 메시지는 `acedia_session_message_send`에 등록 ID·본문·고유 requestKey만 전달하고
+`expectedConversationId`는 생략한다. 메시지 API는 `waitMs` 예산 안에서 새 입력창 준비를
+기다린 후 알린다. 기존 API 생성 세션의 제한된 폴더 Trust 자동 확인이 진행될 수 있지만,
+훅 실행 승인·명령 승인·사용자 질문은 대신 승인하지 않는다. 준비 도중 실행 프로세스가
+바뀌거나 다른 대화가 시작되면 전송하지 않는다. 직접 전달용 `acedia_session_send`는
+기존 대화 ID를 고정하는 계약을 유지하며 첫 대화 없는 세션에는 사용하지 않는다.
+
+저장은 수신·착수와 다르다. 실제 시작은 `delivery.status:started` 및 정확한 알림의 새 턴
+증거로 확인하고, 본문 확인은 `readAt`으로 구분한다. 이미 실패·불확실한 알림은 같은
+requestKey로 자동 재전송하지 않는다. 준비 상태와 기존 수신함·전달 기록을 먼저 확인한다.
+
+검증: 전체 222개 파일·1,782개 검사, 최종 준비·메시지·MCP 경로 3개 파일·36개 검사 및
+TypeScript/Vite 빌드를 통과했다. 설치 Codex 0.166.0을 임시 프로필·가짜 인증·loopback
+응답 서버에서 실행해 Trust 대기 중 첫 알림 요청 → 폴더 Trust 1회 확인 → 빈 입력창
+준비 대기 → 정확한 첫 대화·새 턴 연결 → 한글 수신·답장·중복 방지를 확인했다.
+`output/session-readiness-full-tests.log`, `output/session-readiness-final-tests.log`,
+`output/native-immediate-first-message-0166-final.log`에 기록했다. 창 활성화·GUI 자동화·
+운영 중인 세션 입력은 사용하지 않았다. 새 API는 앱 배포와 MCP 클라이언트의 도구 목록
+갱신 후 사용할 수 있다.
 
 ## 기존 세션 백그라운드 시작
 

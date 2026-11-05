@@ -71,6 +71,7 @@ import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs
 import { createChatMessageSubmitter } from './services/chat-message-submission.mjs';
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
 import { firstMessageSession, noteFirstMessageInput } from './services/session-first-message.mjs';
+import { SessionReadiness } from './services/session-readiness.mjs';
 import { StartupAutomation, startupPrompt } from './services/startup-automation.mjs';
 import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
@@ -1063,10 +1064,15 @@ const sessionDeliveries = new SessionDeliveries({
   },
   publish: payload => sendEventToAll('agent:session-delivery', payload),
 });
+const sessionReadiness = new SessionReadiness({
+  context: deliveryContext, read: currentQuestion, freshRead: freshDeliverySession,
+  ready: (target, options) => sessionDeliveries.ready(target, options),
+});
 const sessionMessages = new SessionMessages({
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
+  prepare: (id, { waitMs, context }) => sessionReadiness.waitForReady(id, waitMs, context),
   notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession: true }),
   receipt: (agentId, requestKey) => sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }),
 });
@@ -1136,6 +1142,7 @@ const sessionRelocation = new SessionRelocation({
   },
 });
 const sessionStart = new SessionStart({
+  readiness: body => sessionReadiness.handle(body),
   agentFor: id => {
     const agent = sessionModelAgent(id);
     const project = monitorService?.state?.projects?.find(item => item.id === agent?.projectId);
@@ -1194,6 +1201,7 @@ const workspaceManagement = new WorkspaceManagement({
   messages: sessionMessages,
   sessionSettings: sessionLaunchSettings,
   sessionStart,
+  readiness: body => sessionReadiness.handle(body),
   relocation: sessionRelocation,
   registry: sessionRegistry,
   sessionState: id => {

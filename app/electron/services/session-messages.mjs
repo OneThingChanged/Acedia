@@ -45,8 +45,8 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, receipt = async () => null, now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, receipt, now });
+  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, now });
     this.records = []; this.inflight = new Map(); this.sequence = 0;
     try {
       if (fs.statSync(file).size > maxStore) throw Error();
@@ -107,7 +107,8 @@ export class SessionMessages {
       await this.inflight.get(old.messageId); return this.view(old);
     }
     if (body.replyTo && !this.records.some(r => r.messageId === body.replyTo && r.targetId === sourceId && r.sourceId === body.sessionId)) throw fail('받은 메시지의 발신 세션에만 replyTo로 답장할 수 있습니다.', 409);
-    const context = this.context(body.sessionId);
+    const liveContext = this.context(body.sessionId);
+    const context = liveContext ? { ...liveContext } : liveContext;
     if (notify && (target.aiToolId !== 'codex' || !context?.entry || context.entry.ssh)) throw fail('자동 알림은 실행 중인 로컬 Codex에 지원합니다. 다른 제공자·OFFLINE 대상은 notify:false로 수신함에 저장하세요.', 409);
     if (body.expectedConversationId && context?.conversationId !== body.expectedConversationId) throw fail('받는 대화가 변경되었습니다. 다시 조회하세요.', 409);
     const record = { messageId: randomUUID(), sequence: ++this.sequence, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
@@ -121,7 +122,19 @@ export class SessionMessages {
     const operation = (async () => {
       const reference = `Acedia session message ${record.messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${record.messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
       try {
-        record.delivery = await this.notify(sourceId, { sessionId: record.targetId, expectedConversationId: context.conversationId ?? null, message: reference, requestKey: record.notificationKey, waitMs });
+        let current = context, remaining = waitMs;
+        if (this.prepare) {
+          const deadline = performance.now() + waitMs;
+          const status = await this.prepare(record.targetId, { waitMs, context });
+          current = this.context(record.targetId);
+          if (current?.entry !== context.entry || (context.conversationId && current.conversationId !== context.conversationId)
+            || (!context.conversationId && current?.conversationId && !status?.firstMessageReady)) {
+            throw fail('받는 실행 세션 또는 대화가 변경되었습니다. 다시 조회하세요.', 409);
+          }
+          if (!status?.ready) throw fail(`Receiving session is not ready (${status?.reason || 'startup-pending'}); nothing sent`, 409);
+          remaining = Math.max(0, Math.floor(deadline - performance.now()));
+        }
+        record.delivery = await this.notify(sourceId, { sessionId: record.targetId, expectedConversationId: current.conversationId ?? null, message: reference, requestKey: record.notificationKey, waitMs: remaining });
       } catch (error) {
         // The reference is never retried automatically, including after restart.
         record.delivery = { status: 'notification-error', reason: String(error.message || error).slice(0, 1000) };

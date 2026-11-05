@@ -24,6 +24,12 @@ it.each(['codex', 'claude', 'qwen', 'agy'])('supports starting a local %s sessio
   const service = new SessionStart({ agentFor: () => ({ aiToolId }), activate: async () => ({ active: true, restarted: true }) });
   await expect(service.handle({ sessionId: 'offline' })).resolves.toMatchObject({ sessionId: 'offline', active: true });
 });
+it('returns actual readiness separately from PTY activation and forwards the bounded wait', async () => {
+  const readiness = vi.fn(async () => ({ ready: false, phase: 'folder-trust', conversationId: null }));
+  const service = new SessionStart({ agentFor: () => ({ aiToolId: 'codex' }), activate: async () => ({ active: true }), readiness });
+  expect(await service.handle({ sessionId: 'new', waitMs: 1000 })).toMatchObject({ active: true, startup: { ready: false, phase: 'folder-trust' } });
+  expect(readiness).toHaveBeenCalledWith({ sessionId: 'new', waitMs: 1000 });
+});
 
 it.each([null, [], {}, { sessionId: 1 }, { sessionId: ' ' }, { sessionId: 'x\n' }, { sessionId: 'x'.repeat(257) }, { sessionId: 'x', focus: true }, { sessionId: 'x', restart: true }])('rejects invalid or unsupported start options before dispatch: %j', async body => {
   const activate = vi.fn();

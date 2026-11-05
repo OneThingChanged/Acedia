@@ -8,6 +8,7 @@ import { AccountPool } from '../electron/services/account-pool.mjs';
 import { ActiveQuestions } from '../electron/services/active-questions.mjs';
 import { SessionDeliveries, deliveryComposerReady } from '../electron/services/session-delivery.mjs';
 import { SessionMessages } from '../electron/services/session-messages.mjs';
+import { SessionReadiness } from '../electron/services/session-readiness.mjs';
 import { WorkspaceManagement } from '../electron/services/workspace-management.mjs';
 import { HookService } from '../electron/services/hook-service.mjs';
 import { CodexScrollbackFilter } from '../electron/services/terminal-stream.mjs';
@@ -22,6 +23,8 @@ import { TaskOrchestration } from '../electron/services/task-orchestration.mjs';
 const binary = process.env.ACEDIA_CODEX_BINARY;
 const messageApi = process.env.ACEDIA_SESSION_MESSAGE_API === '1';
 const firstMessage = process.env.ACEDIA_DELIVERY_FIRST_MESSAGE === '1';
+const immediate = process.env.ACEDIA_DELIVERY_IMMEDIATE === '1';
+assert.ok(!immediate || firstMessage, 'Immediate notification fixture requires a first launch.');
 assert.ok(!firstMessage || messageApi, 'First-message fixture uses the Unicode mailbox API.');
 assert.ok(binary && path.isAbsolute(binary) && fs.existsSync(binary), 'Set ACEDIA_CODEX_BINARY to the installed Codex executable.');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-delivery-cli-'));
@@ -36,7 +39,7 @@ if(firstMessage){
 fs.writeFileSync(path.join(home, 'config.toml'), firstMessage?'[windows]\nsandbox="unelevated"\n':`[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
 const catalog = () => ({ projects: [{ id: 'p', name: 'Fixture', folder: projectFolder }], agents: [{ id: 'caller', name: '한글 관리자', projectId: 'p', aiToolId: 'codex' }, { id: 'target', name: '수신자', folder:workingFolder, projectId: 'p', aiToolId: 'codex', sessionHierarchy:{createdById:'caller'} }] });
 const calls = [], updates = [];
-let terminal, service, hook, mcp, transcript, conversationId, polling;
+let terminal, service, hook, mcp, transcript, conversationId, polling, startupPolicy, confirmStartup;
 const safeStorage = { isEncryptionAvailable: () => true, encryptString: s => Buffer.from(s), decryptString: b => b.toString() };
 const pool = new AccountPool(path.join(root, 'pool'), { port: 0, safeStorage, fetchImpl: async (url, options) => {
   if (url.includes('/models')) return new Response('{"models":[]}', { headers: { 'content-type': 'application/json' } });
@@ -87,16 +90,20 @@ try {
   };
   if(firstMessage){
     await waitFor(()=>startupPrompt(entry)?.startupKind==='folder-trust','initial native folder trust');
-    const policy=new TaskOrchestration({file:path.join(root,'trust-policy.json'),catalog});
+    const policy=new TaskOrchestration({file:path.join(root,'trust-policy.json'),catalog}); startupPolicy=policy;
     const writes=[];
     try{
       assert.equal(policy.startupTrustRoot('target'),process.platform==='win32'?workingFolder.toLowerCase():workingFolder);
       const automation=new StartupAutomation({entry:()=>entry,allowedRoot:id=>policy.startupTrustRoot(id),write:(_id,key)=>{writes.push(key);noteFirstMessageInput(entry,key);terminal.write(key);}});
-      assert.equal(automation.check('target'),true);assert.equal(automation.check('target'),false);assert.deepEqual(writes,['\r']);
-    }finally{policy.close();}
-    console.log('SESSION_MESSAGE_NATIVE_EXTERNAL_FOLDER_TRUST_ONCE_OK');
+      const confirm=()=>{
+        assert.equal(automation.check('target'),true);assert.equal(automation.check('target'),false);assert.deepEqual(writes,['\r']);
+        policy.close(); startupPolicy=null;
+        console.log('SESSION_MESSAGE_NATIVE_EXTERNAL_FOLDER_TRUST_ONCE_OK');
+      };
+      if(immediate) confirmStartup=confirm; else confirm();
+    }finally{if(!immediate)policy.close();}
   }
-  await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'initial composer');
+  if(!immediate) await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'initial composer');
   if(!firstMessage){
     await submitPtyMessage({ ptyProcess: terminal, message: 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.' });
     await waitFor(async () => (await read())?.turn?.status === 'done' && deliveryComposerReady(entry), 'completed native composer');
@@ -121,12 +128,22 @@ try {
     ready: () => deliveryComposerReady(entry), publish: payload => updates.push(payload),
     submit: (_id, _entry, message, isCurrent) => {entry.firstMessageSubmitted=true;return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode });} };
   service = new SessionDeliveries(options);
+  const readiness = new SessionReadiness({ context: options.context, read, freshRead: options.freshRead, ready: options.ready });
   let busy = false;
   polling = setInterval(async () => {
     if (busy) return; busy = true;
     try { service.poll(); const result = await read(); if (result) service.observe(entry.id, entry, result); } finally { busy = false; }
   }, 100);
   const messageOptions = { file: path.join(root, 'session-messages.json'), sessionFor: id => catalog().agents.find(a => a.id === id), context: options.context,
+    prepare: async (id, { waitMs, context }) => {
+      if(immediate && confirmStartup) {
+        assert.equal((await readiness.inspect(id)).phase,'folder-trust');
+        const confirm=confirmStartup;confirmStartup=null;setTimeout(confirm,100);
+      }
+      const status=await readiness.waitForReady(id,waitMs,context);
+      if(immediate) {assert.equal(status.firstMessageReady,true);console.log('SESSION_MESSAGE_WAITED_FOR_NATIVE_STARTUP_BEFORE_NOTIFY_OK');}
+      return status;
+    },
     notify: (agentId, body) => service.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession:true }),
     receipt: (agentId, requestKey) => service.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }) };
   const messages = new SessionMessages(messageOptions);
@@ -205,6 +222,7 @@ try {
   console.log('SESSION_DELIVERY_REAL_MCP_CODEX_RECEIPT_START_UNICODE_CONTEXT_AND_NO_REPLAY_OK');
   }
 } finally {
+  startupPolicy?.close();
   clearInterval(polling); service?.dispose();
   if (mcp) { mcp.stdin.end(); mcp.kill(); }
   if (hook) await new Promise(resolve => { hook.server.closeAllConnections(); hook.server.close(resolve); });

@@ -5,12 +5,13 @@ const supportedTools = new Set(['codex', 'claude', 'qwen', 'agy']);
 // The shared activation broker acknowledges an actual PTY and never restarts
 // an already-running session. CLI readiness is checked separately before send.
 export class SessionStart {
-  constructor({ agentFor, activate, writable = () => true }) {
-    Object.assign(this, { agentFor, activate, writable });
+  constructor({ agentFor, activate, writable = () => true, readiness = null }) {
+    Object.assign(this, { agentFor, activate, writable, readiness });
   }
   async handle(body) {
     if (!body || typeof body !== 'object' || Array.isArray(body)
-      || Object.keys(body).some(key => key !== 'sessionId')
+      || Object.keys(body).some(key => !['sessionId', 'waitMs'].includes(key))
+      || (body.waitMs !== undefined && (!Number.isInteger(body.waitMs) || body.waitMs < 0 || body.waitMs > 10000))
       || typeof body.sessionId !== 'string' || !body.sessionId.trim()
       || body.sessionId.length > 256 || /[\x00-\x1f]/.test(body.sessionId)) throw fail('기존 세션의 sessionId를 정확히 지정하세요.');
     const sessionId = body.sessionId.trim();
@@ -20,6 +21,7 @@ export class SessionStart {
     if (agent.detached || !this.writable(sessionId)) throw fail('다른 창 또는 설정 변경에서 사용하는 세션입니다. 상태를 다시 확인하세요.', 409);
     const result = await this.activate(sessionId);
     if (result?.active !== true) throw fail('실행 중인 터미널을 확인하지 못했습니다. 세션 상태를 다시 조회하세요.', 409);
-    return { sessionId, active: true, started: result.restarted === true, background: true };
+    const startup = this.readiness ? await this.readiness({ sessionId, waitMs: body.waitMs || 0 }) : null;
+    return { sessionId, active: true, started: result.restarted === true, background: true, ...(startup ? { startup } : {}) };
   }
 }

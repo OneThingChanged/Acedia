@@ -199,4 +199,10 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   expect((await fetch(startEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
   expect((await fetch(startEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, focus: true }) })).status).toBe(400);
   expect((await rpc('tools/call', { name: 'acedia_session_start', arguments: { sessionId: 'missing' } })).isError).toBe(true);
+  f.service.readiness = vi.fn(async body => ({ sessionId: body.sessionId, active: true, ready: false, firstMessageReady: false, conversationId: null, phase: 'folder-trust' }));
+  const state = await rpc('tools/call', { name: 'acedia_session_status', arguments: { sessionId: target.id, waitMs: 1000 } });
+  expect(state.structuredContent).toMatchObject({ sessionId: target.id, phase: 'folder-trust', conversationId: null, ready: false });
+  expect(f.service.readiness).toHaveBeenCalledWith({ sessionId: target.id, waitMs: 1000 });
+  const statusEndpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/session-status`;
+  expect((await fetch(statusEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: target.id }) })).status).toBe(401);
 });
