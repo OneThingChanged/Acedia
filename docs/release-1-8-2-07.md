@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.07
-status: preparing
+status: published
 last_updated: 2026-11-06
 ---
 
@@ -21,4 +21,21 @@ last_updated: 2026-11-06
 ## 검증
 
 - 크레딧 판정 관련 9개 파일의 187개 검사와 영상 링크 관련 5개 파일의 52개 검사, TypeScript/Vite 빌드를 통과했다. 실제 유료 요청이나 영상 재생기 실행 없이 모의 API와 파일·버퍼 기반으로 확인했다.
-- 전체 232개 파일의 1,876개 테스트를 통과했다. 패키지·공개 설치 파일 검증 결과는 배포 완료 후 이 문서에 기록한다.
+- 전체 232개 파일의 1,876개 테스트와 TypeScript/Vite 빌드를 통과했다.
+- 패키지의 Electron Node 런타임에서 크레딧 사용 가능·소진·429 대기 판정을 검증했다. Remote/Dashboard의 새 크레딧 모듈 제공, 첨부 파일 원본 전송·재시작·출처 제한, 보드·큐·세션 준비 API와 native PTY 검사도 통과했다. GUI 자동화와 실제 유료 요청은 수행하지 않았다.
+- ASAR 내 소스·렌더러 파일 386개와 Pixel Office 자산·라이선스 20개가 고정 제품 소스와 일치한다. 기존 서명 APK 1.8.1.39를 포함하며 새 APK·Store·Company 배포는 수행하지 않았다.
+- 로컬·공개 설치 파일 모두 NSIS CRC `03b44332`, 압축 파일 전체 검사와 설치 전 검증 모드 시작을 통과했다. 기존 EXE 채널과 같은 미서명(`NotSigned`) 상태다. 사용 중인 앱을 종료하거나 설치를 덮어쓰지 않았다.
+
+## 공개 배포 기록
+
+- 공개 릴리스: [v1.8.2.07](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.07).
+- 게시: **2026-11-06 21:31:55 KST**. 공개 전체 다운로드 검증: **21:34:55 KST**.
+- 제품 소스 커밋: `a575ce6c4ca167c51dc2bdd018fd34fed91eb721`.
+- 실제 업데이터에서 **1.8.2.06 / 1.8.2.05 / 1.8.2.04 → 1.8.2.07** 감지를 확인했다. 공개 세 자산의 태그·크기·SHA-256·manifest가 빌드 원본과 일치한다.
+- 앱 업데이트·재시작 후 적용된다. Remote/Dashboard 새로고침 시 PWA 캐시 v109를 사용한다. 브라우저 메모리에 남은 예약 메시지는 새로고침 전에 보관한다. 배포 과정에서 운영 세션과 브라우저 큐는 조작하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.07-x64.exe` | 156264099 | `89807307f6a6b0a6a5e85a38ff3a521cfe16affcdbd3c2b8af5e93c140973aee` |
+| `Acedia-Setup-1.8.2.07-x64.exe.blockmap` | 163605 | `3bd6f4ac3eb8ec1ee5e0c7a04cec3832fd29c151cbaaa61b5265ca12cff32246` |
+| `latest-exe.json` | 256 | `73645eb8facadb87d22836c100c9f1b36122e6349e19c52af22585c51c04098e` |

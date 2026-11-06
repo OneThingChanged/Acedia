@@ -554,7 +554,8 @@ existing reveal behavior. Failed media associations use the existing error toast
 The two reported Akane files were found on disk; 52 targeted non-GUI checks cover
 link hit detection, child/parent filename conflicts, modifiers, existing path
 resolution and wrapping. These checks do not launch a media application. This is
-a source change; installation requires a later release.
+included in [release 1.8.2.07](release-1-8-2-07.md); updating and restarting the
+installed application applies it.
 
 The 2026-10-21 source also separates multiple absolute file links on the same
 terminal line. The first drive path previously consumed the following labels
