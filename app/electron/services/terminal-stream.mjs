@@ -207,6 +207,7 @@ export class CodexScrollbackFilter {
     this.cols = asDimension(cols, DEFAULT_COLS);
     this.pending = "";
     this.syncParts = null;
+    this.directParts = [];
     this.shadow = createShadowTerminal(this.cols, this.rows);
     this.probe = createShadowTerminal(this.cols, this.rows);
     this.disposed = false;
@@ -221,30 +222,35 @@ export class CodexScrollbackFilter {
     let textStart = 0;
     let cursor = 0;
 
-    while (cursor < input.length) {
-      const escapeIndex = input.indexOf(ESC, cursor);
-      if (escapeIndex < 0) {
+    try {
+      while (cursor < input.length) {
+        const escapeIndex = input.indexOf(ESC, cursor);
+        if (escapeIndex < 0) {
+          this.#acceptPart(input.slice(textStart), false, output);
+          return output.join("");
+        }
+
+        if (escapeIndex > textStart) {
+          this.#acceptPart(input.slice(textStart, escapeIndex), false, output);
+        }
+        const sequence = readEscapeSequence(input, escapeIndex);
+        if (!sequence?.complete) {
+          this.pending = input.slice(escapeIndex);
+          return output.join("");
+        }
+        this.#acceptPart(sequence.value, true, output);
+        cursor = sequence.end;
+        textStart = cursor;
+      }
+      if (textStart < input.length) {
         this.#acceptPart(input.slice(textStart), false, output);
-        return output.join("");
       }
-
-      if (escapeIndex > textStart) {
-        this.#acceptPart(input.slice(textStart, escapeIndex), false, output);
-      }
-      const sequence = readEscapeSequence(input, escapeIndex);
-      if (!sequence?.complete) {
-        this.pending = input.slice(escapeIndex);
-        return output.join("");
-      }
-      this.#acceptPart(sequence.value, true, output);
-      cursor = sequence.end;
-      textStart = cursor;
+      return output.join("");
+    } finally {
+      // Parse adjacent ANSI/text parts together, but always publish a current
+      // viewport before returning to readiness and question consumers.
+      this.#flushDirectParts();
     }
-
-    if (textStart < input.length) {
-      this.#acceptPart(input.slice(textStart), false, output);
-    }
-    return output.join("");
   }
 
   finish() {
@@ -262,6 +268,7 @@ export class CodexScrollbackFilter {
     if (this.syncParts) {
       output.push(this.#flushSyncFrame(false));
     }
+    this.#flushDirectParts();
     return output.join("");
   }
 
@@ -282,6 +289,7 @@ export class CodexScrollbackFilter {
     this.disposed = true;
     this.pending = "";
     this.syncParts = null;
+    this.directParts = [];
     this.shadow.dispose();
     this.probe.dispose();
   }
@@ -308,16 +316,18 @@ export class CodexScrollbackFilter {
 
     let transformed = value;
     if (isEscape && value === ERASE_VIEWPORT) {
+      this.#flushDirectParts();
       transformed = `${createScrollbackAdvance(
         this.rows,
         effectiveRowCount(captureViewport(this.shadow)),
       )}${value}`;
     }
-    this.#writeBoth(transformed);
+    this.directParts.push(transformed);
     return transformed;
   }
 
   #flushSyncFrame(complete) {
+    this.#flushDirectParts();
     const parts = this.syncParts ?? [];
     this.syncParts = null;
     const sanitized = parts.filter(
@@ -347,6 +357,13 @@ export class CodexScrollbackFilter {
     writeShadowSync(this.shadow, transformed);
     this.#alignProbe();
     return transformed;
+  }
+
+  #flushDirectParts() {
+    if (!this.directParts.length) return;
+    const data = this.directParts.join('');
+    this.directParts = [];
+    this.#writeBoth(data);
   }
 
   #writeBoth(data) {
@@ -522,7 +539,7 @@ export class SequencedTerminalBuffer {
     return {
       sequenceStart,
       sequenceEnd: this.nextSequence,
-      data: this.snapshot().slice(offset),
+      data: sequenceStart === this.nextSequence ? '' : this.snapshot().slice(offset),
       resetRequired,
       truncated: requested < this.baseSequence,
     };

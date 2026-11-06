@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-11-06
+last_updated: 2026-11-07
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -1005,6 +1005,52 @@ Evidence and publication details are in the [release record](release-1-8-1-66.md
 Runtime state and work state are distinct. Starting/recovering describes the
 process lifecycle; working/waiting/blocked/done comes from hooks. A completion
 highlight clears when the user opens the session or submits new work.
+
+## Runtime performance (2026-11-07 source)
+
+Read-only OS and authenticated host API sampling found intermittent host delay
+in the running **1.8.2.05** instance: 25 health reads had a median 2.8 ms,
+p95 409.9 ms and maximum 976.3 ms. The machine still had about 34 GB free RAM.
+This confirms variable host responsiveness during sampling, not a complete CPU
+profile or proof of a single cause for every freeze. No workspace, GUI, session
+input, routing settings or installed runtime files were changed.
+
+The current hook log also showed five sessions using a previous host endpoint.
+Managed PowerShell and Node helpers now prefer the validated port/token pair
+from **their own profile's** `hook-info.json` before sending. Missing or invalid
+metadata retains the environment fallback; a host rotating during a failed
+request can still use the latest metadata. This avoids waiting on an obsolete
+host for every tool event, without mixing credentials from different sources.
+SSH-bootstrap helpers always retain environment-based forwarding and do not read
+an unrelated remote machine's local metadata, even if a same-named file exists.
+
+Codex's headless terminal model batches adjacent text/ANSI parts, flushing before
+viewport-dependent clears and synchronized-frame comparisons and before returning
+to readiness consumers. Scrolling, colors, links and the output stream remain
+covered by regression checks. An unchanged `readSince` cursor returns no data
+without joining the retained scrollback; truncated and old-generation cursors
+still receive the required reset.
+
+Isolated Windows/Node measurements on 2026-11-07:
+
+| Workload | Baseline | Current source |
+| --- | ---: | ---: |
+| PowerShell hook with obsolete environment and a live profile endpoint | 2,475.7 ms, 1 stale request | 508.1 ms, 0 stale requests |
+| 150 colored clear/redraw frames, interleaved median of 8 runs | 108.60 ms | 79.97 ms |
+| Headless parse calls per redraw frame | 508 | 4 |
+| 4,000 unchanged polls of 512,000 retained characters, median of 3 runs | 895.78 ms | 0.41 ms |
+
+These are component benchmarks, not a claimed 26% speedup for the whole app.
+`node --expose-gc app/scripts/runtime-performance-bench.mjs` runs only synthetic
+headless buffers; an optional saved baseline module path alternates old and new
+code in the same process. The hook comparison uses temporary fixture servers and
+helpers. Related regression checks cover current/missing/invalid metadata,
+Unicode questions, native terminal scrollback, clear ordering and cursor resets.
+All 1,885 checks across 233 files passed, including targeted reruns after adding
+the missing Git executable to the test environment; the frontend build passed.
+The running application was not restarted during diagnosis. These changes are
+included in [1.8.2.08](release-1-8-2-08.md) and require the installed app update;
+confirmation of intermittent freezes in regular use remains separate.
 
 ## Session transcript storage
 

@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 프로젝트·세션 MCP
 description: 기존 MCP 연결에서 프로젝트·세션과 조직도를 관리하고, UTF-8 전용 수신함·한글 메시지·답장·읽음 확인과 Codex 작업 전달을 지원한다.
 status: stable
-last_updated: 2026-10-27
+last_updated: 2026-11-07
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
@@ -35,6 +35,19 @@ sources:
 소스 1.8.1.48부터 제공한다. Acedia에서 실행한 CLI의 기존 `multiagent_browser`
 MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없이 업데이트 후 세션을
 다시 시작하면 도구 목록에 나타난다. 원격 웹 기능을 켜지 않아도 로컬 MCP는 동작한다.
+
+## 읽기 전용 연결·응답 지연 확인
+
+같은 실행 프로필의 `shared-v1/local/hook-info.json`에서 현재 loopback 포트와 인증 쌍을
+읽고, Bearer 인증으로 `GET /integration/v1/health`와 `GET /integration/v1/sessions`를
+조회할 수 있다. 포트나 인증값을 문서·대화에 복사하거나 이전 실행의 포트를 고정하지 않는다.
+health는 호스트 PID를, sessions는 앱 버전·PID와 세션 상태를 반환한다. 이 GET은 세션을
+시작·선택하거나 창을 활성화하지 않는다. 브라우저 Origin 요청은 거부한다.
+2026-11-07 현재 실행 앱에서 두 경로의 인증된 HTTP 200을 확인했다.
+상태 조회의 왕복 시간은 OS 스케줄링·IPC·다른 요청을 포함하므로 함수별 CPU 프로파일로
+해석하지 않는다. [성능 확인과 재현 범위](workspace-interactions.md#runtime-performance-2026-11-07-source)를 따른다.
+
+## 프로젝트·세션 도구
 
 | 도구 | 기능 |
 | --- | --- |

@@ -17,6 +17,7 @@ import { browserPreferences, browserAddress } from "./services/browser-preferenc
 import { applyBrowserCompatibility } from "./services/browser-compatibility.mjs";
 import { BrowserExtensions } from "./services/browser-extensions.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
+import { collectBrowserPage, captureBrowserAsset, readBrowserCollection } from './services/browser-page-collection.mjs';
 import { BrowserActivity } from "./services/browser-activity.mjs";
 import { ProjectBoard } from './services/project-board.mjs';
 import { ProjectBoardWindow, BoardSessionNavigation, BOARD_COMMANDS, assertBoardAccess } from './services/project-board-window.mjs';
@@ -2845,6 +2846,19 @@ async function handleBrowserIntegrationAction({ agentId, action, body = {} }) {
       return { ok: true, tab: browserIntegrationTabSnapshot(record) };
     case "snapshot":
       return { ok: true, tab: browserIntegrationTabSnapshot(record), snapshot: await executeBrowserSnapshot(record) };
+    case 'collect-page':
+    case 'capture-asset':
+    case 'collection-get': {
+      const directory = path.join(app.getPath('userData'), 'browser-collections', record.id);
+      try {
+        const result = action === 'collect-page' ? await collectBrowserPage(record.view.webContents, body, { directory })
+          : action === 'capture-asset' ? await captureBrowserAsset(record.view.webContents, body, { directory: path.join(directory, 'assets') })
+          : await readBrowserCollection(body, { directory });
+        return { ...result, tab: browserIntegrationTabSnapshot(record) };
+      } catch (error) {
+        return { ok: false, httpStatus: error.statusCode || (error.code === 'ENOENT' ? 404 : 422), error: error.message };
+      }
+    }
     case "click": {
       const result = await browserClick(record, body.selector);
       if (result?.ok === false) return { ok: false, httpStatus: 409, error: result.error };

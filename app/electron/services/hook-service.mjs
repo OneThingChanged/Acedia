@@ -175,14 +175,17 @@ if ($toolName -match '(?i)(^|[.:/])(AskUserQuestion|request_user_input)$' -and (
 if ($effectiveEvent -ne "waiting") { $interactiveQuestion = $null }
 $port = $env:MULTIAGENT_PORT
 $token = $env:MULTIAGENT_TOKEN
-if (-not $port -or -not $token) {
-  if (Test-Path $infoPath) {
-    try {
-      $info = Get-Content $infoPath -Raw | ConvertFrom-Json
-      if (-not $port -and $info.port) { $port = [string]$info.port }
-      if (-not $token -and $info.token) { $token = [string]$info.token }
-    } catch {}
-  }
+# A resumed process can retain a dead host's environment. The helper's own
+# profile file is authoritative; select its port/token together before sending.
+if (Test-Path -LiteralPath $infoPath) {
+  try {
+    $info = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json
+    $runtimePort = 0
+    if ([int]::TryParse([string]$info.port, [ref]$runtimePort) -and $runtimePort -gt 0 -and $runtimePort -le 65535 -and -not [string]::IsNullOrWhiteSpace([string]$info.token)) {
+      $port = [string]$runtimePort
+      $token = [string]$info.token
+    }
+  } catch {}
 }
 "$ts | event=$effectiveEvent | hook=$HookEventName | agent=$($env:MULTIAGENT_AGENT_ID) | session=$sessionId | transcript=$transcriptPath | port=$port" | Out-File -FilePath $logPath -Append -Encoding utf8
 if (-not $port -or -not $token) { "$ts |   ! no port/token" | Out-File -FilePath $logPath -Append -Encoding utf8; exit 0 }
@@ -250,8 +253,10 @@ const question=event==="waiting"?(compact(input.interactive_question,8000)||(que
 if(question)payload.interactive_question=question;
 const assistant=compact(input.last_assistant_message??input.assistant_message??input.response,4000);
 if(assistant)payload.assistant_message=assistant;
-const port=process.env.MULTIAGENT_PORT;
-if(port&&payload.token){try{await fetch("http://127.0.0.1:"+port+"/event",{method:"POST",headers:{"content-type":"application/json; charset=utf-8"},body:JSON.stringify(payload),signal:AbortSignal.timeout(2000)});}catch{}}
+const runtimeEndpoint=async()=>{if(typeof ACEDIA_HOOK_LOCAL_PROFILE==="undefined")return null;try{const fs=await import("node:fs/promises"),info=JSON.parse(await fs.readFile(new URL("./hook-info.json",import.meta.url),"utf8"));const port=Number(info.port);return Number.isInteger(port)&&port>0&&port<=65535&&typeof info.token==="string"&&info.token.trim()?{port:String(port),token:info.token}:null}catch{return null}};
+const endpoint=await runtimeEndpoint()||{port:process.env.MULTIAGENT_PORT,token:payload.token};
+const send=async target=>{const response=await fetch("http://127.0.0.1:"+target.port+"/event",{method:"POST",headers:{"content-type":"application/json; charset=utf-8"},body:JSON.stringify({...payload,token:target.token}),signal:AbortSignal.timeout(2000)});if(!response.ok)throw Error("hook unavailable")};
+if(endpoint.port&&endpoint.token){try{await send(endpoint)}catch{const latest=await runtimeEndpoint();if(latest&&(latest.port!==endpoint.port||latest.token!==endpoint.token)){try{await send(latest)}catch{}}}}
 `;
 
 function remoteBootstrap(aiToolId) {
@@ -562,7 +567,7 @@ export class HookService {
   async writeRuntimeFiles() {
     await fsPromises.mkdir(this.baseDir, { recursive: true });
     await atomicWrite(this.helperPath, HELPER_SCRIPT);
-    await atomicWrite(this.nodeHelperPath, NODE_HELPER_SCRIPT);
+    await atomicWrite(this.nodeHelperPath, 'const ACEDIA_HOOK_LOCAL_PROFILE = true;\n' + NODE_HELPER_SCRIPT);
     await atomicWrite(this.infoPath, JSON.stringify({
       port: this.port,
       token: this.token,

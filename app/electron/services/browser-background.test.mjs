@@ -57,7 +57,7 @@ it("AI open/navigation/snapshot/screenshots do not reveal or attach the tab to a
   const start = source.indexOf("async function handleBrowserIntegration(");
   const end = source.indexOf("\nconst REMOTE_BROWSER_KEYS", start);
   const host = { id: "background-host" };
-  const record = { view: { webContents: { loadURL: vi.fn(async () => {}) } } };
+  const record = { id: 'tab', view: { webContents: { loadURL: vi.fn(async () => {}) } } };
   const reveal = vi.fn();
   const create = vi.fn(async () => ({ browserId: "tab" }));
   const context = {
@@ -68,13 +68,22 @@ it("AI open/navigation/snapshot/screenshots do not reveal or attach the tab to a
     browserIntegrationTabSnapshot: () => ({ tabId: "tab" }), showBrowserIntegrationTab: reveal,
     browserRecordForIntegration: async () => record, executeBrowserSnapshot: async () => ({ text: "page" }),
     saveBrowserScreenshot: async () => "screenshot.png",
+    app: { getPath: () => 'profile' }, path: { join: (...parts) => parts.join('/') },
+    collectBrowserPage: vi.fn(async () => ({ ok: true })),
+    captureBrowserAsset: vi.fn(async () => ({ ok: true })),
+    readBrowserCollection: vi.fn(async () => ({ ok: true })),
   };
   vm.createContext(context);
   vm.runInContext(source.slice(start, end), context);
-  for (const action of ["open", "navigate", "snapshot", "screenshot"]) {
+  for (const action of ["open", "navigate", "snapshot", "screenshot", "collect-page", "capture-asset", "collection-get"]) {
     const result = await context.handleBrowserIntegration({ agentId: "agent", action, body: { tabId: "tab", url: "https://example.com" } });
     expect(result.ok).toBe(true);
   }
+  expect(context.collectBrowserPage).toHaveBeenCalledWith(record.view.webContents, expect.any(Object), { directory: 'profile/browser-collections/tab' });
+  expect(context.captureBrowserAsset).toHaveBeenCalledWith(record.view.webContents, expect.any(Object), { directory: 'profile/browser-collections/tab/assets' });
+  context.collectBrowserPage.mockRejectedValueOnce(Object.assign(new Error('Page collection already in progress'), { statusCode: 409 }));
+  expect(await context.handleBrowserIntegration({ agentId: 'agent', action: 'collect-page', body: { tabId: 'tab' } }))
+    .toEqual({ ok: false, httpStatus: 409, error: 'Page collection already in progress' });
   for (const placement of ["right", "tab"]) {
     const result = await context.handleBrowserIntegration({ agentId: "agent", action: "open", reveal: true,
       body: { url: "https://example.com", placement } });

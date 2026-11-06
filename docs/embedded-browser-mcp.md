@@ -7,7 +7,7 @@ tags:
   - mcp
   - security
 status: stable
-stale_after: 2026-10-31
+stale_after: 2026-12-07
 sources:
   - id: browser-server
     resource: ../app/electron/services/browser-mcp-server.mjs
@@ -15,6 +15,9 @@ sources:
   - id: browser-context
     resource: ../app/electron/services/browser-context.mjs
     title: "Snapshot and annotation sanitization"
+  - id: browser-page-collection
+    resource: ../app/electron/services/browser-page-collection.mjs
+    title: "Rendered DOM, native page archives and original image resources"
   - id: browser-form-automation
     resource: ../app/electron/services/browser-form-automation.mjs
     title: "Semantic form targeting and verified browser actions"
@@ -143,6 +146,7 @@ The fixed tools are:
 
 * `browser_tabs`, `browser_open`, `browser_show`, and `browser_navigate`;
 * `browser_snapshot` and `browser_screenshot`;
+* `browser_collect_page`, `browser_capture_asset`, and `browser_collection_get`;
 * `browser_click` and `browser_type`;
 * `browser_upload_files`;
 * `browser_get_control` and `browser_form_state`;
@@ -152,6 +156,130 @@ The fixed tools are:
 * `browser_attach_annotation`.[^browser-server]
 
 Arbitrary page JavaScript is intentionally not exposed as a tool.
+
+### Rendered-page collection (2026-11-07 source)
+
+These tools run against the selected existing embedded tab and its Chromium
+session. They never call `show()`/`focus()`, reveal a sidebar, copy another
+browser's cookies, or navigate to an unrelated HTTP download client. Use
+`browser_tabs` to reuse the correct profile/tab. If it does not exist, use
+`browser_open` and wait for the catalog to report loading finished; opening may
+time out while the tab itself survives. Check the catalog before creating another.
+
+```json
+{"name":"browser_collect_page","arguments":{"tabId":"<existing-tab-id>","selector":".Post-RichText","expandCode":true,"maxImages":12}}
+```
+
+| Tool | Behavior |
+| --- | --- |
+| `browser_collect_page` | Read article text/HTML, save a viewport PNG, scroll for lazy images, restore the initial scroll, save Chromium HTMLComplete/MHTML, extract original image bytes, and return local artifact metadata. |
+| `browser_capture_asset` | Retry one image referenced by the rendered tab through `webContents.session.fetch`, retaining browser cookies and a document Referer. Accepts `img` source/original attributes and derived Zhihu GIF URLs; rejects unrelated URLs, nonimage responses, resources over 16 MiB, and network requests exceeding 10 seconds. |
+| `browser_collection_get` | Read the saved collection by returned `id` as `collectionId`, with the same `tabId`. Page image metadata without scrolling, downloading, or capturing again. |
+
+`selector` must match exactly one content root. Without one, selection prefers
+`.Post-RichText`, `.Post-RichTextContainer`, article RichText, article, main, then
+body. Review the selected root: a generic main/body fallback can contain site UI.
+The article text/scoped HTML exclude surrounding site UI when the chosen root
+does. Full-page DOM/native archives intentionally preserve the complete page.
+`expandCode` defaults to false and only clicks recognized code-expansion buttons
+inside the content root, adjacent to `pre`/`code`. Other approvals/login controls
+are not clicked. Remaining recognized expanders make the result incomplete.
+
+Each call creates an immutable UUID directory below
+`<userData>/browser-collections/<tabId>/`:
+
+| File | Meaning |
+| --- | --- |
+| `index.html` | Full rendered DOM before code expansion/scrolling; untouched by subsequent conversion. |
+| `expanded.html` | DOM after optional code expansion and lazy-image scrolling. |
+| `article.html`, `content.txt` | Scoped article HTML and full collected text, including code, lists, tables, links and captions. |
+| `viewport.png` | Current visible viewport after scroll restoration, rather than a full-page stitched screenshot. |
+| `page.mhtml`, `page.html` and companion files | Chromium's native archives of the rendered page. |
+| `image-*.ext`, `inline-*.ext`, `asset-*.ext` | Original resource bytes from MHTML, inline base64 or the same-session browser network, without image recompression. |
+| `asset-map.json` | Exact source image URLs to absolute saved file paths. Used as a staging map, not as a Wiki public URL map. |
+| `manifest.json` | Paths, MIME/bytes/SHA-256, all image entries/missing indices, structure counts, expansion status, warnings and completion scope. |
+
+HTML means the rendered DOM, **not the original HTTP response bytes**. Browser
+HTMLComplete/MHTML may rewrite resource URLs; `index.html`/`expanded.html` retain
+the DOM attributes needed by a downstream converter. Zhihu `ztext-gif` or
+`data-actualtype="gif"` thumbnails require the original GIF; a JPG/PNG thumbnail
+alone is incomplete. Network GIF responses also require a GIF byte signature.
+
+`ok:true` means the capture operation produced a report. **Require
+`complete:true` before accepting collection**, and still compare the selected
+body/structure with the page. Missing images, site access blocks, unverified
+short fallback pages, scroll/HTML/text limits, unexpanded code, screenshot or
+archive/inventory failures produce `complete:false` with explicit warnings.
+`saveArchive:false` returns lightweight text/DOM/screen evidence and never claims
+complete preservation. Separate asset retries do not rewrite a prior manifest;
+recollect to produce a newly verified collection.
+
+Limits: 60 scroll steps by default, maximum 100/15 seconds; 1,000 image entries;
+3 million characters each for text/DOM HTML; 8 MiB inline image data; 64 MiB MHTML
+decoding; 4,000 files/256 MiB for the hashed inventory. Missing-image browser
+fallbacks share a 20-second/40-request budget. Limits are reported as partial
+results, never silently counted as a complete article. A per-tab lock rejects
+concurrent captures, and navigation during collection aborts it. MCP gives the
+collection request 90 seconds; a currently loading tab must finish first.
+
+`maxText` (1,000–60,000, default 24,000) bounds the returned text, while
+`content.txt` keeps all collected text up to the explicit collection limit.
+`returnedTextTruncated` is distinct from incomplete saved text. `maxImages`
+(1–40, default 12) and `imageOffset` bound the returned metadata; the full list
+is in `manifest.json`. Read another page with:
+
+```json
+{"name":"browser_collection_get","arguments":{"tabId":"<same-tab-id>","collectionId":"<returned-id>","imageOffset":12,"maxImages":12}}
+```
+
+The authenticated HTTP equivalents are POST
+`/integration/v1/browser/<agentId>/collect-page`, `/capture-asset`, and
+`/collection-get`. They use the same JSON fields and host authorization as other
+browser tools. Collection IDs are UUIDs scoped to the tab's archive directory;
+callers cannot provide arbitrary output paths. Standalone asset files are placed
+under that tab's `assets/` directory.
+
+Raw HTML and the on-disk asset map may contain page scripts, signed asset URLs
+and page-specific data. They remain local, are not executed or automatically
+uploaded, and must be treated as untrusted source material. MCP returns bounded
+text and sanitized URL metadata rather than embedding raw HTML, cookies, image
+base64 or authorization material in conversation history.
+
+#### Sub5torage Wiki handoff
+
+The `Sub5torage_wiki` session was checked by title/project/date, then its
+requirements were confirmed against
+`G:/AI/03_Development/GitHub/Sub5torage/Tools/WikiCapture/docs/CAPTURE_CONVERSION_WORKFLOW.md`
+and `COLLECTION_SESSION_HANDOFF.md`. Its workflow requires full body structures,
+images/captions and GIF originals, with surrounding UI excluded and the original
+snapshot kept separate from conversion/translation. Text-only MCP snapshots do
+not satisfy it.
+
+After `complete:true` and body review, the consumer copies the original and
+expanded DOM to its required
+`Tools/WikiCapture/data/<Topic>/source/<source-id>/_capture/original/index.html`
+and `_capture/original-expanded/index.html`, and copies image bytes to
+`Assets/images/`. Preserve the Acedia manifest/hashes alongside them. Rewrite the
+staging asset map's values to the consumer's served paths, for example
+`/output/wiki/<Topic>/source/<source-id>/Assets/images/<name>`, before passing it
+to `wiki_snapshot_to_local.mjs --snapshot <expanded-snapshot> --asset-map <map>
+--dry-run`. The raw Acedia map contains filesystem paths and must not be used as
+public Wiki URLs. Validate structure/image counts and missing assets before
+translation or registration. These Acedia tools do not write another project's
+files, translate content, register a local Wiki entry or publish a live entry.
+
+Verification: `npm run electron:browser-collection-smoke` uses a hidden isolated
+Electron browser and local fixture. It checks lazy-image loading, restored
+scroll, separate original/expanded code, tables/lists/links/captions, original
+GIF byte hashes, browser-cookie/Referer-protected image retrieval and saved
+result paging. `-- --live-zhihu` additionally checks the requested article
+`1993816774026736429` in a fresh profile. On 2026-11-07 the existing Acedia
+profile successfully read 8,235 characters and captured the rendered screen;
+the isolated fresh profile was blocked and correctly reported
+`complete:false/page_access_blocked`. This is not evidence that the live article
+has been fully archived with the new tools. Updating the Acedia host and
+restarting/reconnecting the MCP client is required to expose these new tools;
+the running older host was not patched or restarted during testing.
 
 ### Showing a browser beside chat
 

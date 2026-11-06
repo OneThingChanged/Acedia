@@ -49,6 +49,33 @@ function createTerminal(cols = 20, rows = 4) {
   return new Terminal({ cols, rows, scrollback: 100, allowProposedApi: true });
 }
 
+it('batches a colored Codex redraw without losing output, current viewport or clear ordering', () => {
+  const filter = new CodexScrollbackFilter(55, 200);
+  const writes = [filter.shadow, filter.probe].map(term => vi.spyOn(term._core, 'writeSync'));
+  const rows = Array.from({ length: 50 }, (_, i) => `\x1b[${i + 1};1H\x1b[32mline ${i} 한글\x1b[0m\x1b[K`).join('');
+  const frame = `\x1b[?2026h\x1b[2J\x1b[H${rows}\x1b[?2026l`;
+  try {
+    expect(filter.push(frame)).toBe(frame);
+    expect(filter.viewportText()).toContain('line 49 한글');
+    expect(writes.reduce((count, spy) => count + spy.mock.calls.length, 0)).toBeLessThanOrEqual(4);
+    filter.push('\x1b[2J\x1b[Hfirst\r\nsecond\x1b[2J\x1b[Hfinal');
+    expect(filter.viewportText().trim()).toBe('final');
+    const lines = bufferLines(filter.shadow, 0, filter.shadow.buffer.active.baseY);
+    expect(lines).toContain('line 49 한글'); expect(lines).toContain('first'); expect(lines).toContain('second');
+  } finally { filter.dispose(); }
+});
+
+it('does not materialize retained scrollback for up-to-date polling, while still replaying new output and resetting old cursors', () => {
+  const buffer = new SequencedTerminalBuffer(1024);
+  buffer.append('a'.repeat(800));
+  const snapshot = vi.spyOn(buffer, 'snapshot');
+  expect(buffer.readSince(800)).toMatchObject({ data: '', resetRequired: false, sequenceEnd: 800 });
+  expect(snapshot).not.toHaveBeenCalled();
+  buffer.append('b'.repeat(800));
+  expect(buffer.readSince(800)).toMatchObject({ data: 'b'.repeat(800), resetRequired: false });
+  expect(buffer.readSince(0)).toMatchObject({ data: 'a'.repeat(224) + 'b'.repeat(800), resetRequired: true, truncated: true });
+});
+
 function writeTerminal(terminal, data) {
   if (!data) return Promise.resolve();
   return new Promise((resolve) => terminal.write(data, resolve));
