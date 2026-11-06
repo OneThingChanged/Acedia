@@ -37,6 +37,54 @@ function fixture() {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
+describe('Queued input readiness without terminal injection', () => {
+  it('waits for the accepted turn and sends three messages only after each turn finishes', async () => {
+    const f = fixture(); let turn = { turn: { id: 'initial' }, lifecycle: 'idle', question: null };
+    f.dependencies.currentQuestion.mockImplementation(async () => turn);
+    const send = async message => { const pending = f.submit({ ...request, message }); await vi.advanceTimersByTimeAsync(PTY_SUBMIT_DELAY_MS); expect(await pending).toBe(true); };
+    await send('첫 번째');
+    expect(await f.submit.readiness(request)).toMatchObject({ supported: true, ready: false, reason: 'awaiting-turn' });
+    await expect(f.submit({ ...request, message: '너무 이른 두 번째' })).rejects.toMatchObject({ outcome: 'not-sent' });
+    expect(f.process.write.mock.calls).toHaveLength(2);
+    turn = { turn: { id: 'first' }, lifecycle: 'working', question: null };
+    expect(await f.submit.readiness(request)).toMatchObject({ ready: false, reason: 'working' });
+    turn.lifecycle = 'idle'; f.state.ready = false;
+    expect(await f.submit.readiness(request)).toMatchObject({ ready: false, reason: 'composer-not-ready' });
+    f.state.ready = true; expect(await f.submit.readiness(request)).toMatchObject({ ready: true });
+    await send('두 번째 C:\\첨부\\이미지.png');
+    // A very short turn can finish between polls; its new turn ID is sufficient.
+    turn = { turn: { id: 'second' }, lifecycle: 'idle', question: null };
+    expect(await f.submit.readiness(request)).toMatchObject({ ready: true });
+    await send('세 번째');
+    expect(f.process.write.mock.calls).toEqual([['첫 번째'], ['\r'], ['두 번째 C:\\첨부\\이미지.png'], ['\r'], ['세 번째'], ['\r']]);
+  });
+  it.each(['draft', 'question', 'answer', 'conversation', 'offline'])('reads %s without writing input or starting a retry', async state => {
+    const f = fixture();
+    if (state === 'draft') f.state.ready = false;
+    if (state === 'question') f.state.question = { async: false };
+    if (state === 'answer') f.state.busy = true;
+    if (state === 'conversation') f.state.sessionId = 'other';
+    if (state === 'offline') f.sessions.clear();
+    expect((await f.submit.readiness(request)).ready).toBe(false);
+    expect(f.process.write).not.toHaveBeenCalled(); expect(f.dependencies.cancelRetry).not.toHaveBeenCalled();
+  });
+  it('rejects an entry replaced during the readiness read', async () => {
+    const f = fixture(); f.dependencies.currentQuestion.mockImplementationOnce(async () => {
+      f.sessions.set(id, { ...f.entry, process: {} }); return { lifecycle: 'idle' };
+    });
+    expect(await f.submit.readiness(request)).toMatchObject({ ready: false, reason: 'session-changed' });
+    expect(f.process.write).not.toHaveBeenCalled();
+  });
+  it('releases an accepted-turn wait after explicit cancellation and binds reads to the requested conversation', async () => {
+    const f = fixture();
+    const pending = f.submit(request); await vi.advanceTimersByTimeAsync(PTY_SUBMIT_DELAY_MS); await pending;
+    expect(await f.submit.readiness(request)).toMatchObject({ ready: false, reason: 'awaiting-turn' });
+    f.submit.reset(id); expect(await f.submit.readiness(request)).toMatchObject({ ready: true });
+    f.state.sessionId = 'after'; expect(await f.submit.readiness(request)).toMatchObject({ ready: false, reason: 'conversation-changed' });
+    expect(f.process.write.mock.calls).toHaveLength(2);
+  });
+});
+
 describe('host chat submission coordination', () => {
   it('rejects a parked terminal draft before retrying paste or Enter', async () => {
     const f = fixture(); f.state.ready = false;

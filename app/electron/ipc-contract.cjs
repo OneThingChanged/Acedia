@@ -11,6 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
+  "open_project_board", "project_board_snapshot", "project_board_ack", "project_board_preferences", "project_board_open_session",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "app_startup_get", "app_startup_set",
@@ -190,6 +191,7 @@ const INVOKE_COMMANDS = Object.freeze([
 ]);
 
 const DELIVERED_EVENTS = Object.freeze([
+  "project-board:open-session",
   "accounts:changed",
   "usage:changed",
   "pty:data",
@@ -286,6 +288,28 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case 'open_project_board':
+    case 'project_board_snapshot':
+      if (Object.keys(args).some(key => command === 'open_project_board' || key !== 'revision')
+        || args.revision !== undefined && !/^[a-f0-9]{64}$/.test(args.revision)) throw new TypeError('Invalid board snapshot');
+      break;
+    case 'project_board_ack':
+    case 'project_board_open_session':
+      assertId(args);
+      if (Object.keys(args).some(key => !['id', command === 'project_board_ack' ? 'fingerprint' : 'compose'].includes(key))
+        || command === 'project_board_ack' && (typeof args.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(args.fingerprint))
+        || command === 'project_board_open_session' && args.compose !== undefined && typeof args.compose !== 'boolean') throw new TypeError('Invalid board session');
+      break;
+    case 'project_board_preferences': {
+      const p = args.preferences;
+      if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
+        || Object.keys(p).some(key => !['zoom', 'x', 'y', 'collapsed', 'projectId'].includes(key))
+        || ['zoom', 'x', 'y'].some(key => p[key] !== undefined && (!Number.isFinite(p[key]) || Math.abs(p[key]) > 1000000))
+        || p.zoom !== undefined && (p.zoom < .2 || p.zoom > 2)
+        || p.projectId !== undefined && p.projectId !== null && (typeof p.projectId !== 'string' || p.projectId.length > 256)
+        || p.collapsed !== undefined && (!Array.isArray(p.collapsed) || p.collapsed.length > 2000 || p.collapsed.some(id => typeof id !== 'string' || id.length > 256))) throw new TypeError('Invalid board preferences');
+      break;
+    }
     case 'app_startup_get':
     case 'app_startup_set':
       if (Object.keys(args).some(key => command === 'app_startup_get' || key !== 'enabled')

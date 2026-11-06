@@ -63,12 +63,21 @@ export class AccountPool {
     }
     catch (error) { if (error.code !== 'ENOENT') this.loadError = '계정 저장소를 읽을 수 없습니다. 기존 데이터를 복구하세요.'; }
   }
-  guard() { if (this.loadError) throw fail(this.loadError, 503); if (this.closed) throw fail('계정 서비스가 종료 중입니다.', 503); }
+  guardReadable() { if (this.loadError) throw fail(this.loadError, 503); if (this.closed) throw fail('계정 서비스가 종료 중입니다.', 503); }
+  guard() { this.guardReadable(); if (this.storageError) throw fail(this.storageError.message, 503); }
   persist() {
-    this.guard();
-    try { atomic(this.file, this.state); }
-    catch { this.loadError = '계정 저장소에 기록하지 못했습니다. 저장 공간을 확인한 뒤 다시 시작하세요.'; throw fail(this.loadError, 503); }
+    this.guardReadable();
+    try { atomic(this.file, this.state); this.storageError = null; }
+    catch (error) {
+      const code = ['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EBUSY', 'EIO', 'ENOENT'].includes(error?.code) ? error.code : 'UNKNOWN';
+      const message = ['ENOSPC', 'EDQUOT'].includes(code) ? '계정 기록을 저장할 공간이 부족합니다. 공간을 확보한 뒤 저장을 다시 시도하세요.'
+        : ['EACCES', 'EPERM', 'EBUSY'].includes(code) ? '계정 기록 파일에 접근하지 못했습니다. 파일 권한이나 잠금을 확인한 뒤 저장을 다시 시도하세요.'
+        : '계정 기록 저장에 실패했습니다. 저장소 상태를 확인한 뒤 저장을 다시 시도하세요.';
+      this.storageError = { code, message, since: this.storageError?.since || this.now(), lastFailedAt: this.now() };
+      throw fail(message, 503);
+    }
   }
+  retryStorage() { this.persist(); }
   account(id) { this.guard(); const item = this.state.accounts.find(a => a.id === id); if (!item) throw fail('계정을 찾을 수 없습니다.', 404); return item; }
   home(id) { this.account(id); return path.join(this.root, 'homes', id); }
   seal(value) {
@@ -80,7 +89,7 @@ export class AccountPool {
     try { return this.safeStorage.decryptString(Buffer.from(value, 'base64')); } catch { throw fail('저장된 인증 정보를 열 수 없습니다. 다시 로그인하세요.', 503); }
   }
   snapshot(admin = true) {
-    this.guard();
+    this.guardReadable();
     if (!admin) return { canManage: false, enabled: this.state.enabled, accounts: [], sessions: [], recent: [] };
     const periodsByAccount = new Map();
     for (const [agentId, session] of Object.entries(this.state.sessions)) {
@@ -92,6 +101,7 @@ export class AccountPool {
       }
     }
     return { canManage: true, enabled: this.state.enabled, running: Boolean(this.server?.listening),
+      storage: { writable: !this.storageError, ...(this.storageError || {}) },
       accounts: this.state.accounts.map(a => ({ id: a.id, label: a.label, email: a.email || null, plan: a.plan || null,
         enabled: a.enabled, state: this.jobs.has(a.id) ? 'login_pending' : a.status, error: a.loginError || null, limits: a.limits || null,
         available: this.eligible(a),
@@ -222,7 +232,7 @@ export class AccountPool {
         try { const file = path.join(this.home(id), 'auth.json'); if (fs.existsSync(file)) fs.unlinkSync(file); }
         catch { this.loadError = '임시 인증 파일을 정리하지 못했습니다. 저장 공간을 확인하세요.'; }
         this.jobs.delete(id);
-        try { this.persist(); } catch { this.loadError = '계정 인증 정보를 저장하지 못했습니다. 저장 공간을 확인하세요.'; }
+        try { this.persist(); } catch { /* Storage failure remains recoverable and visible in snapshots. */ }
       }
     };
     job.finish = finish;
@@ -282,7 +292,7 @@ export class AccountPool {
       || [bucket?.primary, bucket?.secondary].some(w => w?.usedPercent >= 100 && (!w.resetsAt || w.resetsAt * 1000 > this.now()));
   }
   sessionAssignment(id) {
-    this.guard();
+    this.guardReadable();
     const session = Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : null;
     const account = session?.accountId ? this.state.accounts.find(a => a.id === session.accountId) : null;
     return { label: account?.label ?? null, assigned: Boolean(session?.accountId), lastUsed: session?.lastUsed ?? null };
@@ -744,7 +754,9 @@ export class AccountPool {
         }
         a.stats.inputTokens += record.inputTokens; a.stats.outputTokens += record.outputTokens; a.stats.cachedTokens += record.cachedTokens || 0;
         this.state.recent.push(record); this.state.recent = this.state.recent.slice(-200);
-        try { this.persist(); } catch { this.loadError = '계정 사용 기록을 저장하지 못했습니다. 저장 공간을 확인하세요.'; }
+        // Retain in-memory usage and read-only status on write failure. Never
+        // turn a transient statistics write into a permanently unreadable vault.
+        try { this.persist(); } catch { /* persist exposes a recoverable storage error */ }
       }
     }
   }
@@ -758,6 +770,7 @@ export class AccountPool {
       if (!String(req.headers['content-type']).startsWith('application/json')) throw fail('JSON 요청이 필요합니다.', 415);
       const b = await readJson(req);
       switch (b.action) {
+        case 'retry_storage': this.retryStorage(); break;
         case 'create': this.create(b.label); break;
         case 'login': await this.beginLogin(b.id, b.method ?? (local ? 'browser' : 'device')); break;
         case 'cancel': await this.cancelLogin(b.id); break;

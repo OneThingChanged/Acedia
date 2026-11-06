@@ -6,6 +6,14 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('bounds board-only commands to metadata, exact result identity and navigation', () => {
+    expect(contract.assertInvokeRequest('open_project_board', {})).toEqual({});
+    expect(contract.assertInvokeRequest('project_board_open_session', { id: 'a', compose: true })).toEqual({ id: 'a', compose: true });
+    expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64) })).toBeTruthy();
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { zoom: .5, collapsed: ['a'], x: -200, y: 100 } })).toBeTruthy();
+    for (const args of [{ preferences: { zoom: 0 } }, { preferences: { x: Infinity } }, { preferences: { bounds: {} } }, { preferences: { collapsed: [1] } }]) expect(() => contract.assertInvokeRequest('project_board_preferences', args)).toThrow();
+    for (const [command, args] of [['project_board_ack', { id: 'a', fingerprint: 'stale' }], ['project_board_open_session', { id: 'a', command: 'run' }], ['project_board_snapshot', { revision: 2 }]]) expect(() => contract.assertInvokeRequest(command, args)).toThrow();
+  });
   it('bounds Windows startup to explicit booleans with no caller-controlled executable or registry name',()=>{
     expect(contract.assertInvokeRequest('app_startup_get',{})).toEqual({});
     expect(contract.assertInvokeRequest('app_startup_set',{enabled:true})).toEqual({enabled:true});

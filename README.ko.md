@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.2.00-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.2.06-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -13,6 +13,8 @@
 ---
 
 ## 기능
+
+- **프로젝트 보드 전용 창** — 프로젝트·부모/자식 세션, 결과 확인 목록과 컴퓨터 사용 신호를 별도 창에서 보고 노드 더블클릭으로 담당 대화를 엽니다. 창 위치와 보드 배치를 기억합니다. [조직도 안내](docs/session-organization.md).
 
 ### 세션 & 레이아웃
 - **프로젝트 우선 워크플로** — 프로젝트 폴더를 등록하고, 접이식 사이드바 트리 아래에 별명 세션 생성

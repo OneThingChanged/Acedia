@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { browserLoginUrl, accountLoginError } from './account-login.mjs';
 import { AccountPool } from './account-pool.mjs';
 import { CodexRequestBodyBudget } from './codex-request-body.mjs';
@@ -672,6 +672,113 @@ describe('Acedia account pool', () => {
     expect(await fetch(url).then(r => r.text())).toContain('accountPoolView');
     expect((await fetch(url + '/pwa/account-pool.js')).status).toBe(200);
     expect(await fetch(url + '/api/account-pool').then(r => r.json())).toMatchObject({ canManage: true, enabled: false });
+  });
+});
+
+describe('Account pool storage recovery', () => {
+  // Fail only this fixture's atomic replacement, leaving HTTP and fixture cleanup intact.
+  function failWrites(pool, code) {
+    const rename = fs.renameSync;
+    return vi.spyOn(fs, 'renameSync').mockImplementation((source, target) => {
+      if (source === pool.file + '.tmp') throw Object.assign(new Error('private-path secret-refresh'), { code });
+      return rename(source, target);
+    });
+  }
+  it.each([
+    ['ENOSPC', '공간이 부족'], ['EDQUOT', '공간이 부족'],
+    ['EPERM', '권한이나 잠금'], ['EIO', '저장소 상태'], ['unexpected', '저장소 상태'],
+  ])('keeps full quota, assignments and usage readable after %s and recovers without restart', async (code, message) => {
+    const { pool } = fixture(); const id = add(pool, 'A'); await pool.setEnabled(true);
+    await pool.launch('one');
+    const account = pool.account(id);
+    const saved = fs.readFileSync(pool.file);
+    account.limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
+    account.stats.inputTokens = 42;
+    const blocked = failWrites(pool, code);
+    try {
+      expect(() => pool.persist()).toThrow(message);
+      expect(() => pool.retryStorage()).toThrow(message);
+      const snapshot = pool.snapshot();
+      expect(snapshot.storage).toMatchObject({ writable: false, code: code === 'unexpected' ? 'UNKNOWN' : code });
+      expect(snapshot.accounts[0]).toMatchObject({ label: 'A', available: false, stats: { inputTokens: 42 }, limits: account.limits });
+      expect(pool.sessionAssignment('one')).toMatchObject({ label: 'A', assigned: true });
+      expect(JSON.stringify(snapshot)).not.toMatch(/private-path|secret-refresh|access_token/);
+      expect(pool.snapshot(false)).toEqual({ canManage: false, enabled: true, accounts: [], sessions: [], recent: [] });
+      expect(fs.readFileSync(pool.file)).toEqual(saved);
+      await expect(pool.launch('two')).rejects.toMatchObject({ status: 503 });
+      expect(pool.state.sessions.two).toBeUndefined();
+    } finally { blocked.mockRestore(); }
+    pool.retryStorage();
+    expect(pool.snapshot().storage).toEqual({ writable: true });
+    const restored = JSON.parse(fs.readFileSync(pool.file, 'utf8'));
+    expect(restored.accounts[0].stats.inputTokens).toBe(42);
+    expect(restored.sessions.one.accountId).toBe(id);
+    expect(pool.sessionAssignment('one').label).toBe('A');
+  });
+  it('retains a completed response and its usage when the final statistics write fails', async () => {
+    const { pool, seen } = fixture(); const id = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('one'); const saved = fs.readFileSync(pool.file);
+    const blocked = failWrites(pool, 'EPERM');
+    try {
+      const result = await sendRequest(pool, launch);
+      expect(result.response.status).toBe(200);
+      expect(result.text).toContain('response.completed');
+      const snapshot = pool.snapshot();
+      expect(snapshot.storage).toMatchObject({ writable: false, code: 'EPERM' });
+      expect(snapshot.accounts[0]).toMatchObject({ id, active: 0, stats: { requests: 1, inputTokens: 12, outputTokens: 3 } });
+      expect(snapshot.recent.at(-1)).toMatchObject({ status: 'completed', httpStatus: 200 });
+      expect(fs.readFileSync(pool.file)).toEqual(saved);
+      expect((await sendRequest(pool, launch)).response.status).toBe(503);
+      expect(seen).toHaveLength(1);
+    } finally { blocked.mockRestore(); }
+    pool.retryStorage();
+    expect(JSON.parse(fs.readFileSync(pool.file, 'utf8')).recent.at(-1).status).toBe('completed');
+    expect((await sendRequest(pool, launch)).response.status).toBe(200);
+    expect(pool.sessionAssignment('one').label).toBe('A');
+  });
+  it.each(['local', 'remote'])('serves saturated accounts through %s HTTP and restricts retry to the owner and origin', async mode => {
+    const { pool, root, item } = fixture(); const id = add(pool, 'A'); await pool.setEnabled(true);
+    const launch = await pool.launch('one');
+    pool.account(id).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
+    pool.persist();
+    const providers = { accountPoolApi: (...args) => pool.api(...args) };
+    const web = mode === 'local'
+      ? new LocalDashboardService({ baseDir: root, configName: 'web.json', defaultPort: 0, providers })
+      : new RemoteDashboardService({ baseDir: path.join(root, 'remote'), ...providers });
+    if (mode === 'remote') {
+      web.config.server_port = 0; web.config.owner = 'owner'; web.access.approved = ['guest']; web.isDirectLocal = () => false;
+    }
+    item.web = web; await web.start();
+    const base = `http://127.0.0.1:${web.server.address().port}`;
+    const headers = mode === 'remote' ? { cookie: `multiagent_remote=${web.sign('owner')}` } : {};
+    const get = () => fetch(base + '/api/account-pool', { headers });
+    const retry = extra => fetch(base + '/api/account-pool', { method: 'POST', headers: { ...headers, origin: base, 'content-type': 'application/json', ...extra }, body: JSON.stringify({ action: 'retry_storage' }) });
+    expect((await (await get()).json()).accounts[0]).toMatchObject({ id, available: false, limits: { rateLimits: { primary: { usedPercent: 100 } } } });
+    const blocked = failWrites(pool, 'ENOSPC');
+    try {
+      expect(() => pool.persist()).toThrow();
+      const response = await get(); expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ storage: { writable: false, code: 'ENOSPC' }, accounts: [{ id, available: false }] });
+      expect((await retry()).status).toBe(503);
+      expect((await retry({ origin: 'https://evil.invalid' })).status).toBe(403);
+      if (mode === 'remote') {
+        expect((await fetch(base + '/api/account-pool')).status).toBe(401);
+        expect((await retry({ cookie: `multiagent_remote=${web.sign('guest')}` })).status).toBe(403);
+      }
+    } finally { blocked.mockRestore(); }
+    const recovered = await retry(); expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toMatchObject({ storage: { writable: true } });
+    // Quota remains exhausted after storage recovery; no provider request is replayed.
+    expect((await sendRequest(pool, launch)).response.status).toBe(503);
+    expect(pool.state.sessions.one.accountId).toBe(id);
+  });
+  it('never overwrites an unreadable account registry through the recovery action', () => {
+    const { pool, root, item } = fixture(); add(pool, 'A'); pool.close();
+    const corrupted = '{"accounts":'; fs.writeFileSync(pool.file, corrupted);
+    const restored = new AccountPool(root, { safeStorage, port: 0 }); item.pool = restored;
+    expect(() => restored.snapshot()).toThrow('계정 저장소를 읽을 수 없습니다');
+    expect(() => restored.retryStorage()).toThrow('계정 저장소를 읽을 수 없습니다');
+    expect(fs.readFileSync(restored.file, 'utf8')).toBe(corrupted);
   });
 });
 

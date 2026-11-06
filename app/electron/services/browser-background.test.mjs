@@ -62,6 +62,7 @@ it("AI open/navigation/snapshot/screenshots do not reveal or attach the tab to a
   const create = vi.fn(async () => ({ browserId: "tab" }));
   const context = {
     URL, isHttpUrl: url => url.startsWith("https:"), ensureBrowserHostWindow: () => host,
+    projectBoard: { browserAction: async (_id, _action, task) => task() },
     browserParentWindowForAgent: vi.fn(() => { throw new Error("AI must not attach to workspace"); }),
     createDocumentBrowserWindow: create, documentBrowserWindows: new Map([["tab", record]]),
     browserIntegrationTabSnapshot: () => ({ tabId: "tab" }), showBrowserIntegrationTab: reveal,

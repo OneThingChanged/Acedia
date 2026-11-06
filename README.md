@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-[![Version](https://img.shields.io/badge/version-1.8.2.05-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.2.06-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
@@ -15,6 +15,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 ## Features
 
 ### Sessions & Layout
+- **Independent project board window** — monitor project/session trees, review new results, see computer-use signals and double-click a node to open its Acedia conversation. Window placement and board preferences persist. See [Organization](docs/session-organization.md).
 - **Project-first workflow** — register a project folder, then create aliased sessions under it in the collapsible sidebar tree
 - **Project relationship board** — connect or detach parent projects, reference folders across branches, and arrange cards with drag, pan, zoom and undo. Shared settings apply on the next launch while conversations remain independent. See [Organization](docs/session-organization.md).
 - **Session status filters** — choose All, Active, or Sleeping below sidebar search. Blue Sleeping sessions wait to start or resume; search stays within the saved filter and hides projects without matches. See [workspace navigation](docs/workspace-interactions.md#navigation-and-visibility).

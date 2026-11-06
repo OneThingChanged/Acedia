@@ -1,6 +1,16 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['터미널 입력 준비를 기다리고 있습니다. 비어 있는 입력란이 확인되면 예약 전송을 계속합니다.', 'Waiting for the terminal composer. Queued messages will continue when it is empty and ready.'],
+  ['분산 상태 조회 실패', 'Could not read routing status'],
+  ['분산 상태 · 저장 복구 필요', 'Routing status · Storage recovery needed'],
+  ['저장 다시 시도', 'Retry saving'],
+  ['계정·한도·배정은 계속 표시합니다. 새 요청은 저장 복구 후 사용할 수 있습니다.', 'Accounts, limits and assignments remain visible. New requests require storage recovery.'],
+  ['이전 조회 상태를 표시합니다. 목록을 새로고침해 다시 확인하세요.', 'Showing the last snapshot. Refresh the list to check again.'],
+  ['저장된 계정 상태를 다시 읽습니다.', 'Read the saved account status again.'],
+  ['계정 기록을 저장할 공간이 부족합니다. 공간을 확보한 뒤 저장을 다시 시도하세요.', 'There is not enough space to save account records. Free space and retry saving.'],
+  ['계정 기록 파일에 접근하지 못했습니다. 파일 권한이나 잠금을 확인한 뒤 저장을 다시 시도하세요.', 'Could not access the account records file. Check permissions or file locks, then retry saving.'],
+  ['계정 기록 저장에 실패했습니다. 저장소 상태를 확인한 뒤 저장을 다시 시도하세요.', 'Could not save account records. Check storage and retry saving.'],
   ['하위 세션 접기', 'Collapse child sessions', '折叠子会话', '摺疊子工作階段', '子セッションを折りたたむ', 'Contraer sesiones secundarias'],
   ['하위 세션 펼치기', 'Expand child sessions', '展开子会话', '展開子工作階段', '子セッションを展開', 'Expandir sesiones secundarias'],
   ['작업 흐름', 'Task flow'],

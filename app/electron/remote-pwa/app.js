@@ -12,6 +12,7 @@ import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, lo
 import { providerLogo, screenColor, searchText, reconcileChat } from './workspace-ui.js';
 import { buildSessionFamilies } from './session-tree.js';
 import { createChatRequests } from './chat-requests.js';
+import { createQueueInputGate } from './queue-delivery.js';
 import { filesForTurn, renderStoredImages } from './chat-files.js';
 import { renderChatUser, renderAssistantTurn } from "./chat-render.js";
 import { loadVideoPreview, cancelVideoPreview } from './video-preview.js';
@@ -3610,6 +3611,13 @@ function selectUsage() {
 }
 
 function conversationId(agent) { return agent?.hook?.session_id || agent?.lastSessionId || chatHistoryStore.get(agent?.id)?.sessionId || undefined; }
+const queueInputGate = createQueueInputGate({ inspect: async (id, sessionId) => {
+  const query = new URLSearchParams({ id, ...(sessionId ? { sessionId } : {}) });
+  const { response, data } = await requestJson('/api/session/input-status?' + query, { credentials: 'same-origin', cache: 'no-store' }, 5000);
+  if ([404, 501].includes(response.status)) return { supported: false, ready: false };
+  if (!response.ok || data.id !== id) throw new Error('Input status unavailable');
+  return data;
+} });
 async function sendInput(agentId, message, { quiet = false, requestId = submissionId(), steering = false, sessionId = conversationId(agentMap().get(agentId)) } = {}) {
   const text = message.trim();
   if (!agentId || !text) return false;
@@ -3633,6 +3641,7 @@ async function sendInput(agentId, message, { quiet = false, requestId = submissi
     }
     uncertainSubmissions.delete(requestId);
     blockedSubmissions.delete(requestId);
+    if (!steering) queueInputGate.sent(agentId, sessionId);
     if (/^\/clear(?:\s|$)/.test(text) || (agentMap().get(agentId)?.aiToolId === 'codex' && /^\/new(?:\s|$)/.test(text))) {
       clearRemoteChatHistory(agentId, previousConversation);
       if (!quiet) showToast(t('새 대화를 시작했습니다.'));
@@ -4038,7 +4047,7 @@ function renderComposerQueue() {
     ? t('세션을 닫아 예약 전송을 멈췄습니다.') : error === "outcome-unknown"
     ? t("전송 결과를 확인할 수 없습니다. 대화와 터미널을 확인하세요.")
     : error === 'composer-not-ready'
-      ? t('터미널 입력란이 비어 있지 않거나 준비되지 않았습니다. 기존 입력을 확인하세요. 새 메시지는 보내지 않았습니다.')
+      ? t('터미널 입력 준비를 기다리고 있습니다. 비어 있는 입력란이 확인되면 예약 전송을 계속합니다.')
     : error === "activation-timeout"
       ? t("예약 대기열 {0} · 세션 시작이 지연되고 있습니다. 실행되면 자동 전송합니다.", [queue.length])
       : t("예약 대기열 {0} · 이 세션이 준비되면 순서대로 전송", [queue.length]));
@@ -4081,6 +4090,7 @@ function renderComposerQueue() {
       if (!queue.length) {
         sessionQueues.delete(agent.id);
         sessionQueueErrors.delete(agent.id);
+        queueInputGate.clear(agent.id);
       }
       renderComposerQueue();
     });
@@ -4107,7 +4117,7 @@ async function drainQueues() {
           if (selectedAgent()?.id === agentId) renderComposerQueue();
         }
       }
-      if (sessionQueueErrors.has(agentId)) continue;
+      if (sessionQueueErrors.has(agentId) && sessionQueueErrors.get(agentId) !== 'composer-not-ready') continue;
       const activationDeadline = sessionActivationDeadlines.get(agentId);
       if (activationDeadline && Date.now() >= activationDeadline) {
         sessionActivationDeadlines.delete(agentId);
@@ -4115,16 +4125,35 @@ async function drainQueues() {
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
-      if (statusOf(agent) === "offline" || agentInitializing(agent) || agentBusy(agent) || blockingPrompt(agent) || !agentReady(agent)) continue;
+      if (statusOf(agent) === "offline" || agentInitializing(agent) || blockingPrompt(agent)) continue;
       const lastSendAt = sessionLastSendAt.get(agentId) || 0;
       if (Date.now() - lastSendAt < QUEUE_COOLDOWN_MS) continue;
-      sessionLastSendAt.set(agentId, Date.now());
       const head = queue[0];
       if (head.sessionId && conversationId(agent) && head.sessionId !== conversationId(agent)) {
         sessionQueueErrors.set(agentId, 'conversation-changed');
         if (selectedAgent()?.id === agentId) renderComposerQueue();
         continue;
       }
+      const localCodex = agent.aiToolId === 'codex' && !agent.sshHostId;
+      if (localCodex) {
+        const input = await queueInputGate.check(agentId, head.sessionId || conversationId(agent));
+        // Cancelling, closing, typing or switching conversations during a slow
+        // readiness read must not cause its old queue head to be submitted.
+        const latest = agentMap().get(agentId), error = sessionQueueErrors.get(agentId);
+        if (queue[0] !== head || !latest || sendingAgents.has(agentId) || sessionRestartRequests.has(agentId)
+          || (error && error !== 'composer-not-ready') || statusOf(latest) === 'offline' || agentInitializing(latest) || blockingPrompt(latest)) continue;
+        if ((head.sessionId && conversationId(latest) && head.sessionId !== conversationId(latest)) || input.reason === 'conversation-changed') {
+          sessionQueueErrors.set(agentId, 'conversation-changed');
+          if (selectedAgent()?.id === agentId) renderComposerQueue();
+          continue;
+        }
+        if (input.supported) {
+          if (!input.ready) continue;
+          if (!head.sessionId && input.conversationId) head.sessionId = input.conversationId;
+          blockedSubmissions.delete(head.requestId); sessionQueueErrors.delete(agentId);
+        } else if (!agentReady(latest) || sessionQueueErrors.has(agentId)) continue;
+      } else if (!agentReady(agent) || sessionQueueErrors.has(agentId)) continue;
+      sessionLastSendAt.set(agentId, Date.now());
       const sent = await sendInput(agentId, head.text, { quiet: selectedAgent()?.id !== agentId, requestId: head.requestId, sessionId: head.sessionId });
       if (!sent) {
         sessionQueueErrors.set(agentId, blockedSubmissions.has(head.requestId) ? 'composer-not-ready' : uncertainSubmissions.has(head.requestId) ? "outcome-unknown" : "send-failed");

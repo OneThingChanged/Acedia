@@ -18,6 +18,8 @@ import { applyBrowserCompatibility } from "./services/browser-compatibility.mjs"
 import { BrowserExtensions } from "./services/browser-extensions.mjs";
 import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { BrowserActivity } from "./services/browser-activity.mjs";
+import { ProjectBoard } from './services/project-board.mjs';
+import { ProjectBoardWindow, BoardSessionNavigation, BOARD_COMMANDS, assertBoardAccess } from './services/project-board-window.mjs';
 import {
   app,
   BrowserWindow,
@@ -667,7 +669,13 @@ const browserMcpScriptPath = app.isPackaged
   ? path.join(process.resourcesPath, "app.asar.unpacked", "electron", "services", "browser-mcp-server.mjs")
   : path.join(appRoot, "electron", "services", "browser-mcp-server.mjs");
 
+let savedBoardCatalog = { projects: [], agents: [] };
+const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-board.json'),
+  catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
+  live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs });
+
 function publishAgentHookEvent(eventName, payload) {
+  if (eventName === 'agent:hook-event') projectBoard.observe(payload);
   if (eventName === "agent:hook-event" && payload?.id) {
     if (payload.event === 'done' && capacityRetry.isActive(payload.id)) {
       payload = { ...payload, event: 'working', hook_event_name: 'CapacityRetry' };
@@ -1426,6 +1434,7 @@ function modelInputReady(entry) {
 // Session capabilities shared by every web surface (Remote + local Dashboard):
 // send input, stream the live terminal, read the chat transcript, restart.
 const sessionProviders = {
+  inputStatus: request => submitChatMessage.readiness(request),
   sessionNotes: sessionNoteProvider,
   tasks: request => taskOrchestration.handle({ ...request, operator: true }),
   answerQuestion: (id, request) => questionResponder.answer(id, request),
@@ -1509,6 +1518,7 @@ const sessionProviders = {
       return false;
     }
     const previousHook = monitorHooks.get(agentId);
+    submitChatMessage.reset(agentId);
     publishAgentHookEvent("agent:hook-event", {
       id: agentId,
       event: "cancelled",
@@ -1861,6 +1871,7 @@ function installNavigationPolicy(win) {
 
 function sendEventToAll(eventName, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
+    if (runtimeByWebContents.get(win.webContents.id)?.project_board_window) continue;
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send("multiagent:event", eventName, payload);
     }
@@ -1869,6 +1880,7 @@ function sendEventToAll(eventName, payload) {
 
 function sendEventToOtherWindows(excludedWebContentsId, eventName, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
+    if (runtimeByWebContents.get(win.webContents.id)?.project_board_window) continue;
     if (
       !win.isDestroyed() &&
       !win.webContents.isDestroyed() &&
@@ -2782,6 +2794,9 @@ async function browserIntegrationStatus(agentId) {
 }
 
 async function handleBrowserIntegration({ agentId, action, body = {} }) {
+  return projectBoard.browserAction(agentId, action, () => handleBrowserIntegrationAction({ agentId, action, body }));
+}
+async function handleBrowserIntegrationAction({ agentId, action, body = {} }) {
   const normalizedAgentId = String(agentId || "").trim();
   if (!normalizedAgentId) return { ok: false, httpStatus: 400, error: "agent id is required" };
   if (action === "status") return browserIntegrationStatus(normalizedAgentId);
@@ -3123,6 +3138,29 @@ function focusWorkspaceWindow(win) {
   return true;
 }
 
+let boardAttentionSeeded = false;
+async function warmProjectBoard() {
+  if (!Array.isArray(monitorService.state?.agents) || !boardAttentionSeeded) {
+    const snapshot = await readStorageSnapshot();
+    if (!Array.isArray(monitorService.state?.agents)) savedBoardCatalog = { agents: JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]'),
+      projects: JSON.parse(snapshot?.values?.['multiagent.projects.v1'] || '[]') };
+    if (!boardAttentionSeeded) {
+      try { projectBoard.seedAttention(JSON.parse(snapshot?.values?.['multiagent.attentionItems.v1'] || '[]')); } catch { /* old notifications are optional */ }
+      boardAttentionSeeded = true;
+    }
+  }
+}
+const projectBoardWindows = new ProjectBoardWindow({ BrowserWindow, screen, preload: preloadPath,
+  arguments: [`--multiagent-invoke-commands=${BOARD_COMMANDS.join(',')}`, '--multiagent-delivered-events=', '--multiagent-emitted-events='], icon: iconPath, load: loadRenderer,
+  settings: () => projectBoard.data.preferences,
+  save: patch => { try { projectBoard.preferences(patch); } catch { /* geometry must not interrupt work */ } },
+  register: win => { runtimeByWebContents.set(win.webContents.id, { project_board_window: true }); installNavigationPolicy(win); },
+  unregister: win => runtimeByWebContents.delete(win.webContents.id) });
+const boardSessionNavigation = new BoardSessionNavigation({ sessions: () => projectBoard.snapshot().sessions,
+  owner: id => workspaceWindows.get(detachedAgents.get(id)), windows: () => workspaceWindows.values(),
+  create: () => createAppWindow({ restoreWorkspace: false }), ready: win => runtimeByWebContents.get(win.webContents.id)?.ready,
+  send: (win, payload) => sendEvent(win, 'project-board:open-session', payload), focus: focusWorkspaceWindow, live: id => ptys.has(id) });
+
 function createAppWindow({
   workspaceWindowId = randomUUID(),
   openAgentId = null,
@@ -3195,6 +3233,7 @@ function createAppWindow({
     }
   });
   win.webContents.on("destroyed", () => {
+    boardSessionNavigation.closed(webContentsId);
     for (const record of [...documentBrowserWindows.values()]) {
       if (record.win === win) cleanupDocumentBrowser(record);
     }
@@ -3346,6 +3385,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `${productName} 열기`, click: () => showWorkspaceWindow() },
+      { label: '프로젝트 보드', click: () => projectBoardWindows.open() },
       {
         label: "새 작업창",
         click: () =>
@@ -5264,6 +5304,7 @@ const terminalHandlers = createTerminalHandlers({
 
 async function invokeCommand(event, command, rawArgs) {
   const args = assertInvokeRequest(command, rawArgs);
+  assertBoardAccess(runtimeByWebContents.get(event.sender.id), command);
   if (command === 'write_pty' && questionResponder.isBusy(args.id)) throw new Error('An answer is being submitted');
   if (isCompanyBuild && COMPANY_DISABLED_COMMANDS.has(command)) {
     throw new Error("Company 빌드에서는 Remote와 Tunnel 기능을 사용할 수 없습니다.");
@@ -5304,6 +5345,20 @@ async function invokeCommand(event, command, rawArgs) {
     return result;
   }
   switch (command) {
+    case 'open_project_board': {
+      await warmProjectBoard();
+      const win = projectBoardWindows.open(); return { windowId: win.webContents.id };
+    }
+    case 'project_board_snapshot':
+      await warmProjectBoard(); return projectBoard.snapshot(args.revision);
+    case 'project_board_ack':
+      await warmProjectBoard(); return projectBoard.acknowledge(args.id, args.fingerprint);
+    case 'project_board_preferences':
+      return projectBoard.preferences(args.preferences);
+    case 'project_board_open_session': {
+      await warmProjectBoard();
+      return boardSessionNavigation.open(args);
+    }
     case 'task_orchestration': {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (!runtime?.workspace_window) throw new Error('작업창에서 작업 분담을 확인하세요.');
@@ -5335,6 +5390,7 @@ async function invokeCommand(event, command, rawArgs) {
     case "renderer_ready": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (runtime) runtime.ready = true;
+      boardSessionNavigation.loaded(event.sender.id);
       if (closeSmoke) console.log("[electron-smoke] renderer ready for close test");
       if (closeSmoke && eventSenderWindow(event) === initialWindow && closeSmokeStartedAt === null) {
         setTimeout(() => {

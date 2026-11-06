@@ -14,6 +14,12 @@ describe('Routing status summary', () => {
     expect(routingPresentation({ canManage: false, enabled: true, accounts: [] }).state).toBe('enabled');
     expect(routingPresentation(null).state).toBe('loading');
   });
+  it('shows storage faults and request failures instead of leaving the routing state loading', () => {
+    expect(routingPresentation(null, true).state).toBe('error');
+    expect(routingPresentation({ canManage: true, enabled: true, running: true, storage: { writable: false }, accounts: [account] }))
+      .toMatchObject({ state: 'storage-error', participating: 1, available: 1 });
+    expect(routingPresentation({ canManage: true, enabled: true, running: true, accounts: [account] }, true).state).toBe('error');
+  });
 });
 
 describe('Remote account quota labels', () => {

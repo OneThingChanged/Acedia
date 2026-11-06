@@ -8,9 +8,18 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-11-02
+last_updated: 2026-11-06
 stale_after: 2026-12-02
 sources:
+  - id: queue-delivery
+    resource: ../app/electron/remote-pwa/queue-delivery.js
+    title: "Read-only native queue readiness gate"
+  - id: queue-delivery-tests
+    resource: ../app/electron/remote-pwa/queue-delivery.test.mjs
+    title: "Actual Remote queue source regressions without GUI control"
+  - id: input-status-tests
+    resource: ../app/electron/services/remote-input-status.test.mjs
+    title: "Authenticated Dashboard and Remote input-status HTTP tests"
   - id: web-services
     resource: ../app/electron/services/web-services.mjs
     title: "Dashboard and Remote server"
@@ -804,7 +813,8 @@ current scroll offset. Restoration occurs synchronously so consecutive renders
 cannot lose bottom-following between animation frames.
 Successful replies clear only the accepted draft revision and attachments, preserving
 new edits made while waiting. Queued entries retain a request ID across retries;
-failed queue heads pause until explicit retry. Both HTTP servers persist a bounded
+failed or uncertain queue heads pause until explicit retry, except for the
+definitively unsent composer-readiness case described below. Both HTTP servers persist a bounded
 seven-day request ledger before PTY submission, storing content hashes rather than
 message text. Matching retries reuse the outcome, while an interrupted/unknown
 outcome is rejected for manual conversation inspection. Older clients without a
@@ -819,10 +829,40 @@ typing into local Codex, it checks the live composer for existing draft text
 and readiness, including on an explicit retry. A working turn can accept an
 explicit steering request only with an empty native composer. A pre-paste
 rejection returns `outcome: "not-sent"` and `reason: "composer-not-ready"`;
-its request ID can be retried after review because nothing was typed. The queue
-preserves the message, explains the rejection and offers **Check terminal**
-and explicit retry, without appending another copy to the existing input.
+its request ID can be reused because nothing was typed. The queue preserves
+the message and offers **Check terminal** while waiting for an empty composer.
 An unknown post-paste outcome retains the existing replay protection.
+
+From the 2026-11-06 source correction, local Codex queues use authenticated
+`GET /api/session/input-status?id=<session>&sessionId=<conversation>` before
+advancing. The host waits until the previous accepted turn has appeared and
+finished, and checks the actual empty native composer rather than trusting a
+delayed Working/Done badge. Polling occurs only for queued sessions, shares
+in-flight reads and is limited to one check per second per session. This GET
+does not paste text, clear drafts, send Enter or change the selected window.
+
+A `composer-not-ready` rejection before any input no longer permanently pauses
+the queue. After the read-only check confirms readiness, the same head and
+request ID continue automatically. Drafts remain untouched until the user
+clears them. Unknown send outcomes, closed sessions, changed conversations and
+other send failures still require review. Cancelling/replacing a queue head or
+changing the conversation while a readiness read is pending is rechecked before
+any submission. Dashboard and Remote share the implementation and PWA cache v108.
+Clients connected to older hosts or other CLI providers retain their original
+submission path when native readiness inspection is unavailable.
+
+Regression tests use the actual queue-draining source in a Node VM, mocked PTY
+turns and authenticated HTTP servers. They cover three-message FIFO, delayed
+turn starts, quick completed turns, stale Working badges, drafts, cancellation,
+conversation changes, read failures and duplicate protection without GUI control
+or paid model requests. Installed-app deployment and visual verification remain separate.
+Comparing the previous committed queue source against the corrected source under
+the same delayed-status scenario reproduced one accepted message and two stuck
+entries before the change, and three accepted messages with an empty queue after
+the change. The five focused test files pass 76 checks; the TypeScript/Vite build
+also passes. This is source validation rather than a live-user submission test.
+The final regression run passes all 1,843 checks across 229 files, including the
+existing desktop submission, request-ledger, authentication and native-input guards.
 
 2026-10-14 source validation covers 102 focused submission/PTY/API/Chat checks,
 and an isolated [native Codex HTTP smoke](../app/scripts/codex-chat-submit-smoke.mjs)

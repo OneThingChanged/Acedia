@@ -19,6 +19,16 @@ import { RemoteDeviceMonitorService } from "./remote-device-monitor-service.mjs"
 import { completionNotificationPreview } from "./remote-notification-preview.mjs";
 import { RemotePushService } from "./remote-push-service.mjs";
 
+async function sendInputStatus(response, url, provider) {
+  const id = url.searchParams.get('id'), sessionId = url.searchParams.get('sessionId') || undefined;
+  if (!id || id.length > 256 || /[\x00-\x1f]/.test(id) || sessionId && (sessionId.length > 256 || /[\x00-\x1f]/.test(sessionId))) {
+    sendJson(response, 400, { error: 'invalid session identity' }); return;
+  }
+  if (typeof provider !== 'function') { sendJson(response, 501, { error: 'input status unavailable' }); return; }
+  try { sendJson(response, 200, await provider({ id, sessionId }), { 'cache-control': 'no-store' }); }
+  catch { sendJson(response, 503, { error: 'input status temporarily unavailable' }); }
+}
+
 const DASHBOARD_HTML = String.raw`<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Acedia Dashboard</title><style>
@@ -156,6 +166,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/session-state.js", { file: "../shared/session-state.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/session-tree.js", { file: "session-tree.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-requests.js", { file: "chat-requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/queue-delivery.js", { file: "queue-delivery.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/attachments.js", { file: "../shared/remote-attachments.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -995,6 +1006,9 @@ export class LocalDashboardService {
             sendJson(response, 200, { ok: true });
             return;
           }
+          if (request.method === 'GET' && url.pathname === '/api/session/input-status') {
+            await sendInputStatus(response, url, p.inputStatus); return;
+          }
           if (request.method === "POST" && url.pathname === "/api/session/submit") {
             if (!this.isLocalOrigin(request)) { sendJson(response, 403, { error: "blocked" }); return; }
             if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
@@ -1146,7 +1160,7 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, inputStatus, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
     Object.assign(this, { chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
@@ -1162,6 +1176,7 @@ export class RemoteDashboardService {
     this.stateProvider = stateProvider;
     this.writePty = writePty;
     this.submitPty = submitPty ?? (() => false);
+    this.inputStatus = inputStatus;
     this.requestAccess = requestAccess;
     this.fetchImpl = fetchImpl;
     this.terminalSnapshot = terminalSnapshot ?? (() => null);
@@ -1859,6 +1874,9 @@ export class RemoteDashboardService {
           }
           sendJson(response, 200, { ok: true });
           return;
+        }
+        if (request.method === 'GET' && url.pathname === '/api/session/input-status') {
+          await sendInputStatus(response, url, this.inputStatus); return;
         }
         if (request.method === "POST" && url.pathname === "/api/session/submit") {
           if (!this.isSameOrigin(request)) {

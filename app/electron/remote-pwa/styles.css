@@ -44,7 +44,7 @@ html { touch-action: pan-x pan-y pinch-zoom; }
 .pool-routing-summary { padding:20px; margin:8px 0 16px; border:1px solid var(--line-strong); border-left:4px solid var(--muted); border-radius:12px; background:var(--panel); }
 .pool-routing-heading { display:block; font-size:clamp(20px, 3vw, 28px); overflow-wrap:anywhere; }
 .pool-routing-summary[data-state="ready"], .pool-routing-summary[data-state="working"], .pool-routing-summary[data-state="enabled"] { border-left-color:var(--cyan); }
-.pool-routing-summary[data-state="unavailable"], .pool-routing-summary[data-state="connecting"] { border-left-color:var(--yellow, #e6b86a); }
+.pool-routing-summary[data-state="unavailable"], .pool-routing-summary[data-state="connecting"], .pool-routing-summary[data-state="storage-error"], .pool-routing-summary[data-state="error"] { border-left-color:var(--yellow, #e6b86a); }
 .pool-routing-summary p { margin:12px 0 0; color:var(--muted); }
 .pool-routing-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:16px; }
 .pool-routing-metrics span { display:block; color:var(--muted); font-size:13px; word-break:keep-all; }

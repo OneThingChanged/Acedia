@@ -23,13 +23,14 @@ export function requestStatus(record) {
   return { completed: '완료', failed: '실패' }[record.status] || '처리 중…';
 }
 
-export function routingPresentation(data) {
+export function routingPresentation(data, failed = false) {
   const available = (data?.accounts || []).filter(account => account.available === true).length;
   const participating = (data?.accounts || []).filter(account => account.enabled).length;
   const active = (data?.accounts || []).reduce((sum, account) => sum + (Number.isSafeInteger(account.active) && account.active > 0 ? account.active : 0), 0);
-  const state = !data ? 'loading' : !data.enabled ? 'off' : !data.canManage ? 'enabled'
+  const state = failed ? 'error' : !data ? 'loading' : data.canManage && data.storage?.writable === false ? 'storage-error'
+    : !data.enabled ? 'off' : !data.canManage ? 'enabled'
     : data.running !== true ? 'connecting' : active ? 'working' : available ? 'ready' : 'unavailable';
-  const labels = { loading: '분산 상태 확인 중…', off: '분산 꺼짐', enabled: '분산 켜짐', connecting: '분산 켜짐 · 연결 준비 중', working: '분산 켜짐 · 처리 중', ready: '분산 켜짐 · 요청 대기', unavailable: '분산 켜짐 · 사용 가능한 계정 없음' };
+  const labels = { loading: '분산 상태 확인 중…', error: '분산 상태 조회 실패', 'storage-error': '분산 상태 · 저장 복구 필요', off: '분산 꺼짐', enabled: '분산 켜짐', connecting: '분산 켜짐 · 연결 준비 중', working: '분산 켜짐 · 처리 중', ready: '분산 켜짐 · 요청 대기', unavailable: '분산 켜짐 · 사용 가능한 계정 없음' };
   return { state, label: labels[state], available, participating, active };
 }
 
@@ -38,7 +39,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   const loginAccountId = /^[0-9a-f-]{36}$/i.test(pageUrl.searchParams.get('poolLogin') || '') ? pageUrl.searchParams.get('poolLogin') : null;
   const dashboardUrl = new URL(location.pathname, location.origin); dashboardUrl.searchParams.set('usage', '1'); dashboardUrl.searchParams.set('accounts', '1');
   let returnTimer = null;
-  let data = null, busy = false, visible = false, timer = null, entered = false, editingId = null;
+  let data = null, loadFailed = false, busy = false, visible = false, timer = null, entered = false, editingId = null;
   let usageSignature = '';
   let selectedView = 'history';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text) node.textContent = t(text); if (className) node.className = className; return node; };
@@ -54,7 +55,9 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   const status = el('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const toolbar = el('div', '', 'pool-toolbar');
   const toggle = el('button', '분산 켜기'); toggle.type = 'button';
-  const refresh = el('button', '목록 새로고침'); refresh.type = 'button'; toolbar.append(toggle, refresh);
+  const refresh = el('button', '목록 새로고침'); refresh.type = 'button';
+  const retryStorage = el('button', '저장 다시 시도'); retryStorage.type = 'button'; retryStorage.hidden = true;
+  toolbar.append(toggle, refresh, retryStorage);
   const refreshStatus = el('p', '', 'pool-refresh-status'); refreshStatus.setAttribute('role', 'status'); refreshStatus.setAttribute('aria-live', 'polite');
   const form = el('form', '', 'pool-toolbar'); const label = el('label', '계정 이름');
   const input = el('input'); input.required = true; input.maxLength = 80; input.autocomplete = 'off'; label.append(input);
@@ -94,21 +97,22 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
     if (!quiet) status.textContent = t('처리 중…');
     for (const node of panel.querySelectorAll('button,input')) node.disabled = true;
     try {
-      data = await task(); status.textContent = '';
+      data = await task(); loadFailed = false; status.textContent = '';
       const signature = JSON.stringify(data.accounts.map(account => [account.id, account.label, account.enabled, account.state, account.limitsAt]));
       if (signature !== usageSignature) { usageSignature = signature; onChange(); }
     }
-    catch (error) { status.textContent = error.message; }
+    catch (error) { loadFailed = true; status.textContent = error.message; }
     finally { busy = false; panel.setAttribute('aria-busy', 'false'); render(); schedule(); }
   }
   function button(text, action, row, disabled = false) {
-    const node = el('button', text); node.type = 'button'; node.disabled = disabled;
+    const node = el('button', text); node.type = 'button'; node.disabled = disabled || data?.storage?.writable === false;
     node.onclick = () => void run(action); row.append(node); return node;
   }
   const names = { ready: '인증 완료', login_required: '로그인 필요', login_pending: '로그인 대기', login_failed: '로그인 실패' };
   function render() {
     const admin = data?.canManage === true;
-    const presentation = routingPresentation(data);
+    const canWrite = admin && data.storage?.writable !== false;
+    const presentation = routingPresentation(data, loadFailed);
     const nextSummary = JSON.stringify([presentation, admin, getLanguage()]);
     routingSummary.hidden = Boolean(loginAccountId);
     if (summarySignature !== nextSummary) {
@@ -121,21 +125,27 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
         for (const [name, count] of [['참여 계정', presentation.participating], ['사용 가능한 계정', presentation.available], ['처리 중인 요청', presentation.active]]) {
           const metric = el('div'); metric.append(el('span', name), el('b', String(count))); metrics.append(metric);
         }
-        const hint = presentation.state === 'off' ? '분산을 켜면 새 Codex 세션에 분산 계정을 사용할 수 있습니다.'
+        const hint = presentation.state === 'error' ? '이전 조회 상태를 표시합니다. 목록을 새로고침해 다시 확인하세요.'
+          : presentation.state === 'storage-error' ? '계정·한도·배정은 계속 표시합니다. 새 요청은 저장 복구 후 사용할 수 있습니다.'
+          : presentation.state === 'off' ? '분산을 켜면 새 Codex 세션에 분산 계정을 사용할 수 있습니다.'
           : presentation.state === 'unavailable' ? '계정 로그인·분산 참여·한도를 확인하세요.'
           : presentation.state === 'connecting' ? '분산 서버가 아직 준비되지 않았습니다. 목록을 새로고침해 상태를 확인하세요.'
           : presentation.active ? '아래 계정 카드에서 현재 요청을 처리하는 계정을 확인하세요.' : '분산이 켜져 있으며 현재 처리 중인 요청은 없습니다.';
         routingSummary.append(metrics, el('p', hint));
       }
     }
-    form.hidden = toolbar.hidden = !admin || Boolean(loginAccountId);
+    form.hidden = !canWrite || Boolean(loginAccountId);
+    toolbar.hidden = (!admin && !loadFailed) || Boolean(loginAccountId);
     refreshStatus.hidden = !admin || Boolean(loginAccountId);
-    for (const node of panel.querySelectorAll('button,input')) node.disabled = !admin || busy;
+    for (const node of panel.querySelectorAll('button,input')) node.disabled = !canWrite || busy;
     toggle.textContent = t(data?.enabled ? '분산 끄기' : '분산 켜기'); toggle.setAttribute('aria-pressed', String(Boolean(data?.enabled)));
     const job = data?.quotaRefresh;
-    refresh.disabled = !admin || busy || Boolean(job?.running);
+    refresh.disabled = (!admin && !loadFailed) || busy || (canWrite && Boolean(job?.running));
+    retryStorage.hidden = !admin || data.storage?.writable !== false || Boolean(loginAccountId);
+    retryStorage.disabled = !admin || busy;
+    if (admin && data.storage?.message && !loadFailed) status.textContent = t(data.storage.message) + ` (${data.storage.code})`;
     refresh.textContent = t(job?.running ? '갱신 중…' : '목록 새로고침');
-    refresh.title = t('모든 계정의 한도와 목록을 새로고칩니다.');
+    refresh.title = t(canWrite ? '모든 계정의 한도와 목록을 새로고칩니다.' : '저장된 계정 상태를 다시 읽습니다.');
     refreshStatus.textContent = !job ? '' : job.running
       ? t('계정 한도 갱신 중… {0}/{1}', [job.completed, job.total])
       : job.total === 0 ? t('갱신할 계정이 없습니다. 계정을 추가하고 로그인하세요.')
@@ -220,7 +230,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
         for (const method of methods) {
           const start = button(method === 'browser' ? '브라우저 로그인' : '기기 코드 로그인', () => {}, actions, account.active > 0 || quotaBusy);
           start.onclick = () => {
-            if (busy) return;
+            if (busy || !canWrite) return;
             // Reserve the tab during the user gesture, before the asynchronous request.
             const authTab = window.open('about:blank', '_blank');
             if (authTab) authTab.opener = null;
@@ -238,7 +248,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
         }
         if (data.defaultLoginMethod === 'device') card.append(el('small', '다른 기기에서는 기기 코드 로그인을 사용하세요. ChatGPT 보안 설정에서 기기 코드 로그인을 활성화해야 합니다.'));
         button(account.enabled ? '분산 제외' : '분산 참여', () => api({ action: 'update', id: account.id, enabled: !account.enabled }), actions, account.state !== 'ready' && !account.enabled);
-        const rename = el('button', '이름 변경'); rename.type = 'button';
+        const rename = el('button', '이름 변경'); rename.type = 'button'; rename.disabled = !canWrite || busy;
         rename.onclick = () => { editingId = account.id; input.value = account.label; render(); input.focus(); }; actions.append(rename);
         button('제거', async () => {
           if (!window.confirm(`${account.label}: ${t('계정을 제거하면 이 계정에 연결된 대화를 계속할 수 없습니다. 제거할까요?')}`)) return data;
@@ -276,7 +286,8 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
     input.value = ''; editingId = null; return result;
   }); };
   cancelEdit.onclick = () => { editingId = null; input.value = ''; render(); input.focus(); };
-  refresh.onclick = () => { refresh.textContent = t('갱신 중…'); void run(() => api({ action: 'refresh_all' })); };
+  refresh.onclick = () => { refresh.textContent = t('갱신 중…'); void run(() => data?.storage?.writable === false || !data ? api() : api({ action: 'refresh_all' })); };
+  retryStorage.onclick = () => void run(() => api({ action: 'retry_storage' }));
   toggle.onclick = () => void run(() => api({ action: 'configure', enabled: !data.enabled }));
   select(Boolean(loginAccountId) || pageUrl.searchParams.get('accounts') === '1' ? 'accounts' : pageUrl.searchParams.get('sessions') === '1' ? 'sessions' : 'history');
   return { translate, view: () => selectedView, enter: () => { if (entered) return; entered = true; if (visible) void run(() => api()); }, leave: () => { entered = false; clearTimeout(timer); clearTimeout(returnTimer); returnTimer = null; } };

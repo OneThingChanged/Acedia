@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ProjectBoardPage } from './components/ProjectBoardPage';
 import { DesktopPetPage } from "./components/DesktopPetPage";
 import {
   DocumentBrowserPage,
@@ -19,9 +20,10 @@ const desktopPet =
     .__MULTIAGENT_DESKTOP_PET__ === true ||
   new URLSearchParams(window.location.search).has("desktopPet");
 const documentBrowser = !desktopPet && isDocumentBrowserPage();
+const projectBoard = !desktopPet && !documentBrowser && new URLSearchParams(window.location.search).get('projectBoard') === '1';
 
 async function render() {
-  if (!desktopPet && !documentBrowser) {
+  if (!desktopPet && !documentBrowser && !projectBoard) {
     await Promise.all([
       syncSharedStorageBeforeRender(),
       syncReopenStateBeforeRender(),
@@ -31,7 +33,7 @@ async function render() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <AppLanguageProvider>
-        {desktopPet ? <DesktopPetPage /> : documentBrowser ? <DocumentBrowserPage /> : <App />}
+        {desktopPet ? <DesktopPetPage /> : documentBrowser ? <DocumentBrowserPage /> : projectBoard ? <ProjectBoardPage /> : <App />}
       </AppLanguageProvider>
     </React.StrictMode>,
   );

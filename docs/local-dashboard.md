@@ -132,7 +132,13 @@ Session activation and work completion use separate conditions for scheduled
 messages. Once the CLI is running, a long turn or blocking question does not
 expire the activation timer. A startup that finishes late automatically releases
 its activation warning; the queue resumes when work and questions finish.
-Failed or uncertain submissions still require explicit retry. Remote and
+Failed or uncertain submissions still require explicit retry. A definitively
+unsent local-Codex composer rejection now waits for the host's empty-composer
+check and resumes automatically with the same request ID. The host also waits
+for each accepted turn before releasing the next queue entry, even while the
+browser's Working/Done status is delayed. See
+[queue readiness](remote-service.md#session-and-content-surface) for the read-only
+`/api/session/input-status` endpoint and validation scope. Remote and
 Dashboard share this client logic and its `electron:remote-queue-smoke` check.
 The correction is included in EXE 1.8.1.38; see [release verification](release-1-8-1-38.md).
 Installed-app verification remains separate.[^remote-client]

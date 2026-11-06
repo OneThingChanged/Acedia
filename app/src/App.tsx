@@ -14,6 +14,7 @@ import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocati
 import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
+import { boardViewedAgent } from './lib/workBoard';
 import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
 import { loadRightPanelView, LS_RIGHT_PANEL_VIEW } from './lib/pixelOffice';
 import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
@@ -658,6 +659,8 @@ function App() {
   const [filesOpen, setFilesOpen] = useState(loadFilesOpen);
   const [rightPanelView, setRightPanelView] = useState(loadRightPanelView);
   const [organizationOffice, setOrganizationOffice] = useState(false);
+  const [boardNavigation, setBoardNavigation] = useState<{ id: string; live: boolean; compose: boolean; serial: number } | null>(null);
+  const boardNavigationSerial = useRef(0);
   useEffect(() => { try { localStorage.setItem(LS_RIGHT_PANEL_VIEW, rightPanelView); } catch { /* optional preference */ } }, [rightPanelView]);
   const [standaloneNoteId, setStandaloneNoteId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
@@ -1292,6 +1295,8 @@ function App() {
         sessionHierarchy: a.sessionHierarchy ? {
           parentId: a.sessionHierarchy.parentId,
           createdById: a.sessionHierarchy.createdById,
+          inheritFolder: a.sessionHierarchy.inheritFolder,
+          folderOverride: a.sessionHierarchy.folderOverride,
         } : undefined,
         codexAccountId: a.codexAccountId,
         codexPoolAccountId: a.codexPoolAccountId,
@@ -2439,6 +2444,31 @@ function App() {
     },
     [chooseSessionAccountBeforeLaunch, pushToast, selectAgent, text]
   );
+
+  useEffect(() => {
+    let stopped = false;
+    const subscription = listen<{ id: string; live: boolean; compose: boolean }>('project-board:open-session', ({ payload }) => {
+      if (!stopped) setBoardNavigation({ ...payload, serial: ++boardNavigationSerial.current });
+    });
+    subscription.then(remove => { if (stopped) remove(); }).catch(() => {});
+    return () => { stopped = true; boardNavigationSerial.current++; void subscription.then(remove => remove()).catch(() => {}); };
+  }, []);
+  useEffect(() => {
+    if (!boardNavigation || !runtimeFlags || !agents.some(a => a.id === boardNavigation.id)) return;
+    const navigation = boardNavigation; setBoardNavigation(null);
+    void invoke<{ claimed: boolean }>('claim_agent_for_window', { agentId: navigation.id }).then(({ claimed }) => {
+      if (!claimed || navigation.serial !== boardNavigationSerial.current) return;
+      detachedAgentIdsRef.current.delete(navigation.id); setDetachedAgentIds(new Set(detachedAgentIdsRef.current));
+      ownedAgentIdsRef.current.add(navigation.id); setOwnedAgentIds(new Set(ownedAgentIdsRef.current));
+      setInUseAgentIds(current => { const next = new Set(current); next.delete(navigation.id); return next; });
+      const next = agentsRef.current.map(a => a.id === navigation.id ? boardViewedAgent(a, navigation.live) : a);
+      agentsRef.current = next; setAgents(next);
+      const agent = activateAgentProject(navigation.id);
+      setWorkspaceMode('sessions');
+      if (navigation.compose) setChatModeAgents(current => new Set(current).add(navigation.id));
+      applyGroupOp(state => groupOps.selectAgent(state, navigation.id, agent?.projectId));
+    }).catch(reason => pushToast(navigation.id, 'Project Board', String(reason)));
+  }, [boardNavigation, runtimeFlags, agents, activateAgentProject, applyGroupOp, pushToast]);
 
   const selectScreen = useCallback(
     async (groupId: string, agentId: string) => {
@@ -4511,7 +4541,7 @@ function App() {
         browserHubActive={workspaceMode === "browser-hub"}
         browserCount={browserCatalog.length}
         organizationActive={workspaceMode === "organization"}
-        onOpenOrganization={() => setWorkspaceMode("organization")}
+        onOpenOrganization={() => { void invoke('open_project_board').catch(error => pushToast('', 'Project Board', String(error))); }}
         onOpenBrowserHub={
           isElectronRuntime() ? () => setWorkspaceMode("browser-hub") : undefined
         }
