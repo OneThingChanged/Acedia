@@ -280,6 +280,8 @@ the isolated fresh profile was blocked and correctly reported
 has been fully archived with the new tools. Updating the Acedia host and
 restarting/reconnecting the MCP client is required to expose these new tools;
 the running older host was not patched or restarted during testing.
+The source was subsequently published in [Acedia 1.8.2.08](release-1-8-2-08.md);
+public download verification is separate from updating the currently running app.
 
 ### Showing a browser beside chat
 
