@@ -10,6 +10,7 @@ import { newSessionDangerous } from "./lib/newSessionPreferences";
 import { canParentSession, normalizeSessionHierarchy, repairSessionHierarchy, resolveSessionSettings, withSessionModelOverride } from "./lib/sessionHierarchy";
 import { isAbsoluteFsPath, joinFsPath, relativeIfInside } from "./lib/path";
 import { resolveSessionDocumentLink } from "./lib/sessionFileLinks";
+import { openTerminalFile } from "./lib/terminalFileActions";
 import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocation';
 import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
@@ -3637,7 +3638,7 @@ function App() {
           return;
         }
 
-        await invoke("reveal_local_path", { path: resolved.path });
+        await openTerminalFile(resolved.path, reveal);
       } catch (error) {
         pushToast(agentId, agent.name, text(`경로를 열 수 없습니다: ${String(error)}`, `Could not open the path: ${String(error)}`));
       }

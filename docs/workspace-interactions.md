@@ -7,7 +7,7 @@ tags:
   - workspace
   - sessions
 status: stable
-last_updated: 2026-10-21
+last_updated: 2026-11-06
 stale_after: 2026-11-30
 sources:
   - id: chat-submission
@@ -61,6 +61,12 @@ sources:
   - id: terminal-path-service
     resource: ../app/electron/services/terminal-path-service.mjs
     title: "Local filesystem and file URL resolution"
+  - id: terminal-file-actions
+    resource: ../app/src/lib/terminalFileActions.ts
+    title: "Desktop terminal video playback and file reveal actions"
+  - id: terminal-video-link-tests
+    resource: ../app/src/lib/terminalVideoLinks.test.mjs
+    title: "Buffer hit detection, child folder resolution and media action checks without GUI automation"
   - id: chat-view
     resource: ../app/src/components/ChatView.tsx
     title: "Persistent chat history and artifacts"
@@ -537,6 +543,18 @@ continuation opens the same target; OSC 8 links with a visible label follow the
 same routing. Encoded spaces, Unicode and filename characters are decoded once,
 including `file://localhost/` addresses. Images outside the project open in the
 image viewer, while documents and folders use their existing open actions.
+
+The 2026-11-06 source opens terminal video links (MP4, WebM, M4V, MOV, MKV,
+AVI, WMV, MPG and MPEG) with the Windows default media application. Previously
+these resolved successfully but fell through to the general file-location action,
+so clicking an MP4 did not request playback. Ctrl/Cmd-click reveals the same file
+in Explorer. The effective session folder remains the base for relative paths,
+including child sessions with their own folders. Other general files retain their
+existing reveal behavior. Failed media associations use the existing error toast.
+The two reported Akane files were found on disk; 52 targeted non-GUI checks cover
+link hit detection, child/parent filename conflicts, modifiers, existing path
+resolution and wrapping. These checks do not launch a media application. This is
+a source change; installation requires a later release.
 
 The 2026-10-21 source also separates multiple absolute file links on the same
 terminal line. The first drive path previously consumed the following labels

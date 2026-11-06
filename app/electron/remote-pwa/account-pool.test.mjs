@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { quotaPresentation, recordedTokens, requestStatus, routingPresentation } from './account-pool.js';
+import { creditPresentation, quotaPresentation, recordedTokens, requestStatus, routingPresentation } from './account-pool.js';
 
 describe('Routing status summary', () => {
   const account = { enabled: true, available: true, active: 0 };
@@ -23,6 +23,13 @@ describe('Routing status summary', () => {
 });
 
 describe('Remote account quota labels', () => {
+  it('reports extra credits separately while leaving the included quota exhausted', () => {
+    const limits = { rateLimits: { primary: { usedPercent: 100 }, credits: { hasCredits: true, unlimited: false, balance: '25.5' } } };
+    expect(creditPresentation(limits)).toMatchObject({ creditFallbackAvailable: true, balance: '25.5', unlimited: false });
+    expect(quotaPresentation(limits.rateLimits.primary, Date.now()).remaining).toBe(0);
+    expect(creditPresentation({ rateLimits: { ...limits.rateLimits, credits: { balance: '25.5' } } }).creditsAvailable).toBe(false);
+    expect(creditPresentation({ rateLimitsByLimitId: { codex: { credits: { unlimited: true } } } }).unlimited).toBe(true);
+  });
   it('shows a recently checked percentage as remaining quota', () => {
     const now = Date.now();
     expect(quotaPresentation({ usedPercent: 93, resetsAt: Math.floor((now + 3600_000) / 1000) }, now - 30_000, now))

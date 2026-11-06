@@ -1,5 +1,13 @@
 import { requestJson } from './requests.js';
 import { t, getLanguage } from './i18n.js';
+import { codexQuotaInfo } from './codex-quota.js';
+
+export function creditPresentation(limits) {
+  const quota = codexQuotaInfo(limits);
+  const bucket = limits?.rateLimitsByLimitId?.codex || limits?.rateLimits;
+  return { ...quota, unlimited: bucket?.credits?.unlimited === true,
+    balance: bucket?.credits?.balance == null ? null : String(bucket.credits.balance).slice(0, 100) };
+}
 
 export function quotaPresentation(window, limitsAt, now = Date.now()) {
   const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent));
@@ -198,6 +206,12 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
       if (quotaResult?.reason === 'login_required') card.append(el('small', '로그인이 필요해 한도 갱신을 건너뛰었습니다.'));
       if (quotaResult?.reason === 'login_pending') card.append(el('small', '로그인 진행 중인 계정은 한도 갱신을 건너뜁니다.'));
       const bucket = account.limits?.rateLimitsByLimitId?.codex || account.limits?.rateLimits;
+      const credit = creditPresentation(account.limits);
+      if (credit.creditsAvailable) {
+        const label = credit.unlimited ? t('추가 크레딧 무제한') : t('추가 크레딧 사용 가능');
+        card.append(el('p', label + (!credit.unlimited && credit.balance !== null ? ' · ' + t('크레딧 잔액 {0}', [credit.balance]) : ''), 'usage-credit'));
+        if (credit.includedExhausted) card.append(el('small', '포함 한도를 소진했지만 추가 크레딧으로 요청할 수 있습니다.'));
+      }
       for (const [name, w] of [[t('기본 한도'), bucket?.primary], [t('추가 한도'), bucket?.secondary]]) {
         if (typeof w?.usedPercent !== 'number') continue;
         const quota = quotaPresentation(w, account.limitsAt);

@@ -15,6 +15,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { PortsMonitor } from "./PortsMonitor";
 import { ResourceMonitor } from "./ResourceMonitor";
 import { PropertiesDialog } from "./PropertiesDialog";
+import { codexQuotaInfo } from '../../electron/shared/codex-quota.mjs';
 import {
   formatResetRemaining,
   formatResetShort,
@@ -33,6 +34,12 @@ import {
 
 const REFRESH_INTERVAL_MS = 60_000;
 const CLOCK_INTERVAL_MS = 30_000;
+
+export function UsageCreditBadge({ limit, now = Date.now() }: { limit: UsageRateLimit; now?: number }) {
+  const { text } = useAppLanguage();
+  if (!codexQuotaInfo(limit, now).creditFallbackAvailable) return null;
+  return <span className="usage-credit-badge" title={text('포함 한도를 소진했지만 추가 크레딧으로 요청할 수 있습니다.', 'Included usage is exhausted; extra credits can cover further requests.')}>{text('크레딧 가능', 'Credits available')}</span>;
+}
 
 function UsageProgress({
   window,
@@ -333,6 +340,7 @@ export function UsageStatusBar({
                     <span className="usage-status-limit-meta">
                       {provider.key === "agy" ? `${shortName} · ${formatUsageWindow(window.windowMinutes, language)}` : shortName || formatResetShort(window.resetsAt, now)}
                     </span>
+                    <UsageCreditBadge limit={limit} now={now} />
                     {provider.key === "agy" && limit.primary && limit.secondary && <>
                       <b className={`usage-tone-${usageTone(limit.secondary.usedPercent)}`}>
                         {formatUsagePercent(displayUsagePercent(limit.secondary.usedPercent, settings.display))} {settings.display === "used" ? text("사용", "used") : text("남음", "left")}

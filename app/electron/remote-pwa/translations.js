@@ -1,6 +1,11 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['추가 크레딧 사용 가능', 'Extra credits available'],
+  ['추가 크레딧 무제한', 'Unlimited extra credits'],
+  ['크레딧 잔액 {0}', 'Credit balance {0}'],
+  ['포함 한도를 소진했지만 추가 크레딧으로 요청할 수 있습니다.', 'Included usage is exhausted; extra credits can cover further requests.'],
+  ['크레딧 가능', 'Credits available'],
   ['터미널 입력 준비를 기다리고 있습니다. 비어 있는 입력란이 확인되면 예약 전송을 계속합니다.', 'Waiting for the terminal composer. Queued messages will continue when it is empty and ready.'],
   ['분산 상태 조회 실패', 'Could not read routing status'],
   ['분산 상태 · 저장 복구 필요', 'Routing status · Storage recovery needed'],

@@ -49,6 +49,23 @@ const deniedSocket = (url, options) => new Promise(resolve => {
 });
 
 describe('routed native tool credentials', () => {
+  it('continues native requests at 100% with credits and blocks further requests when the server removes credit eligibility', async () => {
+    const f = await fixture(); await f.pool.launchNative('credits', f.accounts[0], null, f.context);
+    const runtime = f.runtimes[0];
+    runtime.onRateLimits({ rateLimits: { primary: { usedPercent: 100 }, secondary: { usedPercent: 100 },
+      credits: { hasCredits: true, unlimited: false, balance: '25' } } });
+    expect(() => runtime.ensureAvailable()).not.toThrow();
+    expect((await request(runtime)).status).toBe(200);
+    expect(f.requests).toHaveLength(1);
+    expect(f.requests[0].headers['chatgpt-account-id']).toBe('chatgpt-A');
+    runtime.onRateLimits({ rateLimits: { primary: { usedPercent: 100 } } });
+    expect(() => runtime.ensureAvailable()).not.toThrow(); // Sparse notifications retain credits.
+    runtime.onRateLimits({ rateLimits: { credits: { hasCredits: false, unlimited: false, balance: '0' } } });
+    expect(() => runtime.ensureAvailable()).toThrow(/분산 계정/);
+    expect((await request(runtime)).status).toBe(503);
+    expect(f.requests).toHaveLength(1);
+    expect(f.pool.state.sessions.credits.accountId).toBe(f.accounts[0]);
+  });
   it('updates only the bound account, deduplicates broadcasts and rejects notifications from replaced sessions', async () => {
     const changed = vi.fn();
     const f = await fixture({ onRateLimitsChanged: changed });

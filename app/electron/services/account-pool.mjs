@@ -11,6 +11,7 @@ import { CodexRequestBodyBudget, readCodexRequestBody } from './codex-request-bo
 import { CODEX_PAYLOAD_BYTES, CODEX_TOOL_UPLOAD_BYTES } from './codex-transport-limits.mjs';
 import { mergeCodexRateLimits } from './codex-usage.mjs';
 import { readCodexModels } from '../shared/session-model.mjs';
+import { codexQuotaInfo } from '../shared/codex-quota.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
@@ -287,9 +288,10 @@ export class AccountPool {
     });
   }
   quotaBlocked(a) {
-    const bucket = a.limits?.rateLimitsByLimitId?.codex || a.limits?.rateLimits;
-    return (a.cooldownUntil || 0) > this.now()
-      || [bucket?.primary, bucket?.secondary].some(w => w?.usedPercent >= 100 && (!w.resetsAt || w.resetsAt * 1000 > this.now()));
+    const now = this.now();
+    if ((a.cooldownUntil || 0) > now) return true;
+    const quota = codexQuotaInfo(a.limits, now);
+    return quota.includedExhausted && !quota.creditsAvailable;
   }
   sessionAssignment(id) {
     this.guardReadable();

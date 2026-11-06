@@ -41,6 +41,44 @@ async function sendRequest(pool, launch, overrides = {}) {
   return { response, text: await response.text() };
 }
 describe('Acedia account pool', () => {
+  it.each(['hasCredits', 'unlimited'])('keeps an exhausted account with %s available across turns and restarts until credits are removed', async flag => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
+    pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, secondary: { usedPercent: 100 },
+      credits: { hasCredits: false, unlimited: false, [flag]: true, balance: '25' } } };
+    await pool.setEnabled(true);
+    expect(pool.choices().accounts.find(a => a.id === first).available).toBe(true);
+    const original = await pool.launch('credits', first);
+    expect((await sendRequest(pool, original)).response.status).toBe(200);
+    await pool.launch('credits', first, first);
+    expect((await sendRequest(pool, original)).response.status).toBe(200);
+    expect(pool.state.sessions.credits.accountId).toBe(first);
+    expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'A']);
+    pool.account(first).limits.rateLimits.credits = { hasCredits: false, unlimited: false, balance: '0' };
+    expect(pool.snapshot().accounts.find(a => a.id === first).available).toBe(false);
+    expect((await sendRequest(pool, original)).response.status).toBe(503);
+    expect(seen).toHaveLength(2);
+    await expect(pool.launch('credits', first)).rejects.toMatchObject({ status: 503 });
+    await pool.launch('credits'); // Switching back to automatic is an explicit restart.
+    expect(pool.state.sessions.credits.accountId).toBe(second);
+  });
+  it('honors an upstream 429 cooldown even with credits and never replays the rejected generation', async () => {
+    let now = Date.now(), calls = 0;
+    const { pool } = fixture({ now: () => now, fetchImpl: async () => {
+      calls++;
+      return calls === 1 ? new Response('{}', { status: 429, headers: { 'retry-after': '120' } })
+        : new Response('data: {"type":"response.completed"}\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    } });
+    const first = add(pool, 'A'); add(pool, 'B');
+    pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, credits: { hasCredits: true } } };
+    await pool.setEnabled(true); const launch = await pool.launch('credits', first);
+    expect((await sendRequest(pool, launch)).response.status).toBe(429);
+    expect(pool.quotaBlocked(pool.account(first))).toBe(true);
+    expect((await sendRequest(pool, launch)).response.status).toBe(503);
+    expect(calls).toBe(1); expect(pool.state.sessions.credits.accountId).toBe(first);
+    now += 120_001;
+    expect((await sendRequest(pool, launch)).response.status).toBe(200);
+    expect(calls).toBe(2); expect(pool.state.sessions.credits.accountId).toBe(first);
+  });
   it('rejects competing buffered requests temporarily and releases bodies before streaming', async () => {
     let enter, finish, calls = 0, stream;
     const entered = new Promise(resolve => { enter = resolve; });

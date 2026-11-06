@@ -167,6 +167,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/session-tree.js", { file: "session-tree.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-requests.js", { file: "chat-requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/queue-delivery.js", { file: "queue-delivery.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/codex-quota.js", { file: "../shared/codex-quota.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/attachments.js", { file: "../shared/remote-attachments.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
