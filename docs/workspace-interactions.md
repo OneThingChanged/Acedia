@@ -491,6 +491,9 @@ click, and a failed folder open reports a toast.[^app-shell][^context-menus]
 
 ## Project Board window lifecycle (2026-11-10 source)
 
+Released in [Acedia 1.8.2.09](release-1-8-2-09.md); applying it to an installed
+app requires that update and restart.
+
 The standalone board captures its renderer ID while creating the native window.
 On `closed`, it removes only that saved registration key; it never reads
 `webContents` from the destroyed window. Geometry persistence remains debounced
