@@ -23,14 +23,25 @@ export class ProjectBoardWindow {
       minWidth: Math.min(760, area.width), minHeight: Math.min(520, area.height), backgroundColor: '#0d1117', icon: this.icon,
       webPreferences: { preload: this.preload, contextIsolation: true, nodeIntegration: false, sandbox: true,
         webSecurity: true, allowRunningInsecureContent: false, additionalArguments: this.args } });
-    this.window = win; this.register(win);
-    let timer;
-    const persist = () => { clearTimeout(timer); if (!win.isDestroyed()) this.save({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }); };
-    const changed = () => { clearTimeout(timer); timer = setTimeout(persist, 400); timer.unref?.(); };
-    win.on('resize', changed); win.on('move', changed); win.on('maximize', changed); win.on('unmaximize', changed);
+    // 'closed' runs after Electron has destroyed the native window. Retain
+    // its registration key now; even reading win.webContents can then throw.
+    const webContentsId = win.webContents.id;
+    this.window = win; this.register(win, webContentsId);
+    let timer, closed = false;
+    const persist = () => { clearTimeout(timer); timer = undefined; if (!closed && !win.isDestroyed()) this.save({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }); };
+    const changed = () => { if (closed || win.isDestroyed()) return; clearTimeout(timer); timer = setTimeout(persist, 400); timer.unref?.(); };
+    const reveal = () => { if (closed || win.isDestroyed()) return; if (saved.maximized) win.maximize(); win.show(); };
+    const geometryEvents = ['resize', 'move', 'maximize', 'unmaximize'];
+    for (const event of geometryEvents) win.on(event, changed);
     win.on('close', persist);
-    win.on('closed', () => { clearTimeout(timer); this.unregister(win); if (this.window === win) this.window = null; });
-    win.once('ready-to-show', () => { if (saved.maximized) win.maximize(); win.show(); });
+    win.once('closed', () => {
+      closed = true; clearTimeout(timer);
+      for (const event of geometryEvents) win.removeListener(event, changed);
+      win.removeListener('close', persist); win.removeListener('ready-to-show', reveal);
+      if (this.window === win) this.window = null;
+      this.unregister(webContentsId);
+    });
+    win.once('ready-to-show', reveal);
     this.load(win, { projectBoard: '1' }).catch(() => { if (!win.isDestroyed()) win.destroy(); });
     return win;
   }

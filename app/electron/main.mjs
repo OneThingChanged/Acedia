@@ -3168,8 +3168,8 @@ const projectBoardWindows = new ProjectBoardWindow({ BrowserWindow, screen, prel
   arguments: [`--multiagent-invoke-commands=${BOARD_COMMANDS.join(',')}`, '--multiagent-delivered-events=', '--multiagent-emitted-events='], icon: iconPath, load: loadRenderer,
   settings: () => projectBoard.data.preferences,
   save: patch => { try { projectBoard.preferences(patch); } catch { /* geometry must not interrupt work */ } },
-  register: win => { runtimeByWebContents.set(win.webContents.id, { project_board_window: true }); installNavigationPolicy(win); },
-  unregister: win => runtimeByWebContents.delete(win.webContents.id) });
+  register: (win, webContentsId) => { runtimeByWebContents.set(webContentsId, { project_board_window: true }); installNavigationPolicy(win); },
+  unregister: webContentsId => runtimeByWebContents.delete(webContentsId) });
 const boardSessionNavigation = new BoardSessionNavigation({ sessions: () => projectBoard.snapshot().sessions,
   owner: id => workspaceWindows.get(detachedAgents.get(id)), windows: () => workspaceWindows.values(),
   create: () => createAppWindow({ restoreWorkspace: false }), ready: win => runtimeByWebContents.get(win.webContents.id)?.ready,

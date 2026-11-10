@@ -6960,14 +6960,22 @@ body.files-resizing .files-resizer::after {
   background: var(--app-panel-hover);
 }
 
-/* App chrome is draggable navigation, not document text. */
-.sidebar, .pane-tabs, .pane-tab, .files-header {
+/* App windows default to navigation surfaces, including the right file tree,
+   dialogs, toolbars and portals mounted outside the workspace. */
+body {
   user-select: none;
   -webkit-user-select: none;
 }
-.sidebar input, .sidebar textarea, .sidebar [contenteditable="true"] {
+/* Editing and copying actual conversation/document contents stay available. */
+input, textarea, [contenteditable]:not([contenteditable="false"]),
+.chat-md, .chat-user-text, .chat-tool pre, .chat-reason, .chat-diff,
+.docs-content, .subagent-log {
   user-select: text;
   -webkit-user-select: text;
+}
+button, select, summary, .chat-codeblock-head {
+  user-select: none;
+  -webkit-user-select: none;
 }
 body.app-tab-dragging, body.app-tab-dragging * {
   user-select: none !important;

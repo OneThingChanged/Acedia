@@ -277,6 +277,15 @@ position. The browse tree stays mounted during search, and typing/canceling
 does not replace the conversation composer or its draft. Both search surfaces
 ignore selection keys during IME composition.[^sidebar][^sidebar-project-tree][^quick-search]
 
+Desktop windows disable native drag text selection by default across navigation,
+including both sidebars, file/repository rows, toolbars, dialogs and detached
+board windows. This is a CSS policy rather than a global pointer/keyboard
+interceptor: row selection, drag/reorder, links and scrolling keep their existing
+handlers. Text inputs, textareas and contenteditable editors remain selectable;
+conversation text/code, tool output, document contents and terminal selection
+remain available for deliberate copying. Browser pages hosted in separate native
+views are outside this workspace CSS policy.
+
 Each project starts folded on first use. Its expanded state is saved separately
 from the session picker's expansion and restored after reopening; selecting a
 conversation or receiving session updates does not reopen a deliberately folded
@@ -479,6 +488,21 @@ clicked session, even when another project is selected. Sessions without a
 local project folder and SSH sessions omit this action. Document tabs retain
 their separate **Reveal in File Explorer** action. The menu closes after the
 click, and a failed folder open reports a toast.[^app-shell][^context-menus]
+
+## Project Board window lifecycle (2026-11-10 source)
+
+The standalone board captures its renderer ID while creating the native window.
+On `closed`, it removes only that saved registration key; it never reads
+`webContents` from the destroyed window. Geometry persistence remains debounced
+during move/resize, saves normal bounds/maximized state on a normal close, and
+cancels timers and late display callbacks when the window is destroyed. Closing
+or reopening the board leaves workspace/PTY ownership unchanged.
+
+Canvas panning captures each move's coordinates before scheduling a React state
+update. Queued updates remain valid after pointerup, cancellation or lost pointer
+capture clears the drag anchor. The regression checks reproduce both the native
+`Object has been destroyed` cleanup error using the actual main-process wiring
+and the delayed-updater null-reference error without GUI automation.
 
 ## Terminal and chat
 

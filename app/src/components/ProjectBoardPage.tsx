@@ -95,7 +95,13 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     {(error || data?.storageError) && <div role="alert" className="wb-error">{error || data?.storageError}</div>}
     <div className="wb-body"><section className="wb-canvas-wrap"><div className="wb-canvas" ref={viewport} tabIndex={0} aria-label={text('업무 노드 · 빈 공간 드래그로 이동', 'Work nodes · drag empty space to pan')}
       onPointerDown={e => { if (e.button !== 0 || (e.target as Element).closest('button')) return; drag.current = { x: e.clientX, y: e.clientY, left: view.x, top: view.y }; e.currentTarget.setPointerCapture(e.pointerId); }}
-      onPointerMove={e => { if (drag.current) setView(v => ({ ...v, x: drag.current!.left + e.clientX - drag.current!.x, y: drag.current!.top + e.clientY - drag.current!.y })); }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}
+      onPointerMove={e => {
+        const anchor = drag.current;
+        if (!anchor) return;
+        // A queued React update can run after pointerup/cancel clears the ref.
+        const x = anchor.left + e.clientX - anchor.x, y = anchor.top + e.clientY - anchor.y;
+        setView(v => ({ ...v, x, y }));
+      }} onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
       onWheel={e => { const r = e.currentTarget.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; setView(v => { const zoom = Math.max(.2, Math.min(2, v.zoom * (e.deltaY > 0 ? .9 : 1.1))); return { zoom, x: px - (px - v.x) * zoom / v.zoom, y: py - (py - v.y) * zoom / v.zoom }; }); }}>
       {!data ? <p className="wb-empty">{error ? text('보드를 불러오지 못했습니다. 새로고침해 주세요.', 'Could not load the board. Refresh to retry.') : text('업무 현황을 불러오는 중…', 'Loading work status…')}</p> : !layout?.nodes.length ? <p className="wb-empty">{text('표시할 세션이 없습니다.', 'No matching sessions.')}</p> : <div className="wb-world" style={{ width: layout.width, height: layout.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         {layout.groups.map(p => <section className="wb-project" key={p.id} style={{ left: p.x, top: p.y, width: p.width, height: p.height }}><h2>{p.name}</h2></section>)}
