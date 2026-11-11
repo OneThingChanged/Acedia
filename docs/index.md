@@ -10,6 +10,9 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.10](release-1-8-2-10.md) - 프로젝트 보드 확인 목록·개별 결과 보존, 연보라색 Claude 백그라운드 대기 표시와 개인용·조직 사전허가 라이선스.
+* [사용 조건과 라이선스 범위](licensing.md) - 개인 무료·기업 사전 허가, 재배포·수정 제한, 이전 MIT 및 제3자 권한.
+
 * [Acedia 1.8.2.05](release-1-8-2-05.md) - 수동 Codex 계정 선택을 재시작에도 적용하고 취소 시 기존 세션 유지.
 
 * [Acedia 1.8.2.04](release-1-8-2-04.md) - 새 세션 준비 상태 API, 첫 메시지 전 입력 준비 대기 및 시작 결과 구분.

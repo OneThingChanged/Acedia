@@ -26,6 +26,7 @@ export function officeState(agent: Agent, now = Date.now()): OfficeState {
   if (agent.deferredStart || !isAgentRuntimeActive(agent)) return 'stopped';
   if (runtime === 'starting' || runtime === 'recovering') return 'starting';
   const activity = agent.activity;
+  if (activity?.workStatus === 'background') return 'working'; // Native child work is still active, not an idle pose.
   if (!activity || now - activity.receivedAt > AGENT_ACTIVITY_STALE_AFTER_MS) return 'idle';
   if (activity.workStatus === 'waiting' || agent.status === 'question') return 'waiting';
   if (activity.workStatus === 'blocked') return 'blocked';

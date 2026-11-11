@@ -45,8 +45,8 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, now });
+  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, readActivity, now });
     this.records = []; this.inflight = new Map(); this.sequence = 0;
     try {
       if (fs.statSync(file).size > maxStore) throw Error();
@@ -162,7 +162,8 @@ export class SessionMessages {
       const at = this.now(); changed.forEach(r => { r.readAt = at; });
       try { this.save(); } catch (error) { changed.forEach(r => { r.readAt = null; }); throw error; }
     }
-    return { direction: outgoing ? 'outbox' : 'inbox', messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true }))),
-      nextAfter: records.at(-1)?.sequence ?? body.after ?? 0, hasMore: candidates.length > records.length };
+    return this.readActivity(agentId, outgoing ? [] : records.map(r => r.sourceId), async () => ({
+      direction: outgoing ? 'outbox' : 'inbox', messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true }))),
+      nextAfter: records.at(-1)?.sequence ?? body.after ?? 0, hasMore: candidates.length > records.length }));
   }
 }

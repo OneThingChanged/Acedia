@@ -20,7 +20,8 @@ import type {
   ProjectFolder,
 } from "../types";
 import { collectAgentIdsInOrder } from "../lib/layout";
-import { isAgentRuntimeActive } from "../lib/agentActivity";
+import { isAgentRuntimeActive, backgroundWaitingLabels } from "../lib/agentActivity";
+import './BackgroundWork.css';
 import { isStandbySession } from "../lib/sessionStandby";
 import { loadSshHosts, sshHostSummary } from "../lib/sshHosts";
 import { useAppLanguage } from "../lib/appLanguage";
@@ -682,6 +683,7 @@ export function SidebarProjectTree({
       ? a.idleResumeSessionId
         ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
         : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
+      : a.status === 'background' ? text(...backgroundWaitingLabels(a.activity?.backgroundCount))
       : a.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : text(a.status, a.status);
     return (
       <li
@@ -698,6 +700,7 @@ export function SidebarProjectTree({
           multi && isActiveGroup ? "agent-grouped-active" : "",
           isDetached ? "agent-detached" : "",
           hasUnreadCompletion ? "agent-completion-unread" : "",
+          !sleeping && a.status === 'background' ? 'has-background-work' : '',
         ]
           .filter(Boolean)
           .join(" ")}

@@ -3,7 +3,7 @@
   "description": "Native Android client for the Acedia Remote service.",
   "private": true,
   "version": "1.8.2",
-  "multiAgentReleaseVersion": "1.8.2.09",
+  "multiAgentReleaseVersion": "1.8.2.10",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -32,5 +32,6 @@
     "signing:setup": "node scripts/setup-signing.mjs",
     "apk": "node scripts/build-apk.mjs",
     "apk:verify": "node scripts/build-apk.mjs --allow-debug-signing"
-  }
+  },
+  "license": "UNLICENSED"
 }

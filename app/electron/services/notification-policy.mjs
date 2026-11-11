@@ -25,7 +25,7 @@ export class WorkPowerPolicy {
     if (!this.live.has(payload.id)) return;
     const event = String(payload.event).toLowerCase(), hook = String(payload.hook_event_name).toLowerCase();
     if (['done', 'cancelled', 'canceled', 'interrupted', 'aborted', 'session-start'].includes(event) || ['stop', 'remotecancel', 'usercancel', 'interrupt'].includes(hook)) this.work.delete(payload.id);
-    else if (['working', 'tool-start', 'tool-end', 'waiting', 'blocked'].includes(event) || ['permissionrequest', 'stopfailure', 'posttoolusefailure'].includes(hook)) this.work.set(payload.id, true);
+    else if (['working', 'tool-start', 'tool-end', 'background-wait', 'waiting', 'blocked'].includes(event) || ['permissionrequest', 'stopfailure', 'posttoolusefailure'].includes(hook)) this.work.set(payload.id, true);
     this.sync();
   }
   sync() {

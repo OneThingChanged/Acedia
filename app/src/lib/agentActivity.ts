@@ -8,6 +8,10 @@ import type {
 import { isQuestionTool } from "./chatPrompt";
 
 export const AGENT_ACTIVITY_STALE_AFTER_MS = 30 * 60 * 1000;
+export function backgroundWaitingLabels(count?: number): [string, string] {
+  return Number.isInteger(count) && count! > 0 ? [`백그라운드 ${count}개 대기`, `Waiting for ${count} background agent${count === 1 ? '' : 's'}`]
+    : ['백그라운드 작업 대기', 'Waiting for background agents'];
+}
 
 export type AgentHookEvent = {
   id: string;
@@ -22,6 +26,7 @@ export type AgentHookEvent = {
   question_id?: string | null;
   question_notification?: boolean;
   assistant_message?: string | null;
+  background_count?: number | null;
 };
 
 function clean(value: string | null | undefined, maxLength = 2_000) {
@@ -64,6 +69,7 @@ export function deriveAgentStatus(
 ): AgentStatus {
   if (runtimeStatus !== "running") return runtimeStatus;
   if (activity?.workStatus === 'waiting' && activity.questionId) return 'question';
+  if (activity?.workStatus === 'background') return 'background';
   if (!activity || now - activity.receivedAt > AGENT_ACTIVITY_STALE_AFTER_MS) {
     return "running";
   }
@@ -106,6 +112,7 @@ function workStatusForHook(event: AgentHookEvent): AgentWorkStatus | null {
   const hookName = event.hook_event_name?.trim().toLowerCase();
   const toolName = event.tool_name?.trim().toLowerCase();
   if (eventName === "session-start") return null;
+  if (eventName === 'background-wait') return 'background';
   if (eventName === "done" || hookName === "stop") return "done";
   if (
     eventName === "blocked" ||
@@ -157,7 +164,8 @@ export function applyAgentHookEvent(
       ? "running"
       : currentRuntimeStatus;
   const workStatus = workStatusForHook(event);
-  const previous = agent.activity;
+  const previous = event.event.trim().toLowerCase() === 'session-start' && agent.activity?.workStatus === 'background'
+    ? undefined : agent.activity;
   const receivedAt = event.received_at || now;
   const providerSessionId = clean(event.session_id, 200);
 
@@ -193,6 +201,8 @@ export function applyAgentHookEvent(
         : undefined,
       lastAssistantMessage:
         clean(event.assistant_message, 4_000) || (workStatus === "waiting" && previous?.workStatus !== "waiting" ? undefined : previous?.lastAssistantMessage),
+      backgroundCount: workStatus === 'background' && Number.isInteger(event.background_count) && event.background_count! > 0
+        ? Math.min(1000, event.background_count!) : undefined,
     };
   } else if (providerSessionId || event.hook_event_name) {
     activity = {
@@ -227,14 +237,17 @@ export function isAgentActivelyWorking(
   agent: Pick<Agent, "status" | "activity">,
   now = Date.now()
 ) {
+  if (['idle', 'exited', 'unreachable'].includes(agent.status)) return false;
   return (
     agent.status === "working" ||
+    agent.status === "background" ||
     agent.status === "question" ||
     agent.status === "waiting" ||
     agent.status === "blocked" ||
     (!!agent.activity &&
       now - agent.activity.receivedAt <= AGENT_ACTIVITY_STALE_AFTER_MS &&
       (agent.activity.workStatus === "working" ||
+        agent.activity.workStatus === "background" ||
         agent.activity.workStatus === "waiting" ||
         agent.activity.workStatus === "blocked"))
   );

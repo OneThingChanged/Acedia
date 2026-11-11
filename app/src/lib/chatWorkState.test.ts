@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isChatWorking } from "./chatWorkState";
 
 describe("desktop chat progress", () => {
+  it('keeps background waiting busy even when the foreground response transcript is already idle', () => {
+    expect(isChatWorking({ status: 'background', lifecycle: 'idle', now: 2000 })).toBe(true);
+    expect(isChatWorking({ status: 'background', lifecycle: 'idle', waiting: true, now: 2000 })).toBe(false);
+  });
   it("shows live transcript work before the working hook arrives", () => {
     expect(isChatWorking({ status: "running", lifecycle: "working", now: 2000 })).toBe(true);
   });

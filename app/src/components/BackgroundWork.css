@@ -1,0 +1,12 @@
+@property --acedia-background-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.has-background-work::after, .sidebar-workspace .sidebar-recent-row.has-background-work[data-background-wait=true]::after, .agent-item.agent-item-nested.has-background-work::after {
+  content: ''; position: absolute; inset: 0; padding: 1.5px; border: 0; border-radius: inherit; pointer-events: none; opacity: 1;
+  background: conic-gradient(from var(--acedia-background-angle), #cdb2f52b 0deg, #cfb6ff55 110deg, #eadcff 165deg, #cdb2f52b 230deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: acedia-background-orbit 3.2s linear infinite;
+}
+.status-background { background: #d2b8ff; box-shadow: 0 0 0 2px #ceb0ff33; }
+@keyframes acedia-background-orbit { to { --acedia-background-angle: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .has-background-work::after { animation: none!important; background: #cdb2f5; } }

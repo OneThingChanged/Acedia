@@ -296,14 +296,17 @@ function assertInvokeRequest(command, rawArgs) {
     case 'project_board_ack':
     case 'project_board_open_session':
       assertId(args);
-      if (Object.keys(args).some(key => !['id', command === 'project_board_ack' ? 'fingerprint' : 'compose'].includes(key))
+      if (Object.keys(args).some(key => !['id', ...(command === 'project_board_ack' ? ['fingerprint', 'itemId'] : ['compose'])].includes(key))
+        || args.itemId !== undefined && (typeof args.itemId !== 'string' || !/^[a-f0-9]{64}$/.test(args.itemId))
         || command === 'project_board_ack' && (typeof args.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(args.fingerprint))
         || command === 'project_board_open_session' && args.compose !== undefined && typeof args.compose !== 'boolean') throw new TypeError('Invalid board session');
       break;
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-        || Object.keys(p).some(key => !['zoom', 'x', 'y', 'collapsed', 'projectId'].includes(key))
+          || Object.keys(p).some(key => !['zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion'].includes(key))
+          || p.motion !== undefined && typeof p.motion !== 'boolean'
+          || p.collapsedProjects !== undefined && (!Array.isArray(p.collapsedProjects) || p.collapsedProjects.length > 2000 || p.collapsedProjects.some(id => typeof id !== 'string' || id.length > 256))
         || ['zoom', 'x', 'y'].some(key => p[key] !== undefined && (!Number.isFinite(p[key]) || Math.abs(p[key]) > 1000000))
         || p.zoom !== undefined && (p.zoom < .2 || p.zoom > 2)
         || p.projectId !== undefined && p.projectId !== null && (typeof p.projectId !== 'string' || p.projectId.length > 256)

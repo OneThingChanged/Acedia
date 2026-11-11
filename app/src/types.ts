@@ -20,6 +20,7 @@ export type AgentWorkStatus =
   | "unknown"
   | "idle"
   | "working"
+  | "background"
   | "waiting"
   | "blocked"
   | "done";
@@ -39,6 +40,7 @@ export type AgentActivity = {
   interactiveQuestion?: string;
   questionId?: string;
   lastAssistantMessage?: string;
+  backgroundCount?: number;
 };
 
 // Compatibility status used by the existing UI and remote dashboard contract.
@@ -46,6 +48,7 @@ export type AgentActivity = {
 export type AgentStatus =
   | AgentRuntimeStatus
   | "working"
+  | "background"
   | "question"
   | "waiting"
   | "blocked";

@@ -4,6 +4,12 @@ import { isStandbySession } from '../../src/lib/sessionStandby';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, projectSessionRuntime, sessionFilterCounts, resolveSessionWorkStatus } from './session-state.mjs';
 
 describe('Remote session lifecycle filters', () => {
+  it('keeps background waiting active and distinct from user questions or completion', () => {
+    const agent = { status: 'working', runtimeStatus: 'running', hook: { event: 'background-wait', background_count: 2 } };
+    expect(resolveSessionWorkStatus(agent)).toBe('background'); expect(matchesSessionFilter(agent, 'active')).toBe(true);
+    expect(resolveSessionWorkStatus({ ...agent, hook: { event: 'done' } })).toBe('done');
+    expect(resolveSessionWorkStatus({ ...agent, status: 'offline' })).toBe('offline');
+  });
   it('uses completion hooks over stale renderer work and switches back for new work', () => {
     const agent = { status: 'working', runtimeStatus: 'running', hook: { event: 'done', lastTs: 100 } };
     expect(resolveSessionWorkStatus(agent)).toBe('done');

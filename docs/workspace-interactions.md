@@ -507,6 +507,137 @@ capture clears the drag anchor. The regression checks reproduce both the native
 `Object has been destroyed` cleanup error using the actual main-process wiring
 and the delayed-updater null-reference error without GUI automation.
 
+## Project Board review inbox (1.8.2.10)
+
+The standalone board now uses project containers with nested session rows and a
+right-hand **Your attention / 내 확인** inbox, following the supplied v2 board
+prototype. The prototype's example sessions and simulated answer/retry controls
+are not product data or commands. Session rows show the current state separately
+from badges for earlier unreviewed results. Blue execution rings, amber questions,
+red errors and mint result checks include text and icons as well as color.
+
+The summary counts working **sessions** separately from attention **items**. One
+working session can have several unreviewed results. Questions + errors + results
+make up the attention total; working sessions are not added to it. Counts cover
+the selected project's complete data (or all projects), including folded rows and
+items beyond the first 50 inbox entries. Search and type filters preserve these
+totals and dim unrelated nodes without moving them. Project/session folds also
+preserve other node positions. **Locate on board** explicitly unfolds ancestors
+and centers the session; polling never pans, zooms or takes keyboard focus.
+
+Opening a result only shows its exact summary, time, scope and submitted artifact
+paths. **Reviewed / 확인했어요** acknowledges that one result, not all results in
+the session, and never approves, publishes or executes work. Response termination,
+partial task submission and verified task completion have distinct labels. A new
+turn does not discard earlier results. Questions open the existing session
+composer for the user to answer; error notices have a separate explicit dismissal
+that does not repair or restart the worker. **Open conversation** navigates to the
+session's current conversation; historical message/line deep links and artifact
+downloads remain in the existing conversation interface.
+
+The host's existing `project-board.json` filename now stores schema version 2,
+including a journal with independent result IDs, fingerprints and review times.
+Version 1 review settings migrate without reopening acknowledged results. Hook
+completion replays share an execution/result identity, and legacy desktop notices
+are correlated by their exact hook receipt time rather than a fuzzy time window
+or translated notification text. The journal retains up to 1,500 results within
+4 MiB: oldest reviewed history can be pruned, but unread entries are not silently
+deleted to make room. Capacity/write/corruption errors remain visible and disable
+review actions; corrupt files are preserved.
+
+Current states use explicit runtime, hook and task signals. External/tool waiting,
+explicit pause, idle and unreachable states are separate; elapsed silence alone
+does not turn an executing worker into idle or completed. Execution elapsed time
+uses an observed user-turn start when available. The latest state sample time is
+separate from the last work activity time. Failed polling displays last-known
+data and stops motion rather than presenting it as a fresh execution signal.
+
+Hierarchy lines are static. Purple directional lines show **observed Acedia inbox
+reads**, from the receiving/reading session to the message's source session. Only
+the actual `SessionMessages.receive` content-read promise can activate their
+motion, and `finally` stops it on success or failure, including concurrent reads.
+Outbox/delivery polling does not create reference activity. A read never starts
+the source session or changes its runtime state. Completed reference observations
+are kept in host memory (up to 300), not persisted across an app restart. Generic
+transcript/file reads and external tools' internal references are not instrumented
+or inferred. Short reads can finish between the two-second board polls and appear
+only as a static last-read relation; no artificial active period is added.
+
+Overview zoom shows project summaries; normal zoom shows session rows. The motion
+switch is saved with project/session folds and viewport preferences, and honors
+the operating system's reduced-motion preference. Arrival emphasis is finite;
+only live execution/read indicators repeat. The inbox has keyboard focus styles,
+detail/back navigation with restored focus and list position, and a stacked
+layout on narrow windows. Polling pauses while the board document is hidden and
+does not subscribe to PTY streams or copy transcripts/images.
+
+The board-only IPC contract remains restricted to snapshots, preferences, exact
+review and session navigation. `project_board_ack` accepts optional `itemId`
+(SHA-256) along with `id` and `fingerprint`; the host checks all three against the
+current inbox. Questions cannot be acknowledged as results. Preferences add
+`collapsedProjects` (up to 2,000 bounded IDs) and boolean `motion`; the legacy
+arguments remain compatible. No task-start, user-answer or retry permission is
+introduced. Node regression checks exercise exact review, restore/migration,
+capacity/write errors, explicit wait/pause, reference termination, stable layout,
+IPC validation and component navigation without GUI automation.
+
+Validation on 2026-11-11: the focused board/IPC/mailbox checks passed 96 tests;
+the complete Vitest run passed 237 files / 1,919 tests, and `npm run build`
+passed TypeScript and the production Vite build. These are source and Node
+checks, not an installed-app GUI or deployment verification. A static preview
+rendered from the actual component is available at
+`output/project-board-v2-preview.html` locally (ignored output, example data,
+non-interactive).
+
+## Native background-agent waiting (1.8.2.10)
+
+Claude's native **Waiting for N background agent(s) to finish** is a separate
+`background` execution state. The sidebar shows a light-purple tint, a slowly
+orbiting outline and a readable waiting count. Foreground work and completed
+results keep their existing colors. Earlier unreviewed completion evidence is
+retained, but the purple current-state outline takes visual priority. The board
+uses the same waiting state, outline and count, with a separate **Background**
+summary/filter and project-header aggregate. The summary counts waiting Acedia
+sessions; a row's count refers to that session's native Claude background agents.
+They are not fabricated Acedia sessions or task-tree children.
+
+The host observes the existing parsed Claude viewport after PTY output, coalesced
+to one scan per 200 ms. It does not start another emulator, reread transcripts,
+poll the whole terminal continuously, or inspect another application's screen.
+A native spinner-prefixed waiting line immediately above the current composer,
+together with a recognizable native footer, provides the evidence. Wrapped rows
+are supported; historical/quoted text and incomplete frames do not establish or
+clear waiting. Unrecognized CLI layouts retain the existing status rather than
+guessing a background count. This currently instruments Claude's visible native
+waiting indicator, not all providers' internal task activity.
+
+State transitions use the existing hook transport: `event: "background-wait"`,
+`hook_event_name: "BackgroundWorkWait"`, and bounded integer `background_count`.
+The monitor/session API exposes the event/count in `hook`; board snapshots expose
+`state: "background"` and `backgroundCount`. No new execution permission or
+automatic task-start API is introduced. Explicit foreground work, questions,
+permission requests, errors and cancellation remain authoritative. A parent Stop
+received while a verified background wait remains visible is held separately;
+when the parent resumes thinking the state returns to foreground work, and when
+the native wait ends without resumed foreground work that held response-complete
+event can be released. Mere silence is not a completion signal.
+
+Background waiting remains active for power/idle policies and Chat/Remote queue
+gates even when the foreground response transcript is idle. The Remote sidebar
+and progress bar recognize it as well. Closing, restarting or replacing the PTY
+cancels its pending observer, and observer errors cannot interrupt terminal byte
+delivery. Reduced-motion settings stop the orbit; the board's motion switch and
+disconnected state stop it too. Node tests exercise native ANSI repaints through
+the real tracked terminal filter, changed counts, burst coalescing, partial and
+quoted frames, foreground resumption, held completion, questions/cancellation,
+PTY replacement, durable prior results, UI labels and Remote queue classification.
+
+Validation on 2026-11-12: the complete run passed 239 files / 1,932 tests. After
+the final idle-pose/dead-runtime compatibility adjustments and board render check,
+the affected 10 suites passed 87 tests. The desktop production build passed; no
+installed application, native window or user session was operated during these
+Node/SSR checks. Publication and public-download verification are tracked in [1.8.2.10](release-1-8-2-10.md).
+
 ## Terminal and chat
 
 Source 1.8.1.82 enables Qwen's synchronized-output capability for local sessions.

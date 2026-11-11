@@ -11,6 +11,13 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it('gives background waiting its own outline, count and accessible reason without hiding earlier completion evidence', () => {
+    const html = render([agent('Claude', { aiToolId: 'claude', status: 'background', runtimeStatus: 'running',
+      activity: { workStatus: 'background', source: 'terminal', receivedAt: 1, stateStartedAt: 1, backgroundCount: 2 } })], { unreadCompletedAgentIds: new Set(['Claude']) });
+    expect(html).toContain('data-background-wait="true"'); expect(html).toContain('has-background-work');
+    expect(html).toContain('status-background'); expect(html).toContain('백그라운드 2개 대기');
+    expect(html).toContain('agent-completion-unread'); expect(html).not.toContain('sidebar-question-label');
+  });
   it('labels child sessions with their dedicated effective folder rather than a stale parent-project folder', () => {
     const html = render([agent('parent'), agent('child', { folder: 'C:/stale', sessionHierarchy: { parentId: 'parent', inheritFolder: false, folderOverride: 'D:/AI2/PCGLab' } })]);
     expect(html).toContain('title="D:/AI2/PCGLab"');

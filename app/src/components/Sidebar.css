@@ -190,3 +190,7 @@
 .sidebar-archive-list > div > span:not(.provider-logo) { flex: 1; min-width: 0; }
 .sidebar-archive-list strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .sidebar-archive-list small { display: block; color: var(--app-muted); font-size: 10px; margin-top: 4px; }
+.sidebar-workspace .sidebar-recent-row.has-background-work[data-background-wait=true], .agent-item.agent-item-nested.has-background-work { position: relative; background: #b995ef18; border-color: #c9a6ff50; }
+.sidebar-workspace .sidebar-recent-row.has-background-work[data-background-wait=true].active { background: #b995ef2c; }
+.sidebar-background-label { display: block; color: #d4baff; font-size: 10px; line-height: 1.4; margin-top: 2px; }
+.app-theme-light .sidebar-background-label { color: #7652a6; }

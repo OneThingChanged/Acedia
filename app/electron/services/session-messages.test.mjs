@@ -24,6 +24,16 @@ function fixture() {
   const service = new SessionMessages(options), call = (action, body, agentId = 'sender') => service.handle({ action, body, agentId });
   return { root, options, service, call, active, agents, notify, receipt };
 }
+it('reports only inbox source IDs while reading and never treats outbox delivery polling as a reference', async () => {
+  const f = fixture(), reads = [];
+  f.service.readActivity = async (id, targets, task) => { reads.push({ id, targets }); return task(); };
+  await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'read-evidence', notify: false });
+  await f.call('message-receive', {}, 'receiver');
+  expect(reads[0]).toEqual({ id: 'receiver', targets: ['sender'] });
+  await f.call('message-receive', { direction: 'outbox' });
+  expect(reads[1]).toEqual({ id: 'sender', targets: [] });
+  expect(f.notify).not.toHaveBeenCalled();
+});
 it('waits for startup once, captures the first bound conversation and never replays the notification', async () => {
   const f = fixture(), entry = { aiToolId: 'codex' };
   let conversationId = null;

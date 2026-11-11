@@ -44,6 +44,7 @@ export function resolveSessionWorkStatus(agent) {
   if (['starting', 'recovering'].includes(status)) return status;
   const event = String(agent?.hook?.event || '').toLowerCase();
   if (event === 'done') return 'done';
+  if (event === 'background-wait') return 'background';
   if (['cancelled', 'canceled', 'interrupted', 'aborted'].includes(event)) return 'idle';
   if (['working', 'tool-start', 'tool-end'].includes(event)) return 'working';
   if (event === 'question' || (event === 'waiting' && agent.hook?.interactive_question)) return 'question';

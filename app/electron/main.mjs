@@ -40,6 +40,7 @@ import {
 } from "electron";
 import fs from "node:fs";
 import { createTerminalLauncher } from "./services/terminal-launcher.mjs";
+import { BackgroundWorkMonitor } from './services/background-work.mjs';
 import { selectedAccountId } from "./services/provider-accounts.mjs";
 import { promises as fsPromises } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -287,10 +288,12 @@ const detachedAgents = new Map();
 /** @type {Map<string, {id: string, name: string, process: import('node-pty').IPty, initTimer: NodeJS.Timeout | null, aiToolId: string, cwd: string | null, ssh: unknown, filter: import("./services/terminal-stream.mjs").CodexScrollbackFilter | import("./services/terminal-stream.mjs").PassThroughTerminalFilter, buffer: import('./services/terminal-stream.mjs').SequencedTerminalBuffer, subscribers: Set<number>}>} */
 const ptys = new Map();
 let sessionModelMemory;
+let backgroundWorkMonitor;
 const terminalSessions = new TerminalSessionService({
   sessions: ptys,
   onBeforeClose: entry => { commandApprovals.forget(entry.id); sessionModelMemory.remember(entry); },
   onInput: (id, data) => { capacityRetry.cancel(id); noteFirstMessageInput(ptys.get(id), data); },
+  onOutput: entry => backgroundWorkMonitor?.output(entry),
   onBell(id) {
     const now = Date.now();
     if (now - (bellTimes.get(id) ?? 0) < 3000) return;
@@ -308,6 +311,7 @@ const terminalSessions = new TerminalSessionService({
     }
   },
   onSessionsChanged({ reason, ids }) {
+    backgroundWorkMonitor?.prune(ids);
     powerPolicy.sessions(ids);
     capacityRetry.prune(ids);
     // Preserve the last live set across app shutdown. Normal per-session exits
@@ -676,7 +680,6 @@ const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-bo
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs });
 
 function publishAgentHookEvent(eventName, payload) {
-  if (eventName === 'agent:hook-event') projectBoard.observe(payload);
   if (eventName === "agent:hook-event" && payload?.id) {
     if (payload.event === 'done' && capacityRetry.isActive(payload.id)) {
       payload = { ...payload, event: 'working', hook_event_name: 'CapacityRetry' };
@@ -700,6 +703,8 @@ function publishAgentHookEvent(eventName, payload) {
       announcedQuestions.set(payload.id, { sessionId: payload.session_id, raw: payload.interactive_question, id: questionId });
       if (announcedQuestions.size > 256) announcedQuestions.delete(announcedQuestions.keys().next().value);
     } else if (['done', 'cancelled', 'session-start'].includes(payload.event)) announcedQuestions.delete(payload.id);
+    payload = backgroundWorkMonitor?.hook(payload) || payload;
+    projectBoard.observe(payload);
     powerPolicy.hook(payload);
     // Remote/monitor views only need concise state. Keep tool input and the
     // full assistant response inside the local renderer/pet contract.
@@ -713,6 +718,7 @@ function publishAgentHookEvent(eventName, payload) {
       interactive_question: payload.interactive_question,
       question_id: payload.question_id,
       received_at: payload.received_at,
+      background_count: payload.background_count,
       lastTs: Date.now(),
     });
     // Track the live transcript path / session id per agent so the chat view
@@ -798,6 +804,9 @@ const hookService = new HookService({
   sendEvent: publishAgentHookEvent,
   sessionService,
 });
+backgroundWorkMonitor = new BackgroundWorkMonitor({ entry: id => ptys.get(id),
+  publish: payload => publishAgentHookEvent('agent:hook-event', payload) });
+
 let hookReady = null;
 let browserReady = null;
 let hookMaintenanceTimer = null;
@@ -1078,6 +1087,7 @@ const sessionReadiness = new SessionReadiness({
   ready: (target, options) => sessionDeliveries.ready(target, options),
 });
 const sessionMessages = new SessionMessages({
+  readActivity: (id, targets, task) => projectBoard.referenceRead(id, targets, task),
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
@@ -5366,7 +5376,7 @@ async function invokeCommand(event, command, rawArgs) {
     case 'project_board_snapshot':
       await warmProjectBoard(); return projectBoard.snapshot(args.revision);
     case 'project_board_ack':
-      await warmProjectBoard(); return projectBoard.acknowledge(args.id, args.fingerprint);
+      await warmProjectBoard(); return projectBoard.acknowledge(args.id, args.fingerprint, args.itemId);
     case 'project_board_preferences':
       return projectBoard.preferences(args.preferences);
     case 'project_board_open_session': {

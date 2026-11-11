@@ -2,8 +2,8 @@
 
 **English** | [한국어](README.ko.md)
 
-[![Version](https://img.shields.io/badge/version-1.8.2.09-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.8.2.10-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![License: Personal Use](https://img.shields.io/badge/license-Personal_Use%20%2F%20Permission_Required-purple)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
 **One workspace for every AI agent terminal.** Acedia runs and organizes multiple AI-agent CLI sessions — Claude Code, Codex, Qwen, Cline — as project-scoped tabs and split panes in a single Windows desktop app, with hook-based status detection, session resume, a chat view, remote phone access, and token-usage tracking.
@@ -15,7 +15,7 @@ Instead of juggling a pile of terminal windows, you register each project once, 
 ## Features
 
 ### Sessions & Layout
-- **Independent project board window** — monitor project/session trees, review new results, see computer-use signals and double-click a node to open its Acedia conversation. Window placement and board preferences persist. See [Organization](docs/session-organization.md).
+- **Independent project board window** — grouped project/session trees, separate current work and persistent result review, a question/error/result inbox, stable filtering and observed message-read references. Claude background-agent waiting has a light-purple orbit and count in the sidebar and board. See [Organization](docs/session-organization.md).
 - **Project-first workflow** — register a project folder, then create aliased sessions under it in the collapsible sidebar tree
 - **Project relationship board** — connect or detach parent projects, reference folders across branches, and arrange cards with drag, pan, zoom and undo. Shared settings apply on the next launch while conversations remain independent. See [Organization](docs/session-organization.md).
 - **Session status filters** — choose All, Active, or Sleeping below sidebar search. Blue Sleeping sessions wait to start or resume; search stays within the saved filter and hides projects without matches. See [workspace navigation](docs/workspace-interactions.md#navigation-and-visibility).
@@ -132,7 +132,7 @@ The variants share the same code and product version while keeping identifiers, 
 │  └─ scripts/             # Build / release scripts
 ├─ docs/                   # OKF v0.2 project knowledge
 ├─ SETUP.md                # Setup guide
-└─ LICENSE                 # MIT
+└─ LICENSE                 # Personal use / organization permission
 ```
 
 ## Documentation
@@ -150,6 +150,6 @@ The canonical OKF v0.2 knowledge index is [`docs/index.md`](docs/index.md):
 
 ## License
 
-[MIT](LICENSE)
+[Acedia Personal Use and Organization Permission License](LICENSE), effective from 1.8.2.10. Free for personal, non-commercial use. Business/organization use requires prior written permission. Redistribution, source reuse and feature modifications require permission, subject to existing MIT and third-party rights. See [usage conditions and license boundaries](docs/licensing.md).
 
 Privacy information is available in [PRIVACY.md](PRIVACY.md).

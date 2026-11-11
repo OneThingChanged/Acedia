@@ -12,6 +12,7 @@ export class TerminalSessionService {
   constructor({
     onBell = () => {},
     onInput = () => {},
+    onOutput = () => {},
     sendDataToView,
     broadcastExit,
     onSessionsChanged = () => {},
@@ -20,6 +21,7 @@ export class TerminalSessionService {
   } = {}) {
     this.onBell = onBell;
     this.onInput = onInput;
+    this.onOutput = onOutput;
     this.sessions = sessions ?? new Map();
     this.generations = new Map();
     this.sendDataToView = sendDataToView ?? (() => {});
@@ -187,6 +189,7 @@ export class TerminalSessionService {
 
   #publish(entry, data) {
     if (!data) return;
+    try { this.onOutput(entry); } catch { /* observation must not interrupt PTY output */ }
     const segment = entry.buffer.append(data);
     for (const viewId of entry.subscribers) {
       this.sendDataToView(viewId, { id: entry.id, ...segment });

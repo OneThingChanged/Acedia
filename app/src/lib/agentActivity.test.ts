@@ -6,6 +6,7 @@ import {
   applyAgentRuntimeStatus,
   deriveAgentStatus,
   isAgentRuntimeActive,
+  isAgentActivelyWorking,
 } from "./agentActivity";
 
 function agent(status: Agent["status"] = "running"): Agent {
@@ -24,6 +25,20 @@ function agent(status: Agent["status"] = "running"): Agent {
 }
 
 describe("agent activity state v2", () => {
+  it('keeps native background waiting active without turning it into a question or a timed-out green idle', () => {
+    const background = applyAgentHookEvent(agent(), { id: 'agent-1', event: 'background-wait', background_count: 2 }, 100);
+    expect(background.status).toBe('background'); expect(background.activity?.backgroundCount).toBe(2);
+    expect(isAgentActivelyWorking(background)).toBe(true);
+    expect(deriveAgentStatus('running', background.activity, AGENT_ACTIVITY_STALE_AFTER_MS * 2)).toBe('background');
+    const done = applyAgentHookEvent(background, { id: 'agent-1', event: 'done' }, 200);
+    expect(done.activity?.workStatus).toBe('done'); expect(done.activity?.backgroundCount).toBeUndefined(); expect(done.status).toBe('running');
+    const question = applyAgentHookEvent(background, { id: 'agent-1', event: 'waiting', tool_name: 'AskUserQuestion', interactive_question: 'Choose?' }, 200);
+    expect(question.status).toBe('question'); expect(question.activity?.backgroundCount).toBeUndefined();
+    expect(applyAgentRuntimeStatus(background, 'exited').status).toBe('exited');
+    expect(isAgentActivelyWorking(applyAgentRuntimeStatus(background, 'exited'))).toBe(false);
+    const cleared = applyAgentHookEvent(background, { id: 'agent-1', event: 'session-start', session_id: 'new-conversation' }, 300);
+    expect(cleared.status).toBe('running'); expect(cleared.activity?.backgroundCount).toBeUndefined();
+  });
   it('keeps a linked question visible until resolution without mislabeling the next permission request', () => {
     const waiting = applyAgentHookEvent(agent(), { id:'agent-1', event:'waiting', tool_name:'request_user_input', interactive_question:'Choose?', question_id:'call-1' }, 100);
     expect(deriveAgentStatus('running', waiting.activity, AGENT_ACTIVITY_STALE_AFTER_MS + 200)).toBe('question');

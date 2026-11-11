@@ -230,6 +230,7 @@ const ui = {
 
 const STATUS = {
   working: { get label() { return t("작업 중"); }, rank: 0 },
+  background: { get label() { return t('백그라운드 대기'); }, rank: 0 },
   attention: { get label() { return t("답변 필요"); }, rank: 1 },
   question: { get label() { return t("질문 · 답변 대기"); }, rank: 1 },
   recovering: { get label() { return t("복구 중"); }, rank: 2 },
@@ -556,6 +557,7 @@ function statusOf(agent) {
   if (["cancelled", "canceled", "interrupted", "aborted"].includes(hookEvent)) return "idle";
   if (rawStatus === "recovering") return "recovering";
   if (rawStatus === "starting") return "starting";
+  if (rawStatus === 'background' || hookEvent === 'background-wait') return 'background';
   if (rawStatus === 'question' || hookEvent === 'question' || (hookEvent === 'waiting' && agent.hook?.interactive_question)) return 'question';
   if (["waiting", "question", "blocked", "permission-request"].includes(rawStatus)
     || ["waiting", "question", "blocked", "permission-request"].includes(hookEvent)) return "attention";
@@ -946,8 +948,9 @@ function renderNavigation() {
     row.querySelector('.session-copy strong').textContent = text(agent.name || agent.id);
     row.querySelector('.session-copy small').textContent = outputPreview(agent) || projectName(agent);
     const statusLabel = row.querySelector('.session-status');
-    statusLabel.hidden = completedUnread.has(agent.id) || status === 'done';
-    statusLabel.textContent = statusLabel.hidden ? '' : STATUS[status].label;
+    statusLabel.hidden = status !== 'background' && (completedUnread.has(agent.id) || status === 'done');
+    statusLabel.textContent = statusLabel.hidden ? '' : status === 'background' && agent.hook?.background_count
+      ? t('백그라운드 {0}개 대기', [agent.hook.background_count]) : STATUS[status].label;
   }
   ui.emptyState.hidden = agents.length !== 0;
   ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")
@@ -4023,7 +4026,7 @@ function clearAcceptedComposer(agentId, snapshot) {
 
 // Never inject a queued instruction into a running turn. Cancellation and
 // completion release the working state before this queue drains.
-const agentBusy = (agent) => statusOf(agent) === "working";
+const agentBusy = (agent) => ['working', 'background'].includes(statusOf(agent));
 const agentInitializing = (agent) => ["recovering", "starting"].includes(agent?.runtimeStatus)
   || ["recovering", "starting"].includes(statusOf(agent));
 // Activation ends when the CLI is running, even if a resumed turn or question
@@ -4234,7 +4237,10 @@ async function closeRemoteSession(id) {
 }
 function updateWorking() {
   const agent = selectedAgent(), bar = document.getElementById('chatWorking');
-  bar.hidden = sessionViewMode !== 'chat' || !agent || statusOf(agent) !== 'working' || lastChatData?.lifecycle === 'idle' || !!blockingPrompt(agent, lastChatData);
+  const background = statusOf(agent) === 'background';
+  bar.hidden = sessionViewMode !== 'chat' || !agent || (!background && (statusOf(agent) !== 'working' || lastChatData?.lifecycle === 'idle')) || !!blockingPrompt(agent, lastChatData);
+  bar.dataset.status = background ? 'background' : 'working';
+  bar.querySelector('strong').textContent = t(background ? '백그라운드 대기' : '작업 중');
   document.getElementById('chatWorkingTool').textContent = lastChatData?.activeTool || '';
   const mode = deliveryModes.get(agent?.id) || 'queued';
   const toggle = document.getElementById('composerDeliveryButton');

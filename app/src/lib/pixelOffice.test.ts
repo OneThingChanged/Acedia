@@ -64,6 +64,7 @@ describe('Pixel Office host projection', () => {
     expect(officeState(agent('cancelled', { activity: undefined }), now)).toBe('idle');
     expect(officeState(agent('stale', { activity: { ...activity('working'), receivedAt: now - AGENT_ACTIVITY_STALE_AFTER_MS - 1 } }), now)).toBe('idle');
     expect(officeState(agent('working', { activity: activity('working') }), now)).toBe('working');
+    expect(officeState(agent('background', { status: 'background', activity: { ...activity('working'), workStatus: 'background', receivedAt: now - AGENT_ACTIVITY_STALE_AFTER_MS - 1 } }), now)).toBe('working');
     expect(officeState(agent('question', { activity: activity('waiting') }), now)).toBe('waiting');
     expect(officeState(agent('approval', { activity: activity('blocked') }), now)).toBe('blocked');
     expect(officeState(agent('turn', { activity: activity('done') }), now)).toBe('done');

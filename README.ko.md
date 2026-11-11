@@ -2,8 +2,8 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.2.09-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.8.2.10-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![License: Personal Use](https://img.shields.io/badge/license-Personal_Use%20%2F%20Permission_Required-purple)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 
 **모든 AI 에이전트 터미널을 하나의 워크스페이스에서.** Acedia는 Claude Code, Codex, Qwen, Cline 같은 여러 AI 에이전트 CLI 세션을 프로젝트 단위의 탭과 분할 화면으로 묶어 한 Windows 데스크톱 앱에서 실행·관리하는 도구입니다. hook 기반 상태 감지, 세션 resume, 채팅 뷰, 폰 원격 접속, 토큰 사용량 추적까지 지원합니다.
@@ -14,7 +14,7 @@
 
 ## 기능
 
-- **프로젝트 보드 전용 창** — 프로젝트·부모/자식 세션, 결과 확인 목록과 컴퓨터 사용 신호를 별도 창에서 보고 노드 더블클릭으로 담당 대화를 엽니다. 창 위치와 보드 배치를 기억합니다. [조직도 안내](docs/session-organization.md).
+- **프로젝트 보드 전용 창** — 프로젝트·부모/자식 세션을 묶어 보고 현재 작업과 누적 결과를 분리합니다. 질문·오류·결과 확인 목록, 개별 결과 확인, 위치 유지 필터와 실제 메시지 읽기 참조선을 제공합니다. Claude 백그라운드 대기는 사이드바·보드에 연보라색 회전 외곽선과 개수로 표시합니다. [조직도 안내](docs/session-organization.md).
 
 ### 세션 & 레이아웃
 - **프로젝트 우선 워크플로** — 프로젝트 폴더를 등록하고, 접이식 사이드바 트리 아래에 별명 세션 생성
@@ -129,7 +129,7 @@ Electron 인스톨러, blockmap, 업데이터 manifest는 `app/electron-dist/`�
 │  └─ scripts/             # 빌드 / 릴리즈 스크립트
 ├─ docs/                   # OKF v0.2 프로젝트 지식
 ├─ SETUP.md                # 설치 안내
-└─ LICENSE                 # MIT
+└─ LICENSE                 # Personal use / organization permission
 ```
 
 ## 문서
@@ -147,6 +147,6 @@ Electron 인스톨러, blockmap, 업데이터 manifest는 `app/electron-dist/`�
 
 ## 라이선스
 
-[MIT](LICENSE)
+[Acedia 개인용·조직 사전허가 라이선스](LICENSE)를 1.8.2.10부터 적용합니다. 개인의 비상업적 사용은 무료이며 기업·기관·단체와 개인 사업·상업적 이용에는 사전 서면 허가가 필요합니다. 재배포·소스 재사용·기능 수정은 별도 허가 없이 금지하며, 기존 MIT·제3자 권리는 유지합니다. [사용 조건과 예외](docs/licensing.md)를 확인하세요.
 
 개인정보 처리 안내는 [PRIVACY.md](PRIVACY.md)에서 확인할 수 있습니다.

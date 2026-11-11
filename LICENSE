@@ -1,21 +1,98 @@
-MIT License
+Acedia Personal Use and Organization Permission License 1.0
+Effective for Acedia releases 1.8.2.10 and later, from 2026-11-12.
 
-Copyright (c) 2026 OneThingChanged
+Copyright (c) 2026 OneThingChanged. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Scope and acceptance
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This agreement applies to Acedia code, binaries, original assets and related
+documentation for which OneThingChanged controls the necessary rights (the
+"Software"). Installing or using a version supplied under this agreement
+constitutes acceptance. If you do not accept, do not install or use that version.
+This is a proprietary, limited-use license, not an open-source license.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Free personal use
+
+An individual may install and run an unmodified official release, free of charge,
+for that individual's own personal, non-commercial purposes. This permission is
+non-exclusive, non-transferable and does not grant ownership of the Software.
+Copies strictly necessary to download, install, run and keep one personal backup
+are allowed. This exception does not permit redistribution or source-code reuse.
+
+3. Organization and business use requires permission
+
+Prior written permission from OneThingChanged is required for use by, for, or on
+behalf of a company, employer, business, public body, school or other organization,
+including internal work, evaluation, development, services and deployment. The
+same requirement applies to business or commercial use by an individual. A free
+download, personal account, individually owned computer or absence of a fee does
+not provide that permission. Any granted organization/business use is governed
+by its separate written terms. Permission requests may be directed privately to
+the verified OneThingChanged GitHub account; a request is not permission.
+
+4. Restrictions
+
+Except for section 2, separate written permission, section 7, or rights that
+applicable law does not allow this agreement to restrict, you may not:
+
+- Copy, publish, upload, mirror, redistribute, rent, sell, sublicense, or provide
+  the Software or its source code, in whole or substantial part, to others.
+- Modify the Software or its features, create derivative applications or builds,
+  extract or reuse its code/assets, rebrand it, or distribute modified versions.
+- Reverse engineer, decompile, disassemble, or circumvent license restrictions.
+- Remove or alter copyright, attribution, license or ownership notices.
+- Host the Software for others or offer it as a service without written permission.
+
+The ordinary use of official settings, documented APIs and integrations is
+permitted within an otherwise permitted use. It is not permission to modify the
+Software's implementation or redistribute its components. All rights not
+expressly granted are reserved.
+
+5. User materials
+
+Your projects, prompts, conversations, files and generated outputs are not made
+subject to this license merely because you use Acedia to work with them. Their
+ownership and applicable provider/third-party terms remain separate. This
+agreement does not grant rights to third-party agent services or their accounts.
+
+6. Termination and future versions
+
+Permission under this agreement terminates if you breach it. Stop using and
+delete copies governed by this agreement upon termination, except copies you
+are legally required or separately entitled to retain. Updates may carry new
+terms disclosed with those updates; changes are not retroactive to an earlier
+version lawfully obtained under different terms.
+
+7. Earlier releases, third-party material and platform rights
+
+This agreement does not revoke permissions already granted for earlier MIT-
+licensed Acedia material, including releases through 1.8.2.09. That historical
+license is preserved in licenses/ACEDIA-LEGACY-MIT.txt. Material received under
+it remains subject to the rights it already grants. This agreement cannot make
+previously granted MIT rights disappear.
+
+Separately licensed material, including third-party dependencies, Pixel Agents
+assets, LobeHub icons, Expo and the separately licensed MultiagentSite project,
+retains its own license and notices. Those licenses govern the relevant material
+if this agreement conflicts with them. See THIRD-PARTY-NOTICES.md and the
+component license files. Nothing here restricts non-waivable legal rights or
+viewing/forking rights granted under GitHub's terms for a public repository.
+No additional general right to redistribute or modify Acedia is granted by
+publishing this agreement or making source code visible.
+
+8. Warranty and liability
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND
+"AS AVAILABLE", WITHOUT WARRANTIES, INCLUDING WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE OR NON-INFRINGEMENT. ONETHINGCHANGED
+IS NOT LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL OR CONSEQUENTIAL LOSS, OR LOSS
+OF DATA, PROFITS OR BUSINESS, ARISING FROM THE SOFTWARE. THESE EXCLUSIONS DO
+NOT APPLY WHERE THEY CANNOT LAWFULLY APPLY, AND DO NOT OVERRIDE MANDATORY RIGHTS.
+
+9. General
+
+A separate written agreement signed or expressly issued by OneThingChanged
+controls to the extent it conflicts with these terms. An invalid provision
+does not invalidate the remaining provisions. No waiver is implied by a delay
+in enforcement. This English agreement is the governing license text; the
+Korean usage guide is an explanatory summary, not a broader permission grant.

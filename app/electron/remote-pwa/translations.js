@@ -1,6 +1,8 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['백그라운드 대기', 'Background wait', '等待后台任务', '等待背景工作', 'バックグラウンド待機', 'Esperando tareas en segundo plano'],
+  ['백그라운드 {0}개 대기', 'Waiting for {0} background agents', '等待 {0} 个后台任务', '等待 {0} 個背景工作', 'バックグラウンド {0} 件を待機', 'Esperando {0} tareas en segundo plano'],
   ['추가 크레딧 사용 가능', 'Extra credits available'],
   ['추가 크레딧 무제한', 'Unlimited extra credits'],
   ['크레딧 잔액 {0}', 'Credit balance {0}'],

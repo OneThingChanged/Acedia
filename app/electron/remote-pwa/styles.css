@@ -2164,3 +2164,18 @@ html[data-native-app="true"] .android-download-button { display: none !important
 .capacity-retry-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; margin: 8px 0; background: var(--panel); border: 1px solid #4283ba; border-radius: 7px; font-size: 12px; }
 .capacity-retry-notice.failed { border-color: #d29922; }
 .capacity-retry-notice button { flex-shrink: 0; padding: 6px 8px; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.status-dot.background { background: #d2b8ff; box-shadow: 0 0 0 2px #ceb0ff33; }
+.session-row[data-status=background] { position: relative; background: #b995ef18; }
+.session-row[data-status=background] .session-status, .status-chip.background, .chat-working-bar[data-status=background] { color: #d4baff; }
+.status-lane[data-status=background] .lane-title i { background: #d4baff; }
+@property --remote-background-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.session-row[data-status=background]::after {
+  content: ''; position: absolute; inset: 0; padding: 1.5px; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(from var(--remote-background-angle), #cdb2f52b 0deg, #cfb6ff55 110deg, #eadcff 165deg, #cdb2f52b 230deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: remote-background-orbit 3.2s linear infinite;
+}
+@keyframes remote-background-orbit { to { --remote-background-angle: 360deg; } }
+@media (prefers-reduced-motion:reduce) { .session-row[data-status=background]::after { animation: none; background: #cdb2f5; } }
