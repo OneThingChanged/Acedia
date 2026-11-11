@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.11
-status: preparing
+status: published
 last_updated: 2026-11-12
 ---
 
@@ -24,7 +24,23 @@ last_updated: 2026-11-12
 
 ## 검증
 
-- 전체 241개 파일·1,953개 테스트, TypeScript/Vite 빌드, 설치된 Codex·Claude의 격리 native CLI 검사를 확인한다.
+- 전체 241개 파일·1,953개 테스트가 통과했고 skip·todo는 0개다. TypeScript/Vite 빌드와 설치된 Codex·Claude의 격리 native CLI 검사를 통과했다.
 - 네 부모/자식 조합의 첫 대화 준비·착수·결과 제출·검토, 계정/모델 오류, Trust 범위, PTY 교체, UTF-8 원문과 중복 방지 검사를 포함한다.
 - 핵심 보호 로직 3개의 의도적인 고장은 관련 테스트가 탐지했다. 모바일 분기 고장은 보강 전 검사 3개가 놓쳤고, 보강 후에는 모두 탐지했다. 전체 mutation coverage나 실제 GUI 검증으로 해석하지 않는다.
-- 패키지 파일·라이선스·EXE 버전·NSIS CRC·압축 파일·설치 전 검증 모드·공개 다운로드 검증은 게시 기록에 추가한다.
+- 패키지의 Electron Node 런타임·인증된 HTTP에서 네 가지 제공자 조합, Claude 첫 수신함, 영속 실행/상태 API, 중복 생성·전송 방지와 native PTY를 확인했다. 기존 보드·큐·Remote/Dashboard·수집 API 회귀 검사도 통과했다. GUI나 운영 세션 조작은 수행하지 않았다.
+- ASAR 런타임·렌더러 파일 **396개**, Pixel Office 자산·라이선스 **20개**, 정본·이전 MIT·제3자 고지가 고정 소스와 일치했다. 별도 체크아웃의 node_modules junction으로 의존성이 빠진 첫 패키지는 실행 검사에서 거절했고 게시하지 않았다. 의존성을 실파일로 복사해 같은 소스·버전을 다시 빌드한 패키지만 게시했다.
+- 로컬·공개 EXE의 NSIS CRC **`5f048623`**, 압축 데이터 전체와 설치 전 검증 모드 시작을 통과했다. Authenticode는 기존 EXE 채널과 같은 **`NotSigned`**다. 실제 설치나 사용 중인 앱 종료는 수행하지 않았다.
+
+## 공개 배포 기록
+
+- 공개 릴리스: [v1.8.2.11](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.11).
+- 게시: **2026-11-12 04:25:42 KST**. 공개 전체 다운로드 검증: **04:26:40 KST**.
+- 제품 소스 커밋: `40af7d0de6a53dd1c36f577e8e1e5fccd97c9935`.
+- 실제 업데이터에서 **1.8.2.10 / 1.8.2.09 / 1.8.2.08 → 1.8.2.11** 감지를 확인했다. 공개 태그·manifest·EXE·blockmap의 버전·크기·SHA-256이 빌드 원본과 일치한다.
+- 앱 업데이트·재시작 후 적용한다. 기존 서명 APK 1.8.1.39를 포함하며 새 APK·Store·Company 배포는 수행하지 않았다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.11-x64.exe` | 156312612 | `67a845f6fc3d537330b3e1f324720b8716acb5e2f57f260218489df3dbc480b8` |
+| `Acedia-Setup-1.8.2.11-x64.exe.blockmap` | 163569 | `206eb717a641a118219292b6ed73924a51ea89900c5fd0aacfb64eee0133654b` |
+| `latest-exe.json` | 256 | `ca1646889edc4f2cf09f36889c6a58d5be5348d7d7c0d0028c152b60c5714a2b` |
