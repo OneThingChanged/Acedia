@@ -15,7 +15,7 @@ export function noteFirstMessageInput(entry, data) {
 }
 
 export function firstMessageSession({ entry, agent, conversationId, hook }) {
-  if (!entry || !agent || !Number.isFinite(entry.startedAt) || entry.ssh || entry.aiToolId !== 'codex' || entry.resumeContext
+  if (!entry || !agent || !Number.isFinite(entry.startedAt) || entry.ssh || !['codex', 'claude'].includes(entry.aiToolId) || entry.resumeContext
     || entry.firstMessageInput || entry.firstMessageSubmitted || !deliveryComposerReady(entry)) return null;
   // A known conversation must belong to this native launch's SessionStart.
   // A missing transcript alone is never proof that an old session is new.

@@ -614,6 +614,8 @@ export class HookService {
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-settings' ? 'session-settings'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/start' ? 'start'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-status' ? 'session-status'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/run' ? 'run'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/run-status' ? 'run-status'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/stop' ? 'stop'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/organize-sessions' ? 'organize-sessions'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/relocate-sessions' ? 'relocate-sessions'

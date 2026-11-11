@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { afterEach, expect, it, vi } from 'vitest';
 import { HookService } from './hook-service.mjs';
@@ -22,7 +23,7 @@ it('exposes collection tools over real stdio MCP and authenticated HTTP with bou
   const hook = new HookService({ baseDir: root, browserProvider });
   await hook.start();
   cleanups.push(() => new Promise(resolve => { hook.server.closeAllConnections(); hook.server.close(resolve); }));
-  const child = spawn(process.execPath, [path.resolve('electron/services/browser-mcp-server.mjs')], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], {
     windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
     env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'page-agent' },
   });

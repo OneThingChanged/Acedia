@@ -4,6 +4,7 @@ export function readTerminalStartupScreen(term: Pick<Terminal, 'buffer' | 'rows'
 export type TerminalStartupPrompt = ChatPrompt & {
   startupKind: 'folder-trust' | 'hook-review';
   selectedIndex?: number;
+  confirmIndex?: number;
   folder?: string;
   trustRoot?: string | null;
 };

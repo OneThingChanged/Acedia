@@ -42,6 +42,8 @@ import fs from "node:fs";
 import { createTerminalLauncher } from "./services/terminal-launcher.mjs";
 import { BackgroundWorkMonitor } from './services/background-work.mjs';
 import { selectedAccountId } from "./services/provider-accounts.mjs";
+import { ChildLaunchPolicy, childLaunchPreferences } from './services/child-launch-policy.mjs';
+import { SessionRuns } from './services/session-runs.mjs';
 import { promises as fsPromises } from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -75,7 +77,7 @@ import { submitPtyMessage, encodeConptyUnicode } from "./services/pty-submit.mjs
 import { createChatMessageSubmitter } from './services/chat-message-submission.mjs';
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
 import { firstMessageSession, noteFirstMessageInput } from './services/session-first-message.mjs';
-import { SessionReadiness } from './services/session-readiness.mjs';
+import { SessionReadiness, startupBlocker } from './services/session-readiness.mjs';
 import { StartupAutomation, startupPrompt } from './services/startup-automation.mjs';
 import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
@@ -617,6 +619,7 @@ async function pollActiveQuestions() {
     sessionDeliveries.poll();
     for (const id of ptys.keys()) startupAutomation.check(id);
     await taskOrchestration.tick();
+    await sessionRuns.tick();
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
@@ -1223,11 +1226,33 @@ const workspaceManagement = new WorkspaceManagement({
   readiness: body => sessionReadiness.handle(body),
   relocation: sessionRelocation,
   registry: sessionRegistry,
+  resolveLaunch: options => childLaunchPolicy.resolve(options),
   sessionState: id => {
     const target = deliveryContext(id);
     return { conversationId: target?.conversationId || null, state: target?.state || 'OFFLINE', reason: target?.reason || 'inactive' };
   },
 });
+const childLaunchPolicy = new ChildLaunchPolicy({
+  parent: id => {
+    const agent = sessionModelAgent(id), entry = ptys.get(id);
+    return agent ? { ...agent, ...(entry ? { generation: entry.startedAt, codexAccountId: entry.codexAccountId, claudeAccountId: entry.claudeAccountId,
+      codexPoolAccountId: entry.poolRouted ? accountPool.state.sessions[id]?.accountId || agent.codexPoolAccountId : agent.codexPoolAccountId,
+      modelSettings: sessionModelMemory.remember(entry) || entry.runtimeModelSettings || entry.modelSettings || agent.modelSettings } : {}) } : null;
+  },
+  preferences: async provider => {
+    const snapshot = await readStorageSnapshot();
+    return childLaunchPreferences(snapshot?.values, provider);
+  },
+  defaults: provider => sessionModelDefaults.get(provider).settings,
+  accounts: provider => accountsForTool(provider).list(),
+  models: ({ ownerId, ...args }) => providerModelCatalog({ ...args, id: ownerId, routed: args.provider === 'codex' && accountPool.state.enabled }),
+});
+const sessionRuns = new SessionRuns({
+  file: path.join(app.getPath('userData'), 'session-runs-v1.json'),
+  create: (ownerId, body, id) => workspaceManagement.createItem('create-session', body, ownerId, id),
+  readiness: body => sessionReadiness.handle(body), messages: sessionMessages, context: deliveryContext, active: id => ptys.has(id),
+});
+workspaceManagement.runs = sessionRuns;
 
 function dispatchRemoteSessionActivation(payload) {
   if (coordinatorWebContentsId === null) return false;
@@ -1375,9 +1400,14 @@ const taskOrchestration = new TaskOrchestration({
   runtime: id => ptys.get(id),
   createSession: payload => workspaceManagement.createTaskSession(payload),
   delivery: sessionDeliveries, read: readTaskSession,
-  models: id => sessionModels.read(id),
+  models: async (id, provider) => {
+    if (!provider || provider === sessionModelAgent(id)?.aiToolId) return sessionModels.read(id);
+    const launch = await childLaunchPolicy.resolve({ ownerId: id, aiToolId: provider });
+    return providerModelCatalog({ provider, accountId: selectedAccountId({ aiToolId: provider, ...launch }),
+      codexPoolAccountId: launch.codexPoolAccountId, id, routed: provider === 'codex' && accountPool.state.enabled });
+  },
   launchedModel: id => {
-    const entry = ptys.get(id), native = entry?.runtimeModelSettings || nativeCodexModel(entry);
+    const entry = ptys.get(id), native = entry?.runtimeModelSettings || nativeCodexModel(entry) || (entry?.aiToolId === 'claude' ? entry.modelSettings : null);
     // The native footer can omit Standard. In that case confirm the explicit
     // launch configuration now; the result still requires actual turn evidence.
     return native && !Object.hasOwn(native, 'serviceTier') && entry.modelSettings?.serviceTier === 'default'
@@ -1385,20 +1415,21 @@ const taskOrchestration = new TaskOrchestration({
   },
   actualModel: async (id, since) => {
     const entry = ptys.get(id);
-    if (!entry || entry.aiToolId !== 'codex' || entry.ssh) return null;
+    if (!entry || !['codex', 'claude'].includes(entry.aiToolId) || entry.ssh) return null;
+    const provider = entry.aiToolId;
     const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
-    const candidate = agentTranscripts.get(id) || resolveChatTranscriptBySession('codex', sessionId, { toolId: 'codex', accountId: selectedAccountId(entry) })?.path;
-    const root = accountTranscriptRoot('codex', selectedAccountId(entry));
+    const candidate = agentTranscripts.get(id) || resolveChatTranscriptBySession(provider, sessionId, { toolId: provider, accountId: selectedAccountId(entry) })?.path;
+    const root = accountTranscriptRoot(provider, selectedAccountId(entry));
     if (!candidate || !root || !sessionId || !isTranscriptInsideRoot(root, candidate) || !candidate.toLowerCase().includes(sessionId.toLowerCase())) return null;
-    const observed = await lastTurnModel(candidate, 'codex', since);
-    if (!observed) return null;
+    const observed = await lastTurnModel(candidate, provider, since);
+    if (!observed || ptys.get(id) !== entry) return null;
     const native = normalizeSessionModel(entry.runtimeModelSettings);
     return !Object.hasOwn(observed, 'serviceTier') && native && Object.hasOwn(native, 'serviceTier') && native.model === observed.model && native.effort === observed.effort
       ? { ...observed, serviceTier: native.serviceTier } : observed;
   },
   answer: (id, request) => questionResponder.answer(id, request),
   stop: id => sessionProviders.closeSession(id),
-  defaults: () => sessionModelDefaults.get('codex').settings,
+  defaults: (provider = 'codex') => sessionModelDefaults.get(provider).settings,
 });
 workspaceManagement.tasks = taskOrchestration;
 const startupAutomation = new StartupAutomation({
@@ -1410,14 +1441,16 @@ const startupAutomation = new StartupAutomation({
 async function readTaskSession(id) {
   const entry = ptys.get(id), startup = startupPrompt(entry);
   if (startup) return { sessionId: agentSessionIds.get(id) || accountBindings.get(id)?.sessionId || null, turn: null, question: null, startup };
+  const blocker = startupBlocker(entry);
+  if (blocker) return { sessionId: agentSessionIds.get(id) || accountBindings.get(id)?.sessionId || null, turn: null, question: blocker };
   const current = await currentQuestion(id);
   const result = current && entry?.startupTrustConfirmation ? { ...current, startupTrust: entry.startupTrustConfirmation } : current;
   if (!result) return freshTaskSession(id);
   if (result.turn || !result.question) return result;
   // The native command approval reader owns the live question but omits the
   // transcript turn. Bind both before exposing it in the task inspector.
-  if (!entry || entry.aiToolId !== 'codex') return result;
-  const transcript = await activeQuestions.read({ id, tool: 'codex', root: accountTranscriptRoot('codex', selectedAccountId(entry)),
+  if (!entry || !['codex', 'claude'].includes(entry.aiToolId)) return result;
+  const transcript = await activeQuestions.read({ id, tool: entry.aiToolId, root: accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry)),
     transcriptPath: agentTranscripts.get(id), sessionId: result.sessionId, startedAt: entry.startedAt });
   return ptys.get(id) === entry && transcript?.sessionId === result.sessionId ? { ...transcript, ...result } : result;
 }
@@ -1435,7 +1468,7 @@ function freshTaskSession(id) {
   const startedIdentity = conversationId && hook?.event === 'session-start' && hook.session_id === conversationId && Number.isFinite(hook.lastTs) && hook.lastTs >= entry?.startedAt;
   if (attempt?.sessionId !== id || !attempt.creationAcknowledged || attempt.turnId || worker.task.state !== 'dispatching'
     || !entry || entry.firstMessageInput || entry.firstMessageSubmitted || !(freshIdentity || startedIdentity)
-    || !deliveryComposerReady(entry) || !(entry.runtimeModelSettings || nativeCodexModel(entry))) return null;
+    || !deliveryComposerReady(entry) || !(entry.runtimeModelSettings || nativeCodexModel(entry) || entry.aiToolId === 'claude' && entry.modelSettings)) return null;
   return { sessionId: conversationId || null, turn: null, question: null, lifecycle: 'idle', startupTrust: entry.startupTrustConfirmation };
 }
 function modelInputReady(entry) {
@@ -6588,6 +6621,7 @@ app.on("before-quit", (event) => {
   if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
   capacityRetry.dispose();
   sessionDeliveries.dispose();
+  sessionRuns.close();
   taskOrchestration.close();
   if (hookMaintenanceTimer) {
     clearInterval(hookMaintenanceTimer);

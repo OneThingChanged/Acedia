@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { derivePendingQuestions, deriveTurnLifecycle } from './chat-transcript.mjs';
 import { isTranscriptInsideRoot } from './transcript-path.mjs';
 import { codexRetryTurn } from './codex-capacity-retry.mjs';
-import { deliveryEvidence } from './session-delivery.mjs';
+import { deliveryEvidence, claudeDeliveryEvidence } from './session-delivery.mjs';
 
 export const QUESTION_TAIL_BYTES = 256 * 1024;
 
@@ -76,8 +76,8 @@ export class ActiveQuestions {
       const question = questions.find(q => !q.async) || questions.find(q => q.async) || null;
       const hasTurnMarker = /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
       const lifecycle = tool === 'codex' && !hasTurnMarker ? same ? previous.result.lifecycle : 'working' : deriveTurnLifecycle(text, tool);
-      const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : null;
-      const delivery = tool === 'codex' ? deliveryEvidence(text, same && stat.size >= previous.size ? previous.delivery : undefined) : undefined;
+      const delivery = ['codex', 'claude'].includes(tool) ? (tool === 'claude' ? claudeDeliveryEvidence : deliveryEvidence)(text, same && stat.size >= previous.size ? previous.delivery : undefined) : undefined;
+      const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : delivery?.turn || null;
       const result = { question, lifecycle, sessionId, turn, ...(delivery ? { deliveries: delivery.receipts } : {}) };
       this.cache.set(id, { path: transcriptPath, startedAt, size: stat.size, mtime: stat.mtimeMs, questions, delivery, result });
       return result;

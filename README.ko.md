@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-[![Version](https://img.shields.io/badge/version-1.8.2.10-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.2.11-blue)](https://github.com/OneThingChanged/Acedia/releases/latest)
 [![License: Personal Use](https://img.shields.io/badge/license-Personal_Use%20%2F%20Permission_Required-purple)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/OneThingChanged/Multiagent)
 

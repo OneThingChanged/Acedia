@@ -54,9 +54,17 @@ it('does not wait past the budget or cross a changed runtime/conversation', asyn
 it('reports offline, other providers and invalid status options without activating a session', async () => {
   const f = fixture(); f.target.entry = null;
   expect(await f.service.handle({ sessionId: 'offline' })).toMatchObject({ phase: 'offline', active: false });
-  f.target.entry = { aiToolId: 'claude' };
-  expect(await f.service.handle({ sessionId: 'claude' })).toMatchObject({ phase: 'unsupported', active: true });
+  f.target.entry = { aiToolId: 'qwen' };
+  expect(await f.service.handle({ sessionId: 'qwen' })).toMatchObject({ phase: 'unsupported', active: true });
   for (const body of [null, {}, { sessionId: 'x', waitMs: -1 }, { sessionId: 'x', waitMs: 10001 }, { sessionId: 'x', approve: true }]) {
     await expect(f.service.handle(body)).rejects.toMatchObject({ statusCode: 400 });
   }
+});
+it('waits for a fresh Claude composer and reports authentication without exposing environment keys or approving it', async () => {
+  const f = fixture(); f.entry.aiToolId = 'claude';
+  expect(await f.service.handle({ sessionId: 'claude', waitMs: 1000 })).toMatchObject({ ready: true, firstMessageReady: true });
+  f.entry.filter.viewportText = () => 'Detected a custom API key in your environment\nANTHROPIC_API_KEY: fixture-secret\nDo you want to use this API key?\nEnter to confirm · Esc to cancel';
+  const state = await f.service.handle({ sessionId: 'claude', waitMs: 1000 });
+  expect(state).toMatchObject({ phase: 'question', ready: false, reason: 'authentication-required', question: { kind: 'authentication' } });
+  expect(JSON.stringify(state)).not.toContain('fixture-secret');
 });

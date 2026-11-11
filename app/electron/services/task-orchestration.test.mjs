@@ -15,7 +15,7 @@ function fixture(options = {}) {
   const catalog = { projects: [{ id: 'p', folder: root }], agents: [{ id: 'a', projectId: 'p', aiToolId: 'codex' }, { id: 'other', projectId: 'p', aiToolId: 'codex' }] };
   const live = new Map([['a', {}], ['other', {}]]), reads = new Map(), receipts = new Map();
   const createSession = vi.fn(async payload => {
-    catalog.agents.push({ id: payload.id, projectId: 'p', aiToolId: 'codex' }); live.set(payload.id, { ...payload, cwd: payload.folder });
+    catalog.agents.push({ id: payload.id, projectId: 'p', aiToolId: payload.aiToolId || 'codex' }); live.set(payload.id, { ...payload, cwd: payload.folder });
     reads.set(payload.id, { sessionId: 'conversation-' + payload.id, turn: { id: 'before' }, question: null });
     if (options.startup) reads.get(payload.id).startup = { startupKind: options.startup };
     if (options.lostCreate) throw Error('creation response lost');
@@ -48,6 +48,18 @@ function fixture(options = {}) {
 }
 
 describe('durable independent Codex task orchestration', () => {
+  for (const owner of ['codex', 'claude']) for (const child of ['codex', 'claude']) it(`${owner} parent → ${child} worker completes the same result/review contract`, async () => {
+    const f = fixture(); f.catalog.agents[0].aiToolId = owner;
+    const claude = { model: 'sonnet', effort: 'medium' };
+    f.engine.defaults = provider => provider === 'claude' ? claude : model;
+    f.engine.models = async (id, provider) => ({ models: (provider === 'claude' ? [claude] : Object.values(policy)).map(s => ({ model: s.model, efforts: [{ effort: s.effort }] })) });
+    const { run } = await f.plan([{ ...task('one'), aiToolId: child }]);
+    await until(() => f.engine.data.runs[0].tasks[0].state === 'running');
+    expect(f.createSession.mock.calls[0][0]).toMatchObject({ ownerId: 'a', aiToolId: child, modelSettings: child === 'claude' ? claude : model });
+    await f.result(run); await f.review(run);
+    await f.call('finish', { runId: run.id, summary: 'All required worker checks and review passed.' });
+    expect(f.engine.data.runs[0].state).toBe('completed');
+  });
   it('keeps startup approvals waiting past the launch deadline and sends once after confirmation', async () => {
     const f = fixture({ startup: 'folder-trust' });
     let clock = Date.now(); f.engine.now = () => clock;
@@ -97,7 +109,8 @@ describe('durable independent Codex task orchestration', () => {
       body: { policy, ownerId: 'a', revision: 0, autoTrustProjectFolders: false } });
     expect(restored.startupTrustRoot(child.id)).toBe(taskPath(f.root, '.'));
     expect(restored.startupTrustRoot('a')).toBe(null);
-    child.aiToolId = 'claude'; expect(restored.startupTrustRoot(child.id)).toBe(null);
+    child.aiToolId = 'claude'; expect(restored.startupTrustRoot(child.id)).toBe(taskPath(f.root, '.'));
+    child.aiToolId = 'qwen'; expect(restored.startupTrustRoot(child.id)).toBe(null);
     child.aiToolId = 'codex'; child.sshHostId = 'ssh'; expect(restored.startupTrustRoot(child.id)).toBe(null);
     delete child.sshHostId; f.catalog.projects[0].sshHostId = 'ssh'; expect(restored.startupTrustRoot(child.id)).toBe(null);
     delete f.catalog.projects[0].sshHostId;

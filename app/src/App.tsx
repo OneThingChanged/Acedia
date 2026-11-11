@@ -3893,6 +3893,8 @@ function App() {
       name: string;
       aiToolId: string;
       dangerous?: boolean;
+      codexAccountId?: string;
+      claudeAccountId?: string;
       codexPoolAccountId?: string;
       sessionHierarchy?: SessionHierarchy;
       project?: { name: string; folder: string };
@@ -3943,11 +3945,14 @@ function App() {
       }
       const creation = payload.project ? createProject({
         ...payload.project, aiToolId: payload.aiToolId, dangerous: newSessionDangerous(payload.aiToolId, payload.dangerous),
+        codexAccountId: payload.codexAccountId, codexPoolAccountId: payload.codexPoolAccountId, claudeAccountId: payload.claudeAccountId,
       }, { projectId: payload.projectId, agentId: payload.id, background: payload.workspaceManaged }) : createAgent(
         {
           name,
           aiToolId: payload.aiToolId,
           dangerous: newSessionDangerous(payload.aiToolId, payload.dangerous),
+          codexAccountId: payload.codexAccountId,
+          claudeAccountId: payload.claudeAccountId,
           codexPoolAccountId: payload.codexPoolAccountId,
           sessionHierarchy: payload.sessionHierarchy,
         },
@@ -3955,6 +3960,10 @@ function App() {
       );
       void creation.then(async result => {
         if (!result.created) return complete({ ok: false, error: result.error, statusCode: 409 });
+        if (payload.project && payload.modelSettings) {
+          agentsRef.current = agentsRef.current.map(agent => agent.id === result.id ? { ...agent, modelSettings: payload.modelSettings } : agent);
+          setAgents(agentsRef.current);
+        }
         if (payload.project && payload.sessionHierarchy) {
           agentsRef.current = agentsRef.current.map(agent => agent.id !== result.id ? agent : { ...agent, sessionHierarchy: normalizeSessionHierarchy(payload.sessionHierarchy) });
           setAgents(agentsRef.current);

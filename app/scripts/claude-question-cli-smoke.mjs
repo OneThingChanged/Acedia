@@ -12,6 +12,12 @@ import {QuestionResponder} from '../electron/services/question-responder.mjs';
 import {claudeQuestionFrame} from '../electron/services/claude-question-responder.mjs';
 import {ActiveQuestions} from '../electron/services/active-questions.mjs';
 import {devElectronEnvironment} from './electron-dev-environment.mjs';
+import {StartupAutomation, startupPrompt} from '../electron/services/startup-automation.mjs';
+import {firstMessageSession} from '../electron/services/session-first-message.mjs';
+import {SessionDeliveries, deliveryComposerReady} from '../electron/services/session-delivery.mjs';
+import {SessionReadiness} from '../electron/services/session-readiness.mjs';
+import {SessionMessages} from '../electron/services/session-messages.mjs';
+import {submitPtyMessage, encodeConptyUnicode} from '../electron/services/pty-submit.mjs';
 const require=createRequire(import.meta.url),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const cases=[
   {name:'three',form:{questions:[
@@ -28,7 +34,9 @@ async function exercise(root){
   const binary=process.env.ACEDIA_CLAUDE_BINARY;
   assert.ok(binary&&path.isAbsolute(binary),'Set ACEDIA_CLAUDE_BINARY to the installed Claude executable');
   const screen=new TrackedTerminalFilter(45,110),asked=new Set(),answered=new Map();
-  let phase=0,child,raw='',modelRequests=0,debugTranscript;
+  const handoff = process.env.ACEDIA_CLAUDE_HANDOFF_FIXTURE === '1';
+  const launchEntry = { id:'fixture', aiToolId:'claude', cwd:root, filter:screen, startedAt:Date.now() };
+  let phase=0,child,raw='',modelRequests=0,debugTranscript,childExited=false;
   const toolId=()=>`toolu_acedia_question_${phase}`;
   const server=http.createServer(async(request,response)=>{
     let rawBody='';for await(const chunk of request)rawBody+=chunk;
@@ -38,7 +46,7 @@ async function exercise(root){
     for(const message of body.messages||[])for(const item of Array.isArray(message.content)?message.content:[]){
       if(item.type==='tool_result'&&item.tool_use_id?.startsWith('toolu_acedia_question_'))answered.set(item.tool_use_id,item);
     }
-    const ask=!asked.has(phase)&&body.tools?.some(tool=>tool.name==='AskUserQuestion');if(ask)asked.add(phase);
+    const ask=!handoff&&!asked.has(phase)&&body.tools?.some(tool=>tool.name==='AskUserQuestion');if(ask)asked.add(phase);
     const block=ask?{type:'tool_use',id:toolId(),name:'AskUserQuestion',input:cases[phase].form}:{type:'text',text:'CLAUDE_QUESTION_FLOW_OK'};
     const message={id:'msg_fixture_'+modelRequests,type:'message',role:'assistant',model:body.model,content:[block],stop_reason:ask?'tool_use':'end_turn',stop_sequence:null,usage:{input_tokens:100,output_tokens:30}};
     if(!body.stream){response.writeHead(200,{'content-type':'application/json'});response.end(JSON.stringify(message));return;}
@@ -58,14 +66,54 @@ async function exercise(root){
     const env={...process.env,HOME:home,USERPROFILE:home,APPDATA:path.join(home,'AppData/Roaming'),LOCALAPPDATA:path.join(home,'AppData/Local'),CLAUDE_CONFIG_DIR:config,TERM:'xterm-256color',ANTHROPIC_API_KEY:'fixture-only',ANTHROPIC_BASE_URL:'http://127.0.0.1:'+server.address().port,CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1',DISABLE_AUTOUPDATER:'1'};
     for(const key of Object.keys(env))if(/TOKEN|API_KEY|AUTH|CODEX|MULTIAGENT|GEMINI/.test(key)&&key!=='ANTHROPIC_API_KEY')delete env[key];
     child=require('node-pty').spawn(binary,['--setting-sources','','--settings',settings,'--model','sonnet'],{cwd:root,env,cols:110,rows:45,useConpty:true});
+    child.onExit(()=>{childExited=true;});
     screen.shadow.onData(data=>child.write(data));child.onData(data=>{raw+=data;screen.push(data);});
-    await until(()=>screen.viewportText().includes('Yes, I trust this folder'),'isolated workspace trust');
-    await pause(800);child.write('\x1b[B');
-    await until(()=>/❯\s+Yes, I trust this folder/.test(screen.viewportText()),'fixture trust selection');child.write('\r');
+    launchEntry.process=child;
+    if(handoff){
+      await until(()=>startupPrompt(launchEntry)?.startupKind==='folder-trust','native parsed Claude trust');
+      await pause(300);
+      const writes=[],automation=new StartupAutomation({entry:()=>launchEntry,allowedRoot:()=>root,write:(_id,key)=>{writes.push(key);child.write(key);}});
+      await until(()=>automation.check('fixture'),'scoped Claude automatic trust');
+      assert.deepEqual(writes,['\x1b[B','\r']);assert.equal(automation.check('fixture'),false);
+      console.log('NATIVE_CLAUDE_SCOPED_TRUST_ONCE_NO_WINDOW_OK');
+    }else{
+      await until(()=>screen.viewportText().includes('Yes, I trust this folder'),'isolated workspace trust');
+      await pause(800);child.write('\x1b[B');
+      await until(()=>/❯\s+Yes, I trust this folder/.test(screen.viewportText()),'fixture trust selection');child.write('\r');
+    }
     await until(()=>screen.viewportText().includes('Detected a custom API key'),'fixture key confirmation');
     await pause(500);child.write('\x1b[A');
     await until(()=>/❯\s+Yes/.test(screen.viewportText()),'fixture key selection');child.write('\r');
     await until(()=>screen.viewportText().includes('auto mode on'),'fixture composer');
+    if(handoff){
+      await until(()=>deliveryComposerReady(launchEntry),'native empty Claude composer');
+      const monitor=new ActiveQuestions(),parentEntry={};let sessionId,transcriptPath;
+      const context=id=>id==='parent'?{entry:parentEntry,name:'Parent'}:{entry:launchEntry,conversationId:sessionId||null,state:'WAIT',reason:'ready'};
+      const read=async()=>{
+        if(!modelRequests)return null;
+        const files=(await fs.readdir(config,{recursive:true})).filter(file=>/[0-9a-f-]{36}\.jsonl$/i.test(file)&&!file.includes('subagents'));
+        if(!files.length)return null;assert.equal(files.length,1);
+        transcriptPath=path.join(config,files[0]);debugTranscript=transcriptPath;sessionId=path.basename(transcriptPath,'.jsonl');
+        return monitor.read({id:'fixture',tool:'claude',root:config,transcriptPath,sessionId});
+      };
+      const freshRead=()=>firstMessageSession({entry:launchEntry,agent:{id:'fixture'},conversationId:sessionId});
+      let submits=0;
+      const deliveries=new SessionDeliveries({file:path.join(root,'delivery.json'),context,read,freshRead,ready:t=>deliveryComposerReady(t.entry),
+        submit:async(_id,entry,message,isCurrent)=>{submits++;entry.firstMessageSubmitted=true;return submitPtyMessage({ptyProcess:child,message,isCurrent,encodeInput:encodeConptyUnicode});}});
+      const ready=new SessionReadiness({context,read,freshRead,ready:deliveries.ready});
+      const messages=new SessionMessages({file:path.join(root,'inbox.json'),sessionFor:id=>({id,aiToolId:'claude'}),context,
+        prepare:(id,{waitMs,context:pinned})=>ready.waitForReady(id,waitMs,pinned),
+        notify:(agentId,body)=>deliveries.handle({action:'send',agentId,body,freshSession:true,asciiEnvelope:true}),
+        receipt:(agentId,requestKey)=>deliveries.handle({action:'delivery',agentId,body:{requestKey,waitMs:0}})});
+      const status=await ready.handle({sessionId:'fixture'});assert.equal(status.firstMessageReady,true);assert.equal(status.conversationId,null);
+      const body={sessionId:'fixture',requestKey:'native-first',message:'한글 첫 지시 → 내용 보존\n격리 CLI 테스트',waitMs:0};
+      const sent=await messages.handle({action:'message-send',agentId:'parent',body});
+      await until(async()=>{const result=await read();deliveries.observe('fixture',launchEntry,result);return deliveries.list('parent')[0]?.status==='started';},'native Claude exact user/assistant receipt');
+      const inbox=await messages.handle({action:'message-receive',agentId:'fixture',body:{messageId:sent.messageId}});assert.equal(inbox.messages[0].message,body.message);
+      await messages.handle({action:'message-send',agentId:'parent',body});assert.equal(submits,1);
+      assert.ok(deliveries.list('parent')[0].turnId);assert.equal(deliveries.list('parent')[0].conversationId,sessionId);
+      deliveries.dispose();console.log('NATIVE_CLAUDE_FIRST_MESSAGE_UTF8_EXACT_TURN_AND_NO_REPLAY_OK');return;
+    }
     const monitor=new ActiveQuestions(),entry={aiToolId:'claude',process:child};let transcriptPath,sessionId;
     const current=()=>monitor.read({id:'fixture',tool:'claude',root:config,transcriptPath,sessionId});
     const responder=new QuestionResponder({entry:()=>entry,current,snapshot:()=>screen.viewportText()});
@@ -91,7 +139,7 @@ async function exercise(root){
     await fs.writeFile(path.join(directory,'screen.txt'),screen.viewportText());await fs.writeFile(path.join(directory,'raw.txt'),raw);
     if(debugTranscript)await fs.copyFile(debugTranscript,path.join(directory,'transcript.jsonl'));throw error;
   }finally{
-    if(child){child.write('\x03');await pause(200);child.write('\x03');await pause(300);try{child.kill();}catch{}}
+    if(child&&!childExited){child.write('\x03');await pause(200);if(!childExited)child.write('\x03');await pause(300);if(!childExited)try{child.kill();}catch{}}
     screen.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   }
 }

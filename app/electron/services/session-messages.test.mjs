@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -167,7 +168,7 @@ async function integration() {
   const headers = { authorization: 'Bearer ' + hook.token, 'x-acedia-agent-id': 'sender', 'content-type': 'application/json; charset=utf-8' };
   const base = `http://127.0.0.1:${hook.port}/integration/v1/workspace/messages`;
   const client = agentId => {
-    const child = spawn(process.execPath, [path.resolve('electron/services/browser-mcp-server.mjs')], { windowsHide: true, env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: agentId }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], { windowsHide: true, env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: agentId }, stdio: ['pipe', 'pipe', 'ignore'] });
     cleanups.push(() => { child.stdin.end(); child.kill(); });
     child.stdout.setEncoding('utf8'); let buffer = '', next = 0; const pending = new Map();
     child.stdout.on('data', chunk => { buffer += chunk; let end; while ((end = buffer.indexOf('\n')) >= 0) { const row = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1); pending.get(row.id)?.(row.result); pending.delete(row.id); } });

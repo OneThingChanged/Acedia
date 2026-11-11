@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from 'node:url';
 import { spawn } from "node:child_process";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
@@ -187,7 +188,7 @@ command = "old-helper working"
 
 describe("browser MCP stdio bridge", () => {
   it("completes initialize using the same environment-based launcher as Codex", async () => {
-    const scriptPath = path.resolve("electron", "services", "browser-mcp-server.mjs");
+    const scriptPath = fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url));
     const child = spawn(process.execPath, [
       "-e",
       "import(require('node:url').pathToFileURL(process.env.MULTIAGENT_MCP_SCRIPT))",
@@ -240,7 +241,7 @@ describe("browser MCP stdio bridge", () => {
   });
 
   it("publishes state-aware browser form tools", async () => {
-    const scriptPath = path.resolve("electron", "services", "browser-mcp-server.mjs");
+    const scriptPath = fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url));
     const child = spawn(process.execPath, [
       "-e",
       "import(require('node:url').pathToFileURL(process.env.MULTIAGENT_MCP_SCRIPT))",

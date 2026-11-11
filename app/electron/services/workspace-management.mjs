@@ -14,8 +14,8 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, deliveries = null, messages = null, sessionSettings = null, sessionStart = null, readiness = null, relocation = null, registry = null, sessionState = () => ({}) }) {
-    Object.assign(this, { catalog, create, isActive, deliveries, messages, sessionSettings, sessionStart, readiness, relocation, registry, sessionState });
+  constructor({ catalog, create, isActive, deliveries = null, messages = null, sessionSettings = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}) }) {
+    Object.assign(this, { catalog, create, isActive, deliveries, messages, sessionSettings, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
   }
   snapshot() {
@@ -26,20 +26,22 @@ export class WorkspaceManagement {
       availableTools: (catalog.availableTools || []).map(t => ({ id: t.id, label: t.label })),
     };
   }
-  async createTaskSession({ id, ownerId, projectId, folder, name, modelSettings }) {
+  async createTaskSession({ id, ownerId, projectId, folder, name, modelSettings, aiToolId = 'codex' }) {
     const snapshot = this.snapshot();
     const caller = (this.catalog().agents || []).find(a => a.id === ownerId);
-    if (!this.isActive(ownerId) || caller?.projectId !== projectId || caller.aiToolId !== 'codex'
+    if (!this.isActive(ownerId) || caller?.projectId !== projectId || !['codex', 'claude'].includes(caller.aiToolId) || !['codex', 'claude'].includes(aiToolId)
       || !snapshot.projects.some(p => p.id === projectId && p.local)
-      || !snapshot.availableTools.some(t => t.id === 'codex') || snapshot.sessions.some(s => s.id === id)) throw fail('전용 작업 세션을 생성할 수 없습니다.', 409);
-    // Leave permission selection to the coordinator's shared new-session policy.
-    // Do not copy the owner's stored or running permission policy.
-    return this.create({ id, projectId, name, aiToolId: 'codex', workspaceManaged: true, modelSettings,
+      || !snapshot.availableTools.some(t => t.id === aiToolId) || snapshot.sessions.some(s => s.id === id)) throw fail('전용 작업 세션을 생성할 수 없습니다.', 409);
+    // Resolve shared creation preferences before launch; do not copy the
+    // owner's stored or running permission policy.
+    const launch = this.resolveLaunch ? await this.resolveLaunch({ ownerId, aiToolId, modelSettings }) : { modelSettings };
+    return this.create({ id, projectId, name, aiToolId, workspaceManaged: true, ...launch,
       sessionHierarchy: { createdById: ownerId, parentId: ownerId, inheritFolder: false, folderOverride: folder, inheritInstructions: true, inheritModel: false } });
   }
   handle({ action, body = {}, agentId }) {
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'run' || action === 'run-status') return this.runs ? this.runs.handle({ action, agentId, body }) : Promise.reject(fail('Child launch service unavailable', 503));
     if (action === 'message-send' || action === 'message-receive') return this.messages ? this.messages.handle({ action, agentId, body }) : Promise.reject(fail('Session messages unavailable', 503));
     if (action === 'start') return this.sessionStart ? this.sessionStart.handle(body) : Promise.reject(fail('Session start unavailable', 503));
     if (action === 'session-status') return this.readiness ? this.readiness(body) : Promise.reject(fail('Session readiness unavailable', 503));
@@ -56,11 +58,11 @@ export class WorkspaceManagement {
     const next = this.queue.catch(() => {}).then(() => this.createItem(action, body, agentId));
     this.queue = next; return next;
   }
-  async createItem(action, body, agentId) {
+  async createItem(action, body, agentId, reservedId) {
     if (!this.isActive(agentId)) throw fail('호출한 Acedia 세션이 종료되었습니다.', 409);
-    const allowed = action === 'create-project' ? ['folder', 'name', 'aiToolId', 'start'] : ['projectId', 'name', 'aiToolId', 'requestKey', 'parentSessionId', 'folder', 'start'];
+    const allowed = action === 'create-project' ? ['folder', 'name', 'aiToolId', 'start'] : ['projectId', 'name', 'aiToolId', 'requestKey', 'parentSessionId', 'folder', 'start', 'modelSettings', 'accountId', 'dangerous'];
     if (Object.keys(body).some(key => !allowed.includes(key))) throw fail('지원하지 않는 생성 옵션입니다.');
-    if (Object.entries(body).some(([key, value]) => key === 'start' ? typeof value !== 'boolean' : key === 'parentSessionId' ? value !== null && typeof value !== 'string' : typeof value !== 'string')) throw fail('생성 옵션의 자료형을 확인하세요.');
+    if (Object.entries(body).some(([key, value]) => ['start', 'dangerous'].includes(key) ? typeof value !== 'boolean' : key === 'modelSettings' ? !value || typeof value !== 'object' || Array.isArray(value) : key === 'parentSessionId' ? value !== null && typeof value !== 'string' : typeof value !== 'string')) throw fail('생성 옵션의 자료형을 확인하세요.');
     const aiToolId = string(body.aiToolId) || 'codex';
     const name = string(body.name);
     if (name.length > 120 || /[\x00-\x1f]/.test(name)) throw fail('이름은 제어 문자 없이 120자 이내로 입력하세요.');
@@ -100,7 +102,7 @@ export class WorkspaceManagement {
     const parentId = action === 'create-session' ? explicitParent ? body.parentSessionId : caller?.projectId === projectId ? agentId : undefined : undefined;
     const parent = parentId ? (this.catalog().agents || []).find(a => a.id === parentId) : null;
     if (parentId && (!parent || parent.projectId !== projectId || parent.sshHostId)) throw fail('부모는 같은 로컬 프로젝트에 등록된 세션이어야 합니다.', 409);
-    const signature = JSON.stringify({ action, projectId: action === 'create-session' ? projectId : null, name, aiToolId, parentId: parentId || null, folder: folder || null, start: body.start !== false });
+    const signature = JSON.stringify({ action, projectId: action === 'create-session' ? projectId : null, name, aiToolId, parentId: parentId || null, folder: folder || null, start: body.start !== false, modelSettings: body.modelSettings, accountId: body.accountId, dangerous: body.dangerous });
     const previous = this.results.get(key);
     if (previous) {
       if (action === 'create-session' && signature !== previous.signature) throw fail('같은 requestKey에 다른 생성 옵션을 사용할 수 없습니다.', 409);
@@ -110,8 +112,9 @@ export class WorkspaceManagement {
     if (!this.snapshot().availableTools.some(t => t.id === aiToolId) || aiToolId === 'none') throw fail('사용 가능한 AI 도구를 선택하세요.', 409);
     // Retain an uncertain/failed acknowledgement too: retrying a timeout must
     // not silently create a second session. The list operation can reconcile it.
-    const promise = Promise.resolve().then(() => this.create({ projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, workspaceManaged: true, start: body.start !== false,
-      sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: parent.aiToolId === aiToolId } : {}), ...(folder ? { inheritFolder: false, folderOverride: folder } : {}) },
+    const promise = Promise.resolve().then(async () => this.create({ ...(reservedId ? { id: reservedId } : {}), projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, workspaceManaged: true, start: body.start !== false,
+      ...(this.resolveLaunch && ['codex', 'claude'].includes(aiToolId) ? await this.resolveLaunch({ ownerId: agentId, aiToolId, modelSettings: body.modelSettings, accountId: body.accountId, dangerous: body.dangerous }) : {}),
+      sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: !this.resolveLaunch && parent.aiToolId === aiToolId } : {}), ...(folder ? { inheritFolder: false, folderOverride: folder } : {}) },
     }))
       .then(result => ({ created: true, projectId, sessionId: result.id, active: this.isActive(result.id), ...(result.startError ? { startError: result.startError } : {}) }));
     this.results.set(key, { signature, promise });

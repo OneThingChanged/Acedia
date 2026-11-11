@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.11](release-1-8-2-11.md) - Codex·Claude 자동 하위 실행, 영속 첫 지시 전달과 테스트 품질 보강.
+* [테스트 유효성 점검](test-quality-audit-2026-11-12.md) - 1,953개 실행 사례의 정적 조사, 대표 결함 탐지와 구조 검사 한계.
 * [Acedia 1.8.2.10](release-1-8-2-10.md) - 프로젝트 보드 확인 목록·개별 결과 보존, 연보라색 Claude 백그라운드 대기 표시와 개인용·조직 사전허가 라이선스.
 * [사용 조건과 라이선스 범위](licensing.md) - 개인 무료·기업 사전 허가, 재배포·수정 제한, 이전 MIT 및 제3자 권한.
 
@@ -154,7 +156,7 @@ configuration that supports it.
 * [Session lifecycle and resume](session-lifecycle-and-resume.md) - PTY startup, hooks, cancellation, shutdown, and provider resume.
 * [Local Dashboard](local-dashboard.md) - Loopback monitoring, terminal, documents and downloads, usage, session model/effort editing and visible waiting questions.
 * [MiraControl integration](miracontrol-integration.md) - Authenticated session state, activation, and guarded input API.
-* [Workspace MCP](workspace-mcp.md) - Project/session creation and verified task delivery between live Codex sessions.
+* [Workspace MCP](workspace-mcp.md) - Project/session creation and verified task delivery; [Codex·Claude 하위 실행](child-session-launch.md) covers background readiness, scoped Trust, provider settings and durable first-task handoff.
 * [Remote service](remote-service.md) - Remote/PWA/Android access, filters, downloads, session model/effort editing and authentication boundaries; [2026-10-12 desktop/Remote comparison](remote-service.md#desktop-and-remote-feature-comparison-2026-10-12) records existing features and remaining UI gaps.
 * [API 단가 기준 환산액](usage-cost-comparison.md) - 중앙 서버·Remote의 USD 비교, 단가 기준, 제외 기록과 검증·적용 상태.
 * [Usage accounting](usage-accounting.md) - Local token indexing, historical aggregation, live account quota refresh and failure states.

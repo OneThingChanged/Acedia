@@ -34,6 +34,8 @@ describe("Codex terminal startup questions", () => {
     expect(parse(hooks)).toMatchObject({ startupKind: "hook-review", selectedIndex: 1, options: [{ send: "1" }, { send: "2" }, { send: "3" }] });
     expect(parse(trust)?.text).toContain("K:\\AI\\Nogari");
     expect(parse(trust)?.text).toContain("Folder\nsettings can run code automatically");
+    expect(parse(trust.replace('2. Quit', '2. Back to Agent Command Center').replace('esc quit', 'esc back'))).toMatchObject({ startupKind: 'folder-trust', selectedIndex: 0 });
+    expect(parse(trust.replace('2. Quit', '2. Back to Agent Command Center'))).toBeNull();
   });
 
   it("ignores unsupported providers, conversation quotations, incomplete or departed screens", () => {

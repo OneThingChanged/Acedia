@@ -10,7 +10,7 @@ const canonical = value => {
 };
 const within = (root, value) => value === root || value.startsWith(root + path.sep);
 export function startupPrompt(entry) {
-  if (!entry || entry.ssh || entry.aiToolId !== 'codex') return null;
+  if (!entry || entry.ssh || !['codex', 'claude'].includes(entry.aiToolId)) return null;
   const screen = entry.filter?.shadow ? readTerminalStartupScreen(entry.filter.shadow) : entry.filter?.viewportText?.() || '';
   return parseTerminalStartupPrompt(screen, entry.aiToolId);
 }
@@ -21,10 +21,11 @@ export class StartupAutomation {
   constructor({ entry, allowedRoot, write, blocked = () => false, publish = () => {} }) {
     Object.assign(this, { entry, allowedRoot, write, blocked, publish });
     this.attempted = new WeakSet();
+    this.moved = new WeakMap();
   }
   check(id) {
     const entry = this.entry(id), prompt = startupPrompt(entry);
-    if (!entry || this.attempted.has(entry) || this.blocked(id) || prompt?.startupKind !== 'folder-trust' || prompt.selectedIndex !== 0) return false;
+    if (!entry || this.attempted.has(entry) || this.blocked(id) || prompt?.startupKind !== 'folder-trust' || prompt.selectedIndex === undefined) return false;
     const inputAt = entry.lastInputAt;
     let root, folder, trustRoot;
     try {
@@ -37,6 +38,18 @@ export class StartupAutomation {
     if (this.entry(id) !== entry || entry.lastInputAt !== inputAt || this.blocked(id)
       || JSON.stringify(livePrompt) !== JSON.stringify(prompt)) return false;
     try { if (canonical(this.allowedRoot(id)) !== root) return false; } catch { return false; }
+    const moved = this.moved.get(entry), confirmIndex = prompt.confirmIndex ?? 0;
+    if (moved && (entry.lastInputAt !== moved.inputAt || moved.folder !== folder || moved.root !== root)) return false;
+    if (prompt.selectedIndex !== confirmIndex) {
+      // Claude starts on No. Move once within this exact native folder dialog;
+      // confirmation is a later observation, never a blind Down+Enter sequence.
+      if (entry.aiToolId !== 'claude' || moved || prompt.selectedIndex !== 0) return false;
+      this.moved.set(entry, { folder, root, at: Date.now(), inputAt });
+      try { this.write(id, '\x1b[B'); this.moved.get(entry).inputAt = entry.lastInputAt; }
+      catch { this.attempted.add(entry); }
+      return false;
+    }
+    if (moved && Date.now() - moved.at < 200) return false;
     this.attempted.add(entry); // A failed/uncertain write is never replayed.
     try {
       this.write(id, '\r');

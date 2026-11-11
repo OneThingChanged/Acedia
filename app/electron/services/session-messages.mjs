@@ -109,7 +109,7 @@ export class SessionMessages {
     if (body.replyTo && !this.records.some(r => r.messageId === body.replyTo && r.targetId === sourceId && r.sourceId === body.sessionId)) throw fail('받은 메시지의 발신 세션에만 replyTo로 답장할 수 있습니다.', 409);
     const liveContext = this.context(body.sessionId);
     const context = liveContext ? { ...liveContext } : liveContext;
-    if (notify && (target.aiToolId !== 'codex' || !context?.entry || context.entry.ssh)) throw fail('자동 알림은 실행 중인 로컬 Codex에 지원합니다. 다른 제공자·OFFLINE 대상은 notify:false로 수신함에 저장하세요.', 409);
+    if (notify && (!['codex', 'claude'].includes(target.aiToolId) || !context?.entry || context.entry.ssh)) throw fail('자동 알림은 실행 중인 로컬 Codex·Claude에 지원합니다. 다른 제공자·OFFLINE 대상은 notify:false로 수신함에 저장하세요.', 409);
     if (body.expectedConversationId && context?.conversationId !== body.expectedConversationId) throw fail('받는 대화가 변경되었습니다. 다시 조회하세요.', 409);
     const record = { messageId: randomUUID(), sequence: ++this.sequence, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
       targetId: body.sessionId, targetName: target.name || body.sessionId, message, sha256: sha(message), signature, notify,

@@ -17,9 +17,11 @@ const taskModel = value => {
   if (model && Object.hasOwn(model, 'serviceTier')) model.serviceTier = model.serviceTier == null ? 'default' : model.serviceTier === 'priority' ? 'fast' : model.serviceTier;
   return model;
 };
-export const taskModelsMatch = (a, b) => {
+export const taskModelsMatch = (a, b, provider = 'codex') => {
   const actual = taskModel(a), requested = taskModel(b);
-  return !!actual && !!requested && actual.model === requested.model
+  const modelMatches = actual && requested && (actual.model === requested.model || provider === 'claude'
+    && ['sonnet', 'opus', 'haiku'].includes(requested.model) && actual.model.startsWith('claude-' + requested.model + '-'));
+  return !!actual && !!requested && modelMatches
     && (!Object.hasOwn(requested, 'effort') || actual.effort === requested.effort)
     && (!Object.hasOwn(requested, 'serviceTier') || Object.hasOwn(actual, 'serviceTier') && actual.serviceTier === requested.serviceTier);
 };
@@ -89,7 +91,8 @@ export class TaskOrchestration {
     // Event carries only invalidation metadata, never prompts/transcripts/images.
     this.publish({ revision: this.data.revision });
   }
-  policy() { return copy(this.data.policy || Object.fromEntries(levels.map(level => [level, this.defaults()]))); }
+  policy(provider = 'codex') { return copy((provider === 'codex' ? this.data.policy : this.data.providerPolicies?.[provider]) || Object.fromEntries(levels.map(level => [level, this.defaults(provider)]))); }
+  taskPolicy(run, task) { return run.policies?.[task.aiToolId || run.aiToolId || 'codex'] || run.policy; }
   startupTrust(ownerId) {
     const agent = this.session(ownerId), project = (this.catalog().projects || []).find(p => p.id === agent?.projectId);
     let folder = null;
@@ -99,7 +102,7 @@ export class TaskOrchestration {
   startupTrustRoot(id) {
     if (this.unavailable || this.closed) return null;
     const agent = this.session(id);
-    if (agent?.aiToolId !== 'codex') return null;
+    if (!['codex', 'claude'].includes(agent?.aiToolId)) return null;
     const setting = this.startupTrust(id);
     // Both workspace creation APIs and dedicated task workers persist their
     // creator. User-created children only have parentId. Keep this provenance
@@ -185,7 +188,7 @@ export class TaskOrchestration {
         .filter(r => !body.ownerId || r.ownerId === body.ownerId).sort((a, b) => b.updatedAt - a.updatedAt);
       return { revision: this.data.revision, runs: runs.slice(offset, offset + 20).map(r => this.summary(r)), nextOffset: offset + 20 < runs.length ? offset + 20 : null };
     }
-    if (action === 'policy') return { policy: this.policy(), revision: this.data.policyRevision, startupTrust: this.startupTrust(operator ? body.ownerId : agentId) };
+    if (action === 'policy') return { policy: this.policy(this.session(operator ? body.ownerId : agentId)?.aiToolId), revision: this.data.policyRevision, startupTrust: this.startupTrust(operator ? body.ownerId : agentId) };
     if (action === 'catalog') {
       if (!operator || !this.session(body.ownerId)) throw fail('A 세션을 선택하세요.', 403);
       return this.models(body.ownerId);
@@ -202,7 +205,10 @@ export class TaskOrchestration {
         if (body.autoTrustProjectFolders) this.data.startupTrust[setting.projectId] = setting.folder;
         else delete this.data.startupTrust[setting.projectId];
       }
-      this.data.policy = policy; this.data.policyRevision++; this.save(); return { policy: copy(policy), revision: this.data.policyRevision, startupTrust: this.startupTrust(body.ownerId) };
+      const provider = this.session(body.ownerId)?.aiToolId || 'codex';
+      if (provider === 'codex') this.data.policy = policy;
+      else { this.data.providerPolicies ??= {}; this.data.providerPolicies[provider] = policy; }
+      this.data.policyRevision++; this.save(); return { policy: copy(policy), revision: this.data.policyRevision, startupTrust: this.startupTrust(body.ownerId) };
     }
     if (action === 'plan') return this.plan(agentId, body, operator);
     const run = this.owned(agentId, body.runId, operator);
@@ -244,13 +250,13 @@ export class TaskOrchestration {
       if (action === 'override') {
         if (!['planned', 'ready'].includes(task.state)) throw fail('시작 전인 작업만 모델을 변경할 수 있습니다.');
         const settings = normalizeSessionModel(body.modelOverride); if (!settings) throw fail('모델 형식 오류', 400);
-        await this.checkModel(settings, run.ownerId);
+        await this.checkModel(settings, run.ownerId, task.aiToolId || run.aiToolId);
         if (!['planned', 'ready'].includes(task.state)) throw fail('이미 시작된 작업입니다.');
         task.modelOverride = settings; task.reason = '다음 배정에 사용자 모델 적용';
       } else if (action === 'retry') {
         if (task.state !== 'failed' || task.attempts.length >= 2) throw fail('실패한 작업만 최대 2회 시도할 수 있습니다.');
         if (attempt && this.runtime(attempt.sessionId)) await this.stop(attempt.sessionId);
-        if (body.modelOverride != null) { const settings = normalizeSessionModel(body.modelOverride); if (!settings) throw fail('모델 형식 오류', 400); await this.checkModel(settings, run.ownerId); task.modelOverride = settings; }
+        if (body.modelOverride != null) { const settings = normalizeSessionModel(body.modelOverride); if (!settings) throw fail('모델 형식 오류', 400); await this.checkModel(settings, run.ownerId, task.aiToolId || run.aiToolId); task.modelOverride = settings; }
         task.state = 'planned'; task.reason = '새 시도 대기'; task.result = null;
         if (run.state === 'awaiting_summary') run.state = 'running';
       } else if (action === 'review') {
@@ -275,7 +281,7 @@ export class TaskOrchestration {
         const current = await this.read(attempt.sessionId);
         if (current?.sessionId !== attempt.conversationId || current.turn?.id !== attempt.turnId || current.question) throw fail('현재 대화·턴 또는 질문 상태가 다릅니다.');
         const actual = await this.actualModel(attempt.sessionId, attempt.sentAt);
-        if (!taskModelsMatch(actual, attempt.requestedModel)) { task.state = 'reconcile_required'; task.reason = '실제 턴 모델·effort·Fast 불일치 또는 미확인'; this.touch(run); throw fail(task.reason); }
+        if (!taskModelsMatch(actual, attempt.requestedModel, task.aiToolId || run.aiToolId)) { task.state = 'reconcile_required'; task.reason = '실제 턴 모델·effort·Fast 불일치 또는 미확인'; this.touch(run); throw fail(task.reason); }
         const result = body.result;
         if (!text(result?.summary, 6000) || !Array.isArray(result.changedFiles) || result.changedFiles.length > 100 || result.changedFiles.some(p => !text(p, 4096))
           || !Array.isArray(result.checks) || result.checks.length > 30 || result.checks.some(c => !text(c.command, 500) || typeof c.passed !== 'boolean' || !text(c.output, 2000))
@@ -310,17 +316,18 @@ export class TaskOrchestration {
     } else attempt.fileAudit = { available: false, reason: after.reason || before?.reason || '기준점 없음' };
   }
   waiting(run, task, reason) { if (task.reason !== reason) { task.reason = reason; this.touch(run); } }
-  async checkModel(settings, ownerId) {
-    const catalog = await this.models(ownerId);
+  async checkModel(settings, ownerId, provider = this.session(ownerId)?.aiToolId || 'codex') {
+    const catalog = await this.models(ownerId, provider);
     const selected = catalog.models.find(m => m.model === settings.model);
     if (!selected || settings.effort && !selected.efforts.some(e => e.effort === settings.effort)
+      || provider === 'claude' && Object.hasOwn(settings, 'serviceTier')
       || settings.serviceTier != null && !['default', 'fast'].includes(settings.serviceTier)) throw fail('지원되지 않는 작업 모델·effort·Fast입니다.', 400);
   }
   async plan(agentId, body, operator) {
     const ownerId = operator ? body.ownerId : agentId, owner = this.session(ownerId);
     if (this.worker(ownerId)) throw fail('하위 세션은 추가 위임할 수 없습니다.', 403);
     const project = (this.catalog().projects || []).find(p => p.id === owner?.projectId);
-    if (!owner || owner.aiToolId !== 'codex' || owner.sshHostId || project?.sshHostId || !project?.folder || !this.runtime(ownerId)) throw fail('실행 중인 로컬 Codex A 세션이 필요합니다.', 400);
+    if (!owner || !['codex', 'claude'].includes(owner.aiToolId) || owner.sshHostId || project?.sshHostId || !project?.folder || !this.runtime(ownerId)) throw fail('실행 중인 로컬 Codex·Claude A 세션이 필요합니다.', 400);
     const folder = this.folderFor(ownerId);
     if (!key(body.requestKey) || !text(body.title, 200) || !text(body.request, 6000) || !Array.isArray(body.tasks) || !body.tasks.length || body.tasks.length > 32) throw fail('계획·요청 키·1~32개 작업을 지정하세요.', 400);
     const signature = digest(body), old = this.data.runs.find(r => r.ownerId === ownerId && r.requestKey === body.requestKey);
@@ -328,26 +335,37 @@ export class TaskOrchestration {
     if (this.data.runs.length >= 100) throw fail('실행 기록 한도에 도달했습니다.', 503);
     const concurrency = body.concurrency ?? 2;
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw fail('동시 실행은 1~4개입니다.', 400);
-    const ids = new Set(body.tasks.map(t => t.id)), policy = this.policy();
+    const ids = new Set(body.tasks.map(t => t.id)), policy = this.policy(owner.aiToolId), policies = {};
     if (ids.size !== body.tasks.length) throw fail('작업 ID 중복', 400);
     const tasks = body.tasks.map(t => {
       if (!key(t.id) || !text(t.title, 120) || !text(t.goal, 2000) || !text(t.acceptance, 2000) || !Array.isArray(t.dependsOn) || t.dependsOn.some(id => !ids.has(id) || id === t.id)
         || !Array.isArray(t.writeScopes) || t.writeScopes.length > 32 || t.required != null && typeof t.required !== 'boolean'
+        || t.aiToolId != null && !['codex', 'claude'].includes(t.aiToolId)
         || t.modelOverride != null && !normalizeSessionModel(t.modelOverride)) throw fail('작업 범위·선행 관계·완료 조건을 확인하세요.', 400);
       const assessment = t.assessment || {};
       if (Buffer.byteLength([t.goal, t.acceptance, ...t.writeScopes].join('\n')) > 5500) throw fail('목표·완료 조건·경로 합계는 UTF-8 5,500바이트 이내로 지정하세요.', 400);
       if (['complexity', 'risk'].some(k => assessment[k] != null && !['low', 'normal', 'high'].includes(assessment[k]))
         || assessment.context != null && !['small', 'normal', 'large'].includes(assessment.context) || assessment.tools != null && typeof assessment.tools !== 'boolean') throw fail('작업 평가 형식 오류', 400);
-      return { id: t.id, title: t.title, goal: t.goal, acceptance: t.acceptance, role: typeof t.role === 'string' ? t.role.slice(0, 80) : 'worker',
+      return { id: t.id, title: t.title, goal: t.goal, acceptance: t.acceptance, aiToolId: t.aiToolId || owner.aiToolId, role: typeof t.role === 'string' ? t.role.slice(0, 80) : 'worker',
         dependsOn: [...new Set(t.dependsOn)], writeScopes: t.writeScopes, scopes: t.writeScopes.map(p => taskPath(folder, p)),
         required: t.required !== false, assessment, ...(t.modelOverride ? { modelOverride: normalizeSessionModel(t.modelOverride) } : {}), state: 'planned', attempts: [] };
     });
     const visiting = new Set(), visited = new Set();
     function visit(t) { if (visiting.has(t.id)) throw fail('순환 의존 관계입니다.', 400); if (visited.has(t.id)) return; visiting.add(t.id); t.dependsOn.forEach(id => visit(tasks.find(x => x.id === id))); visiting.delete(t.id); visited.add(t.id); }
     tasks.forEach(visit);
-    for (const task of tasks) await this.checkModel(selectTaskModel(task, policy).settings, ownerId);
+    for (const provider of new Set(tasks.map(t => t.aiToolId))) {
+      policies[provider] = this.policy(provider);
+      if (provider === 'claude' && !this.data.providerPolicies?.claude) {
+        const catalog = await this.models(ownerId, provider);
+        for (const [level, alias] of [['light', 'haiku'], ['advanced', 'opus']]) {
+          const model = catalog.models.find(m => m.model === alias);
+          if (model) policies[provider][level] = { model: alias, ...(model.efforts.some(e => e.effort === policies[provider][level].effort) ? { effort: policies[provider][level].effort } : {}) };
+        }
+      }
+    }
+    for (const task of tasks) await this.checkModel(selectTaskModel(task, policies[task.aiToolId]).settings, ownerId, task.aiToolId);
     const run = { id: randomUUID(), ownerId, projectId: owner.projectId, folder, requestKey: body.requestKey, signature,
-      title: body.title, request: body.request, policy, concurrency, state: 'running', createdAt: this.now(), updatedAt: this.now(), tasks };
+      title: body.title, request: body.request, aiToolId: owner.aiToolId, policy, policies, concurrency, state: 'running', createdAt: this.now(), updatedAt: this.now(), tasks };
     this.data.runs.push(run); this.touch(run); this.schedule(); return { run: this.view(run), revision: this.data.revision };
   }
   schedule() { if (!this.closed && !this.unavailable) queueMicrotask(() => { void this.tick().catch(() => {}); }); }
@@ -368,7 +386,7 @@ export class TaskOrchestration {
           if (locked.some(t => task.scopes.some(a => t.scopes.some(b => overlaps(a, b))))) { this.waiting(run, task, '수정 파일 범위 충돌 대기'); continue; }
           task.state = 'ready'; this.touch(run);
           // Reserve synchronously; independent worker launches then run in parallel.
-          const chosen = selectTaskModel(task, run.policy, task.attempts.length);
+          const chosen = selectTaskModel(task, this.taskPolicy(run, task), task.attempts.length);
           const attempt = { id: randomUUID(), sessionId: randomUUID(), deliveryKey: randomUUID(), requestedModel: chosen.settings,
             selection: chosen, createdAt: this.now(), creationReserved: true };
           task.attempts.push(attempt); task.state = 'dispatching'; task.reason = '전용 하위 세션 생성 예약'; this.touch(run);
@@ -383,11 +401,11 @@ export class TaskOrchestration {
     } finally { this.ticking = false; }
   }
   async dispatch(run, task, attempt) {
-    await this.checkModel(attempt.requestedModel, run.ownerId);
+    await this.checkModel(attempt.requestedModel, run.ownerId, task.aiToolId || run.aiToolId);
     if (this.closed || task.state !== 'dispatching') return;
     if (!['running', 'paused'].includes(run.state)) { task.state = 'cancelled'; task.reason = '생성 전 취소 확인'; this.touch(run); return; }
     if (this.session(run.ownerId)?.projectId !== run.projectId || taskPath(run.folder, '.') !== taskPath(this.folderFor(run.ownerId), '.')) throw fail('A의 프로젝트·작업 폴더가 변경되었습니다. 상태를 확인하세요.');
-    const result = await this.createSession({ id: attempt.sessionId, ownerId: run.ownerId, projectId: run.projectId, folder: run.folder, name: task.title, modelSettings: attempt.requestedModel });
+    const result = await this.createSession({ id: attempt.sessionId, ownerId: run.ownerId, projectId: run.projectId, folder: run.folder, name: task.title, aiToolId: task.aiToolId || run.aiToolId || 'codex', modelSettings: attempt.requestedModel });
     if (result.id !== attempt.sessionId || result.startError) throw fail(result.startError || '생성 세션 ID 불일치');
     attempt.creationAcknowledged = true; this.touch(run);
     if (!['running', 'paused'].includes(run.state)) {
@@ -396,11 +414,19 @@ export class TaskOrchestration {
       this.touch(run); return;
     }
     let deadline = this.now() + 30000;
-    while (!this.closed && (task.state === 'waiting_approval' || this.now() < deadline)) {
-      if (!['dispatching', 'waiting_approval'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
+    while (!this.closed && (['waiting_approval', 'waiting_user'].includes(task.state) || this.now() < deadline)) {
+      if (!['dispatching', 'waiting_approval', 'waiting_user'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
       if (!this.runtime(attempt.sessionId)) throw fail('시작 확인 중 담당 CLI가 종료되었습니다.');
       const current = await this.read(attempt.sessionId);
-      if (this.closed || !['dispatching', 'waiting_approval'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
+      if (this.closed || !['dispatching', 'waiting_approval', 'waiting_user'].includes(task.state) || !['running', 'paused'].includes(run.state)) return;
+      if (current?.question) {
+        const state = current.question.kind === 'approval' || current.question.kind === 'permission' ? 'waiting_approval' : 'waiting_user';
+        if (task.state !== state || JSON.stringify(task.question) !== JSON.stringify(current.question)) {
+          task.state = state; task.question = copy(current.question); task.reason = '시작 전 사용자 확인 필요 · 부모에서 원래 질문 확인'; this.touch(run);
+        }
+        deadline = this.now() + 30000;
+        await new Promise(resolve => setTimeout(resolve, 150)); continue;
+      }
       if (current?.startup) {
         const reason = current.startup.startupKind === 'folder-trust' ? '폴더 신뢰 확인 대기 · 프로젝트 자동 확인 설정 또는 하위 대화에서 승인' : '시작 훅 검토 대기 · 하위 대화에서 선택';
         if (task.state !== 'waiting_approval' || task.reason !== reason) { task.state = 'waiting_approval'; task.reason = reason; this.touch(run); }
@@ -408,7 +434,7 @@ export class TaskOrchestration {
         await new Promise(resolve => setTimeout(resolve, 150));
         continue;
       }
-      if (task.state === 'waiting_approval') { deadline = this.now() + 30000; task.state = 'dispatching'; task.reason = '시작 확인 완료 · 모델·입력 준비 대기'; this.touch(run); }
+      if (['waiting_approval', 'waiting_user'].includes(task.state)) { deadline = this.now() + 30000; task.state = 'dispatching'; delete task.question; task.reason = '시작 확인 완료 · 모델·입력 준비 대기'; this.touch(run); }
       if (current?.startupTrust) attempt.startupTrust = copy(current.startupTrust);
       if (current && !current.question && taskModelsMatch(this.launchedModel(attempt.sessionId), attempt.requestedModel)) { attempt.conversationId = current.sessionId ?? null; attempt.launchModelVerified = true; break; }
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -420,7 +446,7 @@ export class TaskOrchestration {
     if (!['running', 'paused'].includes(run.state)) throw fail('배정 중 취소됨');
     const message = ['Acedia 독립 작업. 추가 위임하지 말고 맡은 작업을 수행하세요.', `runId=${run.id} taskId=${task.id} attemptId=${attempt.id}`,
       `목표: ${task.goal}`, `완료 조건: ${task.acceptance}`, `수정 범위: ${task.writeScopes.join(', ') || '읽기 전용'}`,
-      '선행 결과는 acedia_task_get의 dependsOn과 해당 결과를 조회하세요. 부모 대화 전체를 복사하지 않습니다.', '질문·승인은 원래 Codex 요청을 사용하세요. 완료 후 acedia_task_get으로 정확한 conversationId/turnId를 조회하고 acedia_task_result로 summary, changedFiles, checks(command, passed, output), artifacts, issues를 제출하세요. 전달 시작이나 한 턴 종료만으로 완료되지 않습니다.'].join('\n');
+      '선행 결과는 acedia_task_get의 dependsOn과 해당 결과를 조회하세요. 부모 대화 전체를 복사하지 않습니다.', '질문·승인은 현재 제공자의 원래 요청을 사용하세요. 완료 후 acedia_task_get으로 정확한 conversationId/turnId를 조회하고 acedia_task_result로 summary, changedFiles, checks(command, passed, output), artifacts, issues를 제출하세요. 전달 시작이나 한 턴 종료만으로 완료되지 않습니다.'].join('\n');
     attempt.sendReserved = true; attempt.sentAt = this.now(); this.touch(run);
     await this.delivery.handle({ action: 'send', agentId: run.ownerId, freshSession: true, body: { sessionId: attempt.sessionId, expectedConversationId: attempt.conversationId, requestKey: attempt.deliveryKey, message, waitMs: 0 } });
     await this.syncAttempt(run, task);

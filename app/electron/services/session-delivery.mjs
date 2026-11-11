@@ -12,20 +12,71 @@ const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
 
 export function deliveryComposerReady(entry, { allowWorking = false } = {}) {
   const screen = entry.filter.viewportText?.() || '';
-  if (parseTerminalStartupPrompt(screen, 'codex')) return false;
+  const claude = entry.aiToolId === 'claude';
+  if (parseTerminalStartupPrompt(screen, claude ? 'claude' : 'codex')) return false;
   if (!allowWorking && /esc to interrupt|Queued follow-up inputs|shift\+.*answer/i.test(screen)) return false;
+  if (claude && /waiting for .*background|Enter to (?:select|confirm)|Esc to cancel/i.test(screen)) return false;
   const buffer = entry.filter.shadow?.buffer.active;
-  const line = buffer?.getLine(buffer.baseY + buffer.cursorY);
+  let row = buffer?.cursorY;
+  if (claude && buffer) {
+    // Ink parks the hardware cursor on the status row. Its empty framed input
+    // is authoritative; do not confuse that parked cursor with a user draft.
+    const rows = entry.filter.shadow.rows;
+    row = -1;
+    for (let i = 1; i < rows - 1; i++) if (/^\s*❯\s/.test(buffer.getLine(buffer.baseY + i)?.translateToString(true) || '')) row = i;
+    if (row < 0 || !/^─+\s*$/.test(buffer.getLine(buffer.baseY + row - 1)?.translateToString(true) || '')
+      || !/^─+\s*$/.test(buffer.getLine(buffer.baseY + row + 1)?.translateToString(true) || '')) return false;
+    const footer = Array.from({ length: Math.min(4, rows - row - 2) }, (_, i) => buffer.getLine(buffer.baseY + row + 2 + i)?.translateToString(true) || '').join('\n');
+    if (!/shift\+tab to cycle|^\s*\? for shortcuts/m.test(footer)) return false;
+  }
+  const line = buffer?.getLine(buffer.baseY + row);
   const text = line?.translateToString(true) || '';
-  const prefix = text.match(/^\s*›\s/);
-  if (!prefix || buffer.cursorX !== prefix[0].length) return false;
+  const prefix = text.match(claude ? /^\s*❯\s/ : /^\s*›\s/);
+  if (!prefix || (!claude || row === buffer.cursorY) && buffer.cursorX !== prefix[0].length) return false;
   // An empty Codex composer displays a dim/gray placeholder. Reject an
   // existing draft even when the user has moved its caret back to the start.
   for (let i = prefix[0].length; i < text.length; i++) {
     const cell = line.getCell(i);
-    if (cell?.getChars().trim() && !cell.isDim() && (!cell.isFgPalette() || cell.getFgColor() !== 8)) return false;
+    if (cell?.getChars().trim() && !cell.isDim() && (!cell.isFgPalette() || cell.getFgColor() !== 8)
+      && !(claude && cell.isFgRGB?.() && cell.getFgColor() === 0x999999)) return false;
   }
   return true;
+}
+
+// Claude has no Codex task_started event. Bind a real top-level user UUID to
+// an assistant whose parent chain descends from it. A user append alone is
+// received, never started. Keep bounded ancestry across incremental tail reads.
+export function claudeDeliveryEvidence(text, previous = { turn: null, receipts: [], parents: [] }) {
+  let turn = previous.turn;
+  const receipts = new Map(previous.receipts.map(r => [r.deliveryId, { ...r }]));
+  const parents = new Map(previous.parents || []), rows = [];
+  for (const line of text.split('\n')) {
+    let row; try { row = JSON.parse(line); } catch { continue; }
+    if (row.isSidechain || !['user', 'assistant', 'attachment', 'system'].includes(row.type) || typeof row.uuid !== 'string' || !Number.isFinite(Date.parse(row.timestamp))) continue;
+    rows.push(row);
+    if (!parents.get(row.uuid)?.id) parents.set(row.uuid, { parentId: row.parentUuid });
+    if (row.type !== 'user' || row.message?.role !== 'user') continue;
+    const content = row.message.content;
+    const value = typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(c => c?.type === 'text').map(c => c.text || '').join('\n');
+    if (!value.trim() || /^\s*\[Request interrupted/i.test(value)) continue;
+    const at = Date.parse(row.timestamp);
+    parents.set(row.uuid, { id: row.uuid, at });
+    if (!turn || at > turn.at) turn = { id: row.uuid, at };
+    const id = value.match(marker)?.[1];
+    if (id && !receipts.has(id)) receipts.set(id, { deliveryId: id, receivedAt: at, messageHash: hash(value), userId: row.uuid });
+  }
+  for (const row of rows) {
+    if (row.type !== 'assistant' || row.message?.role !== 'assistant' || !row.message?.id) continue;
+    let ancestor = parents.get(row.parentUuid), depth = 0;
+    while (ancestor && !ancestor.id && depth++ < 128) ancestor = parents.get(ancestor.parentId);
+    if (depth >= 128) continue;
+    if (!ancestor) continue;
+    parents.set(row.uuid, ancestor);
+    for (const receipt of receipts.values()) if (receipt.userId === ancestor.id && !receipt.startedAt) {
+      receipt.turnId = ancestor.id; receipt.startedAt = Date.parse(row.timestamp);
+    }
+  }
+  return { turn, receipts: [...receipts.values()].slice(-16), parents: [...parents].slice(-128) };
 }
 
 // Only real user messages and identified turn-start events count as receipts.
@@ -146,7 +197,7 @@ export class SessionDeliveries {
     try {
       const source = this.context(sourceId), target = this.context(body.sessionId);
       if (!source?.entry) throw fail('Calling session is not active');
-      if (!target?.entry || target.entry.ssh || target.entry.aiToolId !== 'codex') throw fail('Receiving session must be an active local Codex session');
+      if (!target?.entry || target.entry.ssh || !['codex', 'claude'].includes(target.entry.aiToolId)) throw fail('Receiving session must be an active local Codex or Claude session');
       const unbound = freshSession && body.expectedConversationId == null && target.conversationId == null;
       if (!unbound && target.conversationId !== body.expectedConversationId) throw fail('Receiving conversation changed; refresh acedia_projects');
       const entry = target.entry, inputAt = entry.lastInputAt;

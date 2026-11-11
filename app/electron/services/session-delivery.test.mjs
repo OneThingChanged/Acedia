@@ -110,8 +110,8 @@ it('does not count stale, quoted, mismatched or old-turn evidence as a started t
   expect(f.service.list('caller')[0].status).toBe('received');
   f.advance(16000); expect(f.service.list('caller')[0].reason).toBe('start-not-confirmed');
 });
-it('refuses inactive, SSH, non-Codex, busy, changed, question and non-ready receivers before any input', async () => {
-  const changes = [f => { f.contexts.target.entry = null; }, f => { f.contexts.target.entry.ssh = {}; }, f => { f.contexts.target.entry.aiToolId = 'claude'; },
+it('refuses inactive, SSH, unsupported, busy, changed, question and non-ready receivers before any input', async () => {
+  const changes = [f => { f.contexts.target.entry = null; }, f => { f.contexts.target.entry.ssh = {}; }, f => { f.contexts.target.entry.aiToolId = 'qwen'; },
     f => { f.contexts.target.conversationId = 'other'; }, f => { f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'working' }); },
     f => { f.options.read.mockResolvedValue({ sessionId: 'conversation', question: {} }); }, f => { f.service.ready = () => false; }];
   for (const change of changes) { const f = fixture(); change(f); await expect(f.send()).rejects.toThrow(); expect(f.options.submit).not.toHaveBeenCalled(); }

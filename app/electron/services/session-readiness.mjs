@@ -2,6 +2,17 @@ import { startupPrompt } from './startup-automation.mjs';
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+export function startupBlocker(entry) {
+  if (entry?.aiToolId !== 'claude') return null;
+  const screen = entry.filter?.viewportText?.() || '';
+  if (/^\s*(?:Not logged in|Login expired)\s*·\s*Please run \/login\b/im.test(screen)) {
+    return { kind: 'authentication', text: 'Claude 로그인 필요 · 계정 설정에서 로그인하세요.', answerStyle: 'terminal' };
+  }
+  if (screen.includes('Detected a custom API key in your environment') && screen.includes('Do you want to use this API key?') && screen.includes('Enter to confirm · Esc to cancel')) {
+    return { kind: 'authentication', text: 'Claude의 사용자 API 키 확인이 필요합니다. 원래 계정 설정에서 선택하세요.', answerStyle: 'terminal' };
+  }
+  return null;
+}
 
 // Read the same transcript, fresh-launch and native-composer gates as delivery.
 // Acedia's stable session ID is sufficient; a CLI conversation need not exist.
@@ -11,7 +22,7 @@ export class SessionReadiness {
   }
   canWait(id) {
     const entry = this.context(id)?.entry;
-    return !!entry && entry.aiToolId === 'codex' && !entry.ssh && !entry.resumeContext
+    return !!entry && ['codex', 'claude'].includes(entry.aiToolId) && !entry.ssh && !entry.resumeContext
       && Number.isFinite(entry.startedAt) && !entry.firstMessageInput && !entry.firstMessageSubmitted;
   }
   async inspect(sessionId) {
@@ -22,16 +33,18 @@ export class SessionReadiness {
     const result = (phase, reason, extra = {}) => ({ ...base, phase, reason, ...extra });
     const entry = target.entry;
     if (!entry) return result('offline', 'inactive');
-    if (entry.aiToolId !== 'codex' || entry.ssh) return result('unsupported', 'local-codex-required');
+    if (!['codex', 'claude'].includes(entry.aiToolId) || entry.ssh) return result('unsupported', 'local-codex-or-claude-required');
     const startup = startupPrompt(entry);
     if (startup) return result(startup.startupKind, startup.startupKind, {
       startup: { kind: startup.startupKind, folder: startup.folder || null, trustRoot: startup.trustRoot || null },
     });
+    const blocker = startupBlocker(entry);
+    if (blocker) return result('question', 'authentication-required', { question: blocker });
     const current = await this.read(sessionId);
     const after = this.context(sessionId);
     if (after?.entry !== entry || after.conversationId !== target.conversationId) return result('changed', 'session-changed');
     if (current && current.sessionId !== target.conversationId) return result('changed', 'conversation-changed');
-    if (current?.question) return result('question', 'question-pending');
+    if (current?.question) return result('question', 'question-pending', { question: current.question });
     const fresh = this.freshRead(sessionId);
     if (fresh && fresh.sessionId === (target.conversationId ?? null) && !current?.turn && !fresh.turn && !fresh.question
       && this.ready(target, { freshSession: true })) {

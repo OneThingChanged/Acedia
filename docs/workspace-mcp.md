@@ -493,6 +493,13 @@ build와 실제 Electron 검사를 통과했다. 종료된 세션의 이동 후 
 `output/session-relocation-tests.log`, `output/session-relocation-build.log`,
 `output/session-relocation-electron.log`에 결과를 기록했다.
 
+## Codex·Claude 자동 하위 실행
+
+소스 1.8.2.11의 [자동 하위 세션 실행 계약](child-session-launch.md)을 따른다.
+`acedia_session_run`과 `acedia_session_run_status`로 생성·준비·첫 지시·실제 착수를
+구분하며, `acedia_task_plan.tasks[].aiToolId`로 두 제공자를 선택할 수 있다.
+실행 중인 이전 EXE의 도구 목록과 배포 전 소스의 새 API를 혼동하지 않는다.
+
 ## 다른 세션으로 작업 전달
 
 [Standard EXE 1.8.1.89](release-1-8-1-89.md)부터 hook이 아직 오지 않은 재개 세션도 정확한 계정·
