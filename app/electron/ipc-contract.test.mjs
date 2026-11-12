@@ -13,6 +13,8 @@ describe("Electron IPC contract", () => {
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64), itemId: 'b'.repeat(64) })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { zoom: .5, collapsed: ['a'], x: -200, y: 100 } })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { collapsedProjects: ['p'], motion: false } })).toBeTruthy();
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { layoutVersion: 2, zoom: .8 } })).toBeTruthy();
+    for (const layoutVersion of [1, '2', {}, Infinity]) expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { layoutVersion } })).toThrow();
     for (const preferences of [{ collapsedProjects: [2] }, { collapsedProjects: Array(2001).fill('p') }, { motion: 'yes' }]) expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences })).toThrow();
     for (const itemId of ['', 1, '../other', 'a'.repeat(65)]) expect(() => contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64), itemId })).toThrow();
     for (const args of [{ preferences: { zoom: 0 } }, { preferences: { x: Infinity } }, { preferences: { bounds: {} } }, { preferences: { collapsed: [1] } }]) expect(() => contract.assertInvokeRequest('project_board_preferences', args)).toThrow();

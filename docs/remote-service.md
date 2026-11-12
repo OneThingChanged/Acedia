@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-11-06
+last_updated: 2026-11-12
 stale_after: 2026-12-02
 sources:
   - id: queue-delivery
@@ -1226,6 +1226,27 @@ Validation: 64 related tests in four files, TypeScript checking, and
 `node app/scripts/electron-remote-session-tree-smoke.mjs`. The latter covers
 Remote and Dashboard at 1100px, 390px and 820px, with nested selection, remembered
 folds, filtered search, inactive ancestor/child visibility and live reparenting.
+
+### Remote family metadata follow-up (1.8.2.12)
+
+The tree renderer was present, but the desktop's `sync_remote_agents` and
+`sync_remote_view` projections omitted the editable parent and sidebar visibility
+fields. Both now use `remoteSessionProjection.ts` and carry `projectId`,
+`sessionHierarchy.parentId`, `sidebarArchived` and `sidebarShowInactiveChildren`.
+An explicit null hierarchy clears a detached parent; navigation does not copy
+instructions or substitute the session's creator for its current parent.
+
+The list shows indentation, connecting rails, immediate-parent labels and visible
+child counts. Chat headers expose ancestor links using Remote navigation only.
+Required inactive ancestors remain contextual rows in Active; they are not counted
+as active sessions. Deep mobile trees cap visual indentation while retaining the
+actual ancestry. Static cache v111 refreshes the tree module network-first.
+
+Regression checks run the actual desktop projections through JSON and authenticated
+HTTP, plus the production navigation and breadcrumb functions in Node DOM doubles.
+Earlier UI fixtures supplied parent fields directly and did not catch the missing
+desktop projection. No GUI automation is needed for these checks. Publication and
+public-download evidence are tracked in [1.8.2.12](release-1-8-2-12.md).
 
 ### Slow chat responses and external export access (1.8.2.01)
 

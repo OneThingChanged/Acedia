@@ -10,6 +10,7 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.12](release-1-8-2-12.md) - 원본 기준 보드 카드, 노드 우회 연결선과 Remote 부모·자식 동기화 수정.
 * [Acedia 1.8.2.11](release-1-8-2-11.md) - Codex·Claude 자동 하위 실행, 영속 첫 지시 전달과 테스트 품질 보강.
 * [테스트 유효성 점검](test-quality-audit-2026-11-12.md) - 1,953개 실행 사례의 정적 조사, 대표 결함 탐지와 구조 검사 한계.
 * [Acedia 1.8.2.10](release-1-8-2-10.md) - 프로젝트 보드 확인 목록·개별 결과 보존, 연보라색 Claude 백그라운드 대기 표시와 개인용·조직 사전허가 라이선스.

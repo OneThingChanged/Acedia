@@ -227,7 +227,9 @@ export class ProjectBoard {
     for (const item of items) { const count = itemCounts.get(item.sessionId) || { results: 0, total: 0 }; count.total++; if (item.kind === 'result') count.results++; itemCounts.set(item.sessionId, count); }
     for (const session of sessions) { const count = itemCounts.get(session.id); session.unreviewedResults = count?.results || 0; session.needsAttention = !!count?.total; }
     const references = [...this.references.values()].filter(r => byId.has(r.from) && byId.has(r.to)).map(({ readers, ...r }) => ({ ...r, active: readers > 0 }));
-    const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096) })),
+    const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096),
+      ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),
+      ...(p.hierarchy?.parentId ? { hierarchy: { parentId: short(p.hierarchy.parentId, 256) } } : {}) })),
       items, references, devices, preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };

@@ -304,7 +304,8 @@ function assertInvokeRequest(command, rawArgs) {
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-          || Object.keys(p).some(key => !['zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion'].includes(key))
+          || Object.keys(p).some(key => !['layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion'].includes(key))
+          || p.layoutVersion !== undefined && p.layoutVersion !== 2
           || p.motion !== undefined && typeof p.motion !== 'boolean'
           || p.collapsedProjects !== undefined && (!Array.isArray(p.collapsedProjects) || p.collapsedProjects.length > 2000 || p.collapsedProjects.some(id => typeof id !== 'string' || id.length > 256))
         || ['zoom', 'x', 'y'].some(key => p[key] !== undefined && (!Number.isFinite(p[key]) || Math.abs(p[key]) > 1000000))

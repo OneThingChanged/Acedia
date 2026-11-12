@@ -1,6 +1,9 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ['상위 세션', 'Parent sessions', '父会话', '父工作階段', '親セッション', 'Sesiones superiores'],
+  ['상위 세션 열기: {0}', 'Open parent session: {0}', '打开父会话：{0}', '開啟父工作階段：{0}', '親セッションを開く: {0}', 'Abrir sesión superior: {0}'],
+  ['표시 중인 하위 세션 {0}개', '{0} visible child sessions', '{0} 个可见子会话', '{0} 個可見子工作階段', '表示中の子セッション {0} 件', '{0} sesiones secundarias visibles'],
   ['백그라운드 대기', 'Background wait', '等待后台任务', '等待背景工作', 'バックグラウンド待機', 'Esperando tareas en segundo plano'],
   ['백그라운드 {0}개 대기', 'Waiting for {0} background agents', '等待 {0} 个后台任务', '等待 {0} 個背景工作', 'バックグラウンド {0} 件を待機', 'Esperando {0} tareas en segundo plano'],
   ['추가 크레딧 사용 가능', 'Extra credits available'],

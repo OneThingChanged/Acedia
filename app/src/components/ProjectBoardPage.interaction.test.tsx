@@ -2,10 +2,11 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProjectBoardPage } from './ProjectBoardPage';
 import type { BoardSnapshot } from '../lib/workBoard';
+import { BOARD_CARD, boardLayout } from '../lib/workBoard';
 
 // Exercise the component's actual event handlers and re-renders in Node. No
 // browser, native window, model requests or changes to a user's sessions.
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as { current: unknown }[], index: 0, refIndex: 0, invoke: vi.fn() }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as { current: unknown }[], effects: [] as { run: () => unknown; deps?: unknown[] }[], index: 0, refIndex: 0, invoke: vi.fn() }));
 vi.mock('react', async original => ({
   ...await original<typeof import('react')>(),
   useState: (initial: unknown) => {
@@ -14,7 +15,8 @@ vi.mock('react', async original => ({
     return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === 'function' ? value(hooks.values[index]) : value; }];
   },
   useRef: (current: unknown) => { const index = hooks.refIndex++; return hooks.refs[index] ||= { current }; },
-  useMemo: (compute: () => unknown) => compute(), useCallback: (callback: unknown) => callback, useEffect: () => {},
+  useMemo: (compute: () => unknown) => compute(), useCallback: (callback: unknown) => callback,
+  useEffect: (run: () => unknown, deps?: unknown[]) => { hooks.effects.push({ run, deps }); },
 }));
 vi.mock('../platform/runtime', () => ({ invoke: (...args: unknown[]) => hooks.invoke(...args) }));
 vi.mock('../lib/appLanguage', () => ({ useAppLanguage: () => ({ text: (ko: string) => ko }) }));
@@ -28,7 +30,7 @@ function content(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   return isValidElement<Props>(node) ? Children.toArray(node.props.children).map(content).join('') : '';
 }
-function render(data: BoardSnapshot) { hooks.index = 0; hooks.refIndex = 0; return ProjectBoardPage({ initialSnapshot: data }); }
+function render(data: BoardSnapshot) { hooks.index = 0; hooks.refIndex = 0; hooks.effects = []; return ProjectBoardPage({ initialSnapshot: data }); }
 const resultId = 'a'.repeat(64), secondId = 'b'.repeat(64), questionId = 'c'.repeat(64);
 function fixture(): BoardSnapshot {
   return { revision: 'r', sampledAt: 5000, storageError: null, preferences: {}, devices: [], references: [],
@@ -42,7 +44,7 @@ function fixture(): BoardSnapshot {
   };
 }
 beforeEach(() => {
-  hooks.values = []; hooks.refs = []; hooks.index = 0; hooks.refIndex = 0; hooks.invoke.mockReset();
+  hooks.values = []; hooks.refs = []; hooks.effects = []; hooks.index = 0; hooks.refIndex = 0; hooks.invoke.mockReset();
   vi.stubGlobal('window', { requestAnimationFrame: (callback: () => void) => callback() });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -90,4 +92,49 @@ it('preserves totals and other project positions when folding a project and filt
   tree = render(data);
   expect(elements(tree).filter(e => e.props['data-item-id'])).toHaveLength(2);
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);
+});
+
+it('scrolls a dense project internally and locates an offscreen result without opening or launching its session', () => {
+  const data = fixture(); data.projects = [data.projects[0]];
+  data.sessions = Array.from({ length: 36 }, (_, index) => ({ ...data.sessions[0], id: `s${index}`, name: `Worker ${index}`, parentId: index ? 's0' : null }));
+  data.items = [{ ...data.items![0], sessionId: 's35' }];
+  data.references = [{ id: 'read', from: 's35', to: 's0', active: true, startedAt: 1, endedAt: null, kind: 'message-read', source: 'inbox' }];
+  let tree = render(data);
+  const body = elements(tree).find(e => e.props.className === 'wb-project-body')!;
+  const dom = { scrollTop: 0 }; body.props.ref(dom);
+  const canvas = elements(tree).find(e => e.props.className === 'wb-canvas')!;
+  canvas.props.ref.current = { getBoundingClientRect: () => ({ width: 1000, height: 720 }) };
+  const capture = vi.fn(), stopPropagation = vi.fn();
+  canvas.props.onPointerDown({ button: 0, target: { closest: () => dom }, currentTarget: { setPointerCapture: capture } });
+  expect(capture).not.toHaveBeenCalled();
+  body.props.onWheel({ ctrlKey: false, stopPropagation }); expect(stopPropagation).toHaveBeenCalledOnce();
+  body.props.onWheel({ ctrlKey: true, stopPropagation }); expect(stopPropagation).toHaveBeenCalledOnce();
+  elements(tree).find(e => e.props['data-item-id'] === resultId)!.props.onClick({ currentTarget: { isConnected: false } });
+  tree = render(data);
+  elements(tree).find(e => e.props.className === 'wb-locate')!.props.onClick();
+  tree = render(data);
+  hooks.effects.find(e => e.deps?.[0] === 's35')!.run();
+  expect(dom.scrollTop).toBeGreaterThan(2500);
+  const layout = boardLayout(data, {}), group = layout.groups[0], node = layout.nodes.find(n => n.session.id === 's35')!;
+  expect(node.y - group.y - BOARD_CARD.header - dom.scrollTop).toBeGreaterThanOrEqual(0);
+  expect(node.y - group.y - BOARD_CARD.header - dom.scrollTop + node.height).toBeLessThanOrEqual(group.bodyHeight);
+  tree = render(data);
+  const reference = elements(tree).find(e => e.props.className === 'wb-ref-line')!;
+  expect(reference.props.d).toContain(`M ${node.x} ${node.y - dom.scrollTop + node.height / 2}`);
+  expect(reference.props.d).toMatch(new RegExp(`${group.x} ${group.y + BOARD_CARD.header / 2}$`));
+  expect(hooks.invoke).not.toHaveBeenCalled();
+});
+
+it('keeps a detoured reference selectable by keyboard without starting either session', () => {
+  const data = fixture(); data.references = [{ id: 'read', from: 'c', to: 'a', active: true, startedAt: 1, endedAt: null, kind: 'message-read', source: 'inbox' }];
+  let tree = render(data);
+  const line = elements(tree).find(e => e.type === 'g' && e.props.role === 'button')!;
+  expect(line.props.children).toBeDefined();
+  const preventDefault = vi.fn();
+  line.props.onKeyDown({ key: 'Enter', preventDefault, currentTarget: { isConnected: false } });
+  tree = render(data);
+  expect(preventDefault).toHaveBeenCalledOnce();
+  expect(content(tree)).toContain('Session c → Session a');
+  expect(content(tree)).toContain('실제 수신함 읽기 진행 중');
+  expect(hooks.invoke).not.toHaveBeenCalled();
 });

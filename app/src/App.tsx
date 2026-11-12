@@ -16,6 +16,7 @@ import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
 import { boardViewedAgent } from './lib/workBoard';
+import { remoteAgentStatus, remoteAgentView } from './lib/remoteSessionProjection';
 import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
 import { loadRightPanelView, LS_RIGHT_PANEL_VIEW } from './lib/pixelOffice';
 import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
@@ -1141,22 +1142,13 @@ function App() {
     groupsRef.current = groups;
   }, [groups]);
 
-  // Mirror agent metadata into the Rust remote hub so the remote web
+  // Mirror agent metadata into the remote hub so the remote web
   // client can list sessions and show live status.
   useEffect(() => {
     if (!runtimeFlags || !isCoordinatorWindow || !remoteEnabled) return;
     const projectNames = new Map(projects.map((p) => [p.id, p.name]));
     const payload = {
-      agents: agents.map((a) => ({
-        id: a.id,
-        name: a.name,
-        project: projectNames.get(a.projectId) ?? "",
-        status: a.status,
-        runtimeStatus: a.runtimeStatus,
-        deferredStart: a.deferredStart,
-        resumeEligible: a.resumeEligible,
-        tool: a.aiToolId,
-      })),
+      agents: agents.map((agent) => remoteAgentStatus(agent, projectNames)),
     };
     const json = JSON.stringify(payload);
     if (remoteAgentsJsonRef.current === json) return;
@@ -1183,20 +1175,7 @@ function App() {
         name: folder.name,
         machineKey: folder.machineKey,
       })),
-      agents: agents.map((a) => ({
-        id: a.id,
-        projectId: a.projectId,
-        name: a.name,
-        folder: a.folder,
-        status: a.status,
-        runtimeStatus: a.runtimeStatus,
-        deferredStart: a.deferredStart,
-        resumeEligible: a.resumeEligible,
-        aiToolId: a.aiToolId,
-        dangerous: a.dangerous,
-        modelSettings: a.modelSettings,
-        sshHostId: a.sshHostId,
-      })),
+      agents: agents.map(remoteAgentView),
       availableTools: AI_TOOLS.filter(
         (tool) => tool.id === "none" || !disabledTools.includes(tool.id)
       ).map((tool) => ({

@@ -172,6 +172,7 @@ const ui = {
   detailStatus: $("#detailStatus"),
   detailName: $("#detailName"),
   detailMeta: $("#detailMeta"),
+  detailFamily: $("#detailFamily"),
   renameSessionButton: $("#renameSessionButton"),
   sessionNotifications: $("#sessionNotifications"),
   sessionNavButton: $("#sessionNavButton"),
@@ -249,6 +250,7 @@ function launchPreferences() { try { const value = JSON.parse(localStorage.getIt
 const projectFolds = new Set(storedList('multiagent.remote.projectFolds.v1').filter(id => typeof id === 'string'));
 const sessionFamilyFolds = new Set(storedList('multiagent.remote.sessionFamilyFolds.v1').filter(id => typeof id === 'string'));
 let sessionFamilyRevealKey = '';
+let sessionFamilyTrailKey = '';
 const rememberSessionFamilyFolds = () => { try { localStorage.setItem('multiagent.remote.sessionFamilyFolds.v1', JSON.stringify([...sessionFamilyFolds])); } catch {} };
 const completedUnread = new Map(storedList('multiagent.remote.completedUnread.v1').filter(row => Array.isArray(row) && row.length === 2));
 const completionSeen = new Map(storedList('multiagent.remote.completionSeen.v1').filter(row => Array.isArray(row) && row.length === 2));
@@ -711,6 +713,32 @@ function navigationAgents() {
   });
 }
 
+function sessionFamilyAncestors(agent, catalog = navigationAgents()) {
+  const families = buildSessionFamilies([agent], catalog), byId = new Map(families.agents.map(value => [value.id, value]));
+  const ancestors = [];
+  for (let id = families.parentById.get(agent.id); id; id = families.parentById.get(id)) ancestors.unshift(byId.get(id));
+  return ancestors.filter(Boolean);
+}
+
+function renderSessionFamilyTrail(agent) {
+  if (!ui.detailFamily) return;
+  const trail = sessionFamilyAncestors(agent);
+  const key = JSON.stringify([getLanguage(), trail.map(parent => [parent.id, parent.name])]);
+  if (key === sessionFamilyTrailKey) return;
+  sessionFamilyTrailKey = key;
+  const fragment = document.createDocumentFragment();
+  for (const [index, parent] of trail.entries()) {
+    if (index) fragment.append(make('span', 'session-ancestor-separator', '›'));
+    const button = make('button', 'session-ancestor-link', parent.name || parent.id);
+    button.type = 'button'; button.dataset.ancestorId = parent.id;
+    button.title = t('상위 세션 열기: {0}', [parent.name || parent.id]);
+    button.addEventListener('click', () => selectSession(parent.id)); fragment.append(button);
+  }
+  ui.detailFamily.hidden = trail.length === 0;
+  ui.detailFamily.setAttribute('aria-label', t('상위 세션'));
+  ui.detailFamily.replaceChildren(fragment);
+}
+
 function visibleAgents(catalog = navigationAgents()) {
   const query = ui.searchInput.value.trim().toLowerCase();
   return catalog.filter((agent) => {
@@ -879,7 +907,7 @@ function renderNavigation() {
   for (const screen of screenGroups()) for (const id of screen.memberIds) memberships.set(id, screen);
   const projects = new Map((remoteState.view?.projects || []).map(project => [project.id, project]));
   for (const agent of agents) if (!projects.has(agent.projectId)) projects.set(agent.projectId, { id: agent.projectId, name: projectName(agent) });
-  const structureKey = JSON.stringify([agents.map(agent => [agent.id, agent.projectId, agent.aiToolId, families.parentById.get(agent.id)]), [...projectFolds], [...sessionFamilyFolds], query,
+  const structureKey = JSON.stringify([agents.map(agent => [agent.id, agent.name, agent.projectId, agent.aiToolId, families.parentById.get(agent.id)]), [...projectFolds], [...sessionFamilyFolds], query,
     [...projects.values()].map(project => [project.id, project.name]), [...memberships].map(([id, screen]) => [id, screen.number])]);
   if (structureKey !== sessionNavigationStructureKey) {
     sessionNavigationStructureKey = structureKey;
@@ -916,7 +944,9 @@ function renderNavigation() {
         } else row.append(make('span', 'session-family-spacer'));
         const button = make('button', 'session-select'); button.type = 'button';
         const dot = make('span', 'status-dot'); dot.setAttribute('aria-hidden', 'true');
-        const copy = make('span', 'session-copy'); copy.append(make('strong', ''), make('small', ''));
+        const copy = make('span', 'session-copy'), title = make('span', 'session-title-line'); title.append(make('strong', ''));
+        if (children.length) { const count = make('span', 'session-family-count', String(children.length)); count.title = t('표시 중인 하위 세션 {0}개', [children.length]); title.append(count); }
+        copy.append(title, make('small', ''));
         button.append(dot, providerLogo(agent.aiToolId), copy); button.addEventListener('click', () => selectSession(agent.id));
         const actions = make('span', 'session-row-actions');
         const screen = memberships.get(agent.id);
@@ -927,6 +957,7 @@ function renderNavigation() {
         row.addEventListener('click', event => { if (!event.target.closest('button')) selectSession(agent.id); });
         if (children.length) {
           const group = make('div', 'session-family-children');
+          group.classList.toggle('is-deep', depth >= 3);
           group.id = `session-children-${encodeURIComponent(agent.id)}`; group.setAttribute('role', 'group');
           group.setAttribute('aria-label', agent.name || agent.id); group.hidden = !expanded;
           if (expanded) for (const child of children) group.append(renderFamily(child, depth + 1));
@@ -946,7 +977,11 @@ function renderNavigation() {
     row.classList.toggle('unread-completion', completedUnread.has(agent.id));
     row.querySelector('.status-dot').className = 'status-dot ' + status;
     row.querySelector('.session-copy strong').textContent = text(agent.name || agent.id);
-    row.querySelector('.session-copy small').textContent = outputPreview(agent) || projectName(agent);
+    const parent = catalog.find(value => value.id === families.parentById.get(agent.id));
+    const subtitle = row.querySelector('.session-copy small'), preview = outputPreview(agent) || projectName(agent);
+    subtitle.classList.toggle('session-parent', !!parent);
+    subtitle.textContent = parent ? `↳ ${parent.name || parent.id}` : preview;
+    subtitle.title = parent ? `${t('상위 세션')}: ${parent.name || parent.id}\n${preview}` : preview;
     const statusLabel = row.querySelector('.session-status');
     statusLabel.hidden = status !== 'background' && (completedUnread.has(agent.id) || status === 'done');
     statusLabel.textContent = statusLabel.hidden ? '' : status === 'background' && agent.hook?.background_count
@@ -1493,6 +1528,7 @@ function renderSession() {
   ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
   ui.detailMeta.textContent = `${projectName(agent)} · ${toolName(agent)}`;
+  renderSessionFamilyTrail(agent);
   renderSessionNotifications(agent);
   if (ui.sessionOffline) ui.sessionOffline.hidden = status !== "offline";
   ui.questionPanel.hidden = !question.text;

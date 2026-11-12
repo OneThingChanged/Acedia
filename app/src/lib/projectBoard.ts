@@ -10,7 +10,9 @@ export function boardProjects(projects: readonly Project[], agents: readonly Age
   return projects.filter(p => live.has(p.id));
 }
 
-function folderKey(project: Project): string | null {
+type ProjectStructure = Pick<Project, 'id' | 'folder' | 'remoteFolder' | 'sshHostId' | 'hierarchy'>;
+
+function folderKey(project: ProjectStructure): string | null {
   const raw = (project.sshHostId ? project.remoteFolder : project.folder)?.trim();
   if (!raw || /[\x00-\x1f]/.test(raw)) return null;
   let source = project.sshHostId ? raw : raw.replace(/\\/g, "/");
@@ -35,13 +37,13 @@ function folderKey(project: Project): string | null {
 
 // This is a view of registered folder containment, not a change to launch settings.
 // Passing the visible projects connects the nearest visible ancestor in Active view.
-export function folderProjectParents(projects: readonly Project[]): Map<string, string> {
+export function folderProjectParents(projects: readonly ProjectStructure[]): Map<string, string> {
   const paths = new Map(projects.map(p => [p.id, folderKey(p)]));
   const parents = new Map<string, string>();
   for (const child of projects) {
     const childPath = paths.get(child.id);
     if (!childPath) continue;
-    let nearest: Project | undefined, length = 0;
+    let nearest: ProjectStructure | undefined, length = 0;
     for (const candidate of projects) {
       const parentPath = paths.get(candidate.id);
       if ((candidate.sshHostId || "") !== (child.sshHostId || "") || !parentPath || parentPath.length <= length) continue;

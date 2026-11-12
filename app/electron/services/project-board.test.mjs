@@ -19,6 +19,13 @@ function fixture() {
   return { board: new ProjectBoard(options), source, live, hooks, runs, options, time: value => { now = value; } };
 }
 describe('Independent project board', () => {
+  it('exposes only the project hierarchy and host fields needed by the reference-style layout', () => {
+    const f = fixture();
+    Object.assign(f.source.projects[0], { sshHostId: 'host', remoteFolder: '/work', hierarchy: { parentId: 'master', instructions: 'private instructions' } });
+    expect(f.board.snapshot().projects).toEqual([{ id: 'p', name: '프로젝트', folder: 'G:/example', sshHostId: 'host', remoteFolder: '/work', hierarchy: { parentId: 'master' } }]);
+    f.board.preferences({ layoutVersion: 2, zoom: .8 });
+    expect(new ProjectBoard(f.options).snapshot().preferences).toEqual({ layoutVersion: 2, zoom: .8 });
+  });
   it('projects native background wait separately while retaining old results, then returns to foreground/done', () => {
     const f = fixture(); f.board.observe({ id: 'a', event: 'working', received_at: 1000 });
     f.board.observe({ id: 'a', event: 'done', received_at: 2000, assistant_message: '이전 결과' });
