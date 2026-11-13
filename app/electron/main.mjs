@@ -617,6 +617,7 @@ async function pollActiveQuestions() {
     activeQuestions.prune(ptys.keys());
     capacityRetry.prune(ptys.keys());
     sessionDeliveries.poll();
+    void sessionMessages.poll().catch(error => console.warn('[electron] message queue unavailable', error.message));
     for (const id of ptys.keys()) startupAutomation.check(id);
     await taskOrchestration.tick();
     await sessionRuns.tick();
@@ -680,7 +681,11 @@ const browserMcpScriptPath = app.isPackaged
 let savedBoardCatalog = { projects: [], agents: [] };
 const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-board.json'),
   catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
-  live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs });
+  live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
+  transfers: () => [
+    ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, startedAt: r.startedAt })),
+    ...sessionMessages.records.slice(-50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason, savedAt: r.createdAt, readAt: r.readAt, startedAt: r.delivery?.startedAt, isMessage: true })),
+  ] });
 
 function publishAgentHookEvent(eventName, payload) {
   if (eventName === "agent:hook-event" && payload?.id) {
@@ -1077,11 +1082,14 @@ const sessionDeliveries = new SessionDeliveries({
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
   ready: (target, { freshSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
     && (freshSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
-  submit: (id, entry, message, isCurrent) => {
+  submit: async (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
+    const previous = entry.firstMessageSubmitted;
     entry.firstMessageSubmitted = true;
-    return submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
+    const submitted = await submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
       encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined });
+    if (!submitted && ptys.get(id) === entry) entry.firstMessageSubmitted = previous;
+    return submitted;
   },
   publish: payload => sendEventToAll('agent:session-delivery', payload),
 });
@@ -1095,8 +1103,9 @@ const sessionMessages = new SessionMessages({
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
   prepare: (id, { waitMs, context }) => sessionReadiness.waitForReady(id, waitMs, context),
-  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession: true }),
-  receipt: (agentId, requestKey) => sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }),
+  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession: true, retryNotSent: true }),
+  receipt: async (agentId, requestKey) => { await sessionDeliveries.reconcile(agentId, requestKey); return sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }); },
+  publish: value => sendEventToAll('agent:session-delivery', sessionMessages.notice(value)),
 });
 const sessionLaunchSettings = new SessionLaunchSettings({
   agentFor: id => {
@@ -5410,11 +5419,14 @@ async function invokeCommand(event, command, rawArgs) {
       await warmProjectBoard(); return projectBoard.snapshot(args.revision);
     case 'project_board_ack':
       await warmProjectBoard(); return projectBoard.acknowledge(args.id, args.fingerprint, args.itemId);
+    case 'project_board_ack_results':
+      await warmProjectBoard(); return projectBoard.acknowledgeResults(args.id, args.results);
     case 'project_board_preferences':
       return projectBoard.preferences(args.preferences);
     case 'project_board_open_session': {
       await warmProjectBoard();
-      return boardSessionNavigation.open(args);
+      const opened = boardSessionNavigation.open(args);
+      return args.reviewResults ? { ...opened, snapshot: projectBoard.acknowledgeResults(args.id, args.reviewResults) } : opened;
     }
     case 'task_orchestration': {
       const runtime = runtimeByWebContents.get(event.sender.id);
@@ -5422,7 +5434,8 @@ async function invokeCommand(event, command, rawArgs) {
       return taskOrchestration.handle({ action: args.action, body: args.body, operator: true });
     }
     case 'session_deliveries_get':
-      return sessionDeliveries.list(args.id);
+      { const notices = (await sessionMessages.list(args.id)).map(value => sessionMessages.notice(value));
+        return [...new Map([...sessionDeliveries.list(args.id), ...notices].map(value => [value.sourceId + ':' + value.requestKey, value])).values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 20); }
     case 'capacity_retry_get':
       return capacityRetry.get(args.id);
     case 'capacity_retry_cancel': {
@@ -6620,6 +6633,7 @@ app.on("before-quit", (event) => {
   updaterLifecycle.clearInstallWatchdog();
   if (questionPollTimer) { clearInterval(questionPollTimer); questionPollTimer = null; }
   capacityRetry.dispose();
+  sessionMessages.close();
   sessionDeliveries.dispose();
   sessionRuns.close();
   taskOrchestration.close();

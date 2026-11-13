@@ -29,6 +29,32 @@ function fixture() {
   };
   return { root, options, service, contexts, body, send, acknowledge, updates, advance: ms => { now += ms; service.poll(); } };
 }
+it('rotates completed history without forgetting archived request keys across restart', async () => {
+  const f = fixture(), initial = await f.send(), saved = structuredClone([...f.service.records.values()][0]);
+  f.service.records.clear();
+  for (let i = 0; i < 1000; i++) f.service.records.set('caller:old-' + i, { ...saved, requestKey: 'old-' + i, status: 'started' });
+  expect((await f.send({ requestKey: 'new' })).status).toBe('sent');
+  expect(f.service.records.size).toBeLessThan(1000);
+  const reopened = new SessionDeliveries(f.options);
+  expect(await reopened.handle({ action: 'send', agentId: 'caller', body: { ...f.body, requestKey: 'old-0' } })).toMatchObject({ status: 'started', deliveryId: initial.deliveryId });
+  expect(f.options.submit).toHaveBeenCalledTimes(2);
+});
+it('distinguishes unresolved history capacity from corruption without discarding uncertain receipts', async () => {
+  const f = fixture(); await f.send(); const saved = structuredClone([...f.service.records.values()][0]);
+  f.service.records.clear(); for (let i = 0; i < 1000; i++) f.service.records.set('caller:u-' + i, { ...saved, requestKey: 'u-' + i, status: 'unconfirmed' });
+  await expect(f.send({ requestKey: 'new' })).rejects.toMatchObject({ code: 'DELIVERY_HISTORY_FULL', nothingSent: true });
+  expect(f.service.records.size).toBe(1000); expect(f.options.submit).toHaveBeenCalledOnce();
+  fs.writeFileSync(f.options.file, 'corrupted'); const broken = new SessionDeliveries(f.options);
+  await expect(broken.handle({ action: 'send', agentId: 'caller', body: f.body })).rejects.toMatchObject({ code: 'DELIVERY_HISTORY_UNAVAILABLE', nothingSent: true });
+  expect(fs.readFileSync(f.options.file, 'utf8')).toBe('corrupted');
+});
+it('allows internal mailbox retry only after a definite not-sent result', async () => {
+  const f = fixture(); f.options.submit.mockResolvedValueOnce(false);
+  expect((await f.send()).reason).toBe('not-sent'); await f.send(); expect(f.options.submit).toHaveBeenCalledOnce();
+  await f.service.handle({ action: 'send', agentId: 'caller', body: f.body, retryNotSent: true }); expect(f.options.submit).toHaveBeenCalledTimes(2);
+  const g = fixture(); g.options.submit.mockRejectedValue(Error('outcome unknown'));
+  await g.send(); await g.service.handle({ action: 'send', agentId: 'caller', body: g.body, retryNotSent: true }); expect(g.options.submit).toHaveBeenCalledOnce();
+});
 it('reports actual sent, received and identified new-turn stages; keeps the original Unicode/multiline message', async () => {
   const f = fixture();
   expect(await f.send()).toMatchObject({ status: 'sent', sourceName: 'Main', targetName: 'UI', sentAt: 10000 });

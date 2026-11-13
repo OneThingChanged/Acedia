@@ -43,3 +43,12 @@ it.each(['onPointerUp', 'onPointerCancel', 'onLostPointerCapture'] as const)('ke
   expect(state.values).toContainEqual({ zoom: .8, x: 94, y: 104 });
   expect(setPointerCapture).toHaveBeenCalledWith(1);
 });
+it('pans with the middle button over a node and prevents native auto-scroll', () => {
+  const canvas = findCanvas(ProjectBoardPage())!, preventDefault = vi.fn(), capture = vi.fn();
+  canvas.props.onPointerDown({ button: 1, pointerId: 2, clientX: 10, clientY: 20, preventDefault,
+    target: { closest: () => ({}) }, currentTarget: { setPointerCapture: capture } });
+  canvas.props.onPointerMove({ clientX: 70, clientY: 80 }); canvas.props.onPointerUp();
+  for (const apply of state.pending) apply();
+  expect(state.values).toContainEqual({ zoom: .8, x: 84, y: 84 });
+  expect(preventDefault).toHaveBeenCalledOnce(); expect(capture).toHaveBeenCalledWith(2);
+});

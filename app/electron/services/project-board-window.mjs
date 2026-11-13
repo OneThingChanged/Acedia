@@ -1,4 +1,4 @@
-export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_ack', 'project_board_preferences', 'project_board_open_session']);
+export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session']);
 export function assertBoardAccess(runtime, command) {
   if (runtime?.project_board_window && !BOARD_COMMANDS.includes(command)) throw new Error('보드 전용 창에서는 작업 실행 명령을 사용할 수 없습니다.');
   if ((BOARD_COMMANDS.includes(command) || command === 'open_project_board') && !runtime?.project_board_window && !runtime?.workspace_window) throw new Error('Acedia 작업창에서 보드를 사용하세요.');

@@ -15,7 +15,7 @@ describe('Board-only renderer without GUI automation', () => {
     expect(markup).toContain('미확인 결과'); expect(markup).not.toContain('세션에서 답변하기');
   });
   it('renders projects, sleeping children, review inbox and the session using the computer with escaped text', () => {
-    const data = { revision: 'a', preferences: {}, storageError: null, projects: [{ id: 'p', name: 'RnDHub', folder: 'D:/RnDHub' }],
+    const data = { revision: 'a', preferences: { showSleeping: true }, storageError: null, projects: [{ id: 'p', name: 'RnDHub', folder: 'D:/RnDHub' }],
       sessions: [{ id: 'a', projectId: 'p', name: 'Manager', runtime: 'running', state: 'working', provider: 'codex', parentId: null },
         { id: 'b', projectId: 'p', name: '<img src=x onerror=unsafe>', runtime: 'sleeping', state: 'review', provider: 'claude', parentId: 'a', needsAttention: true }],
       devices: [{ sessionId: 'a', kind: 'desktop', state: 'active', tool: 'cua_repl', source: 'hook' }] } as BoardSnapshot;

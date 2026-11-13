@@ -42,7 +42,9 @@ export function mergeMiraControlAgents(catalogAgents = [], runtimeAgents = []) {
     const existing = merged[existingIndex];
     merged[existingIndex] = {
       ...existing,
-      name: text(runtime?.name) || existing?.name,
+      // The catalog owns the user's current label. PTY startup can omit name
+      // (the launcher then uses its UUID), or retain a label from before rename.
+      name: text(existing?.name) || text(runtime?.name) || id,
       aiToolId: tool,
       folder: text(runtime?.folder) || existing?.folder,
       lastSessionId: text(runtime?.lastSessionId) || existing?.lastSessionId,

@@ -10,8 +10,8 @@ const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, at
 
 /** Host-owned, bounded projection. No transcripts, tool arguments, credentials or PTY subscriptions. */
 export class ProjectBoard {
-  constructor({ file, catalog, live, hook, runs, now = Date.now }) {
-    Object.assign(this, { file, catalog, live, hook, runs, now });
+  constructor({ file, catalog, live, hook, runs, transfers = () => [], now = Date.now }) {
+    Object.assign(this, { file, catalog, live, hook, runs, transfers, now });
     this.data = { version: 2, acknowledged: {}, preferences: {}, results: {}, inbox: {} };
     this.observed = new Map();
     this.devices = new Map();
@@ -230,7 +230,9 @@ export class ProjectBoard {
     const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096),
       ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),
       ...(p.hierarchy?.parentId ? { hierarchy: { parentId: short(p.hierarchy.parentId, 256) } } : {}) })),
-      items, references, devices, preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
+      items, references, devices, transfers: this.transfers().filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
+        status: short(t.status, 50), reason: short(t.reason, 300), savedAt: t.savedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
+      preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
   }
@@ -250,6 +252,18 @@ export class ProjectBoard {
     for (const key of Object.keys(acknowledged)) if (!ids.has(key)) delete acknowledged[key];
     const inbox = item.resultId && this.data.inbox[item.resultId] ? { ...this.data.inbox, [item.resultId]: { ...this.data.inbox[item.resultId], reviewedAt: this.now() } } : this.data.inbox;
     this.save({ ...this.data, acknowledged, inbox });
+    return this.snapshot();
+  }
+  acknowledgeResults(id, results) {
+    if (!Array.isArray(results) || results.length > 1500) throw Error('확인할 결과 목록을 확인하세요.');
+    this.snapshot();
+    const inbox = { ...this.data.inbox };
+    for (const result of results) {
+      const item = inbox[result.id];
+      if (!item || item.kind !== 'result' || item.sessionId !== id || item.fingerprint !== result.fingerprint) throw Error('확인할 결과가 변경되었습니다. 다시 확인하세요.');
+      inbox[item.id] = { ...item, reviewedAt: item.reviewedAt || this.now() };
+    }
+    if (results.length) this.save({ ...this.data, inbox });
     return this.snapshot();
   }
   folder(agent, source) {

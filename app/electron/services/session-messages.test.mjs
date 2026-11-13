@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SessionMessages, sessionMessageText } from './session-messages.mjs';
+import { SessionDeliveries } from './session-delivery.mjs';
 import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
 
@@ -51,7 +52,7 @@ it('waits for startup once, captures the first bound conversation and never repl
   expect(f.notify).toHaveBeenCalledExactlyOnceWith('sender', expect.objectContaining({ expectedConversationId: 'new-conversation' }));
   await f.call('message-send', body); expect(f.notify).toHaveBeenCalledOnce();
 });
-it('does not notify after preparation times out or another runtime/conversation takes over', async () => {
+it('queues initialization timeouts but refuses another runtime or conversation', async () => {
   for (const change of ['timeout', 'runtime', 'conversation']) {
     const f = fixture(), entry = { aiToolId: 'codex' }; let current = { entry, conversationId: null };
     f.service.context = () => current;
@@ -62,7 +63,7 @@ it('does not notify after preparation times out or another runtime/conversation 
     };
     const body = { sessionId: 'receiver', message: text, requestKey: 'not-sent' };
     const result = await f.call('message-send', body);
-    expect(result.saved).toBe(true); expect(result.delivery.status).toBe('notification-error');
+    expect(result.saved).toBe(true); expect(result.delivery.status).toBe(change === 'timeout' ? 'queued' : 'notification-error');
     expect(f.notify).not.toHaveBeenCalled();
     await f.call('message-send', body); expect(f.notify).not.toHaveBeenCalled();
   }
@@ -137,9 +138,77 @@ it('does not conflate notification start with body read, and does not replay unc
   const f = fixture(); f.notify.mockRejectedValue(new Error('notification outcome unknown'));
   const body = { sessionId: 'receiver', message: text, requestKey: 'uncertain' };
   const result = await f.call('message-send', body);
-  expect(result).toMatchObject({ saved: true, readAt: null, delivery: { status: 'notification-error' } });
+  expect(result).toMatchObject({ saved: true, readAt: null, delivery: { status: 'unconfirmed' } });
   await f.call('message-send', body); expect(f.notify).toHaveBeenCalledOnce();
   const inbox = await f.call('message-receive', {}, 'receiver'); expect(inbox.messages[0].message).toBe(text);
+});
+it.each(['codex', 'claude'])('durably queues busy %s input, resumes in order, and preserves original text without replay', async aiToolId => {
+  const f = fixture(), entry = { aiToolId, startedAt: 1 }; let clock = 1000, ready = false;
+  f.agents[1].aiToolId = aiToolId; f.service.now = () => clock;
+  f.service.context = () => ({ entry, conversationId: 'conversation' });
+  f.service.prepare = async () => ({ ready, reason: 'turn-working' });
+  f.service.receipt = async () => null;
+  const one = await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'queue-1', waitMs: 0 });
+  const two = await f.call('message-send', { sessionId: 'receiver', message: 'second', requestKey: 'queue-2', waitMs: 0 });
+  expect(one.delivery.status).toBe('queued'); expect(two.delivery.status).toBe('queued'); expect(f.notify).not.toHaveBeenCalled();
+  const restored = new SessionMessages({ ...f.options, context: f.service.context, now: () => clock, prepare: f.service.prepare, receipt: async () => null });
+  ready = true; clock = 10000; await restored.poll();
+  expect(f.notify).toHaveBeenCalledOnce(); expect(f.notify.mock.calls[0][1].message).toContain(one.messageId);
+  await restored.poll(); expect(f.notify).toHaveBeenCalledTimes(2); expect(f.notify.mock.calls[1][1].message).toContain(two.messageId);
+  await restored.poll(); expect(f.notify).toHaveBeenCalledTimes(2);
+  const inbox = await restored.receive('receiver', { messageId: one.messageId }); expect(inbox.messages[0].message).toBe(text);
+  expect(restored.notice(inbox.messages[0])).toMatchObject({ readAt: clock, savedAt: 1000, isMessage: true });
+});
+it('retries only definite non-input failures with backoff and never replays unknown outcomes after restart', async () => {
+  const f = fixture(); let clock = 1000;
+  f.service.now = () => clock; f.service.receipt = async () => null;
+  f.notify.mockRejectedValueOnce(Object.assign(Error('capacity temporarily full'), { statusCode: 503, nothingSent: true, code: 'DELIVERY_HISTORY_FULL' }));
+  const body = { sessionId: 'receiver', message: text, requestKey: 'retry-safe', waitMs: 0 };
+  expect((await f.call('message-send', body)).delivery).toMatchObject({ status: 'queued', reason: 'DELIVERY_HISTORY_FULL' });
+  await f.service.poll(); expect(f.notify).toHaveBeenCalledOnce();
+  clock = 10000; await Promise.all([f.service.poll(), f.call('message-send', body)]); expect(f.notify).toHaveBeenCalledTimes(2);
+  f.notify.mockRejectedValueOnce(Error('paste may have happened'));
+  expect((await f.call('message-send', { ...body, requestKey: 'uncertain' })).delivery.status).toBe('unconfirmed');
+  const restored = new SessionMessages({ ...f.options, now: () => 99999, receipt: async () => null });
+  await restored.poll(); expect(f.notify).toHaveBeenCalledTimes(3);
+  expect((await restored.list('sender'))[0].delivery.status).toBe('unconfirmed');
+});
+it('uses the same native delivery key for a definite non-input retry and never executes it twice', async () => {
+  const f = fixture(), entry = { id: 'receiver', aiToolId: 'codex', startedAt: 1, lastInputAt: 1 }; let clock = 1000, writes = 0;
+  const contexts = { sender: { entry: {} }, receiver: { entry, conversationId: 'conversation' } };
+  const native = new SessionDeliveries({ file: path.join(f.root, 'native.json'), context: id => contexts[id], now: () => clock,
+    read: async () => ({ sessionId: 'conversation', lifecycle: 'done', turn: { id: 'prior' } }), ready: () => true,
+    submit: async () => { writes++; return writes > 1; } });
+  f.service.context = id => contexts[id]; f.service.now = () => clock;
+  f.service.notify = (agentId, body) => native.handle({ action: 'send', agentId, body, retryNotSent: true });
+  f.service.receipt = (agentId, requestKey) => native.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } });
+  const body = { sessionId: 'receiver', expectedConversationId: 'conversation', message: text, requestKey: 'native-retry', waitMs: 0 };
+  expect((await f.call('message-send', body)).delivery).toMatchObject({ status: 'queued', reason: 'not-sent' });
+  clock = 10000; await Promise.all([f.service.poll(), f.call('message-send', body)]);
+  expect(writes).toBe(2); expect(native.records.size).toBe(1);
+  expect((await f.call('message-send', body)).delivery.status).toBe('sent');
+  clock = 99999; await f.service.poll(); expect(writes).toBe(2);
+});
+it('bounds automatic non-input retries and resumes only on an explicit same-key call after recovery', async () => {
+  const f = fixture(); let clock = 1000;
+  f.service.now = () => clock; f.service.receipt = async () => null;
+  f.notify.mockRejectedValue(Object.assign(Error('temporary failure before input'), { statusCode: 503, nothingSent: true }));
+  const body = { sessionId: 'receiver', message: text, requestKey: 'bounded', waitMs: 0 };
+  await f.call('message-send', body);
+  for (let i = 0; i < 6; i++) { clock += 100000; await f.service.poll(); }
+  expect(f.notify).toHaveBeenCalledTimes(5); expect(f.service.records[0].delivery.status).toBe('notification-error');
+  f.notify.mockResolvedValue({ status: 'started' });
+  await f.call('message-send', body); await f.call('message-send', body);
+  expect(f.notify).toHaveBeenCalledTimes(6); expect(f.service.records).toHaveLength(1);
+});
+it('does not bypass drafts or questions and cancels a queued message if its pinned conversation changes', async () => {
+  const f = fixture(), entry = { aiToolId: 'codex', startedAt: 1 }; let clock = 1000, conversationId = 'conversation';
+  f.service.context = () => ({ entry, conversationId }); f.service.now = () => clock;
+  f.service.prepare = async () => ({ ready: false, reason: 'question-pending' });
+  f.service.receipt = async () => null;
+  expect((await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'question-queue', waitMs: 0 })).delivery.status).toBe('queued');
+  clock = 10000; conversationId = 'different'; await f.service.poll();
+  expect(f.notify).not.toHaveBeenCalled(); expect(f.service.records[0].delivery).toMatchObject({ status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true });
 });
 it('pages without truncating Unicode bodies and rejects stale conversations, bad keys and cross-session sends', async () => {
   const f = fixture();

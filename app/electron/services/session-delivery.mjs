@@ -7,6 +7,9 @@ const hash = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n').
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
 const keyPattern = /^[a-zA-Z0-9_-]{1,128}$/;
 const watching = r => ['sending', 'sent', 'received', 'unconfirmed'].includes(r.status);
+const validRecord = r => r && /^[0-9a-f-]{36}$/.test(r.deliveryId || '') && typeof r.sourceId === 'string' && typeof r.targetId === 'string'
+  && keyPattern.test(r.requestKey || '') && /^[0-9a-f]{64}$/.test(r.signature || '') && /^[0-9a-f]{64}$/.test(r.messageHash || '')
+  && ['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(r.status) && Number.isFinite(r.createdAt);
 const marker = /\[Acedia handoff: ([0-9a-f-]{36})\]/;
 const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
 
@@ -111,11 +114,7 @@ export class SessionDeliveries {
     this.records = new Map(); this.live = new Map(); this.waiters = new Set(); this.locks = new Set(); this.inflight = new Map();
     try {
       const records = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (!Array.isArray(records) || records.length > 1000 || records.some(r => !r || !/^[0-9a-f-]{36}$/.test(r.deliveryId || '')
-        || typeof r.sourceId !== 'string' || typeof r.targetId !== 'string' || !keyPattern.test(r.requestKey || '')
-        || !/^[0-9a-f]{64}$/.test(r.signature || '') || !/^[0-9a-f]{64}$/.test(r.messageHash || '')
-        || !['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(r.status)
-        || !Number.isFinite(r.createdAt))) throw Error('Invalid delivery history');
+      if (!Array.isArray(records) || records.length > 1000 || records.some(r => !validRecord(r))) throw Error('Invalid delivery history');
       for (const record of records) {
         if (watching(record)) Object.assign(record, { status: 'unconfirmed', reason: 'app-restarted' });
         this.records.set(this.#key(record.sourceId, record.requestKey), record);
@@ -123,6 +122,28 @@ export class SessionDeliveries {
     } catch (error) { if (error.code !== 'ENOENT') this.unavailable = true; }
   }
   #key(sourceId, requestKey) { return sourceId + ':' + requestKey; }
+  #archived(key) {
+    const file = path.join(this.file + '.archive', createHash('sha256').update(key).digest('hex') + '.json');
+    try {
+      if (fs.statSync(file).size > 32 * 1024) throw Error('Invalid archived delivery');
+      const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (!validRecord(record) || this.#key(record.sourceId, record.requestKey) !== key) throw Error('Invalid archived delivery');
+      return record;
+    } catch (error) { if (error.code === 'ENOENT') return null; this.unavailable = true; throw Object.assign(fail('Delivery history unavailable; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_UNAVAILABLE' }); }
+  }
+  #record(key) { return this.records.get(key) || this.#archived(key); }
+  #compact() {
+    if (this.records.size < 1000) return;
+    // Retain complete per-key receipts on disk. Removing keys outright would
+    // permit an old request to execute again after the hot history is rotated.
+    const terminal = [...this.records].filter(([, r]) => ['started', 'failed'].includes(r.status)).sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [key, record] of terminal.slice(0, Math.max(1, this.records.size - 800))) {
+      const file = path.join(this.file + '.archive', createHash('sha256').update(key).digest('hex') + '.json');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file + '.tmp', JSON.stringify(record), { mode: 0o600 }); fs.renameSync(file + '.tmp', file);
+      this.records.delete(key);
+    }
+  }
   #save() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file + '.tmp', JSON.stringify([...this.records.values()]), { mode: 0o600 });
@@ -143,7 +164,7 @@ export class SessionDeliveries {
       .sort((a, b) => b.createdAt - a.createdAt).slice(0, 20).map(r => this.#view(r));
   }
   async reconcile(sourceId, requestKey) {
-    const record = this.records.get(this.#key(sourceId, requestKey));
+    const record = this.#record(this.#key(sourceId, requestKey));
     if (!record || !watching(record) || this.unavailable) return;
     const target = this.context(record.targetId);
     if (!target?.entry || record.conversationId && target.conversationId !== record.conversationId) return;
@@ -152,14 +173,14 @@ export class SessionDeliveries {
     this.live.set(record.deliveryId, { record, entry: target.entry });
     this.observe(record.targetId, target.entry, result);
   }
-  async handle({ action, agentId, body, freshSession = false, asciiEnvelope = false }) {
+  async handle({ action, agentId, body, freshSession = false, asciiEnvelope = false, retryNotSent = false }) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('JSON object required', 400);
     const allowed = action === 'send' ? ['sessionId', 'expectedConversationId', 'message', 'requestKey', 'waitMs'] : ['requestKey', 'waitMs'];
     if (Object.keys(body).some(k => !allowed.includes(k)) || typeof body.requestKey !== 'string' || !keyPattern.test(body.requestKey)) throw fail('Invalid delivery options or requestKey', 400);
     const waitMs = body.waitMs ?? (action === 'send' ? 8000 : 0);
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 10000) throw fail('waitMs must be between 0 and 10000', 400);
-    if (action === 'send') await this.#send(agentId, body, freshSession, asciiEnvelope);
-    const record = this.records.get(this.#key(agentId, body.requestKey));
+    if (action === 'send') await this.#send(agentId, body, freshSession, asciiEnvelope, retryNotSent);
+    const record = this.#record(this.#key(agentId, body.requestKey));
     if (!record) throw fail('Delivery not found for this calling session', 404);
     if (waitMs && ['sending', 'sent', 'received'].includes(record.status)) await new Promise(resolve => {
       const finish = () => { clearTimeout(timer); this.waiters.delete(check); resolve(); };
@@ -168,7 +189,7 @@ export class SessionDeliveries {
     });
     return this.#view(record);
   }
-  async #send(sourceId, body, freshSession, asciiEnvelope) {
+  async #send(sourceId, body, freshSession, asciiEnvelope, retryNotSent) {
     if (typeof body.sessionId !== 'string' || !body.sessionId || body.sessionId.length > 256
       || (!(freshSession && body.expectedConversationId == null) && (typeof body.expectedConversationId !== 'string' || !body.expectedConversationId || body.expectedConversationId.length > 256))
       || typeof body.message !== 'string' || !body.message.trim() || /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(body.message)
@@ -176,24 +197,28 @@ export class SessionDeliveries {
     if (sourceId === body.sessionId) throw fail('Select a different receiving session', 400);
     const key = this.#key(sourceId, body.requestKey);
     const signature = hash(JSON.stringify([body.sessionId, body.expectedConversationId, body.message]));
-    const old = this.records.get(key);
+    const old = this.#record(key);
     if (old) {
       if (old.signature !== signature) throw fail('requestKey was already used with different content');
-      return; // Never replay after a disconnect, timeout or app restart.
+      if (!(retryNotSent && old.status === 'failed' && old.reason === 'not-sent')) return;
+      // Only the durable mailbox scheduler enables this internal flag. Unknown
+      // outcomes, sent messages and recovered receipts are never replayed.
     }
     const pending = this.inflight.get(key);
     if (pending) {
       if (pending.signature !== signature) throw fail('requestKey was already used with different content');
       return pending.operation;
     }
-    if (this.unavailable || this.records.size >= 1000) throw fail('Delivery history unavailable or full; nothing sent', 503);
+    if (this.unavailable) throw Object.assign(fail('Delivery history unavailable; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_UNAVAILABLE' });
+    try { this.#compact(); } catch { this.unavailable = true; throw Object.assign(fail('Cannot archive delivery history; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_UNAVAILABLE' }); }
+    if (this.records.size >= 1000) throw Object.assign(fail('Delivery history has 1000 unresolved entries; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_FULL' });
     const operation = this.#deliver(sourceId, body, key, signature, freshSession, asciiEnvelope);
     this.inflight.set(key, { signature, operation });
     try { await operation; } finally { this.inflight.delete(key); }
   }
   async #deliver(sourceId, body, key, signature, freshSession, asciiEnvelope) {
-    if (this.locks.has(body.sessionId)) throw fail('A delivery to this session is already being submitted');
-    this.locks.add(body.sessionId);
+    if (this.locks.has(body.sessionId)) throw Object.assign(fail('A delivery to this session is already being submitted'), { nothingSent: true });
+    this.locks.add(body.sessionId); let inputAttempted = false;
     try {
       const source = this.context(sourceId), target = this.context(body.sessionId);
       if (!source?.entry) throw fail('Calling session is not active');
@@ -234,13 +259,15 @@ export class SessionDeliveries {
         && this.context(body.sessionId)?.entry === entry && (unbound || this.context(body.sessionId)?.conversationId === target.conversationId)
         && entry.lastInputAt === inputAt;
       try {
+        inputAttempted = true;
         const submitted = await this.submit(body.sessionId, entry, message, isCurrent);
         if (!submitted) this.#update(record, 'failed', { reason: 'not-sent' });
         else if (record.status === 'sending') this.#update(record, 'sent', { sentAt: this.now() });
         else this.#update(record, record.status, { sentAt: this.now() });
       } catch { this.#update(record, 'unconfirmed', { reason: 'submission-uncertain' }); }
       this.observe(body.sessionId, entry, await this.read(body.sessionId).catch(() => null));
-    } finally { this.locks.delete(body.sessionId); }
+    } catch (error) { if (!inputAttempted) error.nothingSent = true; throw error; }
+    finally { this.locks.delete(body.sessionId); }
   }
   observe(id, entry, result) {
     if (!result) return;

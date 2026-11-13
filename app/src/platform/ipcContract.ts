@@ -1,5 +1,5 @@
 export type RuntimeCommand =
-  | "open_project_board" | "project_board_snapshot" | "project_board_ack" | "project_board_preferences" | "project_board_open_session"
+  | "open_project_board" | "project_board_snapshot" | "project_board_ack" | "project_board_ack_results" | "project_board_preferences" | "project_board_open_session"
   | "app_startup_get" | "app_startup_set"
   | "collector_status" | "collector_enroll" | "collector_accounts" | "collector_configure" | "collector_flush" | "collector_sources" | "collector_pause"
   | "accounts_removed" | "codex_accounts_rename" | "claude_accounts_rename" | "codex_accounts_remove" | "claude_accounts_remove"

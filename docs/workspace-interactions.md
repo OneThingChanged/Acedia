@@ -509,6 +509,36 @@ and the delayed-updater null-reference error without GUI automation.
 
 ## Project Board review inbox (1.8.2.10)
 
+Board placement supports free project-header dragging and sibling session-row
+reordering with a handle (or its Up/Down keys). Dragging a parent keeps its subtree
+together without reparenting sessions. Project positions and session display order
+are saved immediately on drop through `project_board_preferences` as
+`projectPositions: { [projectId]: { x, y } }` and `sessionOrder: string[]` in the
+host's **local** `project-board.json`. Reopening the board/application restores
+them; polling, search and status filters do not replace placement. Viewport saves
+exclude these keys to avoid overwriting a recent drop with an older debounce.
+Failed writes remain visible with a retry action. **Reset layout** clears only
+placement/order, retaining review history and registered relationships. Pointer
+capture, a movement threshold, click suppression and Escape cancellation keep
+dragging distinct from project folding and canvas panning. Connection routes
+follow moved coordinates; overlapping drops settle beside existing cards.
+
+Top-right **Sleeping** and **Idle / stopped** switches default to hidden and save
+`showSleeping` / `showStopped` booleans immediately in the same local preference
+file. Sleeping has its own category; the second switch covers non-sleeping Idle,
+paused, interrupted and stopped sessions. Ancestors of visible sessions remain,
+including parents in a different project. Hidden rows are compacted and empty
+project cards disappear, while necessary project ancestors and full-board project
+origins are retained. References to hidden sessions are hidden too. Inbox items
+and summary counts still cover the complete selected-project data. Locating a
+hidden inbox session temporarily reveals only it and its ancestors, without
+changing the saved switches; **Hide again** clears the exception. Reset layout
+does not reset visibility preferences.
+
+The saved session catalog now owns display names when merging live PTYs for the
+board and integration API. UUID defaults or stale launch-time aliases cannot
+overwrite current user labels; unnamed/new runtime records still have a fallback.
+
 The standalone board now uses project containers with nested session rows and a
 right-hand **Your attention / 내 확인** inbox, following the supplied v2 board
 prototype. The prototype's example sessions and simulated answer/retry controls
@@ -525,15 +555,43 @@ totals and dim unrelated nodes without moving them. Project/session folds also
 preserve other node positions. **Locate on board** explicitly unfolds ancestors
 and centers the session; polling never pans, zooms or takes keyboard focus.
 
-Opening a result only shows its exact summary, time, scope and submitted artifact
-paths. **Reviewed / 확인했어요** acknowledges that one result, not all results in
-the session, and never approves, publishes or executes work. Response termination,
+Opening a result now marks that exact result read while retaining its detail.
+Opening a conversation captures current result IDs/fingerprints and acknowledges
+only that set after successful navigation. A node's context menu offers the same
+captured-set result review. New arrivals, questions and errors are not consumed.
+The response's display changes to **Response read / 응답 확인됨** once no response
+results remain, while native work state stays independent. Reading never approves,
+publishes or executes work. Response termination,
 partial task submission and verified task completion have distinct labels. A new
 turn does not discard earlier results. Questions open the existing session
 composer for the user to answer; error notices have a separate explicit dismissal
 that does not repair or restart the worker. **Open conversation** navigates to the
 session's current conversation; historical message/line deep links and artifact
 downloads remain in the existing conversation interface.
+
+Middle-button dragging pans even over cards and suppresses native auto-scroll.
+Summary rings stop at zero; the state guide explains direct execution versus CLI
+background completion wait. Inactive titles are muted while attention badges stay
+legible. **Align by work** sorts sibling subtrees and project geometry once,
+retaining ancestors of urgent children; later polling preserves manual placement.
+Delivery badges/detail use bounded host metadata, distinguishing notification
+turn start from original UTF-8 text read; they do not infer external file reads.
+
+Durable UTF-8 inbox notifications now queue on startup, busy input, drafts and
+questions. The native input gates stay unchanged. A bounded host scheduler retries
+only proven non-input outcomes, with 1-30 second backoff and at most five actual
+notification attempts; waiting for input does not consume attempts.
+An explicit same-key send after the retry limit can start another bounded cycle
+only with a proven non-input outcome; polling and restart cannot reset the limit. Destination
+conversation changes stop delivery, and offline sessions are never auto-started.
+Queued intent survives restart; sending/unknown intent is never automatically
+replayed. Existing legacy failures without pinned identity remain for inspection.
+The 1,000-entry hot delivery history rotates terminal receipts into per-request
+files in `session-deliveries.json.archive`, preserving signature/idempotency even
+after rotation and restart. Unresolved receipts are never discarded; capacity
+and corrupt/unavailable history have separate error codes. The original mailbox's
+1,000-message / 16 MiB content limit still fails visibly without deleting unread
+text. The board receives metadata only, not message bodies or notification keys.
 
 The host's existing `project-board.json` filename now stores schema version 2,
 including a journal with independent result IDs, fingerprints and review times.

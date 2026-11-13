@@ -1,8 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import { BOARD_CARD, boardCounts, boardLayout, boardViewedAgent, type BoardSnapshot, type BoardSession, type BoardItem } from './workBoard';
+import { BOARD_CARD, boardCounts, boardLayout, boardViewedAgent, boardDisplayState, boardPriorityOrder, boardTransferLabel, boardVisibleSessionIds, type BoardSnapshot, type BoardSession, type BoardItem } from './workBoard';
 const session = (id: string, parentId: string | null, state = 'working') => ({ id, name: id, projectId: 'p', parentId, state, folder: 'D:/child', needsAttention: state === 'review' } as BoardSession);
 const snapshot = { projects: [{ id: 'p', name: 'Project', folder: 'G:/root' }], sessions: [session('a', null), session('b', 'a', 'review'), session('c', 'b', 'completed')] } as BoardSnapshot;
 describe('Work board node projection', () => {
+  it('distinguishes read responses from unread results and sorts parent subtrees only on explicit request', () => {
+    expect(boardDisplayState(session('a', null, 'review'), 0)).toBe('responded');
+    expect(boardDisplayState(session('a', null, 'review'), 1)).toBe('review');
+    const sessions = [session('idle', null, 'idle'), session('manager', null, 'idle'), session('background', null, 'background'), session('worker', 'manager', 'working')];
+    const order = boardPriorityOrder(sessions, [], []);
+    expect(order.indexOf('manager')).toBeLessThan(order.indexOf('background'));
+    expect(order.indexOf('background')).toBeLessThan(order.indexOf('idle'));
+    expect(boardLayout({ ...snapshot, sessions }, { sessionOrder: order }).nodes.map(n => n.session.id)).toEqual(['manager', 'worker', 'background', 'idle']);
+    const t = { id: 't', from: 'a', to: 'b', status: 'started', reason: '', isMessage: true };
+    expect(boardTransferLabel(t)[0]).toContain('원문 미확인'); expect(boardTransferLabel({ ...t, readAt: 5 })[0]).toContain('원문 읽음');
+  });
+  it('independently hides Sleeping and Idle/Stopped while retaining required ancestors across projects', () => {
+    const sessions = [
+      { ...session('manager', null, 'idle'), runtime: 'sleeping' },
+      { ...session('child', 'manager', 'working'), projectId: 'q', runtime: 'running' },
+      { ...session('sleep', null, 'idle'), runtime: 'sleeping' },
+      { ...session('stop', null, 'review'), runtime: 'stopped' },
+      { ...session('idle', null, 'idle'), runtime: 'running' },
+      { ...session('pause', null, 'paused'), runtime: 'running' },
+      { ...session('interrupted', null, 'interrupted'), runtime: 'running' },
+      ...['waiting', 'background', 'review', 'failed', 'completed', 'planned', 'unknown', 'waiting_external'].map(state => ({ ...session(state, null, state), runtime: 'running' })),
+    ];
+    const important = ['manager', 'child', 'waiting', 'background', 'review', 'failed', 'completed', 'planned', 'unknown', 'waiting_external'];
+    expect(boardVisibleSessionIds(sessions, false, false)).toEqual(new Set(important));
+    expect(boardVisibleSessionIds(sessions, true, false)).toEqual(new Set([...important, 'sleep']));
+    expect(boardVisibleSessionIds(sessions, false, true)).toEqual(new Set([...important, 'stop', 'idle', 'pause', 'interrupted']));
+    expect(boardVisibleSessionIds(sessions, false, false, 'sleep')).toContain('sleep');
+    const cyclic = [session('a', 'b', 'idle'), session('b', 'a', 'working')];
+    expect(boardVisibleSessionIds(cyclic, false, false)).toEqual(new Set(['a', 'b']));
+  });
+
+  it('compacts hidden rows, removes empty projects, and preserves full-board project origins and saved placement', () => {
+    const data = { ...snapshot, projects: [...snapshot.projects, { id: 'q', name: 'Other', folder: 'D:/other' }, { id: 'hidden', name: 'Hidden', folder: 'D:/hidden' }],
+      sessions: [session('a', null), ...Array.from({ length: 24 }, (_, i) => ({ ...session(`s${i}`, null, 'idle'), runtime: 'sleeping' })), session('b', 'a'),
+        { ...session('q1', null), projectId: 'q' }, { ...session('hidden1', null), projectId: 'hidden', runtime: 'stopped' }] };
+    const before = structuredClone(data), full = boardLayout(data, {}), hidden = boardLayout(data, { showSleeping: false, showStopped: false });
+    expect(hidden.nodes.map(n => n.session.id)).toEqual(['a', 'b', 'q1']);
+    expect(hidden.groups.map(g => g.id)).toEqual(['p', 'q']);
+    expect(hidden.groups.find(g => g.id === 'p')!.height).toBeLessThan(full.groups.find(g => g.id === 'p')!.height);
+    for (const g of hidden.groups) { const previous = full.groups.find(p => p.id === g.id)!; expect([g.x, g.y]).toEqual([previous.x, previous.y]); }
+    const moved = boardLayout(data, { showSleeping: false, showStopped: false, projectPositions: { p: { x: -410, y: 800 } } });
+    expect(moved.groups.find(g => g.id === 'p')).toMatchObject({ x: -410, y: 800 });
+    expect(data).toEqual(before);
+  });
   it('branches actual project folders like the supplied HTML, retaining an empty ancestor card', () => {
     const projects = ['master', 'automation', 'movie', 'max', 'unity'].map((id, i) => ({ id, name: id, folder: i ? `G:/Master/${id}` : 'G:/Master' }));
     const data = { ...snapshot, projects, sessions: projects.slice(1).map(p => ({ ...session(p.id, null), projectId: p.id })) };

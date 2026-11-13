@@ -1240,7 +1240,14 @@ The list shows indentation, connecting rails, immediate-parent labels and visibl
 child counts. Chat headers expose ancestor links using Remote navigation only.
 Required inactive ancestors remain contextual rows in Active; they are not counted
 as active sessions. Deep mobile trees cap visual indentation while retaining the
-actual ancestry. Static cache v111 refreshes the tree module network-first.
+actual ancestry. Static cache v112 refreshes the tree module network-first.
+
+Session navigation gives the name its own full-width first row, wrapping up to
+two lines with the complete name in its tooltip and accessible label. Disclosure,
+provider/status icons, status text, child count, parent/preview text and hover
+actions share the separate metadata row below. Hovering or revealing touch actions
+does not reduce the title width. Existing hierarchy rails, selection, folding and
+close actions remain intact. Remote and local Dashboard share this renderer.
 
 Regression checks run the actual desktop projections through JSON and authenticated
 HTTP, plus the production navigation and breadcrumb functions in Node DOM doubles.

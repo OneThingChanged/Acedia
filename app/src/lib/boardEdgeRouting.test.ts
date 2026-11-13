@@ -59,6 +59,14 @@ function fixture(): BoardSnapshot {
   return { revision: 'r', preferences: {}, storageError: null, devices: [], projects, sessions: [s('master', 'Master'), s('desk', 'Automation'), s('auto', 'Automation', 'desk'), s('camera', 'Movie'), s('max', 'Max'), s('export', 'Max', 'max'), s('unity', 'Unity'), s('prefab', 'Unity', 'unity')], references: [read('reverse', 'unity', 'max'), read('forward', 'max', 'unity'), read('vertical', 'camera', 'prefab'), read('internal', 'prefab', 'unity')] };
 }
 describe('Actual project board connection projection', () => {
+  it('reroutes hierarchy and read edges around all cards after restoring dragged project positions', () => {
+    const data = fixture(), layout = boardLayout(data, { projectPositions: { Master: { x: -420, y: 550 }, Unity: { x: 1120, y: -380 } } });
+    const connections = workBoardConnections(layout, data.sessions, data.references!, new Set(), {}, false);
+    expect(connections.routes.size).toBe(layout.projectEdges.length + data.references!.length);
+    for (const [id, route] of connections.routes) assertAvoids(route.path, id.startsWith('project:') ? layout.groups : layout.nodes);
+    const unity = layout.nodes.find(n => n.session.id === 'unity')!;
+    expect(connections.routes.get('read:reverse')!.points[0]).toEqual({ x: unity.x, y: unity.y + unity.height / 2 });
+  });
   it('reproduces the supplied screenshot without crossing source, target or intermediate cards', () => {
     const data = fixture(), layout = boardLayout(data, {});
     const connections = workBoardConnections(layout, data.sessions, data.references!, new Set(), {}, false);

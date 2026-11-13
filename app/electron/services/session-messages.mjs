@@ -7,6 +7,7 @@ const sha = value => createHash('sha256').update(value, 'utf8').digest('hex');
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\x00-\x1f]/.test(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const maxText = 64 * 1024, maxStore = 16 * 1024 * 1024;
+const pendingNotification = status => ['queued', 'notifying', 'sending', 'sent', 'received'].includes(status);
 
 export function sessionMessageText(body) {
   const fields = ['message', 'messageBase64', 'messageFile'].filter(key => own(body, key));
@@ -45,9 +46,9 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, readActivity, now });
-    this.records = []; this.inflight = new Map(); this.sequence = 0;
+  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, publish = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, publish, readActivity, now });
+    this.records = []; this.inflight = new Map(); this.targets = new Set(); this.sequence = 0; this.closed = false;
     try {
       if (fs.statSync(file).size > maxStore) throw Error();
       const records = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -59,7 +60,8 @@ export class SessionMessages {
           || !validId(r.sourceId) || !validId(r.targetId) || typeof r.requestKey !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(r.requestKey)
           || typeof r.message !== 'string' || Buffer.byteLength(r.message, 'utf8') > maxText || sha(r.message) !== r.sha256
           || !/^[a-f0-9]{64}$/.test(r.signature) || !Number.isSafeInteger(r.sequence) || r.sequence <= sequence
-          || !Number.isFinite(r.createdAt) || typeof r.notify !== 'boolean') throw Error();
+          || !Number.isFinite(r.createdAt) || typeof r.notify !== 'boolean'
+          || r.delivery?.status === 'queued' && (r.pinConversationId !== null && !validId(r.pinConversationId) || !['codex', 'claude'].includes(r.pinProvider))) throw Error();
         sequence = r.sequence; ids.add(r.messageId); keys.add(key);
         if (r.delivery?.status === 'notifying') r.delivery = { status: 'unconfirmed', reason: 'app-restarted' };
       }
@@ -76,10 +78,10 @@ export class SessionMessages {
     } catch { this.unavailable = true; throw fail('메시지 저장에 실패했습니다. 전송 상태를 다시 확인하세요.', 503); }
   }
   async view(record, { content = false, includeBase64 = false } = {}) {
-    const { message, signature, notificationKey, ...value } = record;
+    const { message, signature, notificationKey, pinConversationId, pinStartedAt, pinProvider, ...value } = record;
     if (record.notify && record.notificationKey) {
       const current = await this.receipt(record.sourceId, notificationKey).catch(() => null);
-      if (current) value.delivery = current;
+      if (current && !(['queued', 'notifying'].includes(record.delivery?.status) && current.status === 'failed' && current.reason === 'not-sent')) value.delivery = current;
     }
     return { ...value, encoding: 'utf-8', bytes: Buffer.byteLength(message, 'utf8'), saved: true,
       ...(content ? { message, ...(includeBase64 ? { messageBase64: Buffer.from(message, 'utf8').toString('base64') } : {}) } : {}) };
@@ -90,6 +92,93 @@ export class SessionMessages {
     if (!this.sessionFor(agentId)) throw fail('호출 세션을 찾을 수 없습니다.', 404);
     return action === 'message-send' ? this.send(agentId, body) : action === 'message-receive' ? this.receive(agentId, body) : Promise.reject(fail('지원하지 않는 메시지 작업입니다.', 404));
   }
+  async list(id) { return Promise.all(this.records.filter(r => r.sourceId === id || r.targetId === id).slice(-20).reverse().map(r => this.view(r))); }
+  notice(value) {
+    return { ...value.delivery, deliveryId: value.delivery?.deliveryId || value.messageId, requestKey: 'text_' + value.messageId.replace(/-/g, ''),
+      sourceId: value.sourceId, targetId: value.targetId, sourceName: value.sourceName, targetName: value.targetName,
+      createdAt: value.createdAt, savedAt: value.createdAt, readAt: value.readAt, isMessage: true,
+      status: value.delivery?.status === 'notification-error' ? 'failed' : value.delivery?.status === 'inbox' ? 'saved' : value.delivery?.status };
+  }
+  #state(record, delivery) {
+    record.delivery = delivery; this.save();
+    void this.view(record).then(value => this.publish(value)).catch(() => {});
+  }
+  #queue(record, reason) { this.#state(record, { status: 'queued', reason, nextAttemptAt: this.now() + Math.min(30000, 1000 * 2 ** Math.min(record.notificationAttempts || 0, 5)) }); }
+  async dispatch(record, waitMs = 0) {
+    if (this.closed || record.delivery?.status !== 'queued') return;
+    if (this.inflight.has(record.messageId)) return this.inflight.get(record.messageId);
+    if (this.targets.has(record.targetId)) return;
+    if (this.records.some(r => r.sequence < record.sequence && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status))) return;
+    this.targets.add(record.targetId);
+    const operation = Promise.resolve().then(() => this.#notify(record, waitMs));
+    this.inflight.set(record.messageId, operation);
+    try { await operation; } finally { this.inflight.delete(record.messageId); this.targets.delete(record.targetId); }
+  }
+  async #notify(record, waitMs) {
+    if (this.closed || this.unavailable) return;
+    if (record.readAt) { this.#state(record, { status: 'inbox', reason: 'already-read' }); return; }
+    const prior = await this.receipt(record.sourceId, record.notificationKey).catch(() => null);
+    if (prior && !(prior.status === 'failed' && prior.reason === 'not-sent')) { this.#state(record, prior); return; }
+    const context = this.context(record.targetId);
+    if (!context?.entry || !this.context(record.sourceId)?.entry) { this.#queue(record, !context?.entry ? 'target-offline' : 'sender-offline'); return; }
+    if (context.entry.ssh || context.entry.aiToolId !== record.pinProvider || record.pinConversationId && context.conversationId !== record.pinConversationId
+      || !record.pinConversationId && record.pinStartedAt !== null && context.entry.startedAt !== record.pinStartedAt) {
+      this.#state(record, { status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true }); return;
+    }
+    let current = context, remaining = waitMs;
+    try {
+      if (this.prepare) {
+        const deadline = performance.now() + waitMs;
+        const status = await this.prepare(record.targetId, { waitMs, context });
+        current = this.context(record.targetId);
+        if (current?.entry !== context.entry || context.conversationId && current.conversationId !== context.conversationId
+          || !context.conversationId && current?.conversationId && !status?.firstMessageReady) {
+          this.#state(record, { status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true }); return;
+        }
+        if (!status?.ready) { this.#queue(record, status?.reason || 'startup-pending'); return; }
+        remaining = Math.max(0, Math.floor(deadline - performance.now()));
+      }
+    } catch (error) { this.#state(record, { status: 'notification-error', reason: String(error.message || error).slice(0, 1000), nothingSent: true }); return; }
+    if (this.closed || record.readAt) return;
+    record.pinConversationId = current.conversationId ?? null;
+    record.notificationAttempts = (record.notificationAttempts || 0) + 1;
+    // Persist uncertain intent before any terminal call. A crash here is never
+    // replayed on restart, even if the original receipt is not available yet.
+    this.#state(record, { status: 'notifying' });
+    const reference = `Acedia session message ${record.messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${record.messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
+    try {
+      const delivery = await this.notify(record.sourceId, { sessionId: record.targetId, expectedConversationId: record.pinConversationId, message: reference, requestKey: record.notificationKey, waitMs: remaining });
+      if (delivery?.status === 'failed' && delivery.reason === 'not-sent') this.#retry(record, 'not-sent');
+      else this.#state(record, delivery && ['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(delivery.status) ? delivery : { status: 'unconfirmed', reason: 'notification-outcome-unknown' });
+    } catch (error) {
+      if (error.nothingSent === true && [409, 503, 507].includes(error.statusCode)) this.#retry(record, error.code || String(error.message).slice(0, 1000));
+      else this.#state(record, { status: 'unconfirmed', reason: String(error.message || error).slice(0, 1000) });
+    }
+  }
+  #retry(record, reason) {
+    if (record.notificationAttempts >= 5) this.#state(record, { status: 'notification-error', reason: `retry-limit: ${reason}`, nothingSent: true });
+    else this.#queue(record, reason);
+  }
+  async poll() {
+    if (this.closed || this.unavailable || this.polling) return;
+    this.polling = true;
+    try {
+      const pending = this.records.filter(r => r.notify && ['sending', 'sent', 'received'].includes(r.delivery?.status) && !this.inflight.has(r.messageId));
+      const uncertain = this.records.filter(r => r.notify && r.delivery?.status === 'unconfirmed' && !this.inflight.has(r.messageId));
+      const cursor = (this.receiptCursor || 0) % Math.max(1, uncertain.length), count = Math.max(0, 8 - Math.min(8, pending.length));
+      const batch = [...pending.slice(0, 8), ...Array.from({ length: Math.min(count, uncertain.length) }, (_, i) => uncertain[(cursor + i) % uncertain.length])];
+      this.receiptCursor = (cursor + count) % Math.max(1, uncertain.length);
+      for (const r of batch) {
+        const receipt = await this.receipt(r.sourceId, r.notificationKey).catch(() => null);
+        if (receipt && JSON.stringify(receipt) !== JSON.stringify(r.delivery)) this.#state(r, receipt);
+      }
+      const first = new Map();
+      for (const r of this.records) if (r.notify && pendingNotification(r.delivery?.status) && !first.has(r.targetId)) first.set(r.targetId, r);
+      const due = [...first.values()].filter(r => r.delivery.status === 'queued' && (r.delivery.nextAttemptAt || 0) <= this.now()).slice(0, 4);
+      await Promise.all(due.map(r => this.dispatch(r, 0)));
+    } finally { this.polling = false; }
+  }
+  close() { this.closed = true; }
   async send(sourceId, body) {
     if (Object.keys(body).some(k => !['sessionId', 'message', 'messageBase64', 'messageFile', 'expectedSha256', 'expectedConversationId', 'requestKey', 'notify', 'replyTo', 'waitMs'].includes(k))
       || !validId(body.sessionId) || typeof body.requestKey !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(body.requestKey) || body.sessionId === sourceId
@@ -104,6 +193,13 @@ export class SessionMessages {
     const old = this.records.find(r => r.sourceId === sourceId && r.requestKey === body.requestKey);
     if (old) {
       if (old.signature !== signature) throw fail('같은 requestKey에 다른 메시지를 보낼 수 없습니다.', 409);
+      // An explicit repeat of the original API call may restart a bounded retry
+      // cycle only when every prior attempt is proven to have written no input.
+      // Ordinary polling and application restart never reset this limit.
+      if (old.delivery?.status === 'notification-error' && old.delivery.nothingSent === true && old.delivery.reason?.startsWith('retry-limit:') && old.pinProvider) {
+        old.notificationAttempts = 0; this.#state(old, { status: 'queued', reason: 'explicit-safe-retry' });
+      }
+      if (old.delivery?.status === 'queued' && (old.delivery.nextAttemptAt || 0) <= this.now()) await this.dispatch(old, waitMs);
       await this.inflight.get(old.messageId); return this.view(old);
     }
     if (body.replyTo && !this.records.some(r => r.messageId === body.replyTo && r.targetId === sourceId && r.sourceId === body.sessionId)) throw fail('받은 메시지의 발신 세션에만 replyTo로 답장할 수 있습니다.', 409);
@@ -114,35 +210,15 @@ export class SessionMessages {
     const record = { messageId: randomUUID(), sequence: ++this.sequence, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
       targetId: body.sessionId, targetName: target.name || body.sessionId, message, sha256: sha(message), signature, notify,
       ...(body.replyTo ? { replyTo: body.replyTo } : {}), createdAt: this.now(), readAt: null,
-      delivery: { status: notify ? 'notifying' : 'inbox' } };
+      ...(notify ? { pinConversationId: context.conversationId ?? null, pinStartedAt: Number.isFinite(context.entry.startedAt) ? context.entry.startedAt : null, pinProvider: target.aiToolId } : {}),
+      delivery: { status: notify ? 'queued' : 'inbox' } };
     record.notificationKey = 'text_' + record.messageId.replace(/-/g, '');
     this.records.push(record);
     try { this.save(); } catch (error) { this.records.pop(); throw error; }
     if (!notify) return this.view(record);
-    const operation = (async () => {
-      const reference = `Acedia session message ${record.messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${record.messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
-      try {
-        let current = context, remaining = waitMs;
-        if (this.prepare) {
-          const deadline = performance.now() + waitMs;
-          const status = await this.prepare(record.targetId, { waitMs, context });
-          current = this.context(record.targetId);
-          if (current?.entry !== context.entry || (context.conversationId && current.conversationId !== context.conversationId)
-            || (!context.conversationId && current?.conversationId && !status?.firstMessageReady)) {
-            throw fail('받는 실행 세션 또는 대화가 변경되었습니다. 다시 조회하세요.', 409);
-          }
-          if (!status?.ready) throw fail(`Receiving session is not ready (${status?.reason || 'startup-pending'}); nothing sent`, 409);
-          remaining = Math.max(0, Math.floor(deadline - performance.now()));
-        }
-        record.delivery = await this.notify(sourceId, { sessionId: record.targetId, expectedConversationId: current.conversationId ?? null, message: reference, requestKey: record.notificationKey, waitMs: remaining });
-      } catch (error) {
-        // The reference is never retried automatically, including after restart.
-        record.delivery = { status: 'notification-error', reason: String(error.message || error).slice(0, 1000) };
-      }
-      this.save();
-    })();
-    this.inflight.set(record.messageId, operation);
-    try { await operation; return await this.view(record); } finally { this.inflight.delete(record.messageId); }
+    const earlier = this.records.some(r => r !== record && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status));
+    if (!earlier) await this.dispatch(record, waitMs);
+    return this.view(record);
   }
   async receive(agentId, body) {
     if (Object.keys(body).some(k => !['messageId', 'direction', 'unreadOnly', 'after', 'limit', 'markRead', 'includeBase64'].includes(k))
@@ -161,6 +237,7 @@ export class SessionMessages {
     if (changed.length) {
       const at = this.now(); changed.forEach(r => { r.readAt = at; });
       try { this.save(); } catch (error) { changed.forEach(r => { r.readAt = null; }); throw error; }
+      for (const r of changed) void this.view(r).then(value => this.publish(value)).catch(() => {});
     }
     return this.readActivity(agentId, outgoing ? [] : records.map(r => r.sourceId), async () => ({
       direction: outgoing ? 'outbox' : 'inbox', messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true }))),

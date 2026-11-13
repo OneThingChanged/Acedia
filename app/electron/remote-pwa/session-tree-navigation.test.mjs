@@ -87,6 +87,30 @@ it('renders real projected Active sessions under their inactive ancestors, folds
   expect(context.selectSession).not.toHaveBeenCalled(); expect(context.closeRemoteSession).not.toHaveBeenCalled();
 });
 
+it('gives long session names their own full-width title and keeps controls and status on the metadata line', () => {
+  const { all, ui, context } = fixture();
+  const name = 'ProjectWitch · Codex 개발 · 멀티플레이 전투와 VFX 검증 <원문 이름>';
+  all[2].name = name; context.renderNavigation();
+  const row = ui.sessionList.querySelectorAll('.session-row').find(r => r.dataset.agentId === 'worker');
+  const select = row.querySelector('.session-select'), metadata = row.querySelector('.session-meta');
+  expect(select.querySelector('strong').textContent).toBe(name);
+  expect(select.querySelector('strong').title).toBe(name);
+  expect(select.getAttribute('aria-label')).toBe(name);
+  expect(select.querySelectorAll('button')).toHaveLength(0);
+  expect(select.querySelector('.status-dot')).toBeNull(); expect(select.querySelector('svg')).toBeNull();
+  expect(metadata.querySelector('.status-dot')).not.toBeNull(); expect(metadata.querySelector('svg')).not.toBeNull();
+  expect(metadata.querySelector('.session-status').textContent).toBe('Working');
+  expect(metadata.querySelector('.session-parent').textContent).toBe('↳ VFX_New · Codex');
+  expect(metadata.querySelector('.session-row-actions')).not.toBeNull();
+  const manager = ui.sessionList.querySelectorAll('.session-row')[0];
+  expect(manager.querySelector('.session-family-toggle').parentElement).toBe(manager.querySelector('.session-meta'));
+  expect(manager.querySelector('.session-family-count').parentElement).toBe(manager.querySelector('.session-meta'));
+  select.listeners.click(); expect(context.selectSession).toHaveBeenCalledExactlyOnceWith('worker');
+  context.renderNavigation();
+  expect(ui.sessionList.querySelectorAll('.session-row').find(r => r.dataset.agentId === 'worker').querySelector('.session-select')).toBe(select);
+  metadata.querySelector('.session-close').listeners.click(); expect(context.closeRemoteSession).toHaveBeenCalledExactlyOnceWith('worker');
+});
+
 it('shows parent navigation in chat, retains breadcrumb focus targets on polls and clears detached ancestry', () => {
   const { all, ui, context } = fixture(); context.renderSessionFamilyTrail(all[2]);
   const links = () => ui.detailFamily.querySelectorAll('.session-ancestor-link');

@@ -99,7 +99,7 @@ export class SessionRuns {
       if (r.messageId) {
         const outbox = await this.messages.handle({ action: 'message-receive', agentId: r.ownerId, body: { messageId: r.messageId, direction: 'outbox', markRead: false } });
         const delivery = outbox.messages[0]?.delivery;
-        const phase = delivery?.status === 'started' ? 'started' : ['unconfirmed', 'failed', 'notification-error'].includes(delivery?.status) ? 'reconcile-required' : 'sent';
+        const phase = delivery?.status === 'started' ? 'started' : delivery?.status === 'queued' ? 'queued' : ['unconfirmed', 'failed', 'notification-error'].includes(delivery?.status) ? 'reconcile-required' : 'sent';
         if (delivery && (r.phase !== phase || JSON.stringify(delivery) !== JSON.stringify(r.delivery))) this.update(r, phase,
           { delivery, conversationId: delivery.conversationId || r.conversationId, reason: delivery.reason || delivery.status });
         return;
@@ -118,10 +118,10 @@ export class SessionRuns {
       if (this.context(r.sessionId)?.entry !== entry) { this.update(r, 'reconcile-required', { reason: 'child runtime changed' }); return; }
       this.update(r, 'sending', { sendReserved: true, conversationId: status.conversationId });
       const message = await this.messages.handle({ action: 'message-send', agentId: r.ownerId, body: { sessionId: r.sessionId, requestKey: 'run_' + r.sessionId.replaceAll('-', ''), message: r.message, notify: true, waitMs: 0 } });
-      this.update(r, 'sent', { messageId: message.messageId, delivery: message.delivery, question: undefined, startup: undefined, reason: 'waiting for exact receipt' });
+      this.update(r, message.delivery?.status === 'queued' ? 'queued' : 'sent', { messageId: message.messageId, delivery: message.delivery, question: undefined, startup: undefined, reason: message.delivery?.status === 'queued' ? message.delivery.reason || 'waiting for input' : 'waiting for exact receipt' });
     } catch (error) { if (!this.closed) this.update(r, 'reconcile-required', { reason: String(error.message).slice(0, 500) }); }
     finally { this.inflight.delete(r.sessionId); }
   }
-  async tick() { if (!this.closed && !this.unavailable) await Promise.all(this.records.filter(r => preparing.has(r.phase) || r.phase === 'sent').map(r => this.advance(r))); }
+  async tick() { if (!this.closed && !this.unavailable) await Promise.all(this.records.filter(r => preparing.has(r.phase) || ['sent', 'queued'].includes(r.phase)).map(r => this.advance(r))); }
   close() { this.closed = true; }
 }

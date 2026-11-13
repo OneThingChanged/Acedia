@@ -926,6 +926,7 @@ function renderNavigation() {
         const children = families.children.get(agent.id) || [];
         const expanded = !!query || !sessionFamilyFolds.has(agent.id);
         const row = make('div', 'session-row'); row.dataset.agentId = agent.id;
+        const copy = make('span', 'session-copy'), metadata = make('span', 'session-meta');
         row.dataset.depth = String(depth);
         if (families.parentById.has(agent.id)) row.dataset.parentId = families.parentById.get(agent.id);
         if (children.length) {
@@ -940,20 +941,21 @@ function renderNavigation() {
             rememberSessionFamilyFolds(); renderNavigation();
             [...ui.sessionList.querySelectorAll('.session-row')].find(item => item.dataset.agentId === agent.id)?.querySelector('.session-family-toggle')?.focus({ preventScroll: true });
           });
-          row.append(toggle);
-        } else row.append(make('span', 'session-family-spacer'));
+          metadata.append(toggle);
+        }
         const button = make('button', 'session-select'); button.type = 'button';
         const dot = make('span', 'status-dot'); dot.setAttribute('aria-hidden', 'true');
-        const copy = make('span', 'session-copy'), title = make('span', 'session-title-line'); title.append(make('strong', ''));
-        if (children.length) { const count = make('span', 'session-family-count', String(children.length)); count.title = t('표시 중인 하위 세션 {0}개', [children.length]); title.append(count); }
-        copy.append(title, make('small', ''));
-        button.append(dot, providerLogo(agent.aiToolId), copy); button.addEventListener('click', () => selectSession(agent.id));
+        const title = make('span', 'session-title-line'); title.append(make('strong', ''));
+        button.append(title); button.addEventListener('click', () => selectSession(agent.id));
+        metadata.append(dot, providerLogo(agent.aiToolId), make('span', 'session-status'));
+        if (children.length) { const count = make('span', 'session-family-count', String(children.length)); count.title = t('표시 중인 하위 세션 {0}개', [children.length]); metadata.append(count); }
+        metadata.append(make('small', ''));
         const actions = make('span', 'session-row-actions');
         const screen = memberships.get(agent.id);
         if (screen) { row.style.setProperty('--screen-color', screenColor(screen.number)); row.classList.add('has-screen'); actions.append(make('span', 'session-screen-badge', 'S' + screen.number)); }
         const close = make('button', 'session-close', '×'); close.type = 'button'; close.setAttribute('aria-label', t('세션 닫기') + ' · ' + agent.name);
         close.addEventListener('click', () => { void closeRemoteSession(agent.id); }); actions.append(close);
-        row.append(button, make('span', 'session-status'), actions); family.append(row);
+        metadata.append(actions); copy.append(button, metadata); row.append(copy); family.append(row);
         row.addEventListener('click', event => { if (!event.target.closest('button')) selectSession(agent.id); });
         if (children.length) {
           const group = make('div', 'session-family-children');
@@ -976,7 +978,10 @@ function renderNavigation() {
     row.classList.toggle('selected', selection.type === 'session' && selection.id === agent.id);
     row.classList.toggle('unread-completion', completedUnread.has(agent.id));
     row.querySelector('.status-dot').className = 'status-dot ' + status;
-    row.querySelector('.session-copy strong').textContent = text(agent.name || agent.id);
+    const name = text(agent.name || agent.id);
+    row.querySelector('.session-copy strong').textContent = name;
+    row.querySelector('.session-copy strong').title = name;
+    row.querySelector('.session-select').setAttribute('aria-label', name);
     const parent = catalog.find(value => value.id === families.parentById.get(agent.id));
     const subtitle = row.querySelector('.session-copy small'), preview = outputPreview(agent) || projectName(agent);
     subtitle.classList.toggle('session-parent', !!parent);
@@ -986,6 +991,7 @@ function renderNavigation() {
     statusLabel.hidden = status !== 'background' && (completedUnread.has(agent.id) || status === 'done');
     statusLabel.textContent = statusLabel.hidden ? '' : status === 'background' && agent.hook?.background_count
       ? t('백그라운드 {0}개 대기', [agent.hook.background_count]) : STATUS[status].label;
+    statusLabel.title = statusLabel.textContent;
   }
   ui.emptyState.hidden = agents.length !== 0;
   ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")

@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_ack", "project_board_preferences", "project_board_open_session",
+  "open_project_board", "project_board_snapshot", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "app_startup_get", "app_startup_set",
@@ -294,17 +294,26 @@ function assertInvokeRequest(command, rawArgs) {
         || args.revision !== undefined && !/^[a-f0-9]{64}$/.test(args.revision)) throw new TypeError('Invalid board snapshot');
       break;
     case 'project_board_ack':
+    case 'project_board_ack_results':
     case 'project_board_open_session':
       assertId(args);
-      if (Object.keys(args).some(key => !['id', ...(command === 'project_board_ack' ? ['fingerprint', 'itemId'] : ['compose'])].includes(key))
+      if (Object.keys(args).some(key => !['id', ...(command === 'project_board_ack' ? ['fingerprint', 'itemId'] : command === 'project_board_ack_results' ? ['results'] : ['compose', 'reviewResults'])].includes(key))
         || args.itemId !== undefined && (typeof args.itemId !== 'string' || !/^[a-f0-9]{64}$/.test(args.itemId))
         || command === 'project_board_ack' && (typeof args.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(args.fingerprint))
         || command === 'project_board_open_session' && args.compose !== undefined && typeof args.compose !== 'boolean') throw new TypeError('Invalid board session');
+      { const results = command === 'project_board_ack_results' ? args.results : args.reviewResults;
+        if ((command === 'project_board_ack_results' || results !== undefined) && (!Array.isArray(results) || results.length > 1500 || results.some(r => !r || typeof r !== 'object' || Object.keys(r).some(k => !['id', 'fingerprint'].includes(k)) || typeof r.id !== 'string' || typeof r.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.id) || !/^[a-f0-9]{64}$/.test(r.fingerprint)))) throw new TypeError('Invalid board result list'); }
       break;
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-          || Object.keys(p).some(key => !['layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion'].includes(key))
+          || Object.keys(p).some(key => !['layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped'].includes(key))
+          || ['showSleeping', 'showStopped'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
+          || p.sessionOrder !== undefined && (!Array.isArray(p.sessionOrder) || p.sessionOrder.length > 2000 || p.sessionOrder.some(id => typeof id !== 'string' || !id || id.length > 256 || /[\x00-\x1f]/.test(id)))
+          || p.projectPositions !== undefined && (!p.projectPositions || typeof p.projectPositions !== 'object' || Array.isArray(p.projectPositions)
+            || Object.keys(p.projectPositions).length > 2000 || Object.entries(p.projectPositions).some(([id, value]) => !id || id.length > 256 || /[\x00-\x1f]/.test(id)
+              || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || Object.keys(value).some(key => !['x', 'y'].includes(key))
+              || ['x', 'y'].some(key => !Number.isFinite(value[key]) || Math.abs(value[key]) > 1000000)))
           || p.layoutVersion !== undefined && p.layoutVersion !== 2
           || p.motion !== undefined && typeof p.motion !== 'boolean'
           || p.collapsedProjects !== undefined && (!Array.isArray(p.collapsedProjects) || p.collapsedProjects.length > 2000 || p.collapsedProjects.some(id => typeof id !== 'string' || id.length > 256))

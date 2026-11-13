@@ -16,7 +16,7 @@ export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
     void listen<SessionDelivery>('agent:session-delivery', event => {
       if (cancelled || ![event.payload.sourceId, event.payload.targetId].includes(agentId)) return;
       events++;
-      setRecords(old => [event.payload, ...old.filter(r => r.deliveryId !== event.payload.deliveryId)]
+      setRecords(old => [{ ...old.find(r => r.sourceId === event.payload.sourceId && r.requestKey === event.payload.requestKey), ...event.payload }, ...old.filter(r => r.sourceId !== event.payload.sourceId || r.requestKey !== event.payload.requestKey)]
         .sort((a, b) => b.createdAt - a.createdAt).slice(0, 20));
     }).then(async stop => {
       if (cancelled) { stop(); return; }
@@ -31,16 +31,18 @@ export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
   if (!record || dismissed === record.deliveryId + ':' + record.status) return null;
   const bad = ['failed', 'unconfirmed'].includes(record.status);
   const stages = [
+    ...(record.isMessage ? [{ ko: '저장됨', en: 'Saved', at: record.savedAt }] : []),
     { ko: '전송됨', en: 'Sent', at: record.sentAt },
     { ko: '수신됨', en: 'Received', at: record.receivedAt },
-    { ko: '작업 시작됨', en: 'Task started', at: record.startedAt },
+    ...(record.isMessage ? [{ ko: '원문 읽음', en: 'Text read', at: record.readAt }] : []),
+    { ko: record.isMessage ? '응답 시작' : '작업 시작됨', en: record.isMessage ? 'Response started' : 'Task started', at: record.startedAt },
   ];
   return <div className={`session-delivery-notice ${record.status}`} role={bad ? 'alert' : 'status'}>
     <div className='session-delivery-summary'>
       <strong>{record.sourceId === agentId
         ? text(`${record.targetName}에게 작업 전달`, `Task sent to ${record.targetName}`)
         : text(`${record.sourceName}에서 받은 작업`, `Task from ${record.sourceName}`)}</strong>
-      <span>{text(deliveryStatusMessage(record, false), deliveryStatusMessage(record, true))}</span>
+      <span>{text(deliveryStatusMessage(record, false), deliveryStatusMessage(record, true))}{bad && record.reason ? ` · ${record.reason}` : ''}</span>
     </div>
     <ol aria-label={text('전달 진행 상태', 'Delivery progress')}>
       {stages.map(stage => <li key={stage.en} className={stage.at ? 'confirmed' : ''}>

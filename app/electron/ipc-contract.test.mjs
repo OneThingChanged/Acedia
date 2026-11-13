@@ -6,9 +6,21 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('accepts bounded local board placement and rejects malformed coordinates or ordering', () => {
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: { p: { x: -30, y: 750 } }, sessionOrder: ['b', 'a'] } })).toBeTruthy();
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [] } })).toBeTruthy();
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { showSleeping: true, showStopped: false } })).toBeTruthy();
+    for (const preferences of [{ showSleeping: 'yes' }, { showStopped: 0 }, { showSleeping: null }]) expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences })).toThrow();
+    for (const projectPositions of [null, [], { p: { x: 3 } }, { p: { x: '3', y: 4 } }, { p: { x: 3, y: Infinity } }, { p: { x: 1000001, y: 2 } }, { p: { x: 3, y: 4, run: 'unsafe' } }, { 'bad\n': { x: 3, y: 4 } }])
+      expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions } })).toThrow();
+    for (const sessionOrder of [null, {}, [''], [4], ['bad\n'], Array(2001).fill('a')])
+      expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { sessionOrder } })).toThrow();
+  });
   it('bounds board-only commands to metadata, exact result identity and navigation', () => {
     expect(contract.assertInvokeRequest('open_project_board', {})).toEqual({});
     expect(contract.assertInvokeRequest('project_board_open_session', { id: 'a', compose: true })).toEqual({ id: 'a', compose: true });
+    expect(contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results: [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64) }] })).toBeTruthy();
+    for (const results of [null, [{ id: 'a'.repeat(64) }], [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64), execute: true }], Array(1501).fill({})]) expect(() => contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results })).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64) })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64), itemId: 'b'.repeat(64) })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { zoom: .5, collapsed: ['a'], x: -200, y: 100 } })).toBeTruthy();

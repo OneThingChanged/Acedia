@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBoard } from './project-board.mjs';
+import { mergeMiraControlAgents } from './miracontrol-integration.mjs';
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) {
   if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-board-')) throw Error('Unexpected fixture path');
@@ -19,6 +20,56 @@ function fixture() {
   return { board: new ProjectBoard(options), source, live, hooks, runs, options, time: value => { now = value; } };
 }
 describe('Independent project board', () => {
+  it('projects bounded delivery phases without message bodies or private notification keys', () => {
+    const f = fixture(); f.board.transfers = () => [{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', savedAt: 1000, message: 'private body', notificationKey: 'private-key' }];
+    expect(f.board.snapshot().transfers).toEqual([{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', savedAt: 1000, readAt: null, startedAt: null, isMessage: false }]);
+  });
+  it('reviews only captured results atomically and never acknowledges newer results, questions or other sessions', () => {
+    const f = fixture(), captured = f.board.snapshot().items.filter(i => i.kind === 'result');
+    f.board.observe({ id: 'a', event: 'working', received_at: 3000 });
+    f.board.observe({ id: 'a', event: 'done', received_at: 4000, assistant_message: '새로 도착한 결과' });
+    f.hooks.set('b', { event: 'waiting', received_at: 5000, interactive_question: '사용자 답변 필요' }); f.live.add('b');
+    const question = f.board.snapshot().items.find(i => i.kind === 'question');
+    const results = captured.map(i => ({ id: i.id, fingerprint: i.fingerprint }));
+    expect(() => f.board.acknowledgeResults('a', [...results, { id: question.id, fingerprint: question.fingerprint }])).toThrow();
+    expect(f.board.snapshot().items.some(i => i.id === captured[0].id)).toBe(true);
+    f.board.acknowledgeResults('a', results);
+    const next = f.board.snapshot(); expect(next.items.some(i => i.id === captured[0].id)).toBe(false);
+    expect(next.items.some(i => i.id === question.id)).toBe(true);
+    expect(next.items.some(i => i.summary === '새로 도착한 결과')).toBe(true);
+    expect(() => f.board.acknowledgeResults('a', results)).not.toThrow();
+  });
+  it('writes local placement through the renderer IPC contract and restores it after the host restarts', async () => {
+    const { createRequire } = await import('node:module');
+    const contract = createRequire(import.meta.url)('../ipc-contract.cjs');
+    const f = fixture(), before = structuredClone(f.source), positions = { p: { x: -340, y: 910 } };
+    const write = preferences => f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences }).preferences);
+    const first = f.board.snapshot(), item = first.items[0];
+    f.board.acknowledge(item.sessionId, item.fingerprint, item.id);
+    write({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true });
+    write({ zoom: .7, x: 100, y: -20 });
+    const reopened = new ProjectBoard(f.options);
+    expect(reopened.snapshot().preferences).toEqual({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true, zoom: .7, x: 100, y: -20 });
+    expect(reopened.snapshot().items).toHaveLength(0); expect(f.source).toEqual(before);
+    reopened.preferences({ projectPositions: {}, sessionOrder: [] });
+    expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ projectPositions: {}, sessionOrder: [], zoom: .7 });
+  });
+  it('shows saved session names through the actual PTY catalog merge and follows renames without reopening results', () => {
+    const f = fixture();
+    const runtime = f.source.agents.map(agent => ({ id: agent.id, name: agent.id, aiToolId: agent.aiToolId }));
+    const board = new ProjectBoard({ ...f.options, catalog: () => ({ ...f.source, agents: mergeMiraControlAgents(f.source.agents, runtime) }) });
+    const first = board.snapshot();
+    expect(first.sessions.map(s => s.name)).toEqual(['관리자', '자식']);
+    expect(first.items).toHaveLength(1);
+    board.acknowledge(first.items[0].sessionId, first.items[0].fingerprint, first.items[0].id);
+    const before = board.snapshot();
+    f.source.agents[0].name = '이름을 변경한 관리자';
+    const after = board.snapshot();
+    expect(after.sessions[0].name).toBe('이름을 변경한 관리자');
+    expect(after.sessions[0].fingerprint).toBe(before.sessions[0].fingerprint);
+    expect(after.revision).not.toBe(before.revision);
+    expect(after.items).toHaveLength(0); expect(runtime[0].name).toBe('a');
+  });
   it('exposes only the project hierarchy and host fields needed by the reference-style layout', () => {
     const f = fixture();
     Object.assign(f.source.projects[0], { sshHostId: 'host', remoteFolder: '/work', hierarchy: { parentId: 'master', instructions: 'private instructions' } });
