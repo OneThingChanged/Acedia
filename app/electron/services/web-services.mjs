@@ -140,6 +140,9 @@ const REMOTE_ATTACHMENT_TYPES = new Map([
     || (buffer.length >= 22 && buffer.readUInt32LE(0) === 0x06054b50) }],
 ]);
 const REMOTE_PWA_ASSETS = new Map([
+  ["/pwa/workspace-shell.css", { file: "workspace-shell.css", type: "text/css; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/workspace-shell.js", { file: "workspace-shell.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/markdown-blocks.js", { file: "markdown-blocks.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/chat-files.js", { file: "chat-files.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/model-editor.js", { file: "model-editor.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/workspace-ui.js", { file: "workspace-ui.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],

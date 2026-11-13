@@ -1,3 +1,5 @@
+import { renderMarkdownBlocks } from './markdown-blocks.js';
+import { createWorkspaceReview, reviewEntries } from './workspace-shell.js';
 import { createHostingView } from './hosting.js';
 import { createImageZoom } from './image-zoom.js';
 import { createSessionModelEditor } from './session-model.js';
@@ -29,6 +31,13 @@ const $ = (selector) => document.querySelector(selector);
 
 const ui = {
   appShell: $(".app-shell"),
+  chatButton: $("#chatButton"),
+  sessionDocumentsButton: $("#sessionDocumentsButton"),
+  workspaceFolder: $("#workspaceFolder"),
+  workspaceQuickTools: $("#workspaceQuickTools"),
+  documentRawButton: $("#documentRawButton"),
+  documentSource: $("#documentSource"),
+  documentScope: $("#documentScope"),
   connection: $("#connection"),
   updated: $("#updated"),
   workingCount: $("#workingCount"),
@@ -279,6 +288,8 @@ function selectionFromUrl(url) {
   return { type: "monitor", id: null };
 }
 let selection = selectionFromUrl(initialUrl);
+let lastViewedSessionId = selection.type === "session" ? selection.id : null;
+let documentRaw = false;
 const hosting = createHostingView(ui.hostingView);
 const taskFlow = createTaskFlowView(document.getElementById('taskFlowView'), {
   api: async (action, body) => {
@@ -842,8 +853,16 @@ function renderSummary() {
 }
 
 const sessionNotesView = createSessionNotes({ getAgent: id => agentMap().get(id), selectedId: () => selection.type === 'session' ? selection.id : null });
+const workspaceReview = createWorkspaceReview({
+  mount: document.querySelector('.session-note-workspace'), trigger: document.getElementById('workspaceReviewButton'),
+  getEntries: () => reviewEntries(navigationAgents(), completedUnread, displayStatusOf),
+  projectName: id => (remoteState.view?.projects || []).find(p => p.id === id)?.name || '',
+  openSession: id => selectSession(id), beforeOpen: () => { sessionNotesView.close(); setSessionToolsOpen(false); },
+  returnFocus: () => isChatOnly() ? ui.sessionToolsToggle : document.getElementById('workspaceReviewButton'),
+});
+document.getElementById('sessionNoteButton').addEventListener('click', () => workspaceReview.close());
 const sessionModelEditor = createSessionModelEditor({
-  note: id => sessionNotesView.open(id),
+  note: id => { workspaceReview.close(); sessionNotesView.open(id); },
   getAgent: id => agentMap().get(id),
   selectedId: () => selection.type === "session" ? selection.id : null,
   projectName, statusOf, showToast,
@@ -871,6 +890,7 @@ function renderNavigation() {
       || members.some((agent) => matchesQuery(agent, query));
   });
   ui.screenCount.textContent = String(screenGroups().length);
+  if (ui.screensSection) ui.screensSection.hidden = ui.appShell.classList.contains('touch-workspace') || screenGroups().length === 0;
   const screenFragment = document.createDocumentFragment();
   for (const screen of screens) {
     const button = make("button", "screen-row");
@@ -1523,6 +1543,7 @@ function renderSession() {
     selectMonitor();
     return;
   }
+  lastViewedSessionId = agent.id;
   const status = statusOf(agent);
   const displayStatus = displayStatusOf(agent);
   if (openLinkedQuestionInChat) { openLinkedQuestionInChat = false; if (status === 'question') setSessionViewMode('chat'); }
@@ -1534,6 +1555,10 @@ function renderSession() {
   ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
   ui.detailMeta.textContent = `${projectName(agent)} · ${toolName(agent)}`;
+  ui.workspaceFolder.textContent = text(agent.folder || projectMap().get(agent.projectId)?.folder);
+  ui.workspaceFolder.title = ui.workspaceFolder.textContent;
+  ui.sessionDocumentsButton.disabled = !localDocumentProjects().some(p => p.id === agent.projectId);
+  workspaceReview.update();
   renderSessionFamilyTrail(agent);
   renderSessionNotifications(agent);
   if (ui.sessionOffline) ui.sessionOffline.hidden = status !== "offline";
@@ -1604,144 +1629,7 @@ function documentInlineMarkdown(value) {
   return output;
 }
 
-function markdownTableCells(line) {
-  const trimmed = String(line).trim().replace(/^\|/, "").replace(/\|$/, "");
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function isMarkdownTableDivider(line) {
-  const cells = markdownTableCells(line);
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-}
-
-function documentMarkdownToHtml(value) {
-  const lines = String(value ?? "").split(/\r?\n/);
-  const output = [];
-  let listType = null;
-  const closeList = () => {
-    if (!listType) return;
-    output.push(`</${listType}>`);
-    listType = null;
-  };
-  const startsBlock = (index) => {
-    const line = lines[index] || "";
-    const next = lines[index + 1] || "";
-    return !line.trim()
-      || /^(```|~~~)/.test(line.trim())
-      || /^(#{1,6})\s+/.test(line)
-      || /^\s*([-*+]|\d+\.)\s+/.test(line)
-      || /^\s*>\s?/.test(line)
-      || /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)
-      || (line.includes("|") && isMarkdownTableDivider(next));
-  };
-
-  for (let index = 0; index < lines.length;) {
-    const line = lines[index];
-    const trimmed = line.trim();
-    if (!trimmed) {
-      closeList();
-      index += 1;
-      continue;
-    }
-
-    const fence = trimmed.match(/^(```|~~~)\s*([^\s]*)/);
-    if (fence) {
-      closeList();
-      const marker = fence[1];
-      const code = [];
-      index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith(marker)) {
-        code.push(lines[index]);
-        index += 1;
-      }
-      if (index < lines.length) index += 1;
-      const language = fence[2] ? ` data-language="${escapeHtml(fence[2])}"` : "";
-      output.push(`<pre><code${language}>${escapeHtml(code.join("\n"))}</code></pre>`);
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
-    if (heading) {
-      closeList();
-      const level = heading[1].length;
-      output.push(`<h${level}>${documentInlineMarkdown(heading[2])}</h${level}>`);
-      index += 1;
-      continue;
-    }
-
-    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      closeList();
-      output.push("<hr>");
-      index += 1;
-      continue;
-    }
-
-    if (line.includes("|") && isMarkdownTableDivider(lines[index + 1] || "")) {
-      closeList();
-      const headers = markdownTableCells(line);
-      index += 2;
-      const rows = [];
-      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
-        rows.push(markdownTableCells(lines[index]));
-        index += 1;
-      }
-      output.push("<table><thead><tr>");
-      for (const header of headers) output.push(`<th>${documentInlineMarkdown(header)}</th>`);
-      output.push("</tr></thead><tbody>");
-      for (const row of rows) {
-        output.push("<tr>");
-        for (let cellIndex = 0; cellIndex < headers.length; cellIndex += 1) {
-          output.push(`<td>${documentInlineMarkdown(row[cellIndex] || "")}</td>`);
-        }
-        output.push("</tr>");
-      }
-      output.push("</tbody></table>");
-      continue;
-    }
-
-    const unordered = line.match(/^\s*[-*+]\s+(.*)$/);
-    const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
-    if (unordered || ordered) {
-      const nextListType = unordered ? "ul" : "ol";
-      if (listType !== nextListType) {
-        closeList();
-        listType = nextListType;
-        output.push(`<${listType}>`);
-      }
-      let item = (unordered || ordered)[1];
-      const task = item.match(/^\[([ xX])\]\s+(.*)$/);
-      if (task) {
-        item = `<input type="checkbox" disabled${task[1].toLowerCase() === "x" ? " checked" : ""}> ${documentInlineMarkdown(task[2])}`;
-      } else {
-        item = documentInlineMarkdown(item);
-      }
-      output.push(`<li>${item}</li>`);
-      index += 1;
-      continue;
-    }
-
-    closeList();
-    if (/^\s*>\s?/.test(line)) {
-      const quote = [];
-      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^\s*>\s?/, ""));
-        index += 1;
-      }
-      output.push(`<blockquote>${quote.map(documentInlineMarkdown).join("<br>")}</blockquote>`);
-      continue;
-    }
-
-    const paragraph = [trimmed];
-    index += 1;
-    while (index < lines.length && !startsBlock(index)) {
-      paragraph.push(lines[index].trim());
-      index += 1;
-    }
-    output.push(`<p>${documentInlineMarkdown(paragraph.join(" "))}</p>`);
-  }
-  closeList();
-  return output.join("");
-}
+function documentMarkdownToHtml(value) { return renderMarkdownBlocks(value, documentInlineMarkdown, { copyLabel: t('복사') }); }
 
 async function apiError(response) {
   try {
@@ -2057,6 +1945,8 @@ function renderDocumentPreview() {
     ui.documentMarkdown.querySelectorAll("video").forEach(video => { cancelVideoPreview(video); video.pause(); video.removeAttribute("src"); video.load(); video.remove(); });
   }
   ui.documentMarkdown.hidden = true;
+  ui.documentSource.hidden = true;
+  ui.documentRawButton.hidden = true;
   ui.documentHtmlLaunch.hidden = true;
   ui.documentKind.hidden = true;
 
@@ -2107,7 +1997,12 @@ function renderDocumentPreview() {
     ui.documentHtmlLaunch.hidden = false;
   } else {
     const renderKey = `${key}\u0000${documentContent.modifiedAt || ""}\u0000${documentContent.size || 0}`;
-    ui.documentMarkdown.hidden = false;
+    ui.documentRawButton.hidden = false;
+    ui.documentRawButton.textContent = t(documentRaw ? '미리보기' : '원문');
+    ui.documentRawButton.setAttribute('aria-pressed', String(documentRaw));
+    ui.documentSource.hidden = !documentRaw;
+    if (documentRaw && ui.documentSource.textContent !== (documentContent.content || '')) ui.documentSource.textContent = documentContent.content || '';
+    ui.documentMarkdown.hidden = documentRaw;
     if (ui.documentMarkdown.dataset.renderKey !== renderKey) {
       ui.documentMarkdown.dataset.renderKey = renderKey;
       ui.documentMarkdown.innerHTML = documentMarkdownToHtml(documentContent.content || "");
@@ -2524,6 +2419,8 @@ function renderDocuments() {
   ui.refreshDocumentsButton.disabled = projects.length === 0;
 
   const project = projects.find((candidate) => candidate.id === selection.id);
+  ui.documentScope.textContent = project?.folder ? t('프로젝트 폴더') + ' · ' + project.folder : '';
+  ui.documentScope.title = project?.folder || '';
   if (!project) {
     ui.documentListTitle.textContent = t("문서");
     ui.documentListCount.textContent = "0";
@@ -3324,6 +3221,9 @@ function renderSelection() {
   syncTerminal();
   syncSessionView();
   sessionNotesView.update();
+  workspaceReview.update();
+  ui.chatButton.classList.toggle('selected', ['session','screen','monitor'].includes(selection.type));
+  ui.chatButton.setAttribute('aria-current', ['session','screen','monitor'].includes(selection.type) ? 'page' : 'false');
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");
@@ -3602,9 +3502,11 @@ async function submitSessionEditor() {
 }
 
 function selectSession(id, fromScreenId = null) {
+  if (!agentMap().has(id)) return;
   setSessionToolsOpen(false);
   acknowledgeCompletion(id);
-  if (!agentMap().has(id)) return;
+  lastViewedSessionId = id;
+  workspaceReview.close();
   selection = { type: "session", id };
   returnScreenId = isChatOnly() ? null : fromScreenId;
   updateUrl({ push: true });
@@ -3615,6 +3517,7 @@ function selectSession(id, fromScreenId = null) {
 
 function selectDocuments(projectId = null) {
   const projects = localDocumentProjects();
+  projectId ||= selectedAgent()?.projectId || agentMap().get(lastViewedSessionId)?.projectId;
   const id = projects.some((project) => project.id === projectId)
     ? projectId
     : projects[0]?.id;
@@ -3627,6 +3530,7 @@ function selectDocuments(projectId = null) {
   returnScreenId = null;
   if (projectChanged) {
     selectedDocumentPath = null;
+    documentRaw = false;
     documentContent = null;
     documentContentKey = "";
     documentContentError = "";
@@ -5506,6 +5410,13 @@ function applyScreenAvailability() {
   sessionViewMode = mobile ? 'chat' : preferredSessionViewMode;
   const taskModeHost = mobile ? ui.sessionTools : document.querySelector('.composer-settings');
   if (taskModeButton.parentElement !== taskModeHost) taskModeHost.append(taskModeButton);
+  if (ui.workspaceQuickTools) {
+    const quick = ui.workspaceQuickTools;
+    const host = mobile ? ui.sessionTools : ui.sessionToolsToggle.parentElement;
+    if (quick.parentElement !== host) {
+      if (mobile) host.prepend(quick); else host.insertBefore(quick, ui.sessionToolsToggle);
+    }
+  }
   if (!mobile) setSessionToolsOpen(false);
   if (ui.screensSection) ui.screensSection.hidden = mobile;
   ui.searchInput.placeholder = mobile
@@ -5877,6 +5788,20 @@ async function initializeNotifications() {
   }
 }
 
+document.addEventListener('click', async event => {
+  const trigger = event.target.closest('[data-markdown-copy]');
+  if (!trigger) return;
+  const code = trigger.closest('.markdown-code-block')?.querySelector('pre code');
+  if (!code) return;
+  try { await copyText(code.textContent); showToast(t('복사했습니다.')); }
+  catch { showToast(t('복사하지 못했습니다.')); }
+});
+ui.chatButton.addEventListener('click', () => {
+  const id = agentMap().has(lastViewedSessionId) ? lastViewedSessionId : visibleAgents()[0]?.id;
+  if (id) selectSession(id); else { selectMonitor(); closeSidebar(); }
+});
+ui.sessionDocumentsButton.addEventListener('click', () => selectDocuments(selectedAgent()?.projectId));
+ui.documentRawButton.addEventListener('click', () => { documentRaw = !documentRaw; renderDocumentPreview(); });
 ui.overviewButton.addEventListener("click", () => selectMonitor("all"));
 ui.documentsButton.addEventListener("click", () => selectDocuments(selection.type === "documents" ? selection.id : null));
 ui.usageButton.addEventListener("click", selectUsage);

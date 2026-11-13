@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+import { renderMarkdownBlocks } from './markdown-blocks.js';
 import { text } from "./dom.js";
 
 function escapeHtml(text) {
@@ -112,21 +114,6 @@ function inlineMd(text, agent = null, files = []) {
   out = out.replace(/\u0000CHAT(\d+)\u0000/g, (_match, index) => tokens[Number(index)] || "");
   return out;
 }
-function mdToHtml(text, agent = null, files = []) {
-  const lines = String(text).split(/\r?\n/);
-  let html = "";
-  let inList = false;
-  const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,4})\s+(.*)$/);
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    if (heading) { closeList(); html += `<h4>${inlineMd(heading[2], agent, files)}</h4>`; }
-    else if (bullet) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inlineMd(bullet[1], agent, files)}</li>`; }
-    else if (!line.trim()) { closeList(); }
-    else { closeList(); html += `<p>${inlineMd(line, agent, files)}</p>`; }
-  }
-  closeList();
-  return html;
-}
+function mdToHtml(value, agent = null, files = []) { return renderMarkdownBlocks(value, line => inlineMd(line, agent, files), { copyLabel: t('복사') }); }
 
 export { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml };

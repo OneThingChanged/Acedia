@@ -52,7 +52,7 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
   let selectedView = 'history';
   const el = (tag, text, className) => { const node = document.createElement(tag); if (text) node.textContent = t(text); if (className) node.className = className; return node; };
   const tabs = el('div', '', 'pool-tabs'); tabs.setAttribute('aria-label', t('사용량 보기'));
-  const history = el('button', '사용량'); const sessions = el('button', '세션별 사용량'); const accounts = el('button', '계정 관리·분산');
+  const history = el('button', '계정 한도'); const sessions = el('button', '세션별 사용량'); const accounts = el('button', '계정 관리 · 라우팅');
   history.type = sessions.type = accounts.type = 'button'; tabs.append(history, sessions, accounts);
   history.dataset.usageView = 'history'; sessions.dataset.usageView = 'sessions'; accounts.dataset.usageView = 'accounts';
   sessions.dataset.usageSessionsTab = 'true';
@@ -273,16 +273,25 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
     }
     if (loginAccountId) return;
     if (!data.recent.length) records.append(el('p', '분산으로 처리한 요청이 없습니다. 분산을 켜고 새 Codex 세션을 시작하세요.'));
-    for (const item of data.recent.slice(0, 20)) {
-      const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
-      const state = requestStatus(item);
-      const total = recordedTokens(item);
-      const tokens = item.operation === 'tool' ? t('도구 요청 · 대화 토큰과 별도')
-        : item.operation === 'models' ? t('사용량 대상 아님')
-        : total == null ? t('요청별 토큰 정보 없음') : `${total.toLocaleString()} ${t('토큰')}`;
-      records.append(el('p', `${new Date(item.at).toLocaleString()} · ${name} · ${t(state)} · ${tokens} · ${t('세션')} ${sessionLabel(item.sessionId)}`));
+    if (data.recent.length) {
+      const table=el('table'), head=el('thead'), hr=el('tr'), body=el('tbody');
+      for(const label of ['시간','세션','계정','처리 상태','토큰']) hr.append(el('th',label));
+      head.append(hr); table.append(head,body); records.append(table);
+      for (const item of data.recent.slice(0, 20)) {
+        const name = data.accounts.find(a => a.id === item.accountId)?.label || t('제거된 계정');
+        const state = requestStatus(item), total = recordedTokens(item);
+        const tokens = item.operation === 'tool' ? t('도구 요청 · 대화 토큰과 별도')
+          : item.operation === 'models' ? t('사용량 대상 아님')
+          : total == null ? t('요청별 토큰 정보 없음') : total.toLocaleString();
+        const row=el('tr');
+        for(const value of [new Date(item.at).toLocaleString(),sessionLabel(item.sessionId),name,t(state),tokens]) {
+          const cell=el('td'); cell.textContent=value; row.append(cell);
+        }
+        body.append(row);
+      }
     }
   }
+
   function select(value) {
     selectedView = typeof value === 'boolean' ? value ? 'accounts' : 'history' : value;
     visible = selectedView === 'accounts'; panel.hidden = !visible; root.parentElement.classList.toggle('pool-mode', selectedView !== 'history');

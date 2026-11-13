@@ -1,6 +1,22 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["대화","Chat","对话","對話","チャット","Chat"],
+  ["문서 · 결과물","Documents · files","文档 · 文件","文件 · 檔案","ドキュメント · ファイル","Documentos · archivos"],
+  ["사용량 · 라우팅","Usage · routing","用量 · 路由","用量 · 路由","使用量 · ルーティング","Uso · enrutamiento"],
+  ["도구 · 설정","Tools · settings","工具 · 设置","工具 · 設定","ツール · 設定","Herramientas · ajustes"],
+  ["세션 · 프로젝트 · 경로 검색","Search sessions, projects, paths","搜索会话、项目、路径","搜尋工作階段、專案、路徑","セッション・プロジェクト・パスを検索","Buscar sesiones, proyectos, rutas"],
+  ["확인할 일","Needs your attention","需要关注","待確認事項","確認が必要","Requiere atención"],
+  ["새 결과","New result","新结果","新結果","新しい結果","Nuevo resultado"],
+  ["질문은 답변이 필요하며, 새 결과는 대화를 열어 확인하면 정리됩니다.","Questions need your answer. New results clear when you open the conversation.","问题需要您回答。打开对话后，新结果将标记为已读。","問題需要您回答。開啟對話後，新結果將標記為已讀。","質問には回答が必要です。新しい結果は会話を開くと既読になります。","Las preguntas necesitan respuesta. Los resultados se marcan como leídos al abrir la conversación."],
+  ["모두 확인했습니다.","All caught up.","已全部查看。","已全部確認。","すべて確認しました。","Todo revisado."],
+  ["프로젝트 폴더","Project folder","项目文件夹","專案資料夾","プロジェクトフォルダー","Carpeta del proyecto"],
+  ["계정 한도","Account limits","账户限额","帳戶限額","アカウント上限","Límites de cuenta"],
+  ["계정 관리 · 라우팅","Accounts · routing","账户管理 · 路由","帳戶管理 · 路由","アカウント · ルーティング","Cuentas · enrutamiento"],
+  ["원문","Source","源码","原始碼","ソース","Código fuente"],
+  ["미리보기","Preview","预览","預覽","プレビュー","Vista previa"],
+  ["프로젝트의 문서와 결과물을 검색하고 미리봅니다.","Find and preview documents and files in this project.","搜索和预览项目文档与文件。","搜尋並預覽專案文件與檔案。","プロジェクトのドキュメントとファイルを検索・表示します。","Busca y previsualiza documentos y archivos del proyecto."],
+  ["Enter 전송 · Shift+Enter 줄바꿈 · Tab 전달 방식","Enter to send · Shift+Enter for a new line · Tab for delivery mode","Enter 发送 · Shift+Enter 换行 · Tab 切换发送方式","Enter 傳送 · Shift+Enter 換行 · Tab 切換傳送方式","Enter 送信 · Shift+Enter 改行 · Tab 送信方法","Enter para enviar · Shift+Enter nueva línea · Tab modo de entrega"],
   ['상위 세션', 'Parent sessions', '父会话', '父工作階段', '親セッション', 'Sesiones superiores'],
   ['상위 세션 열기: {0}', 'Open parent session: {0}', '打开父会话：{0}', '開啟父工作階段：{0}', '親セッションを開く: {0}', 'Abrir sesión superior: {0}'],
   ['표시 중인 하위 세션 {0}개', '{0} visible child sessions', '{0} 个可见子会话', '{0} 個可見子工作階段', '表示中の子セッション {0} 件', '{0} sesiones secundarias visibles'],

@@ -1240,7 +1240,7 @@ The list shows indentation, connecting rails, immediate-parent labels and visibl
 child counts. Chat headers expose ancestor links using Remote navigation only.
 Required inactive ancestors remain contextual rows in Active; they are not counted
 as active sessions. Deep mobile trees cap visual indentation while retaining the
-actual ancestry. Static cache v112 refreshes the tree module network-first.
+actual ancestry. Static cache v113 refreshes shared workspace modules network-first.
 
 Session navigation gives the name its own full-width first row, wrapping up to
 two lines with the complete name in its tooltip and accessible label. Disclosure,
@@ -1248,6 +1248,43 @@ provider/status icons, status text, child count, parent/preview text and hover
 actions share the separate metadata row below. Hovering or revealing touch actions
 does not reduce the title width. Existing hierarchy rails, selection, folding and
 close actions remain intact. Remote and local Dashboard share this renderer.
+
+### Shared workspace UX (1.8.2.14)
+
+Remote and Dashboard now use the same conversation-first shell. Chat returns to
+the last viewed session; Documents opens that session's registered project, and
+Usage separates account limits, session accounting and account/routing management.
+Hosting, task flow and default-model controls remain under Tools/settings. Empty
+Screen navigation is hidden. Session names retain their own first row, with
+provider/status/parent/actions below. A session's working folder is shown in its
+desktop header; the document tree explicitly labels its **project** folder rather
+than claiming to be a session-only file tree.
+
+The production `workspace-shell.css` is shared across both services. Desktop
+offers review, human notes and documents beside the conversation. On touch devices
+these quick tools move into the existing overflow menu; the header remains Chat
+only. Notes keep their existing revision/conflict handling and are not sent to AI.
+The review panel uses existing question states and unread response receipts. It
+does not infer failures, external file reads or verified task completion. Opening
+a result uses normal session navigation/read acknowledgement; questions remain
+until their observed state changes. No approvals or messages are sent by opening
+the panel. Polling reconciles unchanged rows without moving keyboard focus.
+
+Chat and document Markdown share safe block structure in `markdown-blocks.js`:
+tables, fenced code, headings, ordered/unordered/task lists and block quotes.
+Each view keeps its original scoped link renderer. Tables scroll inside their own
+container; code-copy buttons copy only literal code. Document **Source/Preview**
+switching uses already loaded text, does not refetch or execute HTML, and cannot
+copy markup into executable DOM. Raw HTML remains escaped. Existing HTML previews
+still open using expiring, isolated server URLs; ZIP downloads and file permissions
+are unchanged. The HTML design draft's example files, archive-entry list, account
+values and sessions are not runtime data or additional backend capabilities.
+
+Account limits appear before historical usage. Session totals retain existing
+cache/ordinary-input semantics and API-price basis labels. Recent routed requests
+use a table with time, session, account, completion state and recorded token data;
+missing token evidence remains unknown. The redesign adds no automatic session
+launches, quota polls or cross-session instructions.
 
 Regression checks run the actual desktop projections through JSON and authenticated
 HTTP, plus the production navigation and breadcrumb functions in Node DOM doubles.

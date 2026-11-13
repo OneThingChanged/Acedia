@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/pwa/styles.css">
   <link rel="stylesheet" href="/pwa/task-flow.css">
   <link rel="stylesheet" href="/pwa/session-notes.css">
+  <link rel="stylesheet" href="/pwa/workspace-shell.css">
   <title>Acedia Remote</title>
   <script src="/pwa/xterm.js" defer></script>
   <script src="/pwa/terminal-touch.js" defer></script>
@@ -70,6 +71,8 @@
 
     <main class="workspace">
       <aside class="navigation-pane" id="navigationPane" aria-label="Remote 탐색">
+        <div class="workspace-brand"><img src="/icon.svg" alt="" aria-hidden="true"><span>Acedia</span></div>
+        <button class="overview-button" id="chatButton" type="button"><span class="overview-icon" aria-hidden="true">☷</span><span><strong>대화</strong></span></button>
         <button class="overview-button selected" id="overviewButton" type="button" hidden>
           <span class="overview-icon">▦</span>
           <span><strong>Monitor</strong><small>전체 세션 상태</small></span>
@@ -77,21 +80,23 @@
         </button>
         <button class="overview-button documents-button" id="documentsButton" type="button">
           <span class="overview-icon">▤</span>
-          <span><strong>Documents</strong><small>Markdown · HTML · Video 보기</small></span>
+          <span><strong>문서 · 결과물</strong><small>Markdown · HTML · Video 보기</small></span>
           <b id="documentProjectCount">0</b>
         </button>
         <button class="overview-button usage-button" id="usageButton" type="button">
           <span class="overview-icon">◔</span>
-          <span><strong>Usage</strong><small>토큰 · 계정 한도</small></span>
+          <span><strong>사용량 · 라우팅</strong><small>토큰 · 계정 한도</small></span>
           <b id="usageProviderCount">0</b>
         </button>
 
+        <details class="workspace-utilities"><summary>도구 · 설정</summary>
         <button class="overview-button" id="hostingButton" type="button"><span class="overview-icon" aria-hidden="true">▣</span><span><strong>Hosting</strong><small>로컬 웹페이지 보기</small></span></button>
 
         <button class="overview-button" id="defaultModelsButton" type="button"><span class="overview-icon">⚙</span><span><strong>기본 모델</strong></span></button>
+        </details>
         <label class="search-box">
           <span aria-hidden="true">⌕</span>
-          <input id="searchInput" type="search" placeholder="Screen · 프로젝트 · 세션 검색" autocomplete="off">
+          <input id="searchInput" type="search" placeholder="세션 · 프로젝트 · 경로 검색" autocomplete="off">
         </label>
 
         <section class="nav-section" id="screensSection">
@@ -149,7 +154,7 @@
             <div>
               <span class="eyebrow">PROJECT DOCUMENTS</span>
               <h2>문서</h2>
-              <p>PC의 로컬 프로젝트에 있는 Markdown·HTML·영상 파일을 안전하게 미리봅니다.</p>
+              <p>프로젝트의 문서와 결과물을 검색하고 미리봅니다.</p><span class="document-scope" id="documentScope"></span>
             </div>
           </div>
           <div class="documents-layout">
@@ -184,9 +189,11 @@
                   <span id="documentPath"></span>
                 </div>
                 <span class="document-kind" id="documentKind" hidden></span>
+                <button class="small-button" id="documentRawButton" type="button" aria-pressed="false" hidden>원문</button>
                 <button class="small-button file-download-button" id="documentDownloadButton" type="button" hidden>다운로드</button>
               </div>
               <div class="document-message" id="documentMessage">왼쪽 목록에서 Markdown·HTML·영상 파일을 선택하세요.</div>
+              <pre class="document-source" id="documentSource" hidden></pre>
               <article class="document-markdown" id="documentMarkdown" hidden></article>
               <div class="document-html-launch" id="documentHtmlLaunch" hidden>
                 <div class="document-html-launch-card">
@@ -214,6 +221,30 @@
           </div>
           <div id="accountPoolView"></div>
           <section id="sessionUsageView" hidden></section>
+          <section class="usage-section" aria-labelledby="usageLimitHeading">
+            <div class="usage-section-head">
+              <div>
+                <span class="eyebrow">ACCOUNT LIMITS</span>
+                <h3 id="usageLimitHeading">남은 계정 한도</h3>
+              </div>
+            </div>
+            <div class="usage-summary-grid">
+              <article>
+                <span>가장 적은 잔여량</span>
+                <strong id="usageRemainingSummary">—</strong>
+              </article>
+              <article>
+                <span>표시 중인 계정</span>
+                <strong id="usageProviderSummary">0</strong>
+              </article>
+              <article>
+                <span>마지막 갱신</span>
+                <strong id="usageUpdatedSummary">확인 중</strong>
+              </article>
+            </div>
+            <p class="usage-message" id="usageMessage">사용량 정보를 불러오는 중입니다.</p>
+            <div class="usage-provider-grid" id="usageProviderGrid"></div>
+          </section>
           <section class="usage-section" aria-labelledby="usageTokenHeading">
             <div class="usage-section-head">
               <div>
@@ -312,30 +343,7 @@
               </article>
             </div>
           </section>
-          <section class="usage-section" aria-labelledby="usageLimitHeading">
-            <div class="usage-section-head">
-              <div>
-                <span class="eyebrow">ACCOUNT LIMITS</span>
-                <h3 id="usageLimitHeading">남은 계정 한도</h3>
-              </div>
-            </div>
-            <div class="usage-summary-grid">
-              <article>
-                <span>가장 적은 잔여량</span>
-                <strong id="usageRemainingSummary">—</strong>
-              </article>
-              <article>
-                <span>표시 중인 계정</span>
-                <strong id="usageProviderSummary">0</strong>
-              </article>
-              <article>
-                <span>마지막 갱신</span>
-                <strong id="usageUpdatedSummary">확인 중</strong>
-              </article>
-            </div>
-            <p class="usage-message" id="usageMessage">사용량 정보를 불러오는 중입니다.</p>
-            <div class="usage-provider-grid" id="usageProviderGrid"></div>
-          </section>
+
         </section>
 
         <section class="session-view" id="sessionView" hidden>
@@ -345,21 +353,26 @@
               <span class="status-chip idle" id="detailStatus">대기</span>
               <h2 id="detailName">Session</h2>
               <p id="detailMeta"></p>
+              <span class="workspace-folder" id="workspaceFolder"></span>
               <nav id="detailFamily" class="session-ancestor-path" aria-label="상위 세션" hidden></nav>
             </div>
             <div class="session-head-actions">
+              <div class="workspace-quick-tools" id="workspaceQuickTools">
+              <button class="small-button" id="workspaceReviewButton" type="button" aria-expanded="false">확인할 일</button>
+              <button class="small-button" id="sessionNoteButton" type="button" aria-expanded="false">메모</button>
+              <button class="small-button" id="sessionDocumentsButton" type="button">문서</button>
+              </div>
               <button class="small-button session-tools-toggle" id="sessionToolsToggle" type="button" aria-label="세션 도구 더 보기" aria-expanded="false" aria-controls="sessionTools">⋯</button>
               <div class="session-tools" id="sessionTools" role="group" aria-label="세션 도구">
               <button class="small-button session-icon-button" id="sessionNotifications" type="button" aria-label="세션 알림 켜짐 · 클릭하여 끄기"></button>
               <button class="small-button session-rename-button" id="renameSessionButton" type="button">이름 변경</button>
-              <button class="small-button" id="sessionNoteButton" type="button" aria-expanded="false">✎ 메모</button>
               <button class="small-button" id="sessionModelButton" type="button" hidden>모델 / effort</button>
               <button class="small-button" id="backToScreenButton" type="button" hidden>Screen으로 돌아가기</button>
               </div>
               <div class="session-mode" id="sessionMode" role="tablist">
-                <button class="on" data-mode="chat" type="button" role="tab" aria-controls="chatView" aria-selected="true">💬 채팅</button>
-                <button data-mode="term" type="button" role="tab" aria-controls="outputPanel" aria-selected="false">⌗ 터미널</button>
-                <button data-mode="browser" type="button" role="tab" aria-controls="browserPanel" aria-selected="false">🌐 브라우저</button>
+                <button class="on" data-mode="chat" type="button" role="tab" aria-controls="chatView" aria-selected="true">채팅</button>
+                <button data-mode="term" type="button" role="tab" aria-controls="outputPanel" aria-selected="false">터미널</button>
+                <button data-mode="browser" type="button" role="tab" aria-controls="browserPanel" aria-selected="false">브라우저</button>
               </div>
             </div>
           </div>
@@ -428,6 +441,7 @@
                 <button class="send-button" id="sendButton" type="submit">전송</button>
               </div>
             </form>
+            <div class="composer-hint">Enter 전송 · Shift+Enter 줄바꿈 · Tab 전달 방식</div>
           </div>
         </section>
       </section>
