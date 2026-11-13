@@ -50,6 +50,28 @@ describe('Obstacle-avoiding board connections', () => {
     expect(routeBoardEdges([{ id: 'invalid', from: { anchor: p, escape: p }, to: { anchor: q, escape: q } }], [box(0, 0)]).size).toBe(0);
     expect(routeBoardEdges([], []).size).toBe(0);
   });
+  it('uses another facing side when the preferred escape is blocked, without crossing a card', () => {
+    const source = box(0, 0), target = box(300, 0), blocker = box(40, 105, 20, 30);
+    const route = routeBoardEdges([{ id: 'adaptive',
+      from: { anchor: { x: 50, y: 100 }, escape: { x: 50, y: 112 } },
+      to: { anchor: { x: 350, y: 0 }, escape: { x: 350, y: -12 } },
+      alternatives: [{ from: { anchor: { x: 100, y: 50 }, escape: { x: 112, y: 50 } },
+        to: { anchor: { x: 300, y: 50 }, escape: { x: 288, y: 50 } } }],
+    }], [source, target, blocker]).get('adaptive')!;
+    expect(route.points).toEqual([{ x: 100, y: 50 }, { x: 300, y: 50 }]);
+    assertAvoids(route.path, [source, target, blocker]);
+  });
+  it('tries a longer alternative if the shorter candidate has an obstructed escape', () => {
+    const obstacle = box(5, -5, 20, 10);
+    const route = routeBoardEdges([{ id: 'blocked',
+      from: { anchor: { x: 0, y: 0 }, escape: { x: 12, y: 0 } },
+      to: { anchor: { x: 300, y: 0 }, escape: { x: 288, y: 0 } },
+      alternatives: [{ from: { anchor: { x: 0, y: 0 }, escape: { x: 0, y: -24 } },
+        to: { anchor: { x: 300, y: 0 }, escape: { x: 300, y: -24 } } }],
+    }], [obstacle]).get('blocked')!;
+    expect(route.points).toEqual([{ x: 0, y: 0 }, { x: 0, y: -24 }, { x: 300, y: -24 }, { x: 300, y: 0 }]);
+    assertAvoids(route.path, [obstacle]);
+  });
 });
 
 function fixture(): BoardSnapshot {
@@ -59,6 +81,60 @@ function fixture(): BoardSnapshot {
   return { revision: 'r', preferences: {}, storageError: null, devices: [], projects, sessions: [s('master', 'Master'), s('desk', 'Automation'), s('auto', 'Automation', 'desk'), s('camera', 'Movie'), s('max', 'Max'), s('export', 'Max', 'max'), s('unity', 'Unity'), s('prefab', 'Unity', 'unity')], references: [read('reverse', 'unity', 'max'), read('forward', 'max', 'unity'), read('vertical', 'camera', 'prefab'), read('internal', 'prefab', 'unity')] };
 }
 describe('Actual project board connection projection', () => {
+  const twoProjects = (rows = 1) => {
+    const data = fixture(); data.projects = data.projects.slice(0, 2); data.references = [];
+    data.sessions = [...Array.from({ length: rows }, (_, i) => ({ ...data.sessions[0], id: 'source-' + i })),
+      { ...data.sessions[1], id: 'target' }];
+    return data;
+  };
+  it.each([
+    ['right', 600, 0, 'right', 'left'], ['left', -600, 0, 'left', 'right'],
+    ['below', 0, 700, 'bottom', 'top'], ['above', 0, -700, 'top', 'bottom'],
+  ] as const)('connects a child placed %s through the facing sides', (_name, x, y, fromSide, toSide) => {
+    const data = twoProjects(), layout = boardLayout(data, { projectPositions: { Master: { x: 0, y: 0 }, Automation: { x, y } } });
+    const route = workBoardConnections(layout, data.sessions, [], new Set(), {}, false).routes.get('project:Master:Automation')!;
+    const a = layout.groups.find(g => g.id === 'Master')!, b = layout.groups.find(g => g.id === 'Automation')!;
+    const first = route.points[0], last = route.points[route.points.length - 1];
+    const onSide = (point: BoardPoint, rect: BoardRect, side: string) => {
+      expect(['left', 'right'].includes(side) ? point.x : point.y)
+        .toBe(side === 'left' ? rect.x : side === 'right' ? rect.x + rect.width : side === 'top' ? rect.y : rect.y + rect.height);
+    };
+    onSide(first, a, fromSide); onSide(last, b, toSide);
+    expect(route.points).toHaveLength(2); assertAvoids(route.path, layout.groups);
+  });
+  it('connects the screenshot’s tall parent directly sideways to children at different heights', () => {
+    const data = twoProjects(12);
+    for (const y of [40, 430]) {
+      const layout = boardLayout(data, { projectPositions: { Master: { x: 0, y: 0 }, Automation: { x: 600, y } } });
+      const connections = workBoardConnections(layout, data.sessions, [], new Set(), {}, false);
+      const route = connections.routes.get('project:Master:Automation')!;
+      const parent = layout.groups.find(g => g.id === 'Master')!, child = layout.groups.find(g => g.id === 'Automation')!;
+      expect(route.points[0].x).toBe(parent.x + parent.width);
+      expect(route.points[route.points.length - 1].x).toBe(child.x);
+      expect(route.points[0].y).toBe(route.points[route.points.length - 1].y);
+      expect(route.points[0].y).toBeLessThan(parent.y + parent.height);
+      expect(route.points).toHaveLength(2); assertAvoids(route.path, layout.groups);
+      expect(connections.routes).toEqual(workBoardConnections(layout, data.sessions, [], new Set(), {}, false).routes);
+    }
+  });
+  it('reselects sides after dragging and folding without changing hierarchy or stored placement', () => {
+    const data = twoProjects(12), positions = { Master: { x: 0, y: 0 }, Automation: { x: 600, y: 110 } };
+    const layout = boardLayout(data, { projectPositions: positions });
+    for (const overview of [false, true]) for (const collapsed of [new Set<string>(), new Set(['Master', 'Automation'])]) {
+      const connections = workBoardConnections(layout, data.sessions, [], collapsed, {}, overview);
+      const obstacles = layout.groups.map(g => ({ ...g, height: overview || collapsed.has(g.id) ? BOARD_CARD.header : g.height }));
+      const route = connections.routes.get('project:Master:Automation')!;
+      assertAvoids(route.path, obstacles);
+      expect(route.points[0].x).toBe(BOARD_CARD.width);
+      expect(route.points[route.points.length - 1].x).toBe(600);
+    }
+    const moved = boardLayout(data, { projectPositions: { ...positions, Automation: { x: 0, y: 900 } } });
+    const route = workBoardConnections(moved, data.sessions, [], new Set(), {}, false).routes.get('project:Master:Automation')!;
+    expect(route.points[0].y).toBe(layout.groups[0].height);
+    expect(route.points[route.points.length - 1].y).toBe(900);
+    expect(moved.projectEdges).toEqual(layout.projectEdges);
+    expect(positions.Automation).toEqual({ x: 600, y: 110 });
+  });
   it('reroutes hierarchy and read edges around all cards after restoring dragged project positions', () => {
     const data = fixture(), layout = boardLayout(data, { projectPositions: { Master: { x: -420, y: 550 }, Unity: { x: 1120, y: -380 } } });
     const connections = workBoardConnections(layout, data.sessions, data.references!, new Set(), {}, false);

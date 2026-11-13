@@ -1,7 +1,27 @@
 import { BOARD_CARD, type boardLayout, type BoardReference, type BoardSession } from './workBoard';
-import { routeBoardEdges, type BoardEdgeRequest, type BoardPort, type BoardRect } from './boardEdgeRouting';
+import { routeBoardEdges, type BoardEdgePorts, type BoardEdgeRequest, type BoardPort, type BoardRect } from './boardEdgeRouting';
 
 const key = (from: string, to: string) => `${from}:${to}`;
+
+/** Facing sides follow geometry, not the logical parent/child direction. */
+function projectPorts(a: BoardRect, b: BoardRect): BoardEdgePorts[] {
+  const shared = (startA: number, sizeA: number, startB: number, sizeB: number) => {
+    const low = Math.max(startA + Math.min(12, sizeA / 4), startB + Math.min(12, sizeB / 4));
+    const high = Math.min(startA + sizeA - Math.min(12, sizeA / 4), startB + sizeB - Math.min(12, sizeB / 4));
+    return low <= high ? (low + high) / 2 : null;
+  };
+  const y = shared(a.y, a.height, b.y, b.height), x = shared(a.x, a.width, b.x, b.width);
+  const port = (r: BoardRect, side: 'left' | 'right' | 'top' | 'bottom'): BoardPort => {
+    const horizontal = side === 'left' || side === 'right';
+    const anchor = horizontal ? { x: r.x + (side === 'right' ? r.width : 0), y: y ?? r.y + r.height / 2 }
+      : { x: x ?? r.x + r.width / 2, y: r.y + (side === 'bottom' ? r.height : 0) };
+    return { anchor, escape: { x: anchor.x + (side === 'left' ? -12 : side === 'right' ? 12 : 0),
+      y: anchor.y + (side === 'top' ? -12 : side === 'bottom' ? 12 : 0) } };
+  };
+  return ([['right', 'left'], ['left', 'right'], ['bottom', 'top'], ['top', 'bottom']] as const)
+    .map(([from, to]) => ({ from: port(a, from), to: port(b, to) }));
+}
+
 export function workBoardConnections(layout: ReturnType<typeof boardLayout> | null, sessions: BoardSession[], references: BoardReference[],
   collapsed: Set<string>, scroll: Record<string, number>, overview: boolean) {
   const projects: BoardEdgeRequest[] = [], external: BoardEdgeRequest[] = [], reads: BoardEdgeRequest[] = [];
@@ -24,9 +44,9 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
     return start && end ? { id, from: start, to: end } : null;
   };
   for (const edge of layout?.projectEdges || []) {
-    const a = groups.get(edge.from)!, b = groups.get(edge.to)!;
-    const start = { x: a.x + a.width / 2, y: a.y + a.height }, end = { x: b.x + b.width / 2, y: b.y };
-    projects.push({ id: `project:${key(edge.from, edge.to)}`, from: { anchor: start, escape: { x: start.x, y: start.y + 12 } }, to: { anchor: end, escape: { x: end.x, y: end.y - 12 } } });
+    const a = groups.get(edge.from), b = groups.get(edge.to); if (!a || !b) continue;
+    const [preferred, ...alternatives] = projectPorts(a, b);
+    projects.push({ id: `project:${key(edge.from, edge.to)}`, ...preferred, alternatives });
   }
   for (const edge of layout?.edges || []) {
     if (byId.get(edge.from)?.projectId === byId.get(edge.to)?.projectId) continue;

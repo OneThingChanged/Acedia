@@ -1,7 +1,8 @@
 export type BoardPoint = { x: number; y: number };
 export type BoardRect = BoardPoint & { width: number; height: number };
 export type BoardPort = { anchor: BoardPoint; escape: BoardPoint };
-export type BoardEdgeRequest = { id: string; from: BoardPort; to: BoardPort };
+export type BoardEdgePorts = { from: BoardPort; to: BoardPort };
+export type BoardEdgeRequest = BoardEdgePorts & { id: string; alternatives?: BoardEdgePorts[] };
 export type BoardEdgePath = { points: BoardPoint[]; path: string };
 
 const same = (a: BoardPoint, b: BoardPoint) => a.x === b.x && a.y === b.y;
@@ -60,7 +61,7 @@ class SearchQueue {
 export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRect[], clearance = 12): Map<string, BoardEdgePath> {
   const result = new Map<string, BoardEdgePath>(); if (!requests.length) return result;
   const boxes = obstacles.map(r => ({ left: r.x - clearance, right: r.x + r.width + clearance, top: r.y - clearance, bottom: r.y + r.height + clearance }));
-  const ends = requests.flatMap(r => [r.from.escape, r.to.escape]);
+  const ends = requests.flatMap(r => [r, ...(r.alternatives || [])].flatMap(pair => [pair.from.escape, pair.to.escape]));
   const xs = [...new Set([...ends.map(p => p.x), ...boxes.flatMap(r => [r.left, r.right])])].sort((a, b) => a - b);
   const ys = [...new Set([...ends.map(p => p.y), ...boxes.flatMap(r => [r.top, r.bottom])])].sort((a, b) => a - b);
   const xIndex = new Map(xs.map((x, i) => [x, i])), yIndex = new Map(ys.map((y, i) => [y, i]));
@@ -104,9 +105,21 @@ export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRe
     return null;
   };
   for (const request of requests) {
-    const middle = search(request.from.escape, request.to.escape); if (!middle) continue;
-    const points = simplify([request.from.anchor, ...middle, request.to.anchor]);
-    result.set(request.id, { points, path: boardEdgePath(points, Math.min(6, clearance / 2)) });
+    const lowerBound = (pair: BoardEdgePorts) => distance(pair.from.anchor, pair.from.escape)
+      + distance(pair.from.escape, pair.to.escape) + distance(pair.to.escape, pair.to.anchor);
+    const candidates = [request, ...(request.alternatives || [])].sort((a, b) => lowerBound(a) - lowerBound(b));
+    let best: BoardPoint[] | undefined, bestCost = Infinity;
+    for (const pair of candidates) {
+      // Clear, facing ports usually produce a direct line. Other directions
+      // cannot improve it, so do not run more searches during project dragging.
+      if (best && lowerBound(pair) >= bestCost) break;
+      const middle = search(pair.from.escape, pair.to.escape); if (!middle) continue;
+      const points = simplify([pair.from.anchor, ...middle, pair.to.anchor]);
+      const cost = points.reduce((sum, point, index) => sum + (index ? distance(points[index - 1], point) : 0), 0)
+        + Math.max(0, points.length - 2) * 12;
+      if (cost < bestCost) { best = points; bestCost = cost; }
+    }
+    if (best) result.set(request.id, { points: best, path: boardEdgePath(best, Math.min(6, clearance / 2)) });
   }
   return result;
 }
