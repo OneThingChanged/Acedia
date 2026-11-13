@@ -9,6 +9,10 @@ const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const maxText = 64 * 1024, maxStore = 16 * 1024 * 1024;
 const pendingNotification = status => ['queued', 'notifying', 'sending', 'sent', 'received'].includes(status);
 
+export function sessionMessageNotification(messageId) {
+  return `Acedia session message ${messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
+}
+
 export function sessionMessageText(body) {
   const fields = ['message', 'messageBase64', 'messageFile'].filter(key => own(body, key));
   if (fields.length !== 1) throw fail('message, messageBase64, messageFile 중 하나만 지정하세요.');
@@ -145,7 +149,7 @@ export class SessionMessages {
     // Persist uncertain intent before any terminal call. A crash here is never
     // replayed on restart, even if the original receipt is not available yet.
     this.#state(record, { status: 'notifying' });
-    const reference = `Acedia session message ${record.messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${record.messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
+    const reference = sessionMessageNotification(record.messageId);
     try {
       const delivery = await this.notify(record.sourceId, { sessionId: record.targetId, expectedConversationId: record.pinConversationId, message: reference, requestKey: record.notificationKey, waitMs: remaining });
       if (delivery?.status === 'failed' && delivery.reason === 'not-sent') this.#retry(record, 'not-sent');

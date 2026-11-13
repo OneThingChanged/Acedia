@@ -88,6 +88,7 @@ import { SessionRelocation } from "./services/session-relocation.mjs";
 import { SessionStart } from "./services/session-start.mjs";
 import { SessionRegistry } from "./services/session-registry.mjs";
 import { SessionMessages } from './services/session-messages.mjs';
+import { presentChatSessionMessages } from './services/chat-session-messages.mjs';
 import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
@@ -3990,7 +3991,7 @@ async function chatBlocksForAgent(agentId, sessionIdArg, options = {}) {
   const approval = ptys.get(id) === entry ? commandApprovals.read(id, result.sessionId) : null;
   if (approval && approval.sessionId === result.sessionId) result.pendingQuestion = approval.question;
   else if (result.pendingQuestion?.toolName === 'command-approval') result.pendingQuestion = null;
-  return result;
+  return presentChatSessionMessages(result, { agentId: id, messages: sessionMessages, deliveries: sessionDeliveries });
 }
 
 async function readAgentChatBlocks(agentId, sessionIdArg, options = {}) {

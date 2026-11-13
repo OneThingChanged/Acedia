@@ -1,4 +1,4 @@
-const CACHE_NAME = "multiagent-remote-v113";
+const CACHE_NAME = "multiagent-remote-v114";
 const STATIC_ASSETS = [
   '/pwa/workspace-shell.css', '/pwa/workspace-shell.js', '/pwa/markdown-blocks.js',
   '/pwa/session-notes.js',

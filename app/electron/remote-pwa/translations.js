@@ -1,6 +1,14 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["세션 간 메시지","Session message","会话间消息","工作階段間訊息","セッション間メッセージ","Mensaje entre sesiones"],
+  ["수신됨","Received","已接收","已接收","受信済み","Recibido"],
+  ["전달 본문 복사","Copy message body","复制消息正文","複製訊息本文","メッセージ本文をコピー","Copiar mensaje"],
+  ["복사했습니다","Copied","已复制","已複製","コピーしました","Copiado"],
+  ["복사하지 못했습니다. 다시 시도하세요.","Could not copy. Try again.","无法复制。请重试。","無法複製。請重試。","コピーできませんでした。もう一度お試しください。","No se pudo copiar. Vuelve a intentarlo."],
+  ["전달 정보","Delivery details","传递信息","傳遞資訊","配信情報","Detalles de entrega"],
+  ["보관된 전달 원문을 찾을 수 없습니다.","The stored message body is unavailable."],
+  ["채팅에 도착한 메시지입니다. AI의 읽음·작업 시작 상태와는 별개입니다.","This message reached the conversation. AI read and task-start receipts are tracked separately."],
   ["대화","Chat","对话","對話","チャット","Chat"],
   ["문서 · 결과물","Documents · files","文档 · 文件","文件 · 檔案","ドキュメント · ファイル","Documentos · archivos"],
   ["사용량 · 라우팅","Usage · routing","用量 · 路由","用量 · 路由","使用量 · ルーティング","Uso · enrutamiento"],

@@ -1,13 +1,43 @@
 import { t } from "./i18n.js";
-import { make } from "./dom.js";
+import { make, copyText } from "./dom.js";
 import { inlineMd, mdToHtml } from "./chat-markup.js";
 import { providerLogo, providerLabel } from './workspace-ui.js';
 import { renderFiles, filesForTurn, renderStoredImages } from './chat-files.js';
 
 function renderChatUser(text, agent, block) {
+  if (block?.sessionMessage) return renderSessionMessage(block, agent);
   const node = make("div", "chat-user");
   node.innerHTML = inlineMd(text, agent);
   if (block) node.append(renderStoredImages(block, agent));
+  return node;
+}
+
+function renderSessionMessage(block, agent) {
+  const value = block.sessionMessage, node = make('section', 'chat-session-message');
+  node.setAttribute('aria-label', t('세션 간 메시지'));
+  const head = make('header', 'chat-session-message-head');
+  head.append(make('span', '', t('세션 간 메시지')), make('span', 'chat-session-message-received', t('수신됨')));
+  if (value.message !== null) {
+    const copy = make('button', 'chat-session-message-copy', t('전달 본문 복사'));
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      copy.disabled = true;
+      try { await copyText(value.message); copy.textContent = t('복사했습니다'); }
+      catch { copy.textContent = t('복사하지 못했습니다. 다시 시도하세요.'); }
+      finally { copy.disabled = false; }
+    });
+    head.append(copy);
+  }
+  const route = make('div', 'chat-session-message-route');
+  route.append(make('strong', '', value.sourceName), make('span', '', '→'), make('strong', '', value.targetName));
+  const body = make('div', 'chat-md chat-session-message-body');
+  if (value.message === null) body.textContent = t('보관된 전달 원문을 찾을 수 없습니다.');
+  else body.innerHTML = mdToHtml(value.message, agent);
+  const details = make('details', 'chat-session-message-details');
+  details.append(make('summary', '', t('전달 정보')),
+    make('p', '', t('채팅에 도착한 메시지입니다. AI의 읽음·작업 시작 상태와는 별개입니다.')),
+    make('pre', '', block.text));
+  node.append(head, route, body, details);
   return node;
 }
 

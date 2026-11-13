@@ -252,10 +252,22 @@ export type ChatFileChange = { operation: "add" | "edit" | "delete" | "rename"; 
 export type ChatImageSource = { path?: string; dataUrl?: string; url?: string };
 export type TerminalPathResolution = { kind: "image" | "html" | "markdown" | "folder" | "file"; path: string };
 
+export type ChatSessionMessage = {
+  deliveryId: string;
+  messageId?: string;
+  sourceId: string;
+  sourceName: string;
+  targetId: string;
+  targetName: string;
+  message: string | null;
+  createdAt: number;
+};
+
 export type ChatBlock = {
   role: "user" | "assistant" | "tool";
   kind: "text" | "reasoning" | "tool-call" | "tool-result" | "image";
   text?: string;
+  sessionMessage?: ChatSessionMessage;
   name?: string;
   input?: unknown;
   summary?: string;

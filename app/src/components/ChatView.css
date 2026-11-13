@@ -9,6 +9,17 @@
 .chat-view-modern .chat-user-footer .chat-user-actions { opacity: 0; margin-top: 0; }
 .chat-view-modern .chat-turn.user:hover .chat-user-actions, .chat-view-modern .chat-turn.user:focus-within .chat-user-actions { opacity: 1; }
 .chat-view-modern .chat-user-text { word-break: keep-all; }
+.chat-view-modern .chat-session-message { box-sizing: border-box; width: 100%; min-width: 0; padding: 14px 18px; border: 1px solid color-mix(in srgb, var(--app-accent) 35%, var(--app-border)); border-left: 3px solid var(--app-accent); border-radius: 12px; background: var(--app-panel); color: var(--app-text); overflow-wrap: anywhere; }
+.chat-session-message-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--app-muted); }
+.chat-session-message-head .chat-copy-button { margin-left: auto; }
+.chat-session-message-received { border: 1px solid var(--app-border); padding: 1px 6px; border-radius: 5px; }
+.chat-session-message-route { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 12px; font-size: 13px; }
+.chat-session-message-route strong { min-width: 0; overflow-wrap: anywhere; }
+.chat-session-message-body { min-width: 0; line-height: 1.7; }
+.chat-session-message-body > :last-child { margin-bottom: 0; }
+.chat-session-message-details { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--app-border); color: var(--app-muted); font-size: 11px; }
+.chat-session-message-details summary { cursor: pointer; }
+.chat-session-message-details pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
 .chat-view-modern .chat-user-images { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
 .chat-view-modern .chat-user-images:empty { display: none; }
 .chat-view-modern .chat-user-images .chat-image-preview { flex: 0 1 auto; min-width: 0; }

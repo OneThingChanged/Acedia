@@ -698,6 +698,26 @@ Node/SSR checks. Publication and public-download verification are tracked in [1.
 
 ## Terminal and chat
 
+The 2026-11-13 source presents received Acedia session messages as readable cards
+in desktop Chat and the shared Remote/Dashboard Chat. Each card shows the saved
+sender and recipient names, the complete UTF-8 inbox body as Markdown, a body-copy
+action and collapsed transport details. The ASCII terminal notification remains
+unchanged; no extra input or model request is sent. Older direct-text handoffs
+also use the card when their exact delivery envelope is still verifiable.
+
+This is a read-only projection at the shared chat API boundary, after page
+selection. Source text, durable conversation blocks, sequence cursors and runtime
+receipt states stay intact. Resolution requires the target session, conversation,
+envelope hash and original inbox request binding; rotated hot receipts can use
+the inbox's exact delivery binding without scanning archives. Missing content is
+labelled unavailable rather than inferred from the notification. The card's
+**Received / 수신됨** means the envelope exists in that conversation, not that the
+AI read its body or started work. Viewing/copying a card does not mark AI inbox
+messages read or activate board reference-read lines. Empty delta and ordinary
+chat pages skip mailbox lookup. Tests use isolated stores and both Codex/Claude
+transcript decoders, plus Node/SSR renderer checks; the running user app and
+operational sessions are not manipulated by these checks.
+
 Source 1.8.1.82 enables Qwen's synchronized-output capability for local sessions.
 The host forwards a complete repaint as one segment to desktop and Remote
 terminals, including nested Qwen/Ink redraw boundaries, so a partial erase does

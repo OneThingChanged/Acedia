@@ -1259,6 +1259,17 @@ html[data-native-app="true"] .android-download-button { display: none !important
 @media (hover:none) { .session-row-actions { display: inline-flex; } }
 @media (max-width:480px) { .chat-working-bar { gap: 5px; } #chatWorkingTool { display: none; } .chat-user { box-sizing: border-box; } .chat-image-button img { max-height: 170px; } }
 .chat-user { max-width: 84%; padding: 9px 13px; border: 1px solid rgba(80, 223, 208, 0.3); border-radius: 14px 14px 4px 14px; background: rgba(80, 223, 208, 0.08); color: var(--text); font-size: var(--font-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-session-message { box-sizing: border-box; width: 100%; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--cyan); border-radius: 12px; background: var(--panel); color: var(--text); overflow-wrap: anywhere; }
+.chat-session-message-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: var(--font-small); }
+.chat-session-message-received { padding: 1px 6px; border: 1px solid var(--line); border-radius: 5px; }
+.chat-session-message-copy { margin-left: auto; padding: 4px 7px; font-size: var(--font-small); }
+.chat-session-message-route { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 12px; font-size: var(--font-body); }
+.chat-session-message-route strong { min-width: 0; overflow-wrap: anywhere; }
+.chat-session-message-body { min-width: 0; }
+.chat-session-message-body > :last-child { margin-bottom: 0; }
+.chat-session-message-details { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--font-small); }
+.chat-session-message-details summary { cursor: pointer; }
+.chat-session-message-details pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-small); }
 .chat-role { display: flex; align-items: center; gap: 7px; font-size: var(--font-small); font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
 .chat-role .av { width: 17px; height: 17px; border-radius: 5px; display: grid; place-items: center; font-size: var(--font-small); color: #06131a; background: linear-gradient(135deg, #6ceadd, #3fb6c9); }
 .chat-md { font-size: var(--font-body); line-height: 1.62; color: var(--text); overflow-wrap: anywhere; }

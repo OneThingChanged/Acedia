@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
+import { ChatSessionMessage } from './ChatSessionMessage';
 import { ChatIcon } from "./ChatIcon";
 import { ChatModelPicker } from "./ChatModelPicker";
 import { TaskFlowButton } from './TaskFlow';
@@ -816,7 +817,9 @@ export function ChatView({
   const visibleTurns: ReactNode[] = useMemo(() => ranges.slice(hidden).map((range) =>
     range.user ? (
       <div key={`u-${blockRenderKey(blocks[range.start])}`} className="chat-turn user" data-chat-sequence={blocks[range.start].sequence}>
-        <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />
+        {blocks[range.start].sessionMessage
+          ? <ChatSessionMessage block={blocks[range.start]} folder={folder} onOpenPath={stableOpenPath} />
+          : <UserMessage text={blocks[range.start].text ?? ""} agentId={agentId} sequence={blocks[range.start].sequence} imageOnly={blocks[range.start].kind === "image"} folder={folder} onOpenPath={stableOpenPath} onReuse={reuseMessage} />}
       </div>
     ) : (
       <AssistantTurn key={`a-${blockRenderKey(blocks[range.start])}`} run={blocks.slice(range.start, range.end)} files={chatFilesForTurn(artifacts, blocks.slice(range.start, range.end))} tool={provider || tool} owner={conversationMeta} folder={folder} onOpenPath={stableOpenPath} onQuote={quoteMessage} />
