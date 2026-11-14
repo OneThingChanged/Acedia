@@ -39,7 +39,7 @@ Python 런타임을 설치하지 않는다. 계정 로그인과 갱신은 설치
 
 ## 기존 세션의 계정 변경 API
 
-2026-11-14 소스부터 `acedia_session_routing`과 인증된
+[Standard EXE 1.8.2.17](release-1-8-2-17.md)부터 `acedia_session_routing`과 인증된
 `POST /integration/v1/workspace/session-routing`으로 기존 로컬 Codex 세션의
 계정 목록과 현재/다음 실행 계정을 조회하고, 계정을 고정하거나 자동 배정으로 복귀한다.
 OFFLINE과 실행 중인 세션을 모두 지원하며 Computer Use는 필요하지 않다.

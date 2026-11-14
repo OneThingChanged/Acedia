@@ -1,7 +1,7 @@
 ---
 type: Integration
 title: Acedia 내장 스킬과 연결 진단
-status: source-verified
+status: stable
 last_updated: 2026-11-14
 sources:
   - resource: ../app/electron/services/acedia-skills.mjs
@@ -20,8 +20,8 @@ Acedia 설치·실행을 전제로 기존 MCP 자동 연결을 유지한다. 별
 마켓플레이스 설치나 전역 AGENTS.md/CLAUDE.md 추가는 하지 않는다. 실제 동작·권한은
 기존 MCP/API가 담당하고 스킬은 필요한 작업 절차를 설명한다.
 
-이 문서의 추가 기능은 **2026-11-14 소스 검증 상태**다. 실행 중인 설치본에 반영되려면
-해당 소스의 앱 업데이트가 필요하며, 이미 실행된 CLI는 MCP·스킬 목록을 갱신해야 한다.
+이 기능은 [Standard EXE 1.8.2.17](release-1-8-2-17.md)에 포함된다. 호스트 앱을 업데이트하고
+이미 실행된 CLI를 다시 시작하면 MCP·스킬 목록을 갱신한다.
 
 ## 자동 설치 범위
 

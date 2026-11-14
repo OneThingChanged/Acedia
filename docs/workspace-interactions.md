@@ -762,6 +762,8 @@ URLs and OSC 8 hyperlinks keep their separate recognition.[^terminal-links][^ter
 
 ### Deep-path terminal freeze (2026-11-14 source)
 
+Shipped in [Standard EXE 1.8.2.17](release-1-8-2-17.md); apply the host update to use the new scanner.
+
 A reported freeze when selecting the already-running `PW_관리자` terminal exposed
 exponential backtracking in the document/image link patterns. Their repeated
 directory component also accepted path separators, so an ordinary deep JSON or
