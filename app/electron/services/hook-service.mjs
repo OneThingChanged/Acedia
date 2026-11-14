@@ -5,6 +5,7 @@ import http from "node:http";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { checkProjectPath, makeWritable, projectManagementPlan } from "./project-managed-files.mjs";
+import { AcediaSkills } from './acedia-skills.mjs';
 import { MIRACONTROL_API_VERSION } from "./miracontrol-integration.mjs";
 
 const HOOK_MARKER = "multiagent";
@@ -549,6 +550,7 @@ export class HookService {
     this.recentEvents = [];
     this.lastRepairSummary = null;
     this.lastMaintenance = null;
+    this.skills = new AcediaSkills();
   }
 
   async start() {
@@ -609,9 +611,11 @@ export class HookService {
 
     if (url.pathname.startsWith('/integration/v1/workspace/')) {
       const action = request.method === 'GET' && url.pathname === '/integration/v1/workspace/projects' ? 'list'
+        : request.method === 'GET' && url.pathname === '/integration/v1/workspace/capabilities' ? 'capabilities'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/projects' ? 'create-project'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/sessions' ? 'create-session'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-settings' ? 'session-settings'
+        : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-routing' ? 'session-routing'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/start' ? 'start'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/session-status' ? 'session-status'
         : request.method === 'POST' && url.pathname === '/integration/v1/workspace/run' ? 'run'
@@ -872,13 +876,17 @@ export class HookService {
       throw new Error("Codex account home is unavailable.");
     }
     if (!this.mcpScriptPath) return false;
-    return this.#mergeSettings([{
+    const configChanged = await this.#mergeSettings([{
       target: path.join(path.resolve(requested), "config.toml"),
       merge: before => mergeCodexMcp(before, this.mcpScriptPath),
-    }, ...["SKILL.md", "scripts/browser.py"].map(relative => ({
-      target: path.join(path.resolve(requested), "skills", "acedia-browser", relative),
-      merge: () => fs.readFileSync(new URL(`./acedia-browser-skill/${relative}`, import.meta.url), "utf8"),
-    }))]);
+    }]);
+    const installed = await this.skills.install(path.resolve(requested));
+    return configChanged || installed.changed;
+  }
+
+  async setupClaudeHome(home) {
+    if (!this.mcpScriptPath) return false;
+    return (await this.skills.install(home)).changed;
   }
 
   #mergeSettings(updates, project = null) {

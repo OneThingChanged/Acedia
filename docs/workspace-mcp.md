@@ -3,13 +3,16 @@ type: Integration
 title: Acedia 프로젝트·세션 MCP
 description: 기존 MCP 연결에서 프로젝트·세션과 조직도를 관리하고, UTF-8 전용 수신함·한글 메시지·답장·읽음 확인과 Codex 작업 전달을 지원한다.
 status: stable
-last_updated: 2026-11-07
+last_updated: 2026-11-14
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
   - resource: ../app/electron/services/session-launch-settings.mjs
   - resource: ../app/electron/services/session-start.mjs
   - resource: ../app/electron/services/session-start.test.mjs
+  - resource: ../app/electron/services/session-routing.mjs
+  - resource: ../app/electron/services/session-routing.test.mjs
+  - resource: ../app/scripts/fixtures/session-routing-workspace.mjs
   - resource: ../app/electron/services/session-launch-settings.test.mjs
   - resource: ../app/electron/services/session-relocation.mjs
   - resource: ../app/electron/services/session-registry.mjs
@@ -36,6 +39,10 @@ sources:
 MCP 연결에 아래 도구가 함께 등록된다. 별도 MCP 서버 설정 없이 업데이트 후 세션을
 다시 시작하면 도구 목록에 나타난다. 원격 웹 기능을 켜지 않아도 로컬 MCP는 동작한다.
 
+2026-11-14 소스에는 [내장 스킬 자동 설치와 연결 진단](acedia-skills.md)을 추가했다.
+별도 플러그인 없이 Codex·Claude 계정 홈에 사용 절차를 설치하고 `acedia_connection`으로
+실제 호스트 버전·지원 API·스킬 상태를 조회한다. 설치본 반영과 기존 CLI 목록 갱신은 별도다.
+
 ## 읽기 전용 연결·응답 지연 확인
 
 같은 실행 프로필의 `shared-v1/local/hook-info.json`에서 현재 loopback 포트와 인증 쌍을
@@ -51,6 +58,7 @@ health는 호스트 PID를, sessions는 앱 버전·PID와 세션 상태를 반�
 
 | 도구 | 기능 |
 | --- | --- |
+| `acedia_connection` | 읽기 전용 연결 진단. 실제 호스트 버전·호출 세션·지원 API·스킬 상태·bridge 도구 목록 차이 조회 |
 | `acedia_projects` | 프로젝트·세션 ID, 폴더, 터미널 실행 상태, 사용 가능한 AI 도구 조회 |
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 부모·작업 폴더를 지정한 추가 세션 생성. `start: false`로 실행 없이 등록 가능 |
@@ -59,6 +67,7 @@ health는 호스트 PID를, sessions는 앱 버전·PID와 세션 상태를 반�
 | `acedia_session_stop` | 기존 로컬 세션 프로세스를 종료하고 대기로 저장. 대화·설정·화면 배치 유지 |
 | `acedia_sessions_organize` | 기존 세션들의 이름 변경과 부모 지정·변경·해제를 한 번에 저장. 실행·비활성 모두 지원 |
 | `acedia_session_settings` | 기존 세션의 Dangerous 조회·저장. OFFLINE 대상 지원, 다음 실행부터 반영 |
+| `acedia_session_routing` | 기존 로컬 Codex의 계정 목록·지정 계정·실제 실행 계정 조회, 다음 실행의 라우팅 계정 지정·자동 배정 복귀 |
 | `acedia_sessions_relocate` | 앱 실행 중 기존 OFFLINE 세션들의 소속 프로젝트·작업 폴더를 묶어 변경 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
 | `acedia_session_delivery` | 같은 호출 세션이 보낸 요청의 상태 조회. 입력·재전송 없음 |
@@ -387,6 +396,68 @@ Remote/Dashboard의 `/api/session/restart`에서 `restart`를 생략한 요청�
 등록·인증·Origin·호출 세션·입력·대상 검사와 시작 결과를 검증했다.
 `output/exe-89-tests.log`, `output/exe-89-build.log`,
 `output/session-start-family-delivery-electron.log`에 기록했다. 실제 사용자 세션은 변경하지 않았다.
+
+## 기존 세션 라우팅 계정 변경 (2026-11-14 소스)
+
+`acedia_session_routing`과 인증된 `POST /integration/v1/workspace/session-routing`은
+같은 계약을 사용한다. 새 소스가 반영된 호스트에서 사용할 수 있으며, 기존 CLI의 MCP 도구
+목록을 갱신하려면 해당 CLI를 다시 시작한다. Computer Use나 설정창 조작은 필요하지 않다.
+
+먼저 `acedia_projects`에서 정확한 Acedia 세션 ID를 고르고 조회한다.
+
+```json
+{"sessionId":"대상 Acedia 세션 ID"}
+```
+
+| 반환 필드 | 의미 |
+| --- | --- |
+| `preferredAccountId` | 저장된 다음 실행의 지정 계정. `null`은 세션별 고정 해제 |
+| `accounts` | 계정별 `id`, `label`, `available`. 이메일·인증 정보·로그인 URL은 반환하지 않음 |
+| `enabled` | 호스트의 전역 Codex 라우팅 사용 여부 |
+| `runningMode` | 현재 `routed`, 직접 로그인 `direct`, 꺼진 세션 `inactive` |
+| `runningAccountId` | 현재 실행 중인 라우팅 계정. `direct`/`inactive`이면 `null` |
+| `supportsRouting`, `canEdit` | 지원 여부와 현재 저장 가능 여부 |
+| `appliesOn`, `restartRequired` | `next_start`; 실행 중이면 변경 적용에 별도 재시작 필요 |
+
+반환된 계정 ID와 이전 `preferredAccountId`를 사용해 저장한다. 계정 이름으로 추측하거나
+`expectedAccountId`를 생략하지 않는다.
+
+```json
+{"sessionId":"대상 Acedia 세션 ID","accountId":"accounts에서 고른 ID","expectedAccountId":null}
+```
+
+고정을 해제하려면 `accountId: null`과 현재 조회한 `expectedAccountId`를 보낸다.
+MCP `session_start`로 다시 시작하면 고정 없이 기존 자동 배정 정책을 사용한다.
+데스크톱에서 수동으로 켜는 경우에는 기존 기본 계정·수동 선택 정책도 적용된다.
+전역 라우팅이 꺼져 있어도 다음 실행 설정은 저장할 수 있지만, 이 API가 전역 라우팅을
+켜거나 다른 세션의 계정·기본값을 변경하지는 않는다.
+
+저장은 coordinator의 공통 snapshot을 디스크에 쓴 뒤 main에서 다시 확인해야
+`saved: true`가 된다. 저장 중에는 같은 대상의 계정 변경·시작이 충돌하지 않도록 잠근다.
+실행 중인 요청과 실제 계정은 즉시 바뀌지 않는다. 대화 ID, 모델·effort·Fast,
+Dangerous, 직접 로그인 계정, 이름·부모·폴더·화면 배치를 유지한다.
+
+사용자가 즉시 전환을 요청했다면 다음 순서로 처리한다.
+
+1. 계정을 조회·저장한다. 저장 성공과 사용할 계정의 `available`을 확인한다.
+2. 실행 중인 대상에만 `acedia_session_stop`을 호출한다. 진행 중 작업 중단은 사용자 요청 범위에서 수행한다.
+3. 같은 Acedia ID에 `acedia_session_start`를 호출한다. 새 대화를 만들지 않는다.
+4. `acedia_session_status`로 준비 상태, `acedia_session_routing`으로 실제 실행 계정을 확인한다.
+5. 재개 지시도 승인된 경우 `acedia_session_message_send`로 원문을 한 번 전달하고 읽음·착수 상태를 확인한다.
+
+`start` 성공은 PTY 시작 증거이며 모델 요청 성공이나 작업 완료 증거가 아니다.
+꺼져 있던 세션은 계정 지정만으로 켜지지 않는다. API가 지원하는 범위는 기존 **로컬
+Codex 라우팅 계정**이며 Claude, SSH, 다른 작업창에 분리된 세션, 직접 로그인 계정
+변경은 포함하지 않는다. 없는 대상은 404, 충돌·사용 불가 계정은 409, coordinator 부재는
+503, 저장 응답 시간 초과는 504다. 시간 초과 후에는 저장 여부를 다시 조회한다.
+
+검증: `session-routing.test.mjs`, `account-pool.test.mjs`, HTTP·stdio MCP의
+`workspace-management.test.mjs`, `ipc-contract.test.mjs`, `terminal-launcher.test.mjs`의
+174개 검사와 TypeScript/Vite 빌드가 통과했다. `npm run electron:session-routing-smoke`는
+격리 프로필의 실제 coordinator·HTTP·snapshot·ConPTY에서 실행/비활성 세션의 저장,
+다음 시작에 전달된 지정 계정·고정 해제, 무자동재시작·무창활성화를 확인했다.
+계정 목록은 모의 데이터이며 실제 사용자 계정·세션이나 모델 API를 호출하지 않는다.
+설치본 반영·배포는 별도다.
 
 ## 기존 세션 Dangerous 설정
 

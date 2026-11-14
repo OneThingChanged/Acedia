@@ -13,6 +13,8 @@ const trustOnly = process.argv.includes('--folder-trust') || process.env.ACEDIA_
 const organizationOnly = process.argv.includes('--organization') || process.env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE === '1';
 const messagesOnly = process.argv.includes('--messages') || process.env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE === '1';
 const dangerousOnly = process.argv.includes('--dangerous-defaults') || process.env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE === '1';
+const routingOnly = process.argv.includes('--routing') || process.env.ACEDIA_WORKSPACE_ROUTING_FIXTURE === '1';
+const connectionOnly = process.argv.includes('--connection') || process.env.ACEDIA_WORKSPACE_CONNECTION_FIXTURE === '1';
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.on('browser-window-created', (_event, win) => win.on('show', () => win.hide()));
@@ -22,6 +24,7 @@ if (process.versions.electron) {
   const timeout = setTimeout(() => { console.error('Workspace MCP smoke timeout'); app.exit(1); }, dangerousOnly ? 120000 : 60000);
   let window;
   try {
+    const routingFixture = routingOnly ? await import('./fixtures/session-routing-workspace.mjs').then(module => module.installRoutingFixture()) : null;
     await import('../electron/main.mjs');
     for (let i = 0; i < 150; i++) {
       for (const candidate of BrowserWindow.getAllWindows()) {
@@ -84,6 +87,15 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
     console.log('WORKSPACE_FIXTURE_PROJECT_CREATED');
     assert.equal(first.created, true); assert.equal(first.active, true, JSON.stringify(first));
     assert.equal((await call('/projects', { folder: projectFolder })).created, false);
+    if (connectionOnly) {
+      const { exerciseConnection } = await import('./fixtures/acedia-connection-workspace.mjs');
+      await exerciseConnection({ root, window, invoke, first, base, headers, executable });
+      clearTimeout(timeout); app.quit(); return;
+    }
+    if (routingOnly) {
+      await routingFixture.exercise({ window, invoke, call, first });
+      clearTimeout(timeout); app.quit(); return;
+    }
     if (messagesOnly) {
       const target = await call('/sessions', { projectId: first.projectId, name: '한글 수신 세션', requestKey: 'message-target' });
       const original = '한글 작업 지시를 원문 그대로 저장합니다. 🚀\n\t줄바꿈과 들여쓰기도 유지합니다.';
@@ -348,10 +360,13 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
   const home = path.join(root, 'codex'); fs.mkdirSync(home);
   const env = { ...process.env, ACEDIA_WORKSPACE_MCP_FIXTURE: root, MULTIAGENT_ELECTRON_USER_DATA: path.join(root, 'profile'),
     MULTIAGENT_LOCAL_DATA: path.join(root, 'local-data'), CODEX_HOME: home,
+    CLAUDE_CONFIG_DIR: path.join(root, 'claude'),
     ACEDIA_WORKSPACE_AUTO_TRUST_FIXTURE: trustOnly ? '1' : '0' };
   env.ACEDIA_WORKSPACE_ORGANIZATION_FIXTURE = organizationOnly ? '1' : '0';
   env.ACEDIA_WORKSPACE_MESSAGES_FIXTURE = messagesOnly ? '1' : '0';
   env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE = dangerousOnly ? '1' : '0';
+  env.ACEDIA_WORKSPACE_ROUTING_FIXTURE = routingOnly ? '1' : '0';
+  env.ACEDIA_WORKSPACE_CONNECTION_FIXTURE = connectionOnly ? '1' : '0';
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { env, cwd: appRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -361,7 +376,13 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
     const timer = setTimeout(() => child.kill(), dangerousOnly ? 135000 : 75000);
     const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); }).finally(() => clearTimeout(timer));
     assert.equal(code, 0, output);
-    if (dangerousOnly) {
+    if (connectionOnly) {
+      const marker = 'ACEDIA_CONNECTION_HOST_CAPABILITIES_BOTH_PROVIDER_SKILLS_NO_MUTATION_NO_FOCUS_OK';
+      assert.ok(output.includes(marker), output); console.log(marker);
+    } else if (routingOnly) {
+      const marker = 'ACEDIA_SESSION_ROUTING_DURABLE_OFFLINE_ACTIVE_NEXT_LAUNCH_AUTOMATIC_NO_FOCUS_OK';
+      assert.ok(output.includes(marker), output); console.log(marker);
+    } else if (dangerousOnly) {
       for (const label of ['unset=true', 'on=true', 'off=false', 'remember-off=false', 'remember-on=true', 'legacy-off=false']) assert.ok(output.includes('DANGEROUS_DEFAULT_MAIN_RENDERER_PROJECT_API_TASK_OK ' + label), output);
       assert.ok(output.includes('DANGEROUS_DEFAULT_UNSUPPORTED_OFF_EXISTING_SESSION_CLI_AND_FOCUS_UNCHANGED_OK'), output);
       console.log(output.split('\n').filter(line => line.startsWith('DANGEROUS_DEFAULT_')).join('\n'));

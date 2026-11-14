@@ -37,7 +37,7 @@ if (!process.versions.electron) {
         const env = { ...process.env };
         delete env.ELECTRON_RUN_AS_NODE;
         const launch = createTerminalLauncher({ terminalSessions: sessions,
-          hookService: { port: 0, token: '', setupProject: async () => {}, setupCodexHome: async () => {} },
+          hookService: { port: 0, token: '', setupProject: async () => {}, setupCodexHome: async () => {}, setupClaudeHome: async () => {} },
           ensureBrowserIntegrationReady: async () => {}, waitForHooks: async () => {},
           accountsForTool: () => null, accountBindings: new Map(), accountSwitches: new Set(),
           defaultShell: () => shell, sshPasswords: new Map(), browserMcpScriptPath: '',

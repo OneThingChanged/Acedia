@@ -41,6 +41,17 @@ async function sendRequest(pool, launch, overrides = {}) {
   return { response, text: await response.text() };
 }
 describe('Acedia account pool', () => {
+  it('exposes minimal read-only routing metadata even when quota or storage blocks writes', async () => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A');
+    await pool.setEnabled(true); await pool.launch('session', first);
+    pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, secondary: { usedPercent: 100 } } };
+    pool.storageError = { code: 'ENOSPC', message: 'fixture disk full' };
+    expect(pool.routingStatus('session')).toEqual({ enabled: true, writable: false, assignedAccountId: first,
+      accounts: [{ id: first, label: 'A', available: false }] });
+    expect(pool.routingStatus('missing').assignedAccountId).toBe(null);
+    expect(JSON.stringify(pool.routingStatus('session'))).not.toMatch(/auth|token|secret|email|home/);
+    expect(seen).toHaveLength(0);
+  });
   it.each(['hasCredits', 'unlimited'])('keeps an exhausted account with %s available across turns and restarts until credits are removed', async flag => {
     const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
     pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, secondary: { usedPercent: 100 },

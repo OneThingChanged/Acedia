@@ -760,6 +760,37 @@ Korean folder names (including names ending in `는`), and wrapped paths retain
 their full path text. Uncolored paths keep the existing filename matching;
 URLs and OSC 8 hyperlinks keep their separate recognition.[^terminal-links][^terminal-links-smoke]
 
+### Deep-path terminal freeze (2026-11-14 source)
+
+A reported freeze when selecting the already-running `PW_관리자` terminal exposed
+exponential backtracking in the document/image link patterns. Their repeated
+directory component also accepted path separators, so an ordinary deep JSON or
+video path could spend unbounded CPU time proving that it was not a document
+or image. The work ran in the renderer's synchronous link provider/hit detection.
+
+An isolated worker reproduced the old document and image patterns taking about
+110–116 ms for a synthetic 12-component path; 18- and 24-component cases hit the
+1,000 ms worker deadline. Three separator-dense tokens from the target's recent
+indexed blocks, 289–337 characters long, also exceeded that deadline in the old
+document pattern. Tokens were read without changing the live database or session;
+their original text and conversation contents are not included here.
+
+The specialized link scanners now tokenize once and search the final filename
+for the extension, preserving drive prefixes, Unicode, multiple links and
+document line/column suffixes. Directory names containing `.md` or `.png` do not
+become file links by themselves. The three recorded cases took 0.13–0.58 ms for
+both new scanners together. These are component measurements, not end-to-end app
+latency or proof that every possible freeze has the same cause.
+
+Validation passed 54 tests in five files covering the scanner, mouse hit
+detection, video/file handling, absolute boundaries, wrapped paths and terminal
+delivery, plus TypeScript/Vite build. A worker deadline guards 512-component
+paths and 128,000-character nonmatching tokens against recurrence. No GUI
+automation, active task interruption, conversation cleanup or installed-app
+modification was performed. The correction is in source; applying it to the
+running application requires a later build/update, after which the user's exact
+screen-switch scenario should be checked again.
+
 Development source as of 2026-10-13 also recovers parenthesized file paths when
 the TUI reserves a right-hand gutter before a hard line break. Both the first
 row and the indented continuation open the full path, including long MP4 names.

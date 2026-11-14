@@ -84,6 +84,7 @@ import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capa
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
 import { WorkspaceManagement } from "./services/workspace-management.mjs";
 import { SessionLaunchSettings } from "./services/session-launch-settings.mjs";
+import { SessionRouting } from "./services/session-routing.mjs";
 import { SessionRelocation } from "./services/session-relocation.mjs";
 import { SessionStart } from "./services/session-start.mjs";
 import { SessionRegistry } from "./services/session-registry.mjs";
@@ -1136,6 +1137,28 @@ const sessionLaunchSettings = new SessionLaunchSettings({
     state.agents = (state.agents || []).map(item => item.id === payload.id ? { ...item, dangerous: saved.dangerous } : item);
   },
 });
+const sessionRouting = new SessionRouting({
+  agentFor: id => sessionLaunchSettings.agentFor(id),
+  active: id => ptys.has(id),
+  pool: id => ({ ...accountPool.routingStatus(id), routed: ptys.get(id)?.poolRouted === true }),
+  writable: id => !forceClosing && (!accountSwitches.has(id) || sessionRouting.pending.has(id)),
+  lock: id => accountSwitches.add(id),
+  unlock: id => accountSwitches.delete(id),
+  dispatch: payload => {
+    const runtime = runtimeByWebContents.get(coordinatorWebContentsId), coordinator = workspaceWindows.get(coordinatorWebContentsId);
+    if (!runtime?.workspace_window || !runtime.coordinator || !runtime.ready || !coordinator) return false;
+    sendEvent(coordinator, 'remote:session-routing', payload); return true;
+  },
+  verifySaved: async change => {
+    const snapshot = await readStorageSnapshot();
+    const saved = JSON.parse(snapshot?.values?.['multiagent.agents.v1'] || '[]').find(a => a.id === change.sessionId);
+    if (!saved || saved.aiToolId !== 'codex' || (saved.codexPoolAccountId || null) !== change.accountId) {
+      throw Object.assign(new Error('저장된 세션 라우팅 설정을 확인하지 못했습니다. 다시 조회하세요.'), { statusCode: 409 });
+    }
+    monitorService.state.agents = (monitorService.state.agents || []).map(agent => agent.id === saved.id
+      ? { ...agent, codexPoolAccountId: saved.codexPoolAccountId } : agent);
+  },
+});
 const sessionRelocation = new SessionRelocation({
   catalog: () => monitorService?.state || {},
   active: id => ptys.has(id),
@@ -1226,12 +1249,24 @@ const sessionRegistry = new SessionRegistry({
   },
 });
 const workspaceManagement = new WorkspaceManagement({
+  hostInfo: () => ({ version: productVersion }),
+  browserAvailable: () => true,
+  skillStatus: id => {
+    const agent = sessionModelAgent(id), entry = ptys.get(id);
+    const provider = entry?.aiToolId || agent?.aiToolId;
+    if (!['codex', 'claude'].includes(provider) || agent?.sshHostId || entry?.ssh) return null;
+    try {
+      const accountId = (provider === 'codex' ? entry?.codexAccountId : entry?.claudeAccountId) || selectedAccountId(agent);
+      return hookService.skills.status(accountsForTool(provider).home(accountId));
+    } catch { return { ready: false, state: 'error', reason: 'provider-home-unavailable', skills: [] }; }
+  },
   catalog: () => monitorService?.state || {},
   create: payload => remoteSessionCreateBroker.create(payload),
   isActive: id => ptys.has(id),
   deliveries: sessionDeliveries,
   messages: sessionMessages,
   sessionSettings: sessionLaunchSettings,
+  sessionRouting,
   sessionStart,
   readiness: body => sessionReadiness.handle(body),
   relocation: sessionRelocation,
@@ -6363,6 +6398,14 @@ async function invokeCommand(event, command, rawArgs) {
       }
       return sessionLaunchSettings.complete(args);
     }
+    case "validate_session_routing":
+    case "complete_session_routing": {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (event.sender.id !== coordinatorWebContentsId || !runtime?.workspace_window || !runtime.coordinator) throw new Error('기본 작업창에서만 라우팅 설정을 저장할 수 있습니다.');
+      if (command === 'complete_session_routing') return sessionRouting.complete(args);
+      try { return { ok: true, change: sessionRouting.validate(args) }; }
+      catch (error) { return { ok: false, error: String(error.message || error).slice(0, 1000), statusCode: [400, 404, 409, 503].includes(error.statusCode) ? error.statusCode : 500 }; }
+    }
     case "validate_session_relocation":
     case "complete_session_relocation": {
       const runtime = runtimeByWebContents.get(event.sender.id);
@@ -6651,6 +6694,7 @@ app.on("before-quit", (event) => {
   remoteSessionActivationBroker.close();
   remoteSessionModelBroker.close();
   sessionLaunchSettings.close();
+  sessionRouting.close();
   sessionRelocation.close();
   sessionRegistry.close();
   void hookService.stop();

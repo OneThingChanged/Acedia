@@ -305,6 +305,12 @@ export class AccountPool {
       id: account.id, label: account.label, available: this.eligible(account),
     })) };
   }
+  routingStatus(id) {
+    this.guardReadable();
+    return { enabled: this.state.enabled, writable: !this.storageError,
+      assignedAccountId: Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id].accountId : null,
+      accounts: this.state.accounts.map(a => ({ id: a.id, label: a.label, available: this.eligible(a) })) };
+  }
   eligible(a) {
     return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
   }

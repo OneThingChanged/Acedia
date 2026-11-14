@@ -41,6 +41,12 @@ function lineBuffer(text) {
 }
 
 describe('terminal video link hit → child folder resolution → OS action without GUI automation', () => {
+  it.each(['Result.json', 'Status.md', 'preview.png'])('keeps a deep path clickable without blocking specialization on %s', name => {
+    const relative = Array(24).fill('ProjectWitch').join('/') + '/' + name;
+    const term = lineBuffer('[' + relative + ']');
+    const link = findTerminalLinkAtMouseEvent(term, { clientX: 15, clientY: 10 });
+    expect(link).toEqual({ kind: name.endsWith('.md') ? 'markdown' : name.endsWith('.png') ? 'image' : 'terminal', text: relative });
+  });
   it.each(['Akane-PostProcess-Before-After.mp4', 'Akane-PostProcess-V1.mp4'])('opens %s from the session folder and reserves Ctrl-click for reveal', async name => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-video-link-')); roots.push(root);
     const childFolder = path.join(root, 'VFXProject');

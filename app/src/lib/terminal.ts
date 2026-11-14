@@ -12,6 +12,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { buildHardWrappedPath } from "./terminalWrappedPath";
 import { absoluteTerminalPathSpans } from "./terminalAbsolutePaths";
+import { terminalSpecializedPathMatches } from '../../electron/shared/terminal-path-tokens.mjs';
 import type { DropZone, TerminalEntry } from "../types";
 import { loadAppTheme, type AppThemeId } from "./appTheme";
 import { DEFAULT_TERMINAL_SETTINGS, loadTerminalSettings, terminalSettingsOptions, updateTerminalSettings } from "./terminalSettings";
@@ -59,11 +60,6 @@ const TERMINAL_THEME = TERMINAL_THEMES.soft;
 export function applyTerminalTheme(term: Terminal, theme: AppThemeId) {
   term.options.theme = TERMINAL_THEMES[theme] ?? TERMINAL_THEME;
 }
-const MARKDOWN_PATH_RE =
-  /(?:[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()\[\]{},;]+[\\/])*[^\s"'<>|:*?()\[\]{},;]+\.(?:md|markdown|html|htm)(?::\d+(?::\d+)?)?/gi;
-
-const IMAGE_PATH_RE =
-  /(?:[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()\[\]{},;]+[\\/])*[^\s"'<>|:*?()\[\]{},;]+\.(?:png|jpe?g|gif|webp|bmp|svg|ico)/gi;
 
 const FILE_URL_RE = /\bfile:\/\/[^\s"'<>`|]+/gi;
 
@@ -360,10 +356,7 @@ function startsInsideUrl(text: string, start: number) {
 
 function findImagePathMatches(text: string): MarkdownPathMatch[] {
   const matches: MarkdownPathMatch[] = [];
-  IMAGE_PATH_RE.lastIndex = 0;
-  for (const match of text.matchAll(IMAGE_PATH_RE)) {
-    const raw = match[0];
-    const start = match.index ?? 0;
+  for (const { raw, startIndex: start } of terminalSpecializedPathMatches(text, 'image')) {
     const cleaned = cleanImagePathCandidate(raw);
     if (!cleaned) continue;
     const startColumn = cellWidth(text.slice(0, start));
@@ -479,11 +472,7 @@ function cellWidth(text: string) {
 
 function findMarkdownPathMatches(text: string): MarkdownPathMatch[] {
   const matches: MarkdownPathMatch[] = [];
-  MARKDOWN_PATH_RE.lastIndex = 0;
-
-  for (const match of text.matchAll(MARKDOWN_PATH_RE)) {
-    const raw = match[0];
-    const start = match.index ?? 0;
+  for (const { raw, startIndex: start } of terminalSpecializedPathMatches(text, 'document')) {
     const cleaned = cleanMarkdownPathCandidate(raw);
     if (!cleaned) continue;
 

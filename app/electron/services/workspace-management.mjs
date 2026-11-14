@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { acediaCapabilities } from './acedia-capabilities.mjs';
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const string = value => typeof value === 'string' ? value.trim() : '';
@@ -14,9 +15,17 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, deliveries = null, messages = null, sessionSettings = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}) }) {
-    Object.assign(this, { catalog, create, isActive, deliveries, messages, sessionSettings, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
+  constructor({ catalog, create, isActive, deliveries = null, messages = null, sessionSettings = null, sessionRouting = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}), hostInfo = () => ({}), browserAvailable = () => false, skillStatus = () => null }) {
+    Object.assign(this, { catalog, create, isActive, deliveries, messages, sessionSettings, sessionRouting, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
+    Object.assign(this, { hostInfo, browserAvailable, skillStatus });
+  }
+  capabilities(agentId) {
+    if (typeof agentId !== 'string' || agentId.length > 256 || /[\x00-\x1f]/.test(agentId)) throw fail('올바른 호출 세션 ID가 필요합니다.');
+    const agent = (this.catalog().agents || []).find(a => a.id === agentId);
+    return acediaCapabilities({ services: { ...this, browser: this.browserAvailable() }, host: this.hostInfo(),
+      caller: { sessionId: agentId, registered: Boolean(agent), active: this.isActive(agentId), aiToolId: agent?.aiToolId },
+      skills: agent ? this.skillStatus(agentId) : null });
   }
   snapshot() {
     const catalog = this.catalog();
@@ -39,6 +48,7 @@ export class WorkspaceManagement {
       sessionHierarchy: { createdById: ownerId, parentId: ownerId, inheritFolder: false, folderOverride: folder, inheritInstructions: true, inheritModel: false } });
   }
   handle({ action, body = {}, agentId }) {
+    if (action === 'capabilities') return Promise.resolve().then(() => this.capabilities(agentId));
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
     if (action === 'run' || action === 'run-status') return this.runs ? this.runs.handle({ action, agentId, body }) : Promise.reject(fail('Child launch service unavailable', 503));
@@ -46,6 +56,7 @@ export class WorkspaceManagement {
     if (action === 'start') return this.sessionStart ? this.sessionStart.handle(body) : Promise.reject(fail('Session start unavailable', 503));
     if (action === 'session-status') return this.readiness ? this.readiness(body) : Promise.reject(fail('Session readiness unavailable', 503));
     if (action === 'session-settings') return this.sessionSettings ? this.sessionSettings.handle(body) : Promise.reject(fail('Session settings unavailable', 503));
+    if (action === 'session-routing') return this.sessionRouting ? this.sessionRouting.handle(body) : Promise.reject(fail('Session routing unavailable', 503));
     if (action === 'relocate-sessions') return this.relocation ? this.relocation.handle(body) : Promise.reject(fail('Session relocation unavailable', 503));
     if (action === 'organize-sessions' || action === 'stop') {
       if (action === 'stop' && body?.sessionId === agentId) return Promise.reject(fail('호출 중인 자기 세션은 종료할 수 없습니다.', 409));

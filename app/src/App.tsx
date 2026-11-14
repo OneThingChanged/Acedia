@@ -4045,6 +4045,37 @@ function App() {
       }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: 500 }); });
     }).then(track);
 
+    listen<{ requestId: string; id: string }>('remote:session-routing', event => {
+      const payload = event.payload;
+      if (cancelled || !payload?.requestId || !payload.id) return;
+      const complete = (result: { ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 }) => invoke('complete_session_routing', {
+        requestId: payload.requestId, id: payload.id, ...result,
+      }).catch(() => false);
+      launchSettingsQueue = launchSettingsQueue.catch(() => {}).then(async () => {
+        if (cancelled) { await complete({ ok: false, error: '작업창이 변경되었습니다. 다시 조회하세요.', statusCode: 503 }); return; }
+        const checked = await invoke('validate_session_routing', { requestId: payload.requestId, id: payload.id });
+        if (!checked.ok || !checked.change) { await complete({ ok: false, error: checked.error, statusCode: checked.statusCode || 409 }); return; }
+        const change = checked.change, agent = agentsRef.current.find(item => item.id === change.sessionId);
+        if (!agent) { await complete({ ok: false, error: '세션을 찾을 수 없습니다.', statusCode: 404 }); return; }
+        const project = projectsRef.current.find(item => item.id === agent.projectId);
+        if (agent.aiToolId !== 'codex' || agent.sshHostId || project?.sshHostId || detachedAgentIdsRef.current.has(agent.id)) {
+          await complete({ ok: false, error: '기본 작업창의 로컬 Codex 세션을 선택하세요.', statusCode: 409 }); return;
+        }
+        const current = agent.codexPoolAccountId || null;
+        if (current !== change.expectedAccountId && current !== change.accountId) {
+          await complete({ ok: false, error: '라우팅 설정이 변경되었습니다. 다시 조회하세요.', statusCode: 409 }); return;
+        }
+        const next = agentsRef.current.map(item => item.id === agent.id ? { ...item, codexPoolAccountId: change.accountId || undefined } : item);
+        const stored = mergeStoredByIdForWrite(next.map(storedAgentFromAgent),
+          parseStoredArray<StoredAgent>(readLocalStorageValue(LS_AGENTS)), removedAgentIdsRef.current);
+        const json = JSON.stringify(stored);
+        localStorage.setItem(LS_AGENTS, json); storedAgentsJsonRef.current = json;
+        agentsRef.current = next; setAgents(next);
+        await persistStorageSnapshot(true);
+        await complete({ ok: true });
+      }).catch(async error => { await complete({ ok: false, error: String(error).slice(0, 1000), statusCode: 500 }); });
+    }).then(track);
+
     listen<{ requestId: string; id: string; moves: SessionMove[] }>('remote:relocate-sessions', event => {
       const payload = event.payload;
       if (cancelled || !payload?.requestId || !payload.id) return;

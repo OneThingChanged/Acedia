@@ -26,6 +26,12 @@ const targetSchema = {
 
 const tools = [
   {
+    name: 'acedia_connection',
+    description: 'Diagnose this Acedia-launched session without UI, CLI input or mutations. Reports the actual host version, registered/active caller, supported versus currently available API groups, installed skill status and bridge/host tool-list differences. Use before an unfamiliar Acedia workflow or when tools appear missing. Support is not target readiness or permission. A missing tool in your current client may still require an MCP/CLI reload even when this bridge is compatible. Never print or replace runtime credentials.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'acedia_task_plan',
     description: 'When the user chooses Acedia task delegation, act as A: plan, assign, monitor and review; independent Codex or Claude sessions perform research, edits and checks. Each task may choose aiToolId; omitted inherits the parent provider. Supports both parent providers and all four parent/child combinations. Host selects provider-specific task models and resolves accounts before background launch. Exact registered folder Trust is automatic; hooks, login, questions and command approvals remain explicit. Use task_wait/get for original questions and exact turn/model evidence, review results, then finish only after all required tasks pass. Workers must not delegate again. Existing sessions are never assigned.',
     inputSchema: { type: 'object', properties: {
@@ -91,6 +97,12 @@ const tools = [
     name: 'acedia_session_settings',
     description: 'Read or save Dangerous mode for an existing local Acedia session, including OFFLINE sessions. Pass sessionId alone to read. To change a user-authorized permission setting, include dangerous and the previously read expectedDangerous boolean. Saves durably without starting/restarting a session, selecting a pane or changing focus. Applies on the next session start; active=true does NOT mean the running CLI permission policy changed. Do not enable Dangerous mode merely to bypass a question or approval. After a timeout read again before retrying.',
     inputSchema: { type: 'object', properties: { sessionId: { type: 'string', minLength: 1, maxLength: 256 }, dangerous: { type: 'boolean' }, expectedDangerous: { type: 'boolean' } }, required: ['sessionId'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'acedia_session_routing',
+    description: 'Read or save the next-start Codex routing account for an existing local Acedia session, including OFFLINE sessions. Pass sessionId alone to read account IDs/labels/availability, preferredAccountId, runningMode/runningAccountId and the global routing enabled state. For a user-authorized change pass accountId and the previously read expectedAccountId; null selects Automatic. Saves durably in the background without Computer Use, focus changes, CLI input or restart. The live account remains unchanged until explicit acedia_session_stop then acedia_session_start; stop interrupts running work and requires user authorization. Global routing is not enabled by this call. Preserve the native conversation and use session_message_send for any authorized continuation. After timeout read again before retrying. Claude/direct-login account changes are unsupported.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string', minLength: 1, maxLength: 256 }, accountId: { type: ['string', 'null'], minLength: 1, maxLength: 256 }, expectedAccountId: { type: ['string', 'null'], minLength: 1, maxLength: 256 } }, required: ['sessionId'], additionalProperties: false },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -352,6 +364,29 @@ async function callBrowser(action, body = {}, method = "POST") {
 
 async function callTool(name, args) {
   const body = args && typeof args === "object" ? { ...args } : {};
+  if (name === 'acedia_connection') {
+    if (Array.isArray(args) || Object.keys(body).length) throw new Error('acedia_connection takes no arguments');
+    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535 || !token || !agentId) {
+      return { ok: false, connected: false, reason: 'session-environment-missing', recovery: 'Start the CLI from Acedia. Do not copy another session identity or credentials.' };
+    }
+    let response;
+    try {
+      response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/capabilities`, {
+        headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId }, redirect: 'error', signal: AbortSignal.timeout(5000),
+      });
+    } catch { return { ok: false, connected: false, reason: 'host-unreachable', recovery: 'Check that Acedia is running and restart this CLI from Acedia if its runtime environment is stale.' }; }
+    if (!response.ok) return { ok: false, connected: true, httpStatus: response.status,
+      reason: response.status === 404 ? 'capabilities-unavailable' : [401, 403].includes(response.status) ? 'authentication-failed' : 'host-error',
+      recovery: response.status === 404 ? 'This host has no capability endpoint. Update Acedia and reload the MCP/CLI; do not infer unsupported features from an old client list.' : 'Check the Acedia host and restart the CLI from Acedia. Do not replace credentials or retry mutations.' };
+    let result;
+    try { result = await response.json(); } catch { return { ok: false, connected: true, reason: 'invalid-capabilities-response' }; }
+    if (result.schemaVersion !== 1 || !Array.isArray(result.tools)) return { ok: false, connected: true, reason: 'unsupported-capabilities-schema' };
+    const client = tools.map(tool => tool.name), host = result.tools;
+    return { ...result, connected: true, bridge: { version: '0.2.0',
+      hostOnlyTools: host.filter(tool => !client.includes(tool)), bridgeOnlyTools: client.filter(tool => !host.includes(tool)),
+      reloadClientRecommended: host.some(tool => !client.includes(tool)),
+      note: 'The model client may cache tool metadata separately. If a supported tool is not visible, reload its MCP connection or restart this CLI.' } };
+  }
   if (name.startsWith('acedia_task_')) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const action = name === 'acedia_task_control' ? body.action : name.slice('acedia_task_'.length);
@@ -364,10 +399,10 @@ async function callTool(name, args) {
     if (!response.ok) throw new Error(result.error || `Acedia task request failed (${response.status})`);
     return result;
   }
-  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_start', 'acedia_session_status', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'acedia_session_message_send', 'acedia_session_message_receive'].includes(name)) {
+  if (['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_routing', 'acedia_session_start', 'acedia_session_status', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'acedia_session_message_send', 'acedia_session_message_receive'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
-    const endpoint = name === 'acedia_session_run' ? 'run' : name === 'acedia_session_run_status' ? 'run-status' : name === 'acedia_session_message_send' ? 'messages/send' : name === 'acedia_session_message_receive' ? 'messages/receive' : name === 'acedia_sessions_organize' ? 'organize-sessions' : name === 'acedia_session_stop' ? 'stop' : name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_status' ? 'session-status' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
+    const endpoint = name === 'acedia_session_run' ? 'run' : name === 'acedia_session_run_status' ? 'run-status' : name === 'acedia_session_message_send' ? 'messages/send' : name === 'acedia_session_message_receive' ? 'messages/receive' : name === 'acedia_sessions_organize' ? 'organize-sessions' : name === 'acedia_session_stop' ? 'stop' : name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_status' ? 'session-status' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_routing' ? 'session-routing' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
     const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
       method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),
@@ -420,7 +455,7 @@ async function handle(message) {
       result: {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "multiagent-browser", version: "0.1.0" },
+        serverInfo: { name: "multiagent-browser", version: "0.2.0" },
       },
     });
     return;

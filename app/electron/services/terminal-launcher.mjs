@@ -120,6 +120,9 @@ export function createTerminalLauncher({
           accountEnv.CODEX_HOME || path.join(os.homedir(), ".codex")
         );
       }
+      if (!ssh && aiToolId === 'claude') {
+        await hookService.setupClaudeHome(accountEnv.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
+      }
       const ptyCols = asPositiveInt(args.cols, 120);
       const launchEnvironment = mergeLaunchEnvironment(ssh ? accountEnv : refreshPath(accountEnv), args.launchOptions, platform);
       // Qwen does not recognize xterm-256color as synchronized-output capable.

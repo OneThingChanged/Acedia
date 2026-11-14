@@ -22,6 +22,7 @@ function fixture() {
     port: 12345, token: "fixture-token",
     setupProject: vi.fn(async () => {}),
     setupCodexHome: vi.fn(async () => {}),
+    setupClaudeHome: vi.fn(async () => {}),
   };
   const providers = Object.fromEntries(["codex", "claude"].map(provider => [provider, {
     environment: vi.fn(id => ({
@@ -291,6 +292,17 @@ describe("terminal launch lifecycle", () => {
     const environments = f.dependencies.spawnProcess.mock.calls.map(call => call[2].env);
     expect(environments.map(env => path.basename(env.CODEX_HOME))).toEqual(["account-a", "account-b"]);
     expect(f.sessions.get("session-b").codexAccountId).toBe("account-b");
+  });
+  it('installs standalone skills into the selected Claude account before launching', async () => {
+    const f = fixture(), installed = deferred();
+    f.dependencies.hookService.setupClaudeHome.mockReturnValue(installed.promise);
+    const launching = f.launch({ ...f.args, aiToolId: 'claude', claudeAccountId: 'account-b' });
+    await vi.waitFor(() => expect(f.dependencies.hookService.setupClaudeHome).toHaveBeenCalled());
+    expect(f.dependencies.spawnProcess).not.toHaveBeenCalled(); installed.resolve(); await launching;
+    const home = f.providers.claude.environment.mock.results[0].value.CLAUDE_CONFIG_DIR;
+    expect(f.dependencies.hookService.setupClaudeHome).toHaveBeenCalledWith(home);
+    expect(f.dependencies.spawnProcess.mock.calls[0][2].env.CLAUDE_CONFIG_DIR).toBe(home);
+    expect(f.dependencies.hookService.setupCodexHome).not.toHaveBeenCalled();
   });
 
   it.each(["login", "binding"])("rejects a pending %s before creating a process", async reason => {

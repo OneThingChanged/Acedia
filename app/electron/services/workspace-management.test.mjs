@@ -7,9 +7,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
 import { SessionLaunchSettings } from './session-launch-settings.mjs';
+import { SessionRouting } from './session-routing.mjs';
 import { SessionRelocation } from './session-relocation.mjs';
 import { SessionStart } from './session-start.mjs';
 import { SessionRegistry } from './session-registry.mjs';
+import { acediaCapabilities } from './acedia-capabilities.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -138,13 +140,27 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   const rpc = (method, params = {}) => new Promise(resolve => { const id = ++nextId; pending.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
   await rpc('initialize');
   const exposed = (await rpc('tools/list')).tools;
+  const allCapabilities = acediaCapabilities({ services: new Proxy({}, { get: () => true }), host: { version: 'test' }, caller: { sessionId: 'caller', active: true } });
+  expect(new Set(allCapabilities.tools)).toEqual(new Set(exposed.map(tool => tool.name)));
+  expect(exposed.find(tool => tool.name === 'acedia_connection').annotations.readOnlyHint).toBe(true);
+  f.service.hostInfo = () => ({ version: '1.8.2.16' });
+  const connected = await rpc('tools/call', { name: 'acedia_connection', arguments: {} });
+  expect(connected.structuredContent).toMatchObject({ connected: true, status: 'ready', host: { version: '1.8.2.16' },
+    features: { workspace: { supported: true, available: true }, routing: { supported: false, available: false } } });
+  const capabilitiesUrl = `http://127.0.0.1:${hook.port}/integration/v1/workspace/capabilities`;
+  expect((await fetch(capabilitiesUrl)).status).toBe(401);
+  expect((await fetch(capabilitiesUrl, { headers: { ...headers, origin: 'https://unrelated.invalid' } })).status).toBe(403);
+  const inactiveConnection = await fetch(capabilitiesUrl, { headers: { ...headers, 'x-acedia-agent-id': 'inactive' } });
+  expect(inactiveConnection.status).toBe(200);
+  expect(await inactiveConnection.json()).toMatchObject({ status: 'caller-unregistered', features: { workspace: { supported: true, available: false } } });
+  expect(JSON.stringify(connected)).not.toContain(hook.token);
   expect(exposed.map(t => t.name)).toEqual(expect.arrayContaining(['acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_start', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'browser_open']));
   expect(exposed.find(t => t.name === 'acedia_session_create').inputSchema.properties).toMatchObject({ start: { type: 'boolean' }, folder: { type: 'string' }, parentSessionId: { type: ['string', 'null'] } });
   const created = await rpc('tools/call', { name: 'acedia_project_create', arguments: { folder: f.root, name: 'Fixture' } });
   expect(created.structuredContent).toMatchObject({ created: true, active: true });
   const listed = await rpc('tools/call', { name: 'acedia_projects' });
   expect(listed.structuredContent.projects[0].name).toBe('Fixture');
-  for (const action of ['send', 'delivery', 'run', 'run-status', 'session-settings', 'relocate-sessions', 'start', 'stop', 'organize-sessions']) {
+  for (const action of ['send', 'delivery', 'run', 'run-status', 'session-settings', 'session-routing', 'relocate-sessions', 'start', 'stop', 'organize-sessions']) {
     const endpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/${action}`;
     expect((await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401);
     expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, origin: 'https://unrelated.invalid' }, body: '{}' })).status).toBe(403);
@@ -184,6 +200,26 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: '{}' })).status).toBe(415);
   expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, dangerous: 'true' }) })).status).toBe(400);
   expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
+  const poolInfo = { enabled: true, writable: true, routed: true, assignedAccountId: 'old',
+    accounts: [{ id: 'old', label: '이전 계정', available: true }, { id: 'new', label: 'sub5tudio', available: true }] };
+  const routing = new SessionRouting({ agentFor: id => f.catalog.agents.find(a => a.id === id), active: id => f.active.has(id), pool: () => poolInfo,
+    dispatch: payload => { queueMicrotask(() => void routing.complete({ ...payload, ok: true })); return true; },
+    verifySaved: async change => { target.codexPoolAccountId = change.accountId || undefined; } });
+  cleanups.push(() => routing.close()); f.service.sessionRouting = routing;
+  const routingRead = await rpc('tools/call', { name: 'acedia_session_routing', arguments: { sessionId: target.id } });
+  expect(routingRead.structuredContent).toMatchObject({ preferredAccountId: null, active: false, accounts: [{ id: 'old' }, { id: 'new' }] });
+  const pin = await rpc('tools/call', { name: 'acedia_session_routing', arguments: { sessionId: target.id, accountId: 'new', expectedAccountId: null } });
+  expect(pin.structuredContent).toMatchObject({ saved: true, preferredAccountId: 'new', appliesOn: 'next_start' });
+  f.active.add(target.id);
+  const routingEndpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/session-routing`;
+  const auto = await fetch(routingEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, accountId: null, expectedAccountId: 'new' }) });
+  expect(auto.status).toBe(200);
+  expect(await auto.json()).toMatchObject({ saved: true, preferredAccountId: null, runningAccountId: 'old', active: true });
+  expect(poolInfo.assignedAccountId).toBe('old');
+  expect((await fetch(routingEndpoint, { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: '{}' })).status).toBe(415);
+  expect((await fetch(routingEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: target.id, accountId: 'new' }) })).status).toBe(400);
+  expect((await fetch(routingEndpoint, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'missing' }) })).status).toBe(404);
+  f.active.delete(target.id);
   target.folder = f.root;
   const destination = path.join(f.root, 'RnDHub'); fs.mkdirSync(destination);
   f.catalog.projects.push({ id: 'rnd', name: 'RnDHub', folder: destination });

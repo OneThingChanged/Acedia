@@ -65,6 +65,7 @@ export type RuntimeCommand =
   | "complete_remote_session_create" | "complete_remote_session_activation" | "session_restart_request_pending"
   | "complete_remote_session_model" | "complete_session_launch_settings" | "validate_session_relocation" | "complete_session_relocation" | "restart_session_model" | "get_session_model" | "set_session_model"
   | "validate_session_registry_change" | "complete_session_registry_change"
+  | "validate_session_routing" | "complete_session_routing"
   | "get_model_defaults" | "get_default_model_catalog" | "set_model_defaults"
   | "repair_active_hooks" | "export_diagnostics" | "usage_ingest_now"
   | "usage_rate_limits_get"
@@ -96,6 +97,7 @@ export type RuntimeEventName =
   | "remote:restart-session" | "remote:create-session" | "remote:rename-session" | "remote:deactivate-session"
   | "remote:session-model"
   | "remote:session-launch-settings"
+  | "remote:session-routing"
   | "remote:relocate-sessions"
   | "remote:session-registry-change"
   | "chat:changed"
@@ -448,6 +450,14 @@ export type RuntimeCommandContract = {
     result: boolean;
   };
   complete_session_launch_settings: {
+    args: { requestId: string; id: string; ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+    result: boolean;
+  };
+  validate_session_routing: {
+    args: { requestId: string; id: string };
+    result: { ok: boolean; change?: { sessionId: string; accountId: string | null; expectedAccountId: string | null }; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
+  };
+  complete_session_routing: {
     args: { requestId: string; id: string; ok: boolean; error?: string; statusCode?: 400 | 404 | 409 | 500 | 503 };
     result: boolean;
   };
