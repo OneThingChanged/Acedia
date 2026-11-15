@@ -200,7 +200,7 @@ sources:
 
 # Workspace interactions
 
-## Session overview tables (2026-11-15 source)
+## Session overview tables (1.8.2.18)
 
 The desktop Project Board opens in **Sessions** view by default. **Handoffs**
 shows the retained incoming-request history, and **Board** preserves the existing
@@ -236,16 +236,20 @@ windows scroll the table horizontally and stack the detail panel below it.
 
 The same data is available to agents through `acedia_board` and the authenticated
 `POST /integration/v1/workspace/board` API, with separate snapshot and exact
-request-detail calls. These are source changes; the installed 1.8.2.17 app and
-Remote's separate workspace view do not acquire this table without a build/update.
+request-detail calls. The desktop table ships in 1.8.2.18. Existing installations
+need an update; Remote uses its separate workspace view. The handoff line-break
+fix ships on desktop, Remote and Dashboard.
 
-Validation: 259 Vitest files / 2,083 tests and the TypeScript/Vite production
+Validation: 259 Vitest files / 2,086 tests and the TypeScript/Vite production
 build passed. Tests cover exact historical selection during polling, delayed
 detail responses, independent receipt stages, escaped content, ancestor/filter
 behavior, preserved result identities, IPC restrictions and the real stdio MCP /
 authenticated HTTP path. The full run uses the bundled Git on its process PATH
-and four workers to avoid Windows process-start contention. No GUI automation,
-production session input, installer build or deployment was performed.
+and four workers to avoid Windows process-start contention. The frozen EXE
+package passed authenticated HTTP, unchanged polling, exact original retrieval,
+read-receipt preservation and persisted view-mode checks. See the
+[1.8.2.18 release record](release-1-8-2-18.md) for package and publication evidence.
+No GUI automation or production session input was performed.
 
 ## 작업 분담과 모델 정책 (2026-10-19, 배포 전 소스)
 
