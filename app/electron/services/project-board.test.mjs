@@ -22,7 +22,35 @@ function fixture() {
 describe('Independent project board', () => {
   it('projects bounded delivery phases without message bodies or private notification keys', () => {
     const f = fixture(); f.board.transfers = () => [{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', savedAt: 1000, message: 'private body', notificationKey: 'private-key' }];
-    expect(f.board.snapshot().transfers).toEqual([{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', savedAt: 1000, readAt: null, startedAt: null, isMessage: false }]);
+    expect(f.board.snapshot().transfers).toEqual([{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', summary: '', savedAt: 1000, sentAt: null, receivedAt: null, readAt: null, startedAt: null, isMessage: false }]);
+  });
+  it('reads an exact retained request on demand without changing delivery, read receipts or attention', () => {
+    const f = fixture(), transfer = { id: 'message', from: 'a', to: 'b', status: 'started', summary: 'A short title', isMessage: true, savedAt: 1000, sentAt: 1100, receivedAt: 1200, startedAt: 1300 };
+    const body = 'A short title\nOriginal text <script> stays text';
+    f.board.transfers = () => [transfer]; f.board.transferContent = vi.fn(() => body);
+    const first = f.board.snapshot();
+    expect(JSON.stringify(first)).not.toContain('Original text'); expect(f.board.transferContent).not.toHaveBeenCalled();
+    expect(f.board.transferDetail('message')).toEqual({ id: 'message', from: 'a', to: 'b', message: body });
+    expect(f.board.snapshot().revision).toBe(first.revision); expect(transfer).not.toHaveProperty('readAt');
+    f.source.agents.pop(); expect(() => f.board.transferDetail('message')).toThrow('전달 기록');
+    expect(f.board.transferContent).toHaveBeenCalledOnce();
+  });
+  it('exposes only known display model/account metadata while retaining result review identities', () => {
+    const f = fixture(), first = f.board.snapshot();
+    f.board.runtimeInfo = () => ({ model: { model: 'gpt-6.1-sol', effort: 'xhigh', serviceTier: 'priority', apiKey: 'private-key' }, accountLabel: '계정 표시명', accountId: 'private-id' });
+    const next = f.board.snapshot(); expect(next.sessions[0].model).toEqual({ model: 'gpt-6.1-sol', effort: 'xhigh', serviceTier: 'priority' });
+    expect(next.sessions[0].accountLabel).toBe('계정 표시명');
+    expect(next.sessions[0].fingerprint).toBe(first.sessions[0].fingerprint);
+    expect(JSON.stringify(next)).not.toContain('private-');
+  });
+  it('persists the selected table mode and validates its IPC contract alongside local layout', async () => {
+    const { createRequire } = await import('node:module');
+    const contract = createRequire(import.meta.url)('../ipc-contract.cjs'), f = fixture();
+    f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'transfers', zoom: .8 } }).preferences);
+    expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ viewMode: 'transfers', zoom: .8 });
+    expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'invalid' } })).toThrow();
+    expect(() => contract.assertInvokeRequest('project_board_transfer_detail', { id: 'message', markRead: true })).toThrow();
+    expect(() => contract.assertInvokeRequest('project_board_transfer_detail', { id: '' })).toThrow();
   });
   it('reviews only captured results atomically and never acknowledges newer results, questions or other sessions', () => {
     const f = fixture(), captured = f.board.snapshot().items.filter(i => i.kind === 'result');

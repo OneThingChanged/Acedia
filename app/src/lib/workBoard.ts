@@ -10,18 +10,22 @@ export type BoardSession = {
   fingerprint: string; needsAttention: boolean; unreviewedResults?: number;
   startedAt?: number; lastActivityAt?: number; step?: string;
   backgroundCount?: number | null;
+  model?: { model: string; effort?: string; serviceTier?: string | null } | null;
+  accountLabel?: string;
   task: { title: string; state: string; reason: string; runId: string; taskId: string } | null;
 };
 export type BoardItem = { id: string; sessionId: string; kind: 'question' | 'error' | 'result'; summary: string;
   createdAt: number; fingerprint: string; scope?: 'response' | 'partial' | 'task'; conversationId?: string; runId?: string; taskId?: string; artifacts?: string[] };
 export type BoardReference = { id: string; from: string; to: string; kind: string; source: string; startedAt: number; endedAt: number | null; active: boolean };
-export type BoardTransfer = { id: string; from: string; to: string; status: string; reason: string; savedAt?: number | null; readAt?: number | null; startedAt?: number | null; isMessage?: boolean };
+export type BoardTransfer = { id: string; from: string; to: string; status: string; reason: string; summary?: string; savedAt?: number | null; sentAt?: number | null; receivedAt?: number | null; readAt?: number | null; startedAt?: number | null; isMessage?: boolean };
+export type BoardTransferDetail = { id: string; from: string; to: string; message: string | null };
+export type BoardViewMode = 'sessions' | 'transfers' | 'board';
 export type BoardSnapshot = {
   revision: string; sessions: BoardSession[]; projects: { id: string; name: string; folder: string; remoteFolder?: string; sshHostId?: string; hierarchy?: { parentId?: string } }[];
   devices: { sessionId: string; kind: string; tool: string; state: string; source: string; startedAt: number }[];
   items?: BoardItem[]; references?: BoardReference[]; sampledAt?: number;
   transfers?: BoardTransfer[];
-  preferences: { layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean };
+  preferences: { viewMode?: BoardViewMode; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean };
   storageError: string | null;
 };
 export function boardItems(data: BoardSnapshot): BoardItem[] {

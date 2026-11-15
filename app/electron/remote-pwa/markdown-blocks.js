@@ -13,7 +13,7 @@ function markdownTableCells(line) {
 }
 function isMarkdownTableDivider(line){const cells=markdownTableCells(line);return cells.length>0&&cells.every(cell=>/^:?-{3,}:?$/.test(cell));}
 
-export function renderMarkdownBlocks(value, inline, { copyLabel = 'Copy' } = {}) {
+export function renderMarkdownBlocks(value, inline, { copyLabel = 'Copy', preserveLineBreaks = false } = {}) {
   const lines = String(value ?? "").split(/\r?\n/);
   const output = [];
   let listType = null;
@@ -136,7 +136,7 @@ export function renderMarkdownBlocks(value, inline, { copyLabel = 'Copy' } = {})
       paragraph.push(lines[index].trim());
       index += 1;
     }
-    output.push(`<p>${inline(paragraph.join(" "))}</p>`);
+    output.push(`<p>${preserveLineBreaks ? paragraph.map(inline).join('<br>') : inline(paragraph.join(" "))}</p>`);
   }
   closeList();
   return output.join("");

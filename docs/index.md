@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.18](release-1-8-2-18.md) - 세션·업무 전달 표, 읽기 전용 현황 API, 원문 줄바꿈·인계 작성 지침과 Codex 하위 세션 Fast 설정 검증 수정.
+
 * [Acedia 1.8.2.12](release-1-8-2-12.md) - 원본 기준 보드 카드, 노드 우회 연결선과 Remote 부모·자식 동기화 수정.
 * [Acedia 1.8.2.11](release-1-8-2-11.md) - Codex·Claude 자동 하위 실행, 영속 첫 지시 전달과 테스트 품질 보강.
 * [테스트 유효성 점검](test-quality-audit-2026-11-12.md) - 1,953개 실행 사례의 정적 조사, 대표 결함 탐지와 구조 검사 한계.
@@ -34,6 +36,7 @@ configuration that supports it.
 * [Session organization](session-organization.md) - Project relationship boards and folder references, parent/child session trees, setting inheritance and independent execution.
 * [Pixel Office](pixel-office.md) - Project Board와 우측 사이드바에서 보는 세션 사무실, Pixel Agents 자산·실제 상태 연동·부모 자식 관계·이미지 캐시와 숨김 시 중단.
 * [세션별 개인 메모](session-notes.md) - 사람이 사용하는 세션별 메모, 채팅·터미널·Remote 공통 저장과 동시 편집 보호.
+* [세션 현황 표](workspace-interactions.md#session-overview-tables-2026-11-15-source) - 실제 세션·업무 전달 표, 원문 상세·전달 단계, 기존 보드 전환과 읽기 전용 MCP/API. 2026-11-15 소스 구현·검증 완료, 설치본 반영 별도.
 * [멀티세션 작업 분담 구현 기록](task-orchestration-handoff-2026-10-19.md) - A의 계획·배정·결과 검토, 전용 Codex 세션, 모델 자동 선택, 재시작 복구와 데스크톱·Remote 검사 및 남은 범위. [첫 한국어 초안](mockups/task-orchestration.html), [프로젝트 보드 확장 시안](mockups/project-board-task-flow.html).
 * [사이드바 UX HTML 초안](mockups/sidebar-workspace.html) - 새 대화·검색 고정, 프로젝트 범위 선택, 최근 대화와 상태 필터, 분할 화면·항목 메뉴·다크/라이트 테마를 눌러보는 설계 초안. [미리보기](mockups/sidebar-workspace.png).
 * [대화 UX HTML 초안 02](mockups/chat-workspace-v2.html) - 요청·답변 구분, 상단 Quick Search와 사이드바 프로젝트·세션 통합 검색. [기본 화면](mockups/chat-workspace-v2.png), [검색 화면](mockups/chat-workspace-v2-search.png), [관찰·앱 적용·검사](chat-ux-review-2026-10-08.md).

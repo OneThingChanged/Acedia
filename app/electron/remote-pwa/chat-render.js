@@ -32,7 +32,7 @@ function renderSessionMessage(block, agent) {
   route.append(make('strong', '', value.sourceName), make('span', '', '→'), make('strong', '', value.targetName));
   const body = make('div', 'chat-md chat-session-message-body');
   if (value.message === null) body.textContent = t('보관된 전달 원문을 찾을 수 없습니다.');
-  else body.innerHTML = mdToHtml(value.message, agent);
+  else body.innerHTML = mdToHtml(value.message, agent, [], { preserveLineBreaks: true });
   const details = make('details', 'chat-session-message-details');
   details.append(make('summary', '', t('전달 정보')),
     make('p', '', t('채팅에 도착한 메시지입니다. AI의 읽음·작업 시작 상태와는 별개입니다.')),

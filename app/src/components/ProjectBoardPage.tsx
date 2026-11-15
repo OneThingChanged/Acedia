@@ -8,6 +8,10 @@ import { ProviderLogo } from './ProviderLogo';
 import './ProjectBoardPage.css';
 import './BackgroundWork.css';
 import { backgroundWaitingLabels } from '../lib/agentActivity';
+import { SessionTableView } from './SessionTableView';
+import { BoardRequestDetail } from './BoardRequestDetail';
+import { latestIncoming, sessionTableMatches } from '../lib/sessionTable';
+import type { BoardViewMode } from '../lib/workBoard';
 
 const labels: Record<BoardState, [string, string]> = {
   idle: ['대기', 'Idle'], planned: ['배정 대기', 'Planned'], working: ['작업 중', 'Working'], waiting: ['내 답변 필요', 'Needs your answer'],
@@ -44,6 +48,8 @@ type ProjectDrag = { id: string; pointerId: number; clientX: number; clientY: nu
 export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardSnapshot } = {}) {
   const { text } = useAppLanguage();
   const [data, setData] = useState<BoardSnapshot | null>(initialSnapshot || null), [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<BoardViewMode>(initialSnapshot?.preferences.viewMode || 'sessions');
+  const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ sessionId: string; itemId?: string } | null>(null);
   const [selectedResult, setSelectedResult] = useState<BoardItem | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; results: { id: string; fingerprint: string }[] } | null>(null);
@@ -91,6 +97,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
           if (!initialized.current) {
             initialized.current = true;
             const p = result.preferences;
+            setViewMode(p.viewMode === 'board' || p.viewMode === 'transfers' ? p.viewMode : 'sessions');
             resetView.current = p.layoutVersion !== BOARD_LAYOUT_VERSION;
             setView(resetView.current ? { zoom: .8, x: 24, y: 24 } : { zoom: p.zoom ?? .8, x: p.x ?? 24, y: p.y ?? 24 }); setCollapsed(new Set(p.collapsed || []));
             setCollapsedProjects(new Set(p.collapsedProjects || [])); setProject(p.projectId || ''); setMotion(p.motion ?? true);
@@ -110,11 +117,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   }, []);
   useEffect(() => {
     if (!initialized.current) return;
-    const preferences = { layoutVersion: BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
+    const preferences = { viewMode, layoutVersion: BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
       ...(data?.items ? { collapsedProjects: [...collapsedProjects], motion } : {}) };
     const timer = setTimeout(() => { void invoke('project_board_preferences', { preferences }).catch(reason => setError(String(reason))); }, 500);
     return () => clearTimeout(timer);
-  }, [view, collapsed, projectId, collapsedProjects, motion, !!data?.items]);
+  }, [viewMode, view, collapsed, projectId, collapsedProjects, motion, !!data?.items]);
   const allItems = useMemo(() => data ? boardItems(data) : [], [data]);
   const itemsBySession = useMemo(() => {
     const map = new Map<string, BoardItem[]>(); for (const item of allItems) map.set(item.sessionId, [...(map.get(item.sessionId) || []), item]); return map;
@@ -123,8 +130,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const projectSessions = useMemo(() => data?.sessions.filter(s => !projectId || s.projectId === projectId) || [], [data, projectId]);
   const counts = useMemo(() => boardCounts(projectSessions, allItems), [projectSessions, allItems]);
   const displayedPositions = useMemo(() => projectPreview ? { ...projectPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : projectPositions, [projectPositions, projectPreview]);
-  const layout = useMemo(() => data ? boardLayout(data, { projectId, collapsed, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, revealId: revealedSession }) : null,
-    [data, projectId, collapsed, displayedPositions, sessionOrder, showSleeping, showStopped, revealedSession]);
+  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, revealId: revealedSession }) : null,
+    [data, viewMode, projectId, collapsed, displayedPositions, sessionOrder, showSleeping, showStopped, revealedSession]);
   const nodes = useMemo(() => layout?.nodes.filter(n => !collapsedProjects.has(n.session.projectId)) || [], [layout, collapsedProjects]);
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.session.id, n])), [nodes]);
   const groupById = useMemo(() => new Map(layout?.groups.map(g => [g.id, g])), [layout]);
@@ -133,7 +140,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
     [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, view.zoom < .62]);
   useEffect(() => {
-    if (!resetView.current || !layout?.groups.length) return;
+    if (viewMode !== 'board' || !resetView.current || !layout?.groups.length) return;
     const rect = viewport.current?.getBoundingClientRect(); if (!rect) return;
     resetView.current = false;
     const left = Math.min(...layout.groups.map(g => g.x)), top = Math.min(...layout.groups.map(g => g.y));
@@ -141,9 +148,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     // Migrate only the old column layout's viewport, once. Never pan on new events.
     const zoom = Math.max(.65, Math.min(1, (rect.width - 48) / width, (rect.height - 48) / height));
     setView({ zoom, x: width * zoom <= rect.width - 48 ? (rect.width - width * zoom) / 2 - left * zoom : 24 - left * zoom, y: 24 - top * zoom });
-  }, [layout]);
+  }, [layout, viewMode]);
   const matches = useCallback((s: BoardSession) => (!workingOnly || s.state === 'working') && (!backgroundOnly || s.state === 'background') && (kind === 'all' || itemsBySession.get(s.id)?.some(i => i.kind === kind))
-    && (!query || `${s.name} ${s.folder} ${s.task?.title || ''} ${s.reason} ${data?.projects.find(p => p.id === s.projectId)?.name || ''}`.toLowerCase().includes(query.trim().toLowerCase())), [workingOnly, backgroundOnly, kind, query, data, itemsBySession]);
+    && (!data || sessionTableMatches(data, s, query)), [workingOnly, backgroundOnly, kind, query, data, itemsBySession]);
   const highlighted = useMemo(() => {
     const ids = new Set<string>();
     for (const s of data?.sessions || []) if (matches(s)) { let current: BoardSession | undefined = s; const seen = new Set<string>();
@@ -172,6 +179,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   useEffect(() => { if (!selected && !selectedReference && inspector.current) inspector.current.scrollTop = inboxScroll.current; }, [selected, selectedReference]);
   useEffect(() => { if (selected || selectedReference) inspector.current?.querySelector<HTMLButtonElement>('.wb-back')?.focus({ preventScroll: true }); }, [selected?.sessionId, selected?.itemId, selectedReference]);
   const selectedSession = selected ? sessionsById.get(selected.sessionId) : null;
+  const selectedTransfer = data && selectedSession && selectedTransferId ? data.transfers?.find(t => t.id === selectedTransferId && t.to === selectedSession.id) : undefined;
   const selectedItem = selected?.itemId ? allItems.find(i => i.id === selected.itemId) || (selectedResult?.id === selected.itemId ? selectedResult : null) : null;
   const reference = data?.references?.find(r => r.id === selectedReference);
   const transfersBySession = useMemo(() => { const map = new Map<string, NonNullable<BoardSnapshot['transfers']>>();
@@ -185,6 +193,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   }, [busy, allItems]);
   const choose = (sessionId: string, itemId?: string, trigger?: HTMLElement) => {
+    setSelectedTransferId(data ? latestIncoming(data, sessionId)?.id || null : null);
     if (!selected && !selectedReference) inboxScroll.current = inspector.current?.scrollTop || 0;
     if (trigger) returnFocus.current = trigger;
     if (itemId) returnItemId.current = itemId;
@@ -201,6 +210,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     });
   };
   const locate = (id: string) => {
+    setViewMode('board');
     const session = sessionsById.get(id); if (!session) return;
     const visibility = boardSessionVisibilityKind(session);
     setRevealedSession(visibility === 'sleeping' && !showSleeping || visibility === 'stopped' && !showStopped ? id : null);
@@ -279,7 +289,10 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     else if (projectDrag.current) { e.stopPropagation(); cancelProjectDrag(); }
     else if (selected || selectedReference) { e.stopPropagation(); back(); }
   } }} onPointerDown={e => { if (menu && !(e.target as Element).closest('.wb-context-menu')) setMenu(null); }}>
-    <header className="wb-header"><div className="wb-brand"><BoardIcon name="board"/><div><h1>{text('프로젝트 보드', 'Project Board')}</h1><small>{text('지금 하는 일과 내가 확인할 일을 함께.', 'Current work and what needs your attention.')}</small></div></div>
+    <header className="wb-header"><div className="wb-brand"><BoardIcon name="board"/><div><h1>{text('세션 현황', 'Session overview')}</h1><small>{text('세션의 현재 상태와 실제 업무 전달 기록.', 'Current session state and recorded handoffs.')}</small></div></div>
+      <nav className="wb-view-tabs" aria-label={text('현황 표시 방식', 'Overview view')}>
+        {([['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['board', '보드', 'Board']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{text(ko, en)}</button>)}
+      </nav>
       <label className="wb-project-picker"><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
       <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
@@ -294,6 +307,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     {revealedSession && <div className="wb-revealed">{sessionsById.get(revealedSession)?.name} · {text('보드에서 찾기로 임시 표시 중', 'Temporarily shown by Locate on board')}<button onClick={() => setRevealedSession(null)}>{text('다시 숨기기', 'Hide again')}</button></div>}
     <div className="wb-body"><section className="wb-canvas-wrap">    <nav className="wb-summary" aria-label={text('업무 요약', 'Work summary')}>
       <span className={`wb-connection ${!connected ? 'warning' : ''}`}><i/>{!connected ? text('수신 실패 · 마지막 기록', 'Disconnected · last known data') : text('상태 수신', 'Receiving state')}</span>
+      <button aria-pressed={!workingOnly && !backgroundOnly && kind === 'all'} onClick={() => { setWorkingOnly(false); setBackgroundOnly(false); setKind('all'); }}>{text('전체', 'All')} <b>{projectSessions.length}</b></button>
       <button aria-pressed={workingOnly} title={text('이 세션이 응답이나 명령을 직접 실행 중입니다.', 'This session is actively producing a response or running commands.')} onClick={() => { setWorkingOnly(v => !v); setBackgroundOnly(false); setKind('all'); }}><StateIcon state="working" active={connected && counts.working > 0}/>{text('작업 중', 'Working')} <b>{connected ? counts.working : '—'}</b></button>
       <button aria-pressed={backgroundOnly} title={text('CLI 내부 하위 에이전트 등 백그라운드 작업의 완료를 기다립니다. Acedia 자식 세션 수와는 다릅니다.', 'Waiting for background work, such as internal CLI agents; this is not an Acedia child-session count.')} onClick={() => { setBackgroundOnly(v => !v); setWorkingOnly(false); setKind('all'); }}><StateIcon state="background" active={connected && counts.background > 0}/>{text('하위 작업 대기', 'Background wait')} <b>{connected ? counts.background : '—'}</b></button>
       <button aria-pressed={kind === 'question'} onClick={() => { setKind(kind === 'question' ? 'all' : 'question'); setWorkingOnly(false); setBackgroundOnly(false); }}><StateIcon state="question"/>{text('질문', 'Questions')} <b>{counts.questions}</b></button>
@@ -302,7 +316,13 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <span className="wb-sampled" title={text('작업 진행 시각이 아닌 상태 수신 시각입니다.', 'State sampling time, not evidence of work progress.')}>{text('수신', 'Received')} {new Date(sampledAt).toLocaleTimeString()}</span>
       <details className="wb-state-help"><summary>{text('상태 안내', 'State guide')}</summary><p>{text('작업 중: 현재 대화가 직접 실행 중입니다. 하위 작업 대기: CLI가 내부 백그라운드 작업의 완료를 기다립니다. 미확인 결과: 새로 도착한 응답입니다. 대화나 결과를 열면 확인 처리하며, 새 응답과 질문은 따로 유지합니다.', 'Working: this conversation is executing. Background wait: its CLI is waiting for internal background work. Unread results: new responses; opening the result or conversation marks the captured results read, while new responses and questions remain.')}</p></details>
     </nav>
-      <div className="wb-canvas" ref={viewport} tabIndex={0} aria-label={text('업무 노드 · 빈 공간 드래그로 이동', 'Work nodes · drag empty space to pan')}
+      {viewMode !== 'board' && data && <SessionTableView data={data} mode={viewMode} projectId={projectId} query={query} visible={visibleSessionIds}
+        filterSession={s => (!workingOnly || s.state === 'working') && (!backgroundOnly || s.state === 'background') && (kind === 'all' || !!itemsBySession.get(s.id)?.some(i => i.kind === kind))}
+        selectedId={selected?.sessionId} selectedTransferId={selectedTransferId} step={step}
+        state={s => { const current = boardDisplayState(s, itemsBySession.get(s.id)?.filter(i => i.kind === 'result').length || 0); return <span className="st-state" data-state={current}><StateIcon state={current} active={connected}/>{text(...labels[current])}</span>; }}
+        onChoose={(id, trigger, transferId) => { choose(id, undefined, trigger); if (transferId) setSelectedTransferId(transferId); }} onOpen={id => { void open(id); }}/>}
+      {viewMode !== 'board' && !data && <p className="wb-empty" role="status">{text('세션 현황을 불러오는 중…', 'Loading sessions…')}</p>}
+      <div className="wb-canvas" hidden={viewMode !== 'board'} ref={viewport} tabIndex={0} aria-label={text('업무 노드 · 빈 공간 드래그로 이동', 'Work nodes · drag empty space to pan')}
         onPointerDown={e => { if (e.button !== 0 && e.button !== 1 || e.button === 0 && (e.target as Element).closest('button, select, input, summary, [role="button"], .wb-project-body')) return; if (e.button === 1) e.preventDefault(); drag.current = { x: e.clientX, y: e.clientY, left: view.x, top: view.y }; e.currentTarget.setPointerCapture(e.pointerId); }}
         onAuxClick={e => { if (e.button === 1) e.preventDefault(); }}
         onPointerMove={e => { const anchor = drag.current; if (!anchor) return; const x = anchor.left + e.clientX - anchor.x, y = anchor.top + e.clientY - anchor.y; setView(v => ({ ...v, x, y })); }}
@@ -381,7 +401,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             })}
           </svg>
         </div>}
-      </div><div className="wb-controls"><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { setCollapsed(new Set()); setCollapsedProjects(new Set()); }}>{text('모두 펼치기', 'Expand all')}</button>
+      </div><div className="wb-controls" hidden={viewMode !== 'board'}><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { setCollapsed(new Set()); setCollapsedProjects(new Set()); }}>{text('모두 펼치기', 'Expand all')}</button>
         <button disabled={!Object.keys(projectPositions).length && !sessionOrder.length} onClick={() => { cancelProjectDrag(); setProjectPositions({}); setSessionOrder([]); savePlacement({ projectPositions: {}, sessionOrder: [] }); resetView.current = true; }}>{text('배치 초기화', 'Reset layout')}</button></div>
         <button className="wb-align" disabled={!data?.sessions.length} title={text('한 번 정렬합니다. 답변 필요·실행·하위 작업 대기 순으로 부모 트리를 유지해 정렬하고 이후 수동 배치를 보존합니다.', 'Arrange once by attention, execution and background wait, preserving parent trees. Later manual placement is retained.')}
           onClick={() => { if (!data) return; cancelProjectDrag(); const order = boardPriorityOrder(data.sessions, allItems, sessionOrder), automatic = boardLayout(data, { collapsed, sessionOrder: order });
@@ -396,7 +416,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         <div className="wb-detail-state"><StateIcon state={boardDisplayState(selectedSession, itemsBySession.get(selectedSession.id)?.filter(i => i.kind === 'result').length || 0)}/><strong>{text(...labels[boardDisplayState(selectedSession, itemsBySession.get(selectedSession.id)?.filter(i => i.kind === 'result').length || 0)])}</strong><span>{selectedSession.runtime === 'sleeping' ? 'Sleeping' : selectedSession.runtime}</span></div>
         <p className="wb-copy">{step(selectedSession)}</p><button className="wb-locate" onClick={() => locate(selectedSession.id)}>{text('보드에서 찾기', 'Locate on board')}</button>
         {!!transfersBySession.get(selectedSession.id)?.length && <section className="wb-transfers"><h3>{text('업무 전달', 'Handoffs')}</h3>{[...(transfersBySession.get(selectedSession.id) || [])].reverse().slice(0, 8).map(t => <p key={t.id} data-status={t.status}>
-          <strong>{t.from === selectedSession.id ? '→' : '←'} {sessionsById.get(t.from === selectedSession.id ? t.to : t.from)?.name}</strong><br/>{text(...boardTransferLabel(t))}{t.reason && <small> · {t.reason}</small>}</p>)}</section>}
+          <button onClick={() => { choose(t.to); setSelectedTransferId(t.id); }}>{t.from === selectedSession.id ? '→' : '←'} {sessionsById.get(t.from === selectedSession.id ? t.to : t.from)?.name} · {t.summary || text('전달 상세', 'Handoff details')}</button><br/>{text(...boardTransferLabel(t))}{t.reason && <small> · {t.reason}</small>}</p>)}</section>}
+        {selectedTransfer && <BoardRequestDetail transfer={selectedTransfer} sender={sessionsById.get(selectedTransfer.from)?.name || text('이전 세션', 'Former session')} receiver={selectedSession.name}/>}
+        {selectedTransferId && !selectedTransfer && <p role="status">{text('선택한 전달 기록이 목록 범위를 벗어났습니다. 업무 전달 표에서 다시 선택하세요.', 'The selected handoff is no longer in this snapshot. Select a record from Handoffs.')}</p>}
         {selectedItem ? <article className="wb-result-detail"><span className="wb-detail-kind"><StateIcon state={selectedItem.kind}/>{text(...kinds[selectedItem.kind])}</span><h3>{selectedItem.kind === 'result' ? text('선택한 결과', 'Selected result') : actionLabel(selectedItem)}</h3><time>{new Date(selectedItem.createdAt).toLocaleString()}</time><p className="wb-copy">{selectedItem.summary || text('요약이 없습니다. 세션 대화에서 확인해 주세요.', 'Open the conversation for details.')}</p>
           {selectedItem.kind === 'result' && <><small>{selectedItem.scope === 'task' ? text('업무 검증 완료 결과', 'Verified task result') : selectedItem.scope === 'partial' ? text('부분 결과 · 업무 검증 전', 'Partial result · not verified') : text('응답 종료 결과 · 전체 업무 완료 판정 아님', 'Response result · not task verification')}</small><button className="wb-primary" disabled={busy || !!data?.storageError || !allItems.some(i => i.id === selectedItem.id)} onClick={() => { void acknowledge(selectedItem); }}>✓ {allItems.some(i => i.id === selectedItem.id) ? text('확인했어요', 'Reviewed') : text('확인 완료', 'Read')}</button><small>{text('이 결과 한 개만 확인 처리합니다. 승인·배포·세션 실행과는 무관합니다.', 'Reviews only this result; does not approve, publish or run work.')}</small></>}
           {!!selectedItem.artifacts?.length && <div className="wb-artifacts"><h3>{text('제출된 산출물', 'Submitted artifacts')}</h3>{selectedItem.artifacts.map((file, index) => <p className="wb-copy" key={index}>{file}</p>)}<small>{text('파일 열기·다운로드는 세션 대화에서 이용하세요.', 'Open or download these files in the conversation.')}</small></div>}
@@ -404,7 +426,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
           {selectedItem.kind === 'error' && <button disabled={busy || !!data?.storageError} onClick={() => { void acknowledge(selectedItem); }}>{text('이 오류 알림 정리', 'Dismiss this error notice')}</button>}
         </article> : selected?.itemId ? <p>{text('이 항목은 확인 또는 해결되었습니다.', 'This item was reviewed or resolved.')}</p> : <><h3>{text('미확인 항목', 'Unreviewed items')}</h3>{(itemsBySession.get(selectedSession.id) || []).map(item => <button className="wb-session-item" key={item.id} onClick={() => choose(selectedSession.id, item.id)}><StateIcon state={item.kind}/><span>{item.summary || text(...kinds[item.kind])}</span></button>)}{!itemsBySession.get(selectedSession.id)?.length && <p>{text('확인할 새 항목이 없습니다.', 'No new items to review.')}</p>}</>}
         <div className="wb-actions"><button disabled={busy} onClick={() => { void open(selectedSession.id); }}>{text('세션 대화 열기', 'Open conversation')}</button><button disabled={busy} onClick={() => { void open(selectedSession.id, true); }}>{text('추가 지시 작성', 'Write follow-up')}</button></div>
-        <dl><dt>{text('실행 경과', 'Execution elapsed')}</dt><dd>{elapsed(selectedSession.startedAt, ['working', 'background'].includes(selectedSession.state) && connected ? sampledAt : selectedSession.lastActivityAt || selectedSession.updatedAt) || '—'}</dd><dt>{text('마지막 활동', 'Last activity')}</dt><dd>{selectedSession.lastActivityAt ? new Date(selectedSession.lastActivityAt).toLocaleString() : '—'}</dd><dt>{text('내부 이름', 'Internal name')}</dt><dd>{selectedSession.name}</dd><dt>{text('작업 폴더', 'Working folder')}</dt><dd>{selectedSession.folder}</dd></dl>
+        <dl><dt>{text('부모 세션 · 조직 관계', 'Parent session · organization')}</dt><dd>{sessionsById.get(selectedSession.parentId || '')?.name || text('독립 세션', 'Independent session')}</dd><dt>{text('실행 모델', 'Running model')}</dt><dd>{selectedSession.model ? [selectedSession.model.model, selectedSession.model.effort, selectedSession.model.serviceTier].filter(Boolean).join(' · ') : text('미확인', 'Unknown')}</dd><dt>{text('사용 계정', 'Account')}</dt><dd>{selectedSession.accountLabel || text('미확인', 'Unknown')}</dd><dt>{text('실행 경과', 'Execution elapsed')}</dt><dd>{elapsed(selectedSession.startedAt, ['working', 'background'].includes(selectedSession.state) && connected ? sampledAt : selectedSession.lastActivityAt || selectedSession.updatedAt) || '—'}</dd><dt>{text('마지막 활동', 'Last activity')}</dt><dd>{selectedSession.lastActivityAt ? new Date(selectedSession.lastActivityAt).toLocaleString() : '—'}</dd><dt>{text('내부 이름', 'Internal name')}</dt><dd>{selectedSession.name}</dd><dt>{text('작업 폴더', 'Working folder')}</dt><dd>{selectedSession.folder}</dd></dl>
       </div> : <><header className="wb-inbox-heading"><BoardIcon name="inbox"/><h2>{text('내 확인', 'Your attention')}</h2><b>{counts.attention}</b></header><p className="wb-inbox-description">{text('답변하거나 확인해야 할 일을 모았어요.', 'Questions, errors and results that need your attention.')}</p><nav className="wb-inbox-filters" aria-label={text('확인 유형', 'Attention type')}>{(['all', 'question', 'error', 'result'] as const).map(k => <button key={k} aria-pressed={kind === k} onClick={() => { setKind(k); setWorkingOnly(false); setBackgroundOnly(false); }}>{k === 'all' ? text('전체', 'All') : text(...kinds[k])} <b>{k === 'all' ? counts.attention : k === 'question' ? counts.questions : k === 'error' ? counts.errors : counts.results}</b></button>)}</nav>
         <div className="wb-inbox-list">{inbox.slice(0, visibleCount).map(item => {
           const s = sessionsById.get(item.sessionId)!, time = itemTime(item.createdAt); return <article key={item.id} className="wb-inbox-item" data-kind={item.kind}><div className="wb-inbox-item-top"><StateIcon state={item.kind}/><strong>{s.name}</strong><span data-state={item.kind}>{text(...kinds[item.kind])}</span></div><p>{item.summary || text(...kinds[item.kind])}</p><time dateTime={time.dateTime}>{time.label}</time><div className="wb-inbox-item-bottom"><small>{data?.projects.find(p => p.id === s.projectId)?.name}</small><button data-item-id={item.id} onClick={e => choose(s.id, item.id, e.currentTarget)}>{actionLabel(item)} ›</button></div></article>;

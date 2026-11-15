@@ -114,6 +114,6 @@ function inlineMd(text, agent = null, files = []) {
   out = out.replace(/\u0000CHAT(\d+)\u0000/g, (_match, index) => tokens[Number(index)] || "");
   return out;
 }
-function mdToHtml(value, agent = null, files = []) { return renderMarkdownBlocks(value, line => inlineMd(line, agent, files), { copyLabel: t('복사') }); }
+function mdToHtml(value, agent = null, files = [], { preserveLineBreaks = false } = {}) { return renderMarkdownBlocks(value, line => inlineMd(line, agent, files), { copyLabel: t('복사'), preserveLineBreaks }); }
 
 export { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml };

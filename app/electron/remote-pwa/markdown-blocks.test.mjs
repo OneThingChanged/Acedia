@@ -33,4 +33,12 @@ describe('shared Remote block Markdown', () => {
     expect(html).toContain('<blockquote>한글<br>인용</blockquote>');
     expect(html).toContain('<hr>');
   });
+  it('preserves handoff report lines without changing normal Markdown, code, tables or scoped links', () => {
+    const original = '중간 보고: 검사 완료\n남은 일: 최종 인계\n\n[근거](docs/report.md)\n검사 기록\n\n```text\nfirst\nsecond\n```\n\n| 항목 | 결과 |\n| --- | --- |\n| 검사 | 통과 |';
+    const html = mdToHtml(original, agent, [], { preserveLineBreaks: true });
+    expect(html).toContain('<p>중간 보고: 검사 완료<br>남은 일: 최종 인계</p>');
+    expect(html).toContain('data-chat-file-path="docs/report.md"'); expect(html).toContain('<table>');
+    expect(html).toContain('first\nsecond'); expect(html).not.toContain('first<br>');
+    expect(mdToHtml('첫 줄\n다음 줄', agent)).toBe('<p>첫 줄 다음 줄</p>');
+  });
 });

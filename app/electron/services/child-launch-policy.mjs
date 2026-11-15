@@ -24,8 +24,9 @@ export class ChildLaunchPolicy {
     if (!account || !['default', 'saved'].includes(account.state)) throw fail('하위 세션 계정의 로그인을 설정에서 완료하세요.');
     const settings = normalizeSessionModel(modelSettings ?? (same ? parent.modelSettings : null) ?? this.defaults(aiToolId));
     if (modelSettings && Object.keys(modelSettings).some(key => !['model', 'effort', 'serviceTier'].includes(key))) throw fail('지원하지 않는 하위 모델 옵션입니다.');
+    // Native Codex snapshots report Fast as priority and Fast Off as null.
     if (!settings || aiToolId === 'claude' && Object.hasOwn(settings, 'serviceTier')
-      || aiToolId === 'codex' && Object.hasOwn(settings, 'serviceTier') && !['default', 'fast'].includes(settings.serviceTier)) throw fail('하위 세션 모델·effort·Fast 설정을 확인하세요.');
+      || aiToolId === 'codex' && Object.hasOwn(settings, 'serviceTier') && ![null, 'default', 'fast', 'priority'].includes(settings.serviceTier)) throw fail('하위 세션 모델·effort·Fast 설정을 확인하세요.');
     if (launchOptionsProblem(prefs.launchOptions)) throw fail('제공자의 고급 실행 옵션을 확인하세요.');
     try { sessionModelArgs(settings, prefs.launchOptions, aiToolId); } catch (error) { throw fail(error.message); }
     const pool = aiToolId === 'codex' ? same ? parent.codexPoolAccountId || undefined : prefs.codexPoolAccountId || undefined : undefined;

@@ -18,7 +18,7 @@ export const ChatSessionMessage = memo(function ChatSessionMessage({ block, fold
     </header>
     <div className="chat-session-message-route"><strong>{value.sourceName}</strong><span aria-hidden="true">→</span><strong>{value.targetName}</strong></div>
     <div className="chat-session-message-body chat-md">{value.message !== null
-      ? <ChatMarkdown folder={folder} onOpenPath={onOpenPath}>{value.message}</ChatMarkdown>
+      ? <ChatMarkdown folder={folder} onOpenPath={onOpenPath} preserveLineBreaks>{value.message}</ChatMarkdown>
       : <p>{text('보관된 전달 원문을 찾을 수 없습니다.', 'The stored message body is unavailable.')}</p>}</div>
     <details className="chat-session-message-details">
       <summary>{text('전달 정보', 'Delivery details')}</summary>

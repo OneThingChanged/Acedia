@@ -1,6 +1,8 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProjectBoardPage } from './ProjectBoardPage';
+import { SessionTableView } from './SessionTableView';
+import { BoardRequestDetail } from './BoardRequestDetail';
 import type { BoardSnapshot } from '../lib/workBoard';
 import { BOARD_CARD, boardLayout } from '../lib/workBoard';
 
@@ -33,7 +35,7 @@ function content(node: ReactNode): string {
 function render(data: BoardSnapshot) { hooks.index = 0; hooks.refIndex = 0; hooks.effects = []; return ProjectBoardPage({ initialSnapshot: data }); }
 const resultId = 'a'.repeat(64), secondId = 'b'.repeat(64), questionId = 'c'.repeat(64);
 function fixture(): BoardSnapshot {
-  return { revision: 'r', sampledAt: 5000, storageError: null, preferences: {}, devices: [], references: [],
+  return { revision: 'r', sampledAt: 5000, storageError: null, preferences: { viewMode: 'board' }, devices: [], references: [],
     projects: [{ id: 'p', name: 'RnDHub', folder: 'D:/RnDHub' }, { id: 'p2', name: 'Automation', folder: 'D:/Automation' }],
     sessions: ['a', 'b', 'c'].map((id, index) => ({ id, projectId: index === 2 ? 'p2' : 'p', name: `Session ${id}`, provider: 'codex',
       parentId: index === 1 ? 'a' : null, folder: `D:/${id}`, runtime: 'running', state: index === 2 ? 'waiting' : 'working',
@@ -58,6 +60,24 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 function project(tree: ReactNode, id: string) { return elements(tree).find(e => e.props['data-project-id'] === id)!; }
 function header(tree: ReactNode, id = 'p') { return elements(project(tree, id)).find(e => e.props.className === 'wb-project-header')!; }
 function pointer(x: number, y: number, extra = {}) { return { button: 0, pointerId: 4, clientX: x, clientY: y, stopPropagation: vi.fn(), preventDefault: vi.fn(), currentTarget: { setPointerCapture: vi.fn() }, ...extra }; }
+
+it('defaults to the session table and pins the selected request across polling and view changes without starting work', () => {
+  const data = fixture(); data.preferences = {};
+  data.transfers = [{ id: 'first', from: 'a', to: 'b', status: 'inbox', reason: '', savedAt: 100 }];
+  let tree = render(data);
+  let table = elements(tree).find(e => e.type === SessionTableView)!;
+  expect(table.props.mode).toBe('sessions'); expect(elements(tree).some(e => e.props['data-project-id'])).toBe(false);
+  table.props.onChoose('b', { isConnected: false }); tree = render(data);
+  expect(elements(tree).find(e => e.type === BoardRequestDetail)!.props.transfer.id).toBe('first');
+  data.transfers.push({ ...data.transfers[0], id: 'later', savedAt: 200 });
+  tree = render(data);
+  expect(elements(tree).find(e => e.type === BoardRequestDetail)!.props.transfer.id).toBe('first');
+  const tabs = elements(tree).find(e => e.props.className === 'wb-view-tabs')!;
+  elements(tabs).find(e => e.type === 'button' && content(e) === '업무 전달')!.props.onClick();
+  tree = render(data); table = elements(tree).find(e => e.type === SessionTableView)!;
+  expect(table.props.mode).toBe('transfers'); expect(table.props.selectedTransferId).toBe('first');
+  expect(hooks.invoke).not.toHaveBeenCalled();
+});
 
 it('opens a conversation with only the result IDs captured at double-click, preserving later arrivals', async () => {
   const data = fixture(); let tree = render(data);
@@ -169,7 +189,7 @@ it('restores host-saved placement on a fresh board and keeps it during polling, 
   vi.useFakeTimers();
   vi.stubGlobal('window', { setInterval, requestAnimationFrame: (callback: () => void) => callback() });
   vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-  const data = fixture(); data.preferences = { layoutVersion: 2, projectPositions: { p: { x: -580, y: 760 } }, sessionOrder: ['b', 'a', 'c'], showSleeping: true, showStopped: false };
+  const data = fixture(); data.preferences = { viewMode: 'board', layoutVersion: 2, projectPositions: { p: { x: -580, y: 760 } }, sessionOrder: ['b', 'a', 'c'], showSleeping: true, showStopped: false };
   hooks.invoke.mockImplementation(async (command, args) => command === 'project_board_snapshot' ? data : Object.assign(data.preferences, args.preferences));
   let tree = render(data);
   const stop = hooks.effects[1].run() as () => void;

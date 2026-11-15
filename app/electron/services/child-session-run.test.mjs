@@ -20,16 +20,20 @@ const modelList = provider => [settings[provider]].map(s => ({ model: s.model, e
 const temp = () => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-child-run-')); cleanup.push(() => fs.rmSync(root, { recursive: true })); return root; };
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 
-function policyFixture(parentTool = 'codex') {
-  let parent = { id: 'owner', aiToolId: parentTool, modelSettings: settings[parentTool], codexAccountId: 'codex-parent', claudeAccountId: 'claude-parent' };
+function policyFixture(parentTool = 'codex', parentSettings = settings[parentTool]) {
+  let parent = { id: 'owner', aiToolId: parentTool, modelSettings: parentSettings, codexAccountId: 'codex-parent', claudeAccountId: 'claude-parent' };
   const options = { parent: () => parent, preferences: async tool => ({ codexAccountId: 'codex-default', claudeAccountId: 'claude-default', dangerousDefaultMode: 'off' }),
     defaults: tool => settings[tool], accounts: tool => [{ id: tool + '-parent', state: 'saved' }, { id: tool + '-default', state: 'saved' }, { id: 'empty', state: 'empty' }],
     models: vi.fn(async ({ provider }) => ({ models: modelList(provider) })) };
   return { policy: new ChildLaunchPolicy(options), options, change: value => { parent = { ...parent, ...value }; } };
 }
 
-for (const ownerTool of ['codex', 'claude']) for (const childTool of ['codex', 'claude']) it(`${ownerTool} → ${childTool}: background creation, frozen settings, fresh no-transcript inbox delivery and actual start`, async () => {
-  const root = temp(), p = policyFixture(ownerTool), records = new Map(), contexts = new Map([['owner', { entry: { aiToolId: ownerTool }, name: 'Parent' }]]);
+for (const [ownerTool, childTool, serviceTier] of [
+  ['codex', 'codex', 'fast'], ['codex', 'codex', 'priority'], ['codex', 'codex', null],
+  ['codex', 'claude'], ['claude', 'codex'], ['claude', 'claude'],
+]) it(`${ownerTool} → ${childTool}${ownerTool === childTool && childTool === 'codex' ? ` (${serviceTier})` : ''}: background creation, frozen settings, fresh no-transcript inbox delivery and actual start`, async () => {
+  const childSettings = ownerTool === 'codex' && childTool === 'codex' ? { ...settings.codex, serviceTier } : settings[childTool];
+  const root = temp(), p = policyFixture(ownerTool, ownerTool === childTool ? childSettings : undefined), records = new Map(), contexts = new Map([['owner', { entry: { aiToolId: ownerTool }, name: 'Parent' }]]);
   const catalog = { projects: [{ id: 'project', folder: root }], agents: [{ id: 'owner', projectId: 'project', aiToolId: ownerTool }], availableTools: [{ id: 'codex' }, { id: 'claude' }] };
   const context = id => contexts.get(id), read = async id => records.get(id) || null;
   const freshRead = id => firstMessageSession({ entry: context(id)?.entry, agent: catalog.agents.find(a => a.id === id), conversationId: context(id)?.conversationId });
@@ -73,7 +77,7 @@ for (const ownerTool of ['codex', 'claude']) for (const childTool of ['codex', '
   expect(result.phase, JSON.stringify(result)).toBe('started'); expect(result.delivery).toMatchObject({ status: 'started', targetId: result.sessionId });
   expect(create).toHaveBeenCalledOnce(); expect(submit).toHaveBeenCalledOnce();
   const launch = create.mock.calls[0][0];
-  expect(launch).toMatchObject({ aiToolId: childTool, modelSettings: settings[childTool], dangerous: false, workspaceManaged: true,
+  expect(launch).toMatchObject({ aiToolId: childTool, modelSettings: childSettings, dangerous: false, workspaceManaged: true,
     sessionHierarchy: { createdById: 'owner', parentId: 'owner', inheritModel: false } });
   expect(launch[childTool === 'codex' ? 'codexAccountId' : 'claudeAccountId']).toBe(childTool + (childTool === ownerTool ? '-parent' : '-default'));
   const inbox = await messages.handle({ action: 'message-receive', agentId: result.sessionId, body: { messageId: result.messageId } });
@@ -85,6 +89,13 @@ for (const ownerTool of ['codex', 'claude']) for (const childTool of ['codex', '
   expect((await restored.handle({ action: 'run-status', agentId: 'owner', body: { requestKey: 'one' } })).phase).toBe('started');
   await expect(restored.handle({ action: 'run-status', agentId: 'other-parent', body: { requestKey: 'one' } })).rejects.toMatchObject({ statusCode: 404 });
   expect(create).toHaveBeenCalledOnce(); expect(submit).toHaveBeenCalledOnce();
+});
+
+it.each(['priority', null])('preserves an explicit Codex native tier (%s) and rejects it for Claude', async serviceTier => {
+  const f = policyFixture();
+  const modelSettings = { ...settings.codex, serviceTier };
+  expect(await f.policy.resolve({ ownerId: 'owner', aiToolId: 'codex', modelSettings })).toMatchObject({ modelSettings });
+  await expect(f.policy.resolve({ ownerId: 'owner', aiToolId: 'claude', modelSettings: { ...settings.claude, serviceTier } })).rejects.toMatchObject({ statusCode: 409 });
 });
 
 it('rejects missing login, unsupported models/effort/Fast and a parent switch before creation', async () => {

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { normalizeSessionModel } from '../shared/session-model.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const short = (value, size = 1000) => typeof value === 'string' ? value.slice(0, size) : '';
@@ -10,8 +11,8 @@ const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, at
 
 /** Host-owned, bounded projection. No transcripts, tool arguments, credentials or PTY subscriptions. */
 export class ProjectBoard {
-  constructor({ file, catalog, live, hook, runs, transfers = () => [], now = Date.now }) {
-    Object.assign(this, { file, catalog, live, hook, runs, transfers, now });
+  constructor({ file, catalog, live, hook, runs, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
+    Object.assign(this, { file, catalog, live, hook, runs, transfers, transferContent, runtimeInfo, now });
     this.data = { version: 2, acknowledged: {}, preferences: {}, results: {}, inbox: {} };
     this.observed = new Map();
     this.devices = new Map();
@@ -177,6 +178,7 @@ export class ProjectBoard {
       if (!live && ['working', 'background', 'waiting'].includes(state)) state = 'unknown';
       const count = hook?.background_count || recorded?.backgroundCount || agent.activity?.backgroundCount;
       const backgroundCount = state === 'background' && Number.isInteger(count) && count > 0 && count <= 1000 ? count : null;
+      const info = this.runtimeInfo(agent.id) || {};
       const item = { id: agent.id, projectId: agent.projectId, name: short(agent.name, 200), provider: short(agent.aiToolId, 60),
         parentId: agent.sessionHierarchy?.parentId || null,
         folder: short(this.folder(agent, source), 4096),
@@ -184,7 +186,7 @@ export class ProjectBoard {
         updatedAt: Math.max(agent.activity?.receivedAt || 0, eventAt, task?.updatedAt || 0),
         summary: task?.result || recorded?.summary || short(agent.activity?.lastAssistantMessage), reason: task?.reason || short(hook?.interactive_question || recorded?.reason || agent.activity?.interactiveQuestion),
         startedAt: recorded?.startedAt || 0, lastActivityAt: Math.max(agent.activity?.receivedAt || 0, recorded?.at || 0),
-        backgroundCount,
+        backgroundCount, model: normalizeSessionModel(info.model) || null, accountLabel: short(info.accountLabel, 200),
         step: state === 'working' ? (recorded?.tool ? `${recorded.tool} 실행 중` : task?.title || '작업 실행 중')
           : state === 'background' ? backgroundCount ? `백그라운드 ${backgroundCount}개 작업 완료 대기` : '백그라운드 작업 완료 대기'
           : state === 'idle' ? '할당된 작업 없음' : '', task: task || null };
@@ -231,10 +233,17 @@ export class ProjectBoard {
       ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),
       ...(p.hierarchy?.parentId ? { hierarchy: { parentId: short(p.hierarchy.parentId, 256) } } : {}) })),
       items, references, devices, transfers: this.transfers().filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
-        status: short(t.status, 50), reason: short(t.reason, 300), savedAt: t.savedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
+        status: short(t.status, 50), reason: short(t.reason, 300), summary: short(t.summary, 200), savedAt: t.savedAt || null,
+        sentAt: t.sentAt || null, receivedAt: t.receivedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
       preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
+  }
+  transferDetail(id) {
+    const transfer = this.snapshot().transfers.find(t => t.id === id);
+    if (!transfer) throw Object.assign(Error('전달 기록을 찾을 수 없습니다. 목록을 새로고침하세요.'), { statusCode: 404 });
+    const message = transfer.isMessage ? this.transferContent(id) : null;
+    return { id, from: transfer.from, to: transfer.to, message: typeof message === 'string' ? message.slice(0, 65536) : null };
   }
   acknowledge(id, fingerprint, itemId) {
     if (itemId) {

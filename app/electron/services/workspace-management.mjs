@@ -15,8 +15,8 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, deliveries = null, messages = null, sessionSettings = null, sessionRouting = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}), hostInfo = () => ({}), browserAvailable = () => false, skillStatus = () => null }) {
-    Object.assign(this, { catalog, create, isActive, deliveries, messages, sessionSettings, sessionRouting, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
+  constructor({ catalog, create, isActive, board = null, deliveries = null, messages = null, sessionSettings = null, sessionRouting = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}), hostInfo = () => ({}), browserAvailable = () => false, skillStatus = () => null }) {
+    Object.assign(this, { catalog, create, isActive, board, deliveries, messages, sessionSettings, sessionRouting, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
     Object.assign(this, { hostInfo, browserAvailable, skillStatus });
   }
@@ -51,6 +51,13 @@ export class WorkspaceManagement {
     if (action === 'capabilities') return Promise.resolve().then(() => this.capabilities(agentId));
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'board') {
+      if (!this.board) return Promise.reject(fail('Session overview unavailable', 503));
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !['revision', 'transferId'].includes(k))
+        || ['revision', 'transferId'].some(k => body[k] !== undefined && (typeof body[k] !== 'string' || !body[k] || body[k].length > 128 || /[\x00-\x1f]/.test(body[k])))
+        || body.revision !== undefined && body.transferId !== undefined) return Promise.reject(fail('Invalid session overview request'));
+      return body.transferId ? Promise.resolve().then(() => this.board.transferDetail(body.transferId)) : Promise.resolve().then(() => this.board.snapshot(body.revision));
+    }
     if (action === 'run' || action === 'run-status') return this.runs ? this.runs.handle({ action, agentId, body }) : Promise.reject(fail('Child launch service unavailable', 503));
     if (action === 'message-send' || action === 'message-receive') return this.messages ? this.messages.handle({ action, agentId, body }) : Promise.reject(fail('Session messages unavailable', 503));
     if (action === 'start') return this.sessionStart ? this.sessionStart.handle(body) : Promise.reject(fail('Session start unavailable', 503));

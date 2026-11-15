@@ -11,6 +11,20 @@ import type { ImagePathOpener } from "../lib/imageActions";
 export { isChatLocalPath } from "../lib/chatPaths";
 
 type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
+function remarkMessageLineBreaks() {
+  return (tree: MarkdownNode) => {
+    const visit = (node: MarkdownNode) => {
+      if (!node.children || ['code', 'inlineCode', 'html'].includes(node.type)) return;
+      node.children = node.children.flatMap(child => {
+        if (child.type !== 'text' || !child.value?.includes('\n')) { visit(child); return [child]; }
+        return child.value.split('\n').flatMap((value, index) => [
+          ...(index ? [{ type: 'break' }] : []), ...(value ? [{ type: 'text', value }] : []),
+        ]);
+      });
+    };
+    visit(tree);
+  };
+}
 function remarkChatPaths() {
   return (tree: MarkdownNode) => {
     const visit = (node: MarkdownNode) => {
@@ -86,13 +100,14 @@ const markdownComponents: Components = {
       },
 };
 const remarkPlugins = [remarkGfm, remarkChatPaths];
+const messageRemarkPlugins = [...remarkPlugins, remarkMessageLineBreaks];
 const rehypePlugins = [rehypeHighlight];
 function chatUrlTransform(url: string, key: string) {
   return isChatLocalPath(normalizeChatPath(url, true)) || (key === "src" && /^data:image\/(?:png|jpe?g|gif|webp|bmp|svg\+xml|x-icon|avif);base64,[a-z\d+/=]+$/i.test(url)) ? url : defaultUrlTransform(url);
 }
 
-export function ChatMarkdown({ children, onOpenPath, folder }: { children: string; folder?: string; onOpenPath?: ImagePathOpener }) {
+export function ChatMarkdown({ children, onOpenPath, folder, preserveLineBreaks = false }: { children: string; folder?: string; onOpenPath?: ImagePathOpener; preserveLineBreaks?: boolean }) {
   const context = useMemo(() => ({ folder, onOpenPath }), [folder, onOpenPath]);
-  return <ChatMarkdownContext.Provider value={context}><ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}
+  return <ChatMarkdownContext.Provider value={context}><ReactMarkdown remarkPlugins={preserveLineBreaks ? messageRemarkPlugins : remarkPlugins} rehypePlugins={rehypePlugins}
     urlTransform={chatUrlTransform} components={markdownComponents}>{children}</ReactMarkdown></ChatMarkdownContext.Provider>;
 }

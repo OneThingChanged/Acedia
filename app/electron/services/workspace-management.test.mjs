@@ -143,6 +143,19 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   const allCapabilities = acediaCapabilities({ services: new Proxy({}, { get: () => true }), host: { version: 'test' }, caller: { sessionId: 'caller', active: true } });
   expect(new Set(allCapabilities.tools)).toEqual(new Set(exposed.map(tool => tool.name)));
   expect(exposed.find(tool => tool.name === 'acedia_connection').annotations.readOnlyHint).toBe(true);
+  expect(exposed.find(tool => tool.name === 'acedia_board').annotations.readOnlyHint).toBe(true);
+  f.service.board = { snapshot: vi.fn(async revision => revision === 'known' ? { revision, unchanged: true } : { revision: 'known', sessions: [{ id: 'worker' }] }),
+    transferDetail: vi.fn(async id => ({ id, from: 'caller', to: 'worker', message: '원문\n<script>text</script>' })) };
+  expect((await rpc('tools/call', { name: 'acedia_board', arguments: {} })).structuredContent).toMatchObject({ revision: 'known', sessions: [{ id: 'worker' }] });
+  expect((await rpc('tools/call', { name: 'acedia_board', arguments: { revision: 'known' } })).structuredContent).toEqual({ revision: 'known', unchanged: true });
+  expect((await rpc('tools/call', { name: 'acedia_board', arguments: { transferId: 'request' } })).structuredContent).toMatchObject({ id: 'request', message: '원문\n<script>text</script>' });
+  expect((await rpc('tools/call', { name: 'acedia_board', arguments: { transferId: 'request', revision: 'known' } })).isError).toBe(true);
+  const boardUrl = `http://127.0.0.1:${hook.port}/integration/v1/workspace/board`;
+  const boardRead = (h, body = {}) => fetch(boardUrl, { method: 'POST', headers: h, body: JSON.stringify(body) });
+  expect((await boardRead({ 'content-type': 'application/json' })).status).toBe(401);
+  expect((await boardRead({ ...headers, origin: 'https://unrelated.invalid' })).status).toBe(403);
+  expect((await boardRead({ ...headers, 'x-acedia-agent-id': 'inactive' })).status).toBe(409);
+  expect(f.create).not.toHaveBeenCalled();
   f.service.hostInfo = () => ({ version: '1.8.2.16' });
   const connected = await rpc('tools/call', { name: 'acedia_connection', arguments: {} });
   expect(connected.structuredContent).toMatchObject({ connected: true, status: 'ready', host: { version: '1.8.2.16' },

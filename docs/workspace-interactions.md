@@ -200,6 +200,53 @@ sources:
 
 # Workspace interactions
 
+## Session overview tables (2026-11-15 source)
+
+The desktop Project Board opens in **Sessions** view by default. **Handoffs**
+shows the retained incoming-request history, and **Board** preserves the existing
+canvas, placement and navigation. The selected view is saved in the host's local
+board preferences; switching views does not change sessions or their parents.
+
+The session table groups registered Acedia sessions by project, with current
+execution state, last activity and the latest recorded incoming request. Project,
+state, request-sender, task and folder filters work together. Sleeping/stopped
+visibility keeps the required parents of matching children. A parent is an
+organizational relationship, not evidence of who sent a request. An incoming
+request can be historical, and an unrecorded source is shown as unknown. CLI
+internal agents are not registered Acedia child sessions and are not invented as
+table rows. The canvas layout and connection routing are computed only in Board
+view.
+
+Single-click selects details; double-click opens the existing conversation.
+Request selection stays pinned to its exact ID while new records arrive. The
+request detail shows separately observed save, notification-send,
+notification-receipt, original-text-read and response-start timestamps. Missing
+stages stay unconfirmed, even if a later stage is observed. A response start or
+received message does not establish task completion. Existing result review
+still acknowledges only captured result IDs, leaving later responses and
+questions intact.
+
+The bounded snapshot includes at most 100 handoffs with a 200-character title;
+full request bodies are loaded only on explicit detail selection through
+`project_board_transfer_detail`. That operation does not mark the recipient's
+inbox read, submit input, start/stop a session or activate a window. Model and
+account labels use known running-session metadata, with unknown values left
+unknown. Table content and original requests are escaped React text. Narrow
+windows scroll the table horizontally and stack the detail panel below it.
+
+The same data is available to agents through `acedia_board` and the authenticated
+`POST /integration/v1/workspace/board` API, with separate snapshot and exact
+request-detail calls. These are source changes; the installed 1.8.2.17 app and
+Remote's separate workspace view do not acquire this table without a build/update.
+
+Validation: 259 Vitest files / 2,083 tests and the TypeScript/Vite production
+build passed. Tests cover exact historical selection during polling, delayed
+detail responses, independent receipt stages, escaped content, ancestor/filter
+behavior, preserved result identities, IPC restrictions and the real stdio MCP /
+authenticated HTTP path. The full run uses the bundled Git on its process PATH
+and four workers to avoid Windows process-start contention. No GUI automation,
+production session input, installer build or deployment was performed.
+
 ## 작업 분담과 모델 정책 (2026-10-19, 배포 전 소스)
 
 로컬 Codex 대화의 **작업 분담** 토글은 이후 전송하는 요청에 A의 계획·배정·결과 검토 지침을 붙인다. 새 모델 호출을 자동으로 만들거나 이미 실행 중인 A의 모델·계정을 변경하지 않는다. **작업 흐름 → 모델 정책**에서 경량·일반·고성능 등급의 모델, effort와 Fast를 설치된 카탈로그에 맞춰 설정한다. 별도 정책이 없으면 기존 Codex 기본 모델을 세 등급 모두에 사용하며 특정 모델 이름·가격을 추가로 고정하지 않는다. 정책 변경은 다음 실행부터 적용된다. 시작 전 작업과 실패한 작업의 다음 시도 모델을 개별 지정할 수 있다.

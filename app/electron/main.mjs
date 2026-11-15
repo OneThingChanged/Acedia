@@ -685,9 +685,19 @@ const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-bo
   catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
   transfers: () => [
-    ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, startedAt: r.startedAt })),
-    ...sessionMessages.records.slice(-50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason, savedAt: r.createdAt, readAt: r.readAt, startedAt: r.delivery?.startedAt, isMessage: true })),
-  ] });
+    ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
+    ...sessionMessages.records.slice(-50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
+      summary: r.message?.split(/\r?\n/).find(line => line.trim())?.trim().slice(0, 200), savedAt: r.createdAt, sentAt: r.delivery?.sentAt, receivedAt: r.delivery?.receivedAt, readAt: r.readAt, startedAt: r.delivery?.startedAt, isMessage: true })),
+  ], transferContent: id => sessionMessages.records.find(r => r.messageId === id)?.message ?? null,
+  runtimeInfo: id => {
+    const entry = ptys.get(id); if (!entry) return {};
+    const provider = entry.aiToolId;
+    const accountId = provider === 'codex' ? entry.codexAccountId : entry.claudeAccountId;
+    const routed = entry.poolRouted ? accountPool.state.accounts.find(a => a.id === accountPool.state.sessions[id]?.accountId) : null;
+    const label = routed?.label || (entry.poolRouted ? 'Codex Routing' : ['codex', 'claude'].includes(provider)
+      ? accountsForTool(provider).accounts.find(a => a.id === accountId)?.label || (accountId && accountId !== 'default' ? '' : '기존 로그인') : '');
+    return { model: entry.runtimeModelSettings || nativeCodexModel(entry) || entry.modelSettings, accountLabel: label };
+  } });
 
 function publishAgentHookEvent(eventName, payload) {
   if (eventName === "agent:hook-event" && payload?.id) {
@@ -1249,6 +1259,8 @@ const sessionRegistry = new SessionRegistry({
   },
 });
 const workspaceManagement = new WorkspaceManagement({
+  board: { snapshot: async revision => { await warmProjectBoard(); return projectBoard.snapshot(revision); },
+    transferDetail: async id => { await warmProjectBoard(); return projectBoard.transferDetail(id); } },
   hostInfo: () => ({ version: productVersion }),
   browserAvailable: () => true,
   skillStatus: id => {
@@ -5453,6 +5465,8 @@ async function invokeCommand(event, command, rawArgs) {
     }
     case 'project_board_snapshot':
       await warmProjectBoard(); return projectBoard.snapshot(args.revision);
+    case 'project_board_transfer_detail':
+      await warmProjectBoard(); return projectBoard.transferDetail(args.id);
     case 'project_board_ack':
       await warmProjectBoard(); return projectBoard.acknowledge(args.id, args.fingerprint, args.itemId);
     case 'project_board_ack_results':

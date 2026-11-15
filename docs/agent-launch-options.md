@@ -112,6 +112,18 @@ Codex는 해당 세션의 실제 로그인 또는 분산 계정에서 `model/lis
 고급 실행의 `--model`·`--effort` 또는 Codex `model`·`model_reasoning_effort` 설정과 충돌하면
 적용하지 않고 해당 옵션을 제거하도록 안내한다.
 
+### 세션별 모델 조회·저장 API
+
+Local Dashboard의 실제 loopback 주소에서 `GET /api/session/model?id=<Acedia 세션 ID>`로
+계정의 지원 모델·effort, `saved`(다음 실행 설정), `current`와 `currentSource`(현재 실행 근거)를 조회한다.
+같은 서버의 `POST /api/session/model`에 `{ "id": "<세션 ID>", "settings": { "model": "gpt-6-astra", "effort": "xhigh", "serviceTier": "fast" }, "restart": false }`를 JSON으로 보내면 다음 실행 설정만 저장한다.
+Codex Fast는 현재 실행 응답에서 `priority`로 표시될 수 있다. 실제 Dashboard 포트는 실행 중인 호스트에서 확인하며 이전 실행의 주소를 고정하지 않는다.
+
+2026-11-12 실행 중인 Standard 1.8.2.08에서 새 Codex 두 세션의 모델 목록 조회·설정 저장을 확인했다.
+`acedia_session_start`로 백그라운드 시작 후 `currentSource: native`의 Astra/Sol 모델·effort·서비스 티어와
+`acedia_session_status` 계열 응답의 `firstMessageReady`를 각각 확인했다. 첫 제작 메시지나 모델 요청의 성공까지 검증한 것은 아니다.
+세션 생성·시작·부모 지정은 [프로젝트·세션 MCP](workspace-mcp.md)를 따른다.
+
 ### Acedia 기본 모델
 
 1.8.1.77에서 **설정 → 에이전트 → Codex / Claude → 기본 모델**을

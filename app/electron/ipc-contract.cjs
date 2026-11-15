@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
+  "open_project_board", "project_board_snapshot", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "app_startup_get", "app_startup_set",
@@ -307,10 +307,14 @@ function assertInvokeRequest(command, rawArgs) {
       { const results = command === 'project_board_ack_results' ? args.results : args.reviewResults;
         if ((command === 'project_board_ack_results' || results !== undefined) && (!Array.isArray(results) || results.length > 1500 || results.some(r => !r || typeof r !== 'object' || Object.keys(r).some(k => !['id', 'fingerprint'].includes(k)) || typeof r.id !== 'string' || typeof r.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.id) || !/^[a-f0-9]{64}$/.test(r.fingerprint)))) throw new TypeError('Invalid board result list'); }
       break;
+    case 'project_board_transfer_detail':
+      if (Object.keys(args).some(key => key !== 'id') || typeof args.id !== 'string' || !args.id || args.id.length > 128 || /[\x00-\x1f]/.test(args.id)) throw new TypeError('Invalid board transfer');
+      break;
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-          || Object.keys(p).some(key => !['layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped'].includes(key))
+          || Object.keys(p).some(key => !['viewMode', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped'].includes(key))
+          || p.viewMode !== undefined && !['sessions', 'transfers', 'board'].includes(p.viewMode)
           || ['showSleeping', 'showStopped'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
           || p.sessionOrder !== undefined && (!Array.isArray(p.sessionOrder) || p.sessionOrder.length > 2000 || p.sessionOrder.some(id => typeof id !== 'string' || !id || id.length > 256 || /[\x00-\x1f]/.test(id)))
           || p.projectPositions !== undefined && (!p.projectPositions || typeof p.projectPositions !== 'object' || Array.isArray(p.projectPositions)

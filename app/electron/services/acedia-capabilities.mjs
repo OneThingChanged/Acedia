@@ -5,6 +5,7 @@ export const ACEDIA_CAPABILITIES_VERSION = 1;
 const groups = {
   connection: { tools: ['acedia_connection'], services: [] },
   workspace: { tools: ['acedia_projects', 'acedia_project_create', 'acedia_session_create'], services: ['create'] },
+  board: { tools: ['acedia_board'], services: ['board'] },
   sessions: { tools: ['acedia_session_start'], services: ['sessionStart'] },
   readiness: { tools: ['acedia_session_status'], services: ['readiness'] },
   organization: { tools: ['acedia_session_stop', 'acedia_sessions_organize'], services: ['registry'] },

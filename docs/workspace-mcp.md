@@ -56,6 +56,35 @@ health는 호스트 PID를, sessions는 앱 버전·PID와 세션 상태를 반�
 
 ## 프로젝트·세션 도구
 
+### 읽기 쉬운 인계문 (1.8.2.18)
+
+보내는 세션은 첫 문장에서 중간 보고와 최종 인계를 구분하고 결론을 적는다.
+긴 보고는 결론·완료한 일·남은 일·발견한 문제·근거로 나누며, 문장 띄어쓰기와
+Markdown 목록·빈 줄을 사용한다. 경로·실행 ID·해시·로그 위치는 근거에 모으고
+검사 완료를 전체 업무 완료로 확대하지 않는다. 이 지침은 내장 스킬과 전송 도구
+설명에 포함된다. 과거 저장 원문은 재작성하지 않는다.
+
+데스크톱·Remote·Dashboard의 메시지 카드는 단일 개행도 보존한다. 기존 표·코드·
+링크와 일반 대화의 Markdown 문단 규칙은 유지하며 원문 복사·수신함 내용은 같다.
+
+### 세션 현황 표 조회 (2026-11-15 소스)
+
+`acedia_board({})`는 데스크톱 세션 표와 같은 프로젝트·세션 상태, 부모 관계,
+미확인 결과와 최근 전달 단계의 제한된 스냅샷을 반환한다. `revision`을 다시
+주면 동일한 스냅샷에서 `unchanged`를 반환한다. `transferId`를 지정한 별도
+호출은 해당 스냅샷에 남아 있는 원문 한 건을 반환한다. 스냅샷에는 전체
+원문을 포함하지 않는다. 직접 전달처럼 원문을 보관하지 않는 방식은
+`message: null`이다. `revision`과 `transferId`를 함께 지정할 수 없다.
+
+공식 HTTP 경로는 `POST /integration/v1/workspace/board`이며 본문은 위 도구와
+동일하다. 기존 Bearer·본인 `x-acedia-agent-id` 인증과 실행 중인 호출자 검증을
+사용하며 브라우저 Origin을 거부한다. 원문 조회는 받는 세션을 가장하지 않고
+데스크톱 보드의 명시적 상세 조회와 같은 경로로 읽는다. 원문 읽음 영수증,
+응답 착수, 결과 확인, 세션 실행·중지·선택 상태를 변경하지 않는다.
+
+격리 호스트의 인증된 HTTP와 실제 stdio MCP에서 조회·revision·원문·오류 및
+비인증/Origin/비활성 호출자 거부를 확인했다. 실행 중인 설치본 반영은 별도다.
+
 | 도구 | 기능 |
 | --- | --- |
 | `acedia_connection` | 읽기 전용 연결 진단. 실제 호스트 버전·호출 세션·지원 API·스킬 상태·bridge 도구 목록 차이 조회 |
@@ -563,6 +592,26 @@ build와 실제 Electron 검사를 통과했다. 종료된 세션의 이동 후 
 늦은 검증 실패가 새 요청을 취소하지 않는 경우도 포함한다.
 `output/session-relocation-tests.log`, `output/session-relocation-build.log`,
 `output/session-relocation-electron.log`에 결과를 기록했다.
+
+## 작업 중인 Codex에 범위 변경 전달
+
+입력 대기 중인 Codex의 새 작업은 `acedia_session_message_send`를 우선 사용한다.
+작업 중인 세션의 현재 턴을 사용자가 명시적으로 수정한 경우에는 같은 호스트의
+Local Dashboard `POST /api/session/submit`에 `id`(Acedia 세션 ID),
+`sessionId`(현재 대화 ID), `message`, `steering: true`, `requestId`를 JSON으로 전달할 수 있다.
+`requestId`는 13자리 현재 epoch 밀리초, `-`, 영문·숫자·하이픈 16~80자의 조합이다.
+같은 요청 재조회/재시도에는 동일 ID와 본문을 유지한다. 작업·메시지의 별도 허가는 필요하며
+이 경로가 임의 위임이나 질문·입력 초안 우회를 허용하지 않는다.
+
+긴 UTF-8 본문은 먼저 `acedia_session_message_send`의 `notify: false`로 보관하고,
+steering 본문에는 반환된 messageId를 `acedia_session_message_receive`로 읽으라는 참조만
+넣을 수 있다. `ok: true`는 입력 전달 성공이며 수신함 `readAt`, 실제 응답의 범위 수락,
+산출물과 검사를 각각 확인해야 작업 접수·완료를 판정할 수 있다.
+
+2026-11-12 Standard 1.8.2.08에서 사용자가 승인한 VFX_New Codex 세션의 작업 범위 변경과
+검사 피드백을 전달하고, 수신함 읽음·새 범위 수락·해당 범위 산출물 및 수정 결과를 확인했다.
+실제 Dashboard 주소는 현재 호스트에서 확인하며 이전 실행 포트를 고정하지 않는다.
+Claude 세션에는 이 경로로 새 작업을 전달하지 않았다.
 
 ## Codex·Claude 자동 하위 실행
 
