@@ -1,6 +1,7 @@
 import { IdleSessionsPanel } from './IdleSessionsPanel';
 import { StartupSettingsPanel } from './StartupSettingsPanel';
 import { tunnelConfigurationIssue, validGitHubOwner } from "../../electron/shared/tunnel-config.mjs";
+import { parseRemoteAddress } from '../../electron/shared/remote-address.mjs';
 import { DashboardLanPanel, type DashboardStatus } from "./DashboardLanPanel";
 import { UsageCollectorPanel } from './UsageCollectorPanel';
 import { StatusBarSettingsPanel } from './StatusBarSettingsPanel';
@@ -720,6 +721,8 @@ export function SettingsModal({
       if (issue) {
         setTunnelError(issue === "oauth"
           ? text("GitHub Client ID와 Owner GitHub username을 먼저 입력하고 Save를 눌러 주세요.", "Enter GitHub Client ID and Owner GitHub username, then click Save first.")
+          : issue === 'address'
+            ? text('공개 주소를 확인해 주세요. agent.example.com/acedia 또는 https://agent.example.com/acedia 형식을 사용할 수 있습니다.', 'Enter a valid public address such as agent.example.com/acedia or https://agent.example.com/acedia.')
           : issue === "hostname"
             ? text("고정 터널의 Public hostname을 입력하고 Save를 눌러 주세요.", "Enter Public hostname for the named tunnel, then click Save first.")
             : text("고정 터널의 로컬 서버 포트(1–65535)를 입력하고 Save를 눌러 주세요.", "Enter a fixed local server port (1–65535), then click Save first."));
@@ -1848,8 +1851,8 @@ export function SettingsModal({
             </label>
             <div className="app-update-message">
               {text(
-                "github.com/settings/developers에서 OAuth App을 만들고 Client ID를 입력하세요. Client Secret + Public hostname까지 설정하면 코드 입력 없는 리다이렉트 로그인이 되고(callback URL: https://호스트네임/auth/github/callback), 비우면 Device Flow를 사용합니다. Owner 계정은 승인 없이 항상 접속할 수 있습니다.",
-                "Create an OAuth App at github.com/settings/developers and enter its Client ID. Setting both Client Secret and Public hostname enables redirect login without entering a code (callback URL: https://hostname/auth/github/callback); otherwise Device Flow is used. The owner account is always allowed without approval.",
+                "github.com/settings/developers에서 OAuth App을 만들고 Client ID를 입력하세요. Client Secret과 공개 주소를 설정하면 코드 입력 없는 리다이렉트 로그인이 됩니다. OAuth callback URL은 아래 공개 주소에 맞춰 표시됩니다. 비우면 Device Flow를 사용하며 Owner 계정은 승인 없이 접속할 수 있습니다.",
+                "Create a GitHub OAuth App and enter its Client ID. Setting Client Secret and the public address enables redirect login. The callback URL is shown below for that address; otherwise Device Flow is used. The owner account is always allowed without approval.",
               )}
             </div>
 
@@ -1868,10 +1871,10 @@ export function SettingsModal({
               />
             </label>
             <label className="field app-remote-field" {...settingTarget("remote.hostname")}>
-              <span className="field-label">Public hostname<SettingScope id="remote.hostname" /></span>
+              <span className="field-label">{text('공개 주소 (하위 경로 포함 가능)', 'Public address (optional path)')}<SettingScope id="remote.hostname" /></span>
               <input
                 value={remoteConfig.public_hostname}
-                placeholder="agent.example.com"
+                placeholder="agent.example.com/acedia"
                 onChange={(e) =>
                   setRemoteConfig((c) => ({
                     ...c,
@@ -1879,6 +1882,8 @@ export function SettingsModal({
                   }))
                 }
               />
+              <small>{text('호스트 또는 전체 주소를 입력하세요. 예: agent.example.com/acedia → /acedia/ 아래에서 서비스합니다.', 'Enter a host or full address, e.g. agent.example.com/acedia serves Remote under /acedia/.')}</small>
+              {(() => { try { const address = parseRemoteAddress(remoteConfig.public_hostname); return address ? <small>OAuth callback URL: {new URL('auth/github/callback', address.url).href}</small> : null; } catch { return null; } })()}
             </label>
             <label className="field app-remote-field" {...settingTarget("remote.port")}>
               <span className="field-label">{text("로컬 서버 포트 (0 = 랜덤, named tunnel은 고정 필요)", "Local server port (0 = random; a named tunnel requires a fixed port)")}<SettingScope id="remote.port" /></span>
@@ -1909,8 +1914,8 @@ export function SettingsModal({
             <p className="app-update-message">{text('Save로 저장하면 다음 앱 실행부터 적용합니다. 외부 자동 연결에는 named tunnel 토큰·호스트 이름·고정 포트가 필요합니다. Windows 로그인 자동 실행은 일반 설정에서 따로 선택합니다.', 'Save to apply at the next app start. Automatic external connection requires a named tunnel token, hostname and fixed port. Choose Windows sign-in startup separately in General.')}</p>
             <div className="app-update-message">
               {text(
-                "Cloudflare Zero Trust → Networks → Tunnels에서 만든 토큰을 입력하면 고정 도메인으로 서비스됩니다. 대시보드의 Public hostname service는 여기 설정한 포트의 http://localhost를 가리켜야 합니다.",
-                "Enter a token created in Cloudflare Zero Trust → Networks → Tunnels to use a fixed domain. The dashboard's Public hostname service must point to http://localhost on the port configured here.",
+                "Cloudflare에서 해당 호스트와 경로를 여기 설정한 포트의 http://localhost로 연결하세요. 예: /acedia 및 /acedia/ 하위 요청을 이 포트로 보내며 경로를 제거하지 않습니다. Cloudflare 경로 설정은 별도로 적용해야 합니다.",
+                "Route this hostname and path to http://localhost on the configured port in Cloudflare. Match /acedia and its descendants without stripping the path. Apply the Cloudflare route separately.",
               )}
             </div>
             <div className="app-update-actions">

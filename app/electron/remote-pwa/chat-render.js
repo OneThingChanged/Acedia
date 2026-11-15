@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t } from "./i18n.js";
 import { make, copyText } from "./dom.js";
 import { inlineMd, mdToHtml } from "./chat-markup.js";
@@ -127,7 +128,7 @@ function renderAssistantTurn(run, agent = null, artifacts = [], owner = {}) {
           loading = true;
           const status = make('div', 'chat-tool-loading', t('상세 내역 불러오는 중…')); item.append(status);
           try {
-            const response = await fetch('/api/chat/details', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+            const response = await fetch(remotePath('/api/chat/details'), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ id: agent.id, sessionId: owner.sessionId, conversationId: owner.conversationId, sequences: tool.deferredSequences }) });
             const data = await response.json();
             if (!response.ok || !data.blocks?.length) throw Error('Details unavailable');

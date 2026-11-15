@@ -8,7 +8,7 @@ tags:
   - android
   - security
 status: stable
-last_updated: 2026-11-12
+last_updated: 2026-11-16
 stale_after: 2026-12-02
 sources:
   - id: queue-delivery
@@ -194,6 +194,59 @@ sources:
 ---
 
 # Remote service
+
+## Full public address with a service path (2026-11-16 source)
+
+The single **Public address** setting accepts `agent.example.com/acedia` or
+`https://agent.example.com/acedia/`. The host and mount path are derived from
+that value; there is no separate path field. Existing host-only settings retain
+the root deployment. Path case is preserved, trailing slashes are canonicalized,
+and credentials, queries, fragments and unsafe/encoded path segments are rejected
+before saving. The persisted/API field remains `public_hostname` for compatibility.
+
+For that example the browser URL is `https://agent.example.com/acedia/` and the
+GitHub OAuth callback is `https://agent.example.com/acedia/auth/github/callback`.
+Settings shows the derived callback; the GitHub OAuth App must use that URL.
+Requests to `/acedia` redirect to `/acedia/`, while sibling service paths and
+unprefixed APIs are not served by Remote. The local status URL also includes the
+mount. Saving configuration does not start Remote or expose a tunnel.
+
+Cloudflare must separately route the hostname **and** the original path to the
+local port, for example:
+
+```yaml
+hostname: agent.example.com
+path: ^/acedia(/.*)?$
+service: http://localhost:18800
+```
+
+Do not strip `/acedia` before forwarding. Other path rules may target different
+ports on the same hostname. Entering the address in Acedia does not create or
+modify Cloudflare ingress rules. Named and quick-tunnel links retain the mount;
+a quick tunnel connects to the local origin, not a path-bearing upstream URL.
+
+HTML assets, API requests, terminal SSE, downloads, document/Hosting previews,
+OAuth redirects and logout use the mount. Cookies have a path-specific name and
+Path attribute; origin checks compare the public origin rather than the full
+address. Preview isolation and authorization checks remain in place. The PWA
+manifest, install URL, shortcuts, service-worker scope, offline assets and
+notification navigation use the same prefix. Cache cleanup removes only this
+Remote scope's old caches, not another service's caches.
+
+Android source also preserves the path in profiles, OAuth ticket exchange,
+native-bridge navigation and monitor-token revocation. Existing APKs do not
+gain these changes without a new APK build. Browser/PWA access needs the updated
+desktop host. These changes are included in 1.8.2.20; publication and artifact
+verification are tracked in [the release record](release-1-8-2-20.md).
+
+Validation: 264 app test files / 2,124 tests passed, including isolated mounted
+HTTP authentication, OAuth, SSE, asset, preview and tunnel-link checks. The
+production desktop build and mobile typecheck passed; all 26 mobile tests passed.
+No live Cloudflare route, OAuth App, stored credential or running session was
+changed. The public hostname was not tested externally.
+
+Validation uses isolated HTTP services and Node tests; it does not change the
+user's Cloudflare routes, OAuth App, saved Remote credentials or running sessions.
 
 ## 앱 시작 시 자동 활성화 (2026-11-02, 소스 구현)
 

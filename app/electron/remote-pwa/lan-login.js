@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t, setLanguage, bindShellTranslations } from "./i18n.js";
 
 bindShellTranslations(document);
@@ -8,7 +9,7 @@ const error = document.querySelector("#lanError");
 const showError = value => { error.textContent = t(value); error.hidden = false; };
 
 try {
-  const response = await fetch("/auth/mode", { credentials: "same-origin", cache: "no-store" });
+  const response = await fetch(remotePath("/auth/mode"), { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new Error();
   const mode = await response.json();
   setLanguage(mode.language);
@@ -22,7 +23,7 @@ form.addEventListener("submit", async event => {
   button.disabled = true;
   error.hidden = true;
   try {
-    const response = await fetch("/auth/lan", {
+    const response = await fetch(remotePath("/auth/lan"), {
       method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }),
     });
     if (!response.ok) {
@@ -30,7 +31,7 @@ form.addEventListener("submit", async event => {
       input.focus(); input.select(); return;
     }
     // Preserve session/screen links without accepting external redirect targets.
-    location.replace(`/${location.search}`);
+    location.replace(remotePath('/') + location.search);
   } catch { showError("서버에 연결하지 못했습니다. 다시 시도해 주세요."); }
   finally { button.disabled = false; }
 });

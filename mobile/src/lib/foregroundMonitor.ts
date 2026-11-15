@@ -27,7 +27,7 @@ async function ensureNotificationPermission() {
 
 async function revokeIssuedToken(baseUrl: string, token: string) {
   try {
-    await fetch(new URL("/api/monitor/device", baseUrl), {
+    await fetch(new URL('api/monitor/device', baseUrl), {
       method: "DELETE",
       headers: { authorization: `Bearer ${token}` },
     });

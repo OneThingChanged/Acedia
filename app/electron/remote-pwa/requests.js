@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 export function submissionId() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return `${Date.now()}-${Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("")}`;
@@ -10,7 +11,7 @@ export async function requestJson(url, options = {}, timeoutMs = 12_000) {
   try {
     return await Promise.race([
       (async () => {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(remotePath(url), { ...options, signal: controller.signal });
         const data = await response.json();
         return { response, data };
       })(),

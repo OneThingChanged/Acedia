@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t } from './i18n.js';
 export function createSessionModelEditor({ getAgent, selectedId, projectName, showToast, refresh, rename, closeSession, restartSession, note }) {
   const $ = id => document.getElementById(id);
@@ -37,7 +38,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, sh
     retry.hidden = true;
     try {
       const url = defaults ? `/api/session/defaults?provider=${selectedProvider}` : `/api/session/model?id=${encodeURIComponent(id)}`;
-      const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetch(remotePath(url), { credentials: 'same-origin', cache: 'no-store' });
       const data = await response.json();
       if (ticket !== generation || overlay.hidden) return;
       if (!response.ok || !data.models?.length) throw Error(data.error || t('사용 가능한 모델이 없습니다.'));
@@ -79,7 +80,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, sh
     busy = true; controls(); error('');
     try {
       const body = defaults ? { provider: provider(), settings, revision: catalog.revision } : { id: target, settings, restart: applyNow };
-      const response = await fetch(defaults ? '/api/session/defaults' : '/api/session/model', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const response = await fetch(remotePath(defaults ? '/api/session/defaults' : '/api/session/model'), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const result = await response.json(); if (!response.ok) throw Error(result.error || t('설정을 변경하지 못했습니다.'));
       busy = false; close(); lastRead = 0;
       showToast(t(defaults ? '기본 모델을 저장했습니다.' : result.restarted ? '같은 대화를 새 모델 설정으로 재시작했습니다.' : '저장했습니다. 다음 세션 시작에 적용됩니다.')); await refresh();
@@ -138,7 +139,7 @@ export function createSessionModelEditor({ getAgent, selectedId, projectName, sh
     if (!overlay.hidden && !busy && Date.now() - lastRead > 2500 && !pending) { void load(true); }
     else if (overlay.hidden && supported(agent) && Date.now() - lastRead > 10000 && !pending) {
       const ticket = generation; pending = true; lastRead = Date.now();
-      void fetch(`/api/session/model?id=${encodeURIComponent(id)}`, { cache: 'no-store', credentials: 'same-origin' }).then(response => response.ok ? response.json() : null).then(data => {
+      void fetch(remotePath(`/api/session/model?id=${encodeURIComponent(id)}`), { cache: 'no-store', credentials: 'same-origin' }).then(response => response.ok ? response.json() : null).then(data => {
         if (ticket === generation && id === selectedId() && data) { triggerButton.textContent = data.models?.find(item => item.model === data.current?.model)?.label || data.current?.model || data.saved?.model || t('확인되지 않음'); triggerButton.title = label(data.current); }
       }).catch(() => {}).finally(() => { if (ticket === generation) pending = false; });
     }

@@ -2,6 +2,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { PreferencesStore } from './preferences-store.mjs';
 import { sendJson } from './remote-http.mjs';
+import { remotePath } from '../shared/remote-address.mjs';
 
 export function hostingUrl(raw) {
   const url = new URL(String(raw));
@@ -73,7 +74,7 @@ export class RemoteHosting {
         if (this.tickets.size >= 128) this.tickets.delete(this.tickets.keys().next().value);
         const token = crypto.randomBytes(32).toString('base64url');
         this.tickets.set(token, { id: entry.id, origin: target.origin, expires: Date.now() + 30 * 60_000 });
-        sendJson(response, 200, { url: `/hosting-preview/${token}${target.pathname}${target.search}`, expiresIn: 1800, entry });
+        sendJson(response, 200, { url: remotePath(`/hosting-preview/${token}${target.pathname}${target.search}`, request.acediaBasePath), expiresIn: 1800, entry });
       } else throw new Error('Unknown Hosting action.');
     } catch (error) { sendJson(response, 400, { error: error.message }); }
     return true;
@@ -90,7 +91,7 @@ export class RemoteHosting {
       if (!ticket || ticket.expires <= Date.now() || !this.store.get().entries.some(e => e.id === ticket.id)) { response.writeHead(410).end('Hosting link expired or removed. Reopen it from Hosting.'); return true; }
       const target = new URL(ticket.origin + match[2] + url.search);
       if (target.origin !== ticket.origin || Number(target.port) === request.socket.localPort) throw new Error('Invalid hosting target.');
-      const prefix = `/hosting-preview/${match[1]}/`;
+      const prefix = remotePath(`/hosting-preview/${match[1]}/`, request.acediaBasePath);
       const upstream = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { accept: '*/*' } });
       if ([301,302,303,307,308].includes(upstream.status)) {
         const destination = new URL(upstream.headers.get('location'), target);

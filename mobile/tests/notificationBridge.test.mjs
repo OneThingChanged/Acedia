@@ -8,6 +8,10 @@ import {
   parseNativeBridgeRequest,
 } from "../src/lib/notificationBridge.ts";
 
+test('keeps native tokens inside the configured service path', () => {
+  assert.equal(isTrustedNativeBridgeUrl('https://agent.example.com/acedia/', 'https://agent.example.com/acedia/?source=mobile-app'), true);
+  assert.equal(isTrustedNativeBridgeUrl('https://agent.example.com/acedia/', 'https://agent.example.com/other/'), false);
+});
 test("allows the native token bridge only on the configured Remote origin", () => {
   const base = "https://agent.example.com/";
   assert.equal(isTrustedNativeBridgeUrl(base, `${base}?agent=1`), true);

@@ -360,12 +360,12 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain("ui.appShell.dataset.view = selection.type");
     expect(appScriptBody).toContain("function setSessionViewMode(mode)");
     expect(appScriptBody).toContain("function loadRemoteBrowserFrame()");
-    expect(appScriptBody).toContain('fetch(`/api/browser/frame?${query}`');
-    expect(appScriptBody).toContain('fetch("/api/browser/action"');
+    expect(appScriptBody).toContain('fetch(remotePath(`/api/browser/frame?${query}`');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/browser/action"');
     expect(appScriptBody).toContain("function remoteBrowserPoint(clientX, clientY)");
     expect(appScriptBody).toContain("function requestSessionActivation(agentId");
     expect(appScriptBody).toContain("async function cancelSession(agentId)");
-    expect(appScriptBody).toContain('fetch("/api/session/cancel"');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/session/cancel"');
     expect(appScriptBody).toContain('"/api/session/create"');
     expect(appScriptBody).toContain('"/api/session/rename"');
     expect(appScriptBody).toContain("function openCreateSessionEditor()");
@@ -377,7 +377,7 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain('const agentInitializing = (agent)');
     expect(appScriptBody).toContain('inactive && sessionViewMode !== "chat"');
     expect(appScriptBody).toContain("dataset.sessionMode = sessionViewMode");
-    expect(appScriptBody).toContain('fetch("/api/attachment"');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/attachment"');
     expect(appScriptBody).toContain("refreshPending");
     expect(appScriptBody).toContain("usageRefreshPollTimer");
     expect(appScriptBody).toContain("function clipboardAttachmentFiles(event)");
@@ -399,7 +399,7 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain("window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__");
     expect(appScriptBody).toContain('query.set("format", "json")');
     expect(appScriptBody).not.toContain("function inlineRemoteHtmlAssets(html, context)");
-    expect(appScriptBody).toContain('fetch(`/api/files/image?${query}`');
+    expect(appScriptBody).toContain('fetch(remotePath(`/api/files/image?${query}`');
     expect(appScriptBody).toContain('closest(".chat-file-link")');
     expect(markupBody).toContain("CHAT_FILE_PATH_RE");
     expect(appScriptBody).toContain("function syncMobileAppDownload(info)");
@@ -412,10 +412,10 @@ describe("Electron dashboard server", () => {
     expect(appScriptBody).toContain('classList.toggle("keyboard-visible"');
     expect(appScriptBody).toContain("availableHeight / naturalHeight");
     expect(appScriptBody).not.toContain("Math.ceil(element.offsetHeight * scale)");
-    expect(appScriptBody).toContain('fetch("/api/push/subscription"');
-    expect(appScriptBody).toContain('fetch("/api/monitor/device"');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/push/subscription"');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/monitor/device"');
     expect(appScriptBody).toContain('type: "multiagent:start-native-monitor"');
-    expect(appScriptBody).toContain('fetch("/api/mobile/device"');
+    expect(appScriptBody).toContain('fetch(remotePath("/api/mobile/device"');
     expect(appScriptBody).toContain('type: "multiagent:register-native-session-access"');
     expect(appScriptBody).not.toContain("/api/push/native-subscription");
     expect(appScriptBody).not.toContain("ExpoPushToken");
@@ -469,7 +469,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v115');
+    expect(workerBody).toContain('multiagent-remote-v116');
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');
@@ -482,8 +482,8 @@ describe("Electron dashboard server", () => {
       if (name === 'codex-quota.js') expect(await module.text()).toContain('export function codexQuotaInfo');
     }
     expect(workerBody).toContain('addEventListener("push"');
-    expect(workerBody).toContain('url.pathname.startsWith("/downloads/")');
-    expect(workerBody).toContain('url.pathname.startsWith("/preview/")');
+    expect(workerBody).toContain('pathname.startsWith("/downloads/")');
+    expect(workerBody).toContain('pathname.startsWith("/preview/")');
     expect(stateBody.pwa).toBe(true);
     expect(stateBody.language).toBe("en");
     service.syncView({ ...service.view, language: "ja" });

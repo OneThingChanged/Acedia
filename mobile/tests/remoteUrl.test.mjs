@@ -9,8 +9,8 @@ import {
 
 test("normalizes a public Remote host to HTTPS", () => {
   assert.equal(
-    normalizeRemoteUrl("agent.example.com/path?ignored=yes"),
-    "https://agent.example.com/",
+    normalizeRemoteUrl("agent.example.com/acedia"),
+    "https://agent.example.com/acedia/",
   );
 });
 
@@ -56,4 +56,13 @@ test("builds a same-origin mobile auth ticket exchange URL", () => {
     mobileAuthCompleteUrl("https://agent.example.com/", "ticket_123"),
     "https://agent.example.com/auth/mobile/complete?ticket=ticket_123",
   );
+});
+test('preserves the configured service path for navigation, app launch and login', () => {
+  const base = normalizeRemoteUrl('agent.example.com/tools/Acedia');
+  assert.equal(base, 'https://agent.example.com/tools/Acedia/');
+  assert.equal(remoteAppUrl(base), base + '?source=mobile-app');
+  assert.equal(mobileAuthCompleteUrl(base, 'ticket'), base + 'auth/mobile/complete?ticket=ticket');
+  assert.equal(isAllowedInAppNavigation(base, base + 'api/state'), true);
+  assert.equal(isAllowedInAppNavigation(base, 'https://agent.example.com/other/'), false);
+  for (const address of ['agent.example.com/acedia?x=1', 'agent.example.com/a/../b', 'agent.example.com/a%2fb']) assert.throws(() => normalizeRemoteUrl(address));
 });

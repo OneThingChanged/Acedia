@@ -1,5 +1,9 @@
-const CACHE_NAME = "multiagent-remote-v115";
+const BASE_PATH = new URL(self.registration.scope).pathname;
+const CACHE_PREFIX = `acedia-remote:${BASE_PATH}:`;
+const CACHE_NAME = CACHE_PREFIX + 'multiagent-remote-v116';
+const scopePath = path => BASE_PATH + path.replace(/^\//, '');
 const STATIC_ASSETS = [
+  '/pwa/base-path.js',
   '/pwa/workspace-shell.css', '/pwa/workspace-shell.js', '/pwa/markdown-blocks.js',
   '/pwa/session-notes.js',
   '/pwa/session-notes.css',
@@ -42,13 +46,13 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS.map(scopePath))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter(key => key !== CACHE_NAME && (key.startsWith(CACHE_PREFIX) || BASE_PATH === '/' && /^multiagent-remote-v\d+$/.test(key))).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -58,16 +62,18 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (!url.pathname.startsWith(BASE_PATH)) return;
+  const pathname = '/' + url.pathname.slice(BASE_PATH.length);
   if (
-    url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/auth/") ||
-    url.pathname.startsWith("/downloads/") ||
-    url.pathname.startsWith("/hosting-preview/") ||
-    url.pathname.startsWith("/preview/")
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/downloads/") ||
+    pathname.startsWith("/hosting-preview/") ||
+    pathname.startsWith("/preview/")
   ) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/")));
+    event.respondWith(fetch(request).catch(() => caches.open(CACHE_NAME).then(cache => cache.match(scopePath('/')))));
     return;
   }
 
@@ -75,31 +81,31 @@ self.addEventListener("fetch", (event) => {
   // new build lands immediately instead of being pinned to a stale cache.
   // Vendor/static assets (xterm, icons) stay cache-first for speed.
   const isAppShell =
-    ["/pwa/workspace-shell.css", "/pwa/workspace-shell.js", "/pwa/markdown-blocks.js"].includes(url.pathname) ||
-    url.pathname === "/pwa/chat-files.js" ||
-    url.pathname === "/pwa/model-editor.js" ||
-    url.pathname === "/pwa/workspace-ui.js" ||
-     url.pathname === "/pwa/session-model.js" ||
-    url.pathname === "/pwa/hosting.js" ||
-    url.pathname === "/pwa/account-pool.js" ||
-    url.pathname === "/pwa/usage-sessions.js" ||
-    url.pathname === "/pwa/session-state.js" ||
-    url.pathname === "/pwa/session-tree.js" ||
-    url.pathname === "/pwa/app.js" ||
-    url.pathname === "/pwa/dom.js" ||
-    url.pathname === "/pwa/i18n.js" ||
-    url.pathname === "/pwa/translations.js" ||
-    url.pathname === "/pwa/chat-markup.js" ||
-    url.pathname === "/pwa/image-zoom.js" ||
-    url.pathname === "/pwa/chat-render.js" ||
-    url.pathname === "/pwa/chat-history.js" ||
-    url.pathname === "/pwa/chat-pagination.js" ||
-     url.pathname === "/pwa/chat-prompt.js" ||
-     url.pathname === "/pwa/question-form.js" ||
-    url.pathname === "/pwa/requests.js" ||
-    url.pathname === "/pwa/attachments.js" ||
-    url.pathname === "/pwa/styles.css" ||
-    url.pathname === "/pwa/terminal-touch.js";
+    ['/pwa/base-path.js', "/pwa/workspace-shell.css", "/pwa/workspace-shell.js", "/pwa/markdown-blocks.js"].includes(pathname) ||
+    pathname === "/pwa/chat-files.js" ||
+    pathname === "/pwa/model-editor.js" ||
+    pathname === "/pwa/workspace-ui.js" ||
+     pathname === "/pwa/session-model.js" ||
+    pathname === "/pwa/hosting.js" ||
+    pathname === "/pwa/account-pool.js" ||
+    pathname === "/pwa/usage-sessions.js" ||
+    pathname === "/pwa/session-state.js" ||
+    pathname === "/pwa/session-tree.js" ||
+    pathname === "/pwa/app.js" ||
+    pathname === "/pwa/dom.js" ||
+    pathname === "/pwa/i18n.js" ||
+    pathname === "/pwa/translations.js" ||
+    pathname === "/pwa/chat-markup.js" ||
+    pathname === "/pwa/image-zoom.js" ||
+    pathname === "/pwa/chat-render.js" ||
+    pathname === "/pwa/chat-history.js" ||
+    pathname === "/pwa/chat-pagination.js" ||
+     pathname === "/pwa/chat-prompt.js" ||
+     pathname === "/pwa/question-form.js" ||
+    pathname === "/pwa/requests.js" ||
+    pathname === "/pwa/attachments.js" ||
+    pathname === "/pwa/styles.css" ||
+    pathname === "/pwa/terminal-touch.js";
   if (isAppShell) {
     event.respondWith(
       fetch(request)
@@ -141,12 +147,12 @@ self.addEventListener("push", (event) => {
     body: payload.body || "작업이 완료되었습니다.",
     tag: payload.tag || (agentId ? `done:${agentId}` : "multiagent:done"),
     renotify: true,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: scopePath('/icons/icon-192.png'),
+    badge: scopePath('/icons/icon-192.png'),
     timestamp: Number(payload.timestamp) || Date.now(),
     data: {
       agentId,
-      url: agentId ? `/?agent=${encodeURIComponent(agentId)}` : "/",
+      url: scopePath(agentId ? `/?agent=${encodeURIComponent(agentId)}` : '/'),
     },
   }));
 });
@@ -156,13 +162,13 @@ self.addEventListener("notificationclick", (event) => {
   const agentId = event.notification.data?.agentId || null;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
-      const existing = clients[0];
+      const existing = clients.find(client => { try { const url = new URL(client.url); return url.origin === self.location.origin && url.pathname.startsWith(BASE_PATH); } catch { return false; } });
       if (existing) {
         await existing.focus();
         existing.postMessage({ type: "open-agent", agentId });
         return;
       }
-      const target = agentId ? `/?agent=${encodeURIComponent(agentId)}&view=chat` : "/";
+      const target = scopePath(agentId ? `/?agent=${encodeURIComponent(agentId)}&view=chat` : '/');
       await self.clients.openWindow(target);
     })
   );

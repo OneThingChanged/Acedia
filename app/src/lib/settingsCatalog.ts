@@ -125,7 +125,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
     ["owner", "소유자 계정", "Owner account", "saved", "항상 허용 username owner"],
     ["clientSecret", "로그인 Client Secret", "Login Client Secret", "saved", "인증 OAuth 비밀 키"],
     ["tunnelToken", "터널 토큰", "Tunnel token", "saved", "cloudflare named quick"],
-    ["hostname", "공개 호스트 이름", "Public hostname", "saved", "도메인 domain"],
+    ["hostname", "공개 주소·하위 경로", "Public address and path", "saved", "도메인 domain hostname url base path 하위경로"],
     ["port", "리모트 서버 포트", "Remote server port", "saved", "로컬 port"],
     ["access", "접근 승인", "Access approval", "action", "승인 거절 해제 pending approved revoke"],
   ].map(([id, ko, en, scope, keywords]) => entry("remote." + id, "remote", ko, en, scope as SettingScope, keywords)),

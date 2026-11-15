@@ -18,6 +18,7 @@ function isPrivateIpv4(hostname: string) {
 export function normalizeRemoteUrl(input: string) {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Remote 주소를 입력하세요.");
+  if (trimmed.length > 2048) throw new Error('Remote 주소가 너무 깁니다.');
   const withScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
     ? trimmed
     : `https://${trimmed}`;
@@ -41,7 +42,10 @@ export function normalizeRemoteUrl(input: string) {
   ) {
     throw new Error("외부 Remote 서버는 HTTPS 주소를 사용해야 합니다.");
   }
-  return `${parsed.origin}/`;
+  const segments = parsed.pathname.split('/').slice(1); if (segments.at(-1) === '') segments.pop();
+  if (parsed.search || parsed.hash || /[\\%]/.test(trimmed) || segments.some(segment => !/^[A-Za-z0-9._~-]+$/.test(segment))
+    || /(?:^|\/)\.{1,2}(?:\/|$)/.test(withScheme.replace(/^https?:\/\/[^/]+/i, ''))) throw new Error('Remote 주소에는 안전한 서비스 경로만 포함할 수 있습니다.');
+  return `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}/`;
 }
 
 export function remoteAppUrl(baseUrl: string) {
@@ -54,14 +58,14 @@ export function isAllowedInAppNavigation(baseUrl: string, targetUrl: string) {
   try {
     const base = new URL(baseUrl);
     const target = new URL(targetUrl);
-    return target.origin === base.origin;
+    return target.origin === base.origin && target.pathname.startsWith(base.pathname);
   } catch {
     return false;
   }
 }
 
 export function mobileAuthCompleteUrl(baseUrl: string, ticket: string) {
-  const url = new URL("/auth/mobile/complete", baseUrl);
+  const url = new URL('auth/mobile/complete', baseUrl);
   url.searchParams.set("ticket", ticket);
   return url.toString();
 }

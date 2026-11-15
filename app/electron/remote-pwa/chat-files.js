@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t } from './i18n.js';
 import { make } from './dom.js';
 import { chatFileKind, cleanChatFilePath } from './chat-markup.js';
@@ -36,7 +37,7 @@ export function fileButton(file, agent) {
   }
   if (chatFileKind(file.path) === 'image') {
     const image = document.createElement('img'); image.loading = 'lazy'; image.alt = name;
-    image.src = `/api/files/image?${new URLSearchParams({ projectId: agent?.projectId || '', agentId: agent?.id || '', path: cleanChatFilePath(file.path) })}`;
+    image.src = remotePath(`/api/files/image?${new URLSearchParams({ projectId: agent?.projectId || '', agentId: agent?.id || '', path: cleanChatFilePath(file.path) })}`);
     image.dataset.imageKey = `${agent?.id}:${file.path}`; image.addEventListener('error', () => { image.hidden = true; }, { once: true }); button.prepend(image);
   }
   return button;
@@ -90,7 +91,7 @@ export function renderStoredImages(block, agent) {
   // bitmap request, and image-only user turns use their original sequence.
   let pending = imageLoads.get(cacheKey);
   if (!pending) {
-    pending = fetch(`/api/chat/images?${new URLSearchParams({ id: agent.id, sequence: block.sequence })}`, { credentials: 'same-origin', cache: 'no-store' })
+    pending = fetch(remotePath(`/api/chat/images?${new URLSearchParams({ id: agent.id, sequence: block.sequence })}`), { credentials: 'same-origin', cache: 'no-store' })
       .then(response => response.ok ? response.json() : { images: [] }).then(data => {
         const images = Array.isArray(data.images) ? data.images : [];
         if (imageLoads.has(cacheKey)) { imageSizes.set(cacheKey, images.reduce((sum, source) => sum + String(source.dataUrl || source.url || source.path || '').length * 2, 0)); trimImages(); }

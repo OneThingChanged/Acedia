@@ -1,3 +1,4 @@
+import { isAllowedInAppNavigation } from './remoteUrl.ts';
 export type NativeBridgeRequest =
   | { type: "multiagent:start-native-monitor"; token: string; cursor: number }
   | { type: "multiagent:register-native-session-access"; token: string }
@@ -45,7 +46,7 @@ export function parseNativeBridgeRequest(value: string): NativeBridgeRequest | n
 
 export function isTrustedNativeBridgeUrl(baseUrl: string, targetUrl: string) {
   try {
-    return new URL(baseUrl).origin === new URL(targetUrl).origin;
+    return isAllowedInAppNavigation(baseUrl, targetUrl);
   } catch {
     return false;
   }

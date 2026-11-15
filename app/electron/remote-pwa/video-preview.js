@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t } from './i18n.js';
 
 const previews = new WeakMap();
@@ -22,6 +23,7 @@ export function cancelVideoPreview(video) {
 }
 
 export async function loadVideoPreview(video, url, { isCurrent, onError }) {
+  url = remotePath(url);
   cancelVideoPreview(video);
   const controller = new AbortController();
   previews.set(video, controller);

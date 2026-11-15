@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { remotePath } from '../shared/remote-address.mjs';
 import fs from "node:fs";
 import { promises as fsPromises } from "node:fs";
 import path from "node:path";
@@ -709,9 +710,14 @@ async function sendRemoteHtmlPreview(request, response, previews, pathname) {
     return true;
   }
   const markdown = extension === ".md" || extension === ".markdown";
-  const htmlBody = html
+  let htmlBody = html
     ? Buffer.from(await prepareRemoteHtmlPreview(entry, parsed.token, resolved))
-    : markdown ? Buffer.from(renderRemoteMarkdownPreview(parsed.token, resolved, await fsPromises.readFile(resolved, "utf8"))) : null;
+    : markdown ? Buffer.from(renderRemoteMarkdownPreview(parsed.token, resolved, await fsPromises.readFile(resolved, "utf8")))
+      : extension === '.css' ? Buffer.from(rewriteRemotePreviewRootUrls(await fsPromises.readFile(resolved, 'utf8'), parsed.token)) : null;
+  if (htmlBody && request.acediaBasePath && request.acediaBasePath !== '/') {
+    const prefix = `/preview/${parsed.token}/`;
+    htmlBody = Buffer.from(htmlBody.toString('utf8').replaceAll(prefix, remotePath(prefix, request.acediaBasePath)));
+  }
   const gzip = html && acceptsPreviewGzip(request);
   response.writeHead(200, {
     "content-type": contentType,
@@ -817,7 +823,7 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
       case "/api/docs/read": sendJson(response, 200, await readRemoteDocument(...args)); break;
       case "/api/docs/download": await sendRemoteDocumentDownload(request, response, ...args); break;
       case "/api/docs/preview": {
-        const location = await issueRemoteHtmlPreview(previews, ...args);
+        const location = remotePath(await issueRemoteHtmlPreview(previews, ...args), request.acediaBasePath);
         if (url.searchParams.get("format") === "json") {
           sendJson(response, 200, { url: location, expiresInSeconds: REMOTE_HTML_PREVIEW_TTL_MS / 1000 }, { "cache-control": "no-store" });
         } else response.writeHead(302, { location, "cache-control": "no-store" }).end();

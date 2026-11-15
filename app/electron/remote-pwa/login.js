@@ -1,3 +1,4 @@
+import { remotePath } from './base-path.js';
 import { t, setLanguage, bindShellTranslations } from "./i18n.js";
 
 bindShellTranslations(document);
@@ -22,7 +23,7 @@ function showError(message) {
 }
 
 async function requestJson(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(remotePath(path), {
     credentials: "same-origin",
     ...options,
     headers: { "content-type": "application/json", ...(options.headers || {}) },
@@ -46,7 +47,7 @@ async function pollLogin(device) {
     }
     if (result.login) {
       loginProgress.textContent = t("GitHub @{0} 로그인 완료", [result.login]);
-      location.href = "/";
+      location.href = remotePath('/');
       return;
     }
     throw new Error(t("로그인 결과를 확인하지 못했습니다."));
@@ -75,7 +76,7 @@ startButton.addEventListener("click", () => {
     void startDeviceLogin();
     return;
   }
-  const target = new URL("/auth/github", location.origin);
+  const target = new URL(remotePath('/auth/github'), location.origin);
   const profileId = String(window.__MULTIAGENT_PROFILE_ID__ || "").trim();
   if (
     window.__MULTIAGENT_NATIVE_APP__ === true &&

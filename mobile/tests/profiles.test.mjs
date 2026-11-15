@@ -8,12 +8,13 @@ import {
 } from "../src/lib/profiles.ts";
 
 test("creates a stable profile id and defaults its name to the host", () => {
-  const first = createRemoteProfile("https://pc-one.example.com/path");
-  const second = createRemoteProfile("pc-one.example.com");
+  const first = createRemoteProfile("https://pc-one.example.com/acedia");
+  const second = createRemoteProfile("pc-one.example.com/acedia/");
   assert.equal(first.id, second.id);
-  assert.equal(first.id, profileIdForUrl("https://pc-one.example.com/"));
+  assert.equal(first.id, profileIdForUrl("https://pc-one.example.com/acedia/"));
+  assert.notEqual(first.id, createRemoteProfile('pc-one.example.com').id);
   assert.equal(first.name, "pc-one.example.com");
-  assert.equal(first.baseUrl, "https://pc-one.example.com/");
+  assert.equal(first.baseUrl, "https://pc-one.example.com/acedia/");
 });
 
 test("migrates the legacy single URL into the multi-PC profile store", () => {

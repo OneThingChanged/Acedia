@@ -1,3 +1,4 @@
+import { remotePath, remoteLocalPath, REMOTE_BASE_PATH } from './base-path.js';
 import { renderMarkdownBlocks } from './markdown-blocks.js';
 import { createWorkspaceReview, reviewEntries } from './workspace-shell.js';
 import { createHostingView } from './hosting.js';
@@ -1414,7 +1415,7 @@ async function loadScreenChat(agentId, container, force = false) {
   if (!pending) {
     const query = new URLSearchParams({id:agentId,turns:String(CHAT_TURNS_PER_PAGE)});
     if (cached?.data?.conversationId && cached.data.lastSequence) { query.set('conversation',cached.data.conversationId);query.set('after',String(cached.data.lastSequence)); }
-    pending = fetch(`/api/chat?${query}`, { credentials: "same-origin" })
+    pending = fetch(remotePath(`/api/chat?${query}`), { credentials: "same-origin" })
       .then(async (response) => {
         const data = await response.json().catch(() => ({ blocks: [] }));
         return response.ok ? data : { blocks: [], error: true };
@@ -1737,7 +1738,7 @@ async function copyDocumentPath(value) {
 async function showDocumentPath(file, trigger) {
   try {
     const query = new URLSearchParams({ projectId: file.projectId, path: file.path });
-    const response = await fetch(`/api/docs/path?${query}`, { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(remotePath(`/api/docs/path?${query}`), { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) throw new Error(await apiError(response));
     const result = await response.json();
     ui.documentRelativePath.textContent = result.relativePath;
@@ -1756,7 +1757,7 @@ async function deleteRemoteDocument(file) {
   deletingDocuments.add(key);
   try {
     const query = new URLSearchParams({ projectId: file.projectId, path: file.path });
-    const response = await fetch(`/api/docs/file?${query}`, { method: "DELETE", credentials: "same-origin" });
+    const response = await fetch(remotePath(`/api/docs/file?${query}`), { method: "DELETE", credentials: "same-origin" });
     if (!response.ok) throw new Error(await apiError(response));
     if (selection.type === "documents" && selection.id === file.projectId && selectedDocumentPath === file.path) {
       selectedDocumentPath = null;
@@ -1862,7 +1863,7 @@ async function loadDocumentList(projectId, { force = false } = {}) {
   const promise = (async () => {
     try {
       const query = new URLSearchParams({ projectId });
-      const response = await fetch(`/api/docs?${query}`, { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch(remotePath(`/api/docs?${query}`), { cache: "no-store", credentials: "same-origin" });
       if (!response.ok) throw new Error(await apiError(response));
       const result = await response.json();
       documentLists.set(projectId, {
@@ -1917,7 +1918,7 @@ async function loadDocument(projectId, relativePath, { force = false } = {}) {
   }
   try {
     const query = new URLSearchParams({ projectId, path: relativePath });
-    const response = await fetch(`/api/docs/read?${query}`, { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(remotePath(`/api/docs/read?${query}`), { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) throw new Error(await apiError(response));
     const result = await response.json();
     if (documentContentKey !== key) return;
@@ -2068,7 +2069,7 @@ async function downloadRemoteFile(file) {
   downloadingFiles.add(query);
   syncFileDownloadButtons();
   try {
-    const href = `/api/docs/download?${query}`;
+    const href = remotePath(`/api/docs/download?${query}`);
     // Check errors before starting a browser-managed, streaming download. The
     // original bytes never need to be buffered in the PWA as a Blob.
     const response = await fetch(href, {
@@ -2127,7 +2128,7 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "", host
   const query = remoteFileQuery(projectId, relativePath, agentId);
   query.set("format", "json");
   try {
-    const response = await fetch(hostedUrl ? '/api/hosting' : `/api/docs/preview?${query}`, {
+    const response = await fetch(remotePath(hostedUrl ? '/api/hosting' : `/api/docs/preview?${query}`), {
       cache: "no-store", credentials: "same-origin",
       signal: AbortSignal.any([launch.controller.signal, AbortSignal.timeout(30000)]),
       ...(hostedUrl ? { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -2142,7 +2143,7 @@ async function openRemoteHtmlPreview(projectId, relativePath, agentId = "", host
     }
     const previewUrl = new URL(result.url, window.location.origin);
     const expectedPrefix = hostedUrl ? /^\/hosting-preview\/[A-Za-z0-9_-]{43}\// : /^\/preview\/[A-Za-z0-9_-]{43}\//;
-    if (previewUrl.origin !== window.location.origin || !expectedPrefix.test(previewUrl.pathname)) {
+    if (previewUrl.origin !== window.location.origin || !expectedPrefix.test(remoteLocalPath(previewUrl.pathname) || '')) {
       throw new Error(t("올바른 미리보기 주소를 받지 못했습니다."));
     }
     if (hostedUrl) {
@@ -2279,7 +2280,7 @@ async function openChatFolder(agentId, projectId, rawPath, trail = []) {
   document.documentElement.classList.add("file-preview-open");
   ui.filePreviewClose.focus();
   try {
-    const response = await fetch(`/api/files/folder?${remoteFileQuery(projectId, path, agentId)}`, { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(remotePath(`/api/files/folder?${remoteFileQuery(projectId, path, agentId)}`), { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) throw new Error(await apiError(response));
     const result = await response.json();
     if (requestId !== filePreviewRequest) return;
@@ -2355,7 +2356,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
       return;
     }
     if (kind === "markdown" || kind === "text") {
-      const response = await fetch(`/api/docs/read?${query}`, { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch(remotePath(`/api/docs/read?${query}`), { cache: "no-store", credentials: "same-origin" });
       if (!response.ok) throw new Error(await apiError(response));
       const result = await response.json();
       if (requestId !== filePreviewRequest) return;
@@ -2383,7 +2384,7 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
       return;
     }
 
-    const response = await fetch(`/api/files/image?${query}`, { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(remotePath(`/api/files/image?${query}`), { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) throw new Error(await apiError(response));
     const blob = await response.blob();
     if (requestId !== filePreviewRequest) return;
@@ -2715,7 +2716,7 @@ async function changeUsageVisibility(profile) {
   usageLoading = false; usageRefreshing = false;
   renderUsage();
   try {
-    const response = await fetch("/api/usage/profile-visibility", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ profileKey: profile.key, hidden: profile.visible }) });
+    const response = await fetch(remotePath("/api/usage/profile-visibility"), { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ profileKey: profile.key, hidden: profile.visible }) });
     const result = await response.json();
     if (!response.ok) throw new Error(text(result?.error) || `HTTP ${response.status}`);
     usageSummary = { ...usageSummary, limits: result.limits, profiles: result.profiles ?? usageSummary?.profiles, updatedAt: result.updatedAt };
@@ -3142,7 +3143,7 @@ async function loadUsage(refresh = false) {
     if (requestedSelection.mode === "month") query.set("month", String(requestedSelection.month));
     if (requestedSelection.mode === "week" && requestedSelection.week != null) query.set("week", String(requestedSelection.week));
     if (refresh) query.set("refresh", "1");
-    const response = await fetch(`/api/usage?${query}`, {
+    const response = await fetch(remotePath(`/api/usage?${query}`), {
       cache: "no-store",
       credentials: "same-origin",
     });
@@ -3464,7 +3465,7 @@ async function submitSessionEditor() {
         }
       : { id: sessionEditorAgentId, name };
     const response = await fetch(
-      creating ? "/api/session/create" : "/api/session/rename",
+      remotePath(creating ? "/api/session/create" : "/api/session/rename"),
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3732,7 +3733,7 @@ function readFileDataUrl(file, type = file.type) {
 async function uploadAttachment(agentId, attachment, file) {
   try {
     const data = await readFileDataUrl(file, attachment.type);
-    const response = await fetch("/api/attachment", {
+    const response = await fetch(remotePath("/api/attachment"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -3868,7 +3869,7 @@ function handleComposerImageDrop(event) {
 async function sendRaw(agentId, data) {
   if (!agentId || !data) return false;
   try {
-    const response = await fetch("/api/input", {
+    const response = await fetch(remotePath("/api/input"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -3887,7 +3888,7 @@ async function sendRaw(agentId, data) {
 async function cancelSession(agentId) {
   if (!agentId) return false;
   try {
-    const response = await fetch("/api/session/cancel", {
+    const response = await fetch(remotePath("/api/session/cancel"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -4129,7 +4130,7 @@ async function requestSessionActivation(agentId, { queuedMessage = false, restar
   if (existingDeadline && existingDeadline > Date.now() && !restart) return true;
   if (restart) sessionRestartRequests.add(agentId);
   try {
-    const response = await fetch("/api/session/restart", {
+    const response = await fetch(remotePath("/api/session/restart"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -4175,7 +4176,7 @@ async function waitForSessionReady(agentId) {
 }
 
 async function closeRemoteSession(id) {
-  try { const response = await fetch('/api/session/close', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) });
+  try { const response = await fetch(remotePath('/api/session/close'), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) });
     if (!response.ok) throw Error(await apiError(response));
     if (sessionQueues.get(id)?.length) sessionQueueErrors.set(id, 'closed');
     renderComposerQueue(); await fetchState(); showToast(t('세션을 닫았습니다.')); }
@@ -4551,7 +4552,7 @@ function attachTerminal(container, agentId, fontSize = 15) {
   instance.connectionState = "connecting";
   instance.followOutput = true;
   instance.unseenOutput = false;
-  const stream = new EventSource(`/api/stream?id=${encodeURIComponent(agentId)}`);
+  const stream = new EventSource(remotePath(`/api/stream?id=${encodeURIComponent(agentId)}`));
   instance.stream = stream;
   updateMainTerminalChrome();
   stream.onopen = () => {
@@ -4807,7 +4808,7 @@ async function fetchRemoteBrowserTabs(agentId, { force = false } = {}) {
   remoteBrowser.statusLoading = true;
   try {
     const query = new URLSearchParams({ agentId });
-    const response = await fetch(`/api/browser/tabs?${query}`, {
+    const response = await fetch(remotePath(`/api/browser/tabs?${query}`), {
       cache: "no-store",
       credentials: "same-origin",
     });
@@ -4870,7 +4871,7 @@ async function loadRemoteBrowserFrame() {
       maxWidth: String(Math.min(2_048, Math.max(720, Math.round(viewportWidth * pixelRatio)))),
       maxHeight: String(Math.min(2_048, Math.max(720, Math.round(viewportHeight * pixelRatio)))),
     });
-    const response = await fetch(`/api/browser/frame?${query}`, {
+    const response = await fetch(remotePath(`/api/browser/frame?${query}`), {
       cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal,
@@ -4905,7 +4906,7 @@ async function remoteBrowserAction(action, payload = {}) {
   const agentId = remoteBrowser.agentId || selectedAgent()?.id;
   if (!agentId) return null;
   try {
-    const response = await fetch("/api/browser/action", {
+    const response = await fetch(remotePath("/api/browser/action"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -5252,7 +5253,7 @@ async function fetchChatPage(agentId, { beforeSequence = null, prepend = false, 
     if (Number.isSafeInteger(Number(beforeSequence)) && Number(beforeSequence) > 0) {
       query.set("before", String(beforeSequence));
     }
-    const response = await fetch(`/api/chat?${query}`, { credentials: "same-origin", signal });
+    const response = await fetch(remotePath(`/api/chat?${query}`), { credentials: "same-origin", signal });
     let data = await response.json().catch(() => ({ blocks: [] }));
     if (!response.ok) data = { blocks: [], error: true };
     if (chatAgent !== agentId || seq !== (prepend ? chatOlderRequestSeq : chatRequestSeq)
@@ -5514,7 +5515,7 @@ function validateSelection() {
 function syncMobileAppDownload(info) {
   if (!ui.androidDownloadButton) return;
   const downloadUrl = text(info?.downloadUrl);
-  const available = Boolean(info?.available && downloadUrl.startsWith("/downloads/"));
+  const available = Boolean(info?.available && remoteLocalPath(downloadUrl)?.startsWith('/downloads/'));
   ui.androidDownloadButton.hidden = !available;
   if (!available) return;
   ui.androidDownloadButton.href = downloadUrl;
@@ -5614,7 +5615,7 @@ function samePushKey(subscription, expected) {
 async function ensureBackgroundPush(registration) {
   if (!registration?.pushManager) return false;
   try {
-    const keyResponse = await fetch("/api/push/public-key", {
+    const keyResponse = await fetch(remotePath("/api/push/public-key"), {
       cache: "no-store",
       credentials: "same-origin",
     });
@@ -5630,7 +5631,7 @@ async function ensureBackgroundPush(registration) {
       userVisibleOnly: true,
       applicationServerKey: key,
     });
-    const response = await fetch("/api/push/subscription", {
+    const response = await fetch(remotePath("/api/push/subscription"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -5654,7 +5655,7 @@ async function ensureNativeSessionAccess(detail) {
   ) return;
   nativeSessionAccessPending = true;
   try {
-    const response = await fetch("/api/mobile/device", {
+    const response = await fetch(remotePath("/api/mobile/device"), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -5684,7 +5685,7 @@ async function enableNotifications() {
       return;
     }
     try {
-      const response = await fetch("/api/monitor/device", {
+      const response = await fetch(remotePath("/api/monitor/device"), {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -5769,7 +5770,7 @@ async function installPwa() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;
   try {
-    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    await navigator.serviceWorker.register(remotePath('/sw.js'), { scope: REMOTE_BASE_PATH });
     return await navigator.serviceWorker.ready;
   } catch {
     return null;
@@ -6361,7 +6362,7 @@ ui.notifyButton.addEventListener("click", enableNotifications);
 ui.installButton.addEventListener("click", installPwa);
 ui.logoutButton.addEventListener("click", async () => {
   stopNativeMonitor();
-  await fetch("/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  await fetch(remotePath("/auth/logout"), { method: "POST", credentials: "same-origin" }).catch(() => {});
   location.reload();
 });
 ui.mobileMonitorButton.addEventListener("click", () => selectMonitor("all"));

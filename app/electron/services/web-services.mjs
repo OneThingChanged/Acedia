@@ -1,5 +1,6 @@
 import { RemoteHosting } from './remote-hosting.mjs';
 import { assertTunnelConfigured, validGitHubOwner } from "../shared/tunnel-config.mjs";
+import { parseRemoteAddress, remotePath, remoteRequestPath } from '../shared/remote-address.mjs';
 import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentIsText, remoteAttachmentSizeError } from "../shared/remote-attachments.mjs";
@@ -172,6 +173,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/queue-delivery.js", { file: "queue-delivery.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/codex-quota.js", { file: "../shared/codex-quota.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/requests.js", { file: "requests.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ['/pwa/base-path.js', { file: 'base-path.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' }],
   ["/pwa/attachments.js", { file: "../shared/remote-attachments.mjs", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/", { file: "index.html", type: "text/html; charset=utf-8", cache: "no-store" }],
   ["/login", { file: "login.html", type: "text/html; charset=utf-8", cache: "no-store" }],
@@ -224,10 +226,19 @@ function remoteUsageHistorySelection(url) {
   return { selection };
 }
 
-function sendRemoteAsset(response, pathname) {
+function sendRemoteAsset(response, pathname, basePath = '/') {
   const asset = REMOTE_PWA_ASSETS.get(pathname);
   if (!asset) return false;
-  const body = fs.readFileSync(path.join(REMOTE_PWA_DIR, asset.file));
+  let body = fs.readFileSync(path.join(REMOTE_PWA_DIR, asset.file));
+  if (basePath !== '/' && asset.type.startsWith('text/html')) {
+    body = Buffer.from(body.toString('utf8').replace(/\b(src|href|action|poster)=(['"])\/(?!\/)/gi, (_, name, quote) => `${name}=${quote}${basePath}`));
+  } else if (basePath !== '/' && pathname === '/manifest.webmanifest') {
+    const manifest = JSON.parse(body); manifest.id = basePath; manifest.scope = basePath;
+    manifest.start_url = remotePath(manifest.start_url, basePath);
+    for (const icon of manifest.icons || []) icon.src = remotePath(icon.src, basePath);
+    for (const shortcut of manifest.shortcuts || []) { shortcut.url = remotePath(shortcut.url, basePath); for (const icon of shortcut.icons || []) icon.src = remotePath(icon.src, basePath); }
+    body = Buffer.from(JSON.stringify(manifest));
+  }
   response.writeHead(200, {
     "content-type": asset.type,
     "content-length": body.length,
@@ -238,19 +249,19 @@ function sendRemoteAsset(response, pathname) {
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
-    ...(asset.serviceWorker ? { "service-worker-allowed": "/" } : {}),
+    ...(asset.serviceWorker ? { "service-worker-allowed": basePath } : {}),
   });
   response.end(body);
   return true;
 }
 
-function remoteMobileApkInfo(apkPath) {
+function remoteMobileApkInfo(apkPath, basePath = '/') {
   try {
     const stats = fs.statSync(apkPath);
     if (!stats.isFile() || stats.size <= 0) return { available: false };
     return {
       available: true,
-      downloadUrl: REMOTE_MOBILE_APK_URL,
+      downloadUrl: remotePath(REMOTE_MOBILE_APK_URL, basePath),
       filename: path.basename(apkPath),
       size: stats.size,
       architecture: "arm64-v8a",
@@ -931,7 +942,7 @@ export class LocalDashboardService {
       });
       return true;
     }
-    if (request.method === "GET" && ["/lan-login", "/login", "/pwa/lan-login.js", "/pwa/styles.css", "/pwa/i18n.js", "/pwa/translations.js", "/icon.svg"].includes(url.pathname)) {
+    if (request.method === "GET" && ["/lan-login", "/login", "/pwa/lan-login.js", '/pwa/base-path.js', "/pwa/styles.css", "/pwa/i18n.js", "/pwa/translations.js", "/icon.svg"].includes(url.pathname)) {
       return sendRemoteAsset(response, url.pathname === "/login" ? "/lan-login" : url.pathname);
     }
     if (this.lanAccess.authenticated(request)) return false;
@@ -1226,8 +1237,10 @@ export class RemoteDashboardService {
 
   async setConfig(config) {
     if (['auto_start', 'auto_start_tunnel'].some(key => config[key] !== undefined && typeof config[key] !== 'boolean')) throw new TypeError('Invalid Remote startup setting');
+    if (config.public_hostname !== undefined && typeof config.public_hostname !== 'string') throw new TypeError('Invalid Remote public address');
     if (config.owner !== undefined && (typeof config.owner !== 'string' || (config.owner.trim() && !validGitHubOwner(config.owner)))) throw new TypeError('Owner must be a GitHub username, not an email address or profile URL.');
     const next = { ...this.config, ...config };
+    if (next.public_hostname) { parseRemoteAddress(next.public_hostname); next.public_hostname = next.public_hostname.trim(); }
     if (typeof next.owner === 'string') next.owner = next.owner.trim();
     if (next.auto_start && next.auto_start_tunnel && (!String(next.tunnel_token || '').trim() || !String(next.public_hostname || '').trim()
       || !Number.isInteger(Number(next.server_port)) || Number(next.server_port) < 1 || Number(next.server_port) > 65535)) throw new Error('Save a named tunnel token, hostname and fixed server port before enabling automatic tunnel connection.');
@@ -1331,7 +1344,7 @@ export class RemoteDashboardService {
   }
 
   sessionLogin(request) {
-    const match = String(request.headers.cookie || "").match(/(?:^|;\s*)multiagent_remote=([^;]+)/);
+    const match = String(request.headers.cookie || "").match(new RegExp(`(?:^|;\\s*)${this.cookieName()}=([^;]+)`));
     if (!match) return null;
     const [payload, signature] = match[1].split(".");
     if (!payload || !signature) return null;
@@ -1360,33 +1373,25 @@ export class RemoteDashboardService {
       .toLowerCase();
     if (!forwardedHost) return false;
     const allowed = new Set([`http://${forwardedHost}`, `https://${forwardedHost}`]);
-    const publicHostname = String(this.config.public_hostname || "").trim().toLowerCase();
-    if (publicHostname) allowed.add(`https://${publicHostname}`);
+    const publicAddress = parseRemoteAddress(this.config.public_hostname);
+    if (publicAddress) allowed.add(publicAddress.origin.toLowerCase());
     return allowed.has(origin);
   }
 
   cookieFor(login, request, maxAge = 604800) {
     const secure = this.config.public_hostname || request.headers["x-forwarded-proto"] === "https";
     const value = login ? this.sign(login) : "";
-    return `multiagent_remote=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+    return `${this.cookieName()}=${value}; HttpOnly; SameSite=Lax; Path=${this.basePath()}; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
   }
+
+  basePath() { return parseRemoteAddress(this.config.public_hostname)?.basePath || '/'; }
+  cookieName() { const base = this.basePath(); return base === '/' ? 'multiagent_remote' : `multiagent_remote_${crypto.createHash('sha256').update(base).digest('hex').slice(0, 12)}`; }
 
   githubOAuthRedirectUri() {
     const publicHostname = String(this.config.public_hostname || "").trim();
     if (!publicHostname) return "";
     try {
-      const publicUrl = new URL(`https://${publicHostname}`);
-      if (
-        publicUrl.protocol !== "https:" ||
-        publicUrl.username ||
-        publicUrl.password ||
-        publicUrl.pathname !== "/" ||
-        publicUrl.search ||
-        publicUrl.hash
-      ) {
-        return "";
-      }
-      return new URL("/auth/github/callback", publicUrl).href;
+      return new URL('auth/github/callback', parseRemoteAddress(publicHostname).url).href;
     } catch {
       return "";
     }
@@ -1412,7 +1417,7 @@ export class RemoteDashboardService {
   }
 
   status() {
-    return { running: Boolean(this.server?.listening), url: this.port ? `http://127.0.0.1:${this.port}` : null, port: this.port };
+    return { running: Boolean(this.server?.listening), url: this.port ? `http://127.0.0.1:${this.port}${this.basePath().replace(/\/$/, '')}` : null, port: this.port };
   }
 
   async handleOAuth(request, response, url) {
@@ -1430,7 +1435,7 @@ export class RemoteDashboardService {
         return true;
       }
       response.writeHead(302, {
-        location: "/",
+        location: this.basePath(),
         "set-cookie": this.cookieFor(entry.login, request),
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
@@ -1533,7 +1538,7 @@ export class RemoteDashboardService {
       return true;
     }
     response.writeHead(302, {
-      location: "/",
+      location: this.basePath(),
       "set-cookie": this.cookieFor(login, request),
     }).end();
     return true;
@@ -1626,6 +1631,14 @@ export class RemoteDashboardService {
     this.server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url || "/", "http://127.0.0.1");
+        const basePath = this.basePath();
+        request.acediaBasePath = basePath;
+        if (basePath !== '/' && [basePath.slice(0, -1), '/'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
+          response.writeHead(308, { location: basePath + url.search, 'cache-control': 'no-store' }).end(); return;
+        }
+        const pathname = remoteRequestPath(url.pathname, basePath);
+        if (pathname === null) { response.writeHead(404).end(); return; }
+        url.pathname = pathname;
         if (await this.hosting.preview(request, response, url)) return;
         if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/preview/")) {
           if (await sendRemoteHtmlPreview(request, response, this.htmlPreviews, url.pathname)) return;
@@ -1647,13 +1660,14 @@ export class RemoteDashboardService {
           "/login",
           "/pwa/styles.css",
           "/pwa/login.js",
+          '/pwa/base-path.js',
           "/pwa/i18n.js",
           "/pwa/translations.js",
           "/icon.svg",
           "/icons/icon-192.png",
           "/icons/icon-512.png",
         ].includes(url.pathname);
-        if (publicAsset && sendRemoteAsset(response, url.pathname)) return;
+        if (publicAsset && sendRemoteAsset(response, url.pathname, basePath)) return;
         if (
           ["GET", "DELETE"].includes(request.method) &&
           url.pathname === "/api/monitor/device"
@@ -1712,7 +1726,7 @@ export class RemoteDashboardService {
               response.writeHead(403, { "content-type": "text/html; charset=utf-8" })
                 .end(`<meta charset="utf-8"><title>승인 대기</title><body style="background:#0d1117;color:#c9d1d9;font:16px system-ui;padding:40px"><h2>GitHub @${login.replace(/[<>&"']/g, "")}</h2><p>Acedia 앱에서 원격 접속 요청을 승인해 주세요.</p></body>`);
             } else {
-              response.writeHead(302, { location: "/login" }).end();
+              response.writeHead(302, { location: remotePath('/login', basePath) }).end();
             }
           } else sendJson(response, 401, { error: "unauthorized", pending: Boolean(login) });
           return;
@@ -1826,7 +1840,7 @@ export class RemoteDashboardService {
             view: this.view,
             language: this.view?.language,
             ...runtime,
-            mobileApp: remoteMobileApkInfo(this.mobileApkPath),
+            mobileApp: remoteMobileApkInfo(this.mobileApkPath, basePath),
           });
           return;
         }
@@ -2025,7 +2039,7 @@ export class RemoteDashboardService {
           ownerFileAccess: usageAccess.canManageAccounts,
           mutationAllowed: () => this.isSameOrigin(request), trashDocument: this.trashDocument,
         })) return;
-        if (request.method === "GET" && sendRemoteAsset(response, url.pathname)) return;
+        if (request.method === "GET" && sendRemoteAsset(response, url.pathname, basePath)) return;
         response.writeHead(404).end();
       } catch (error) {
         sendJson(response, error.statusCode || 500, { error: error.message });
@@ -2138,7 +2152,7 @@ export class TunnelService {
       if (!named && !localUrl) throw new Error("Remote PWA 서버가 실행 중이 아닙니다.");
       const args = named
         ? ["tunnel", "run", "--token", config.tunnel_token.trim()]
-        : ["tunnel", "--url", localUrl, "--no-autoupdate"];
+        : ["tunnel", "--url", new URL(localUrl).origin, "--no-autoupdate"];
       const child = this.spawnImpl(executable, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       this.child = child;
       this.publicUrl = null;
@@ -2162,14 +2176,16 @@ export class TunnelService {
           if (epoch !== this.startEpoch) { finish(new Error('Tunnel startup cancelled')); return; }
           recent = `${recent}${String(chunk)}`.slice(-8192);
           if (named && recent.includes("Registered tunnel connection")) {
-            this.publicUrl = config.public_hostname ? `https://${config.public_hostname}` : null;
+            const address = parseRemoteAddress(config.public_hostname);
+            this.publicUrl = address ? address.basePath === '/' ? address.origin : address.url : null;
             finish();
             return;
           }
           if (!named) {
             const match = recent.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
             if (match) {
-              this.publicUrl = match[0].replace(/\/$/, "");
+              const base = parseRemoteAddress(config.public_hostname)?.basePath || '/';
+              this.publicUrl = match[0].replace(/\/$/, '') + (base === '/' ? '' : base);
               finish();
             }
           }

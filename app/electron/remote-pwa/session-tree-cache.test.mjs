@@ -6,7 +6,7 @@ it('fetches fresh tree code before using a cached copy and falls back only when 
   const listeners = new Map(), put = vi.fn(), match = vi.fn(async () => new Response('old-tree'));
   const fetcher = vi.fn(async () => new Response('new-tree'));
   const context = vm.createContext({ URL, fetch: fetcher,
-    self: { location: { origin: 'https://remote.test' }, addEventListener: (name, callback) => listeners.set(name, callback) },
+    self: { registration: { scope: 'https://remote.test/' }, location: { origin: 'https://remote.test' }, addEventListener: (name, callback) => listeners.set(name, callback) },
     caches: { open: async () => ({ put }), match },
   });
   vm.runInContext(fs.readFileSync(new URL('./sw.js', import.meta.url), 'utf8'), context);
