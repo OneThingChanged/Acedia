@@ -20,6 +20,26 @@ function fixture() {
   return { board: new ProjectBoard(options), source, live, hooks, runs, options, time: value => { now = value; } };
 }
 describe('Independent project board', () => {
+  it('projects delegated waiting without consuming a result or read receipt, and retires old work across restarts', () => {
+    const f = fixture(); f.live.add('b');
+    f.board.observe({ id: 'b', event: 'working', received_at: 2000 });
+    const transfer = { id: 'delegation', from: 'a', to: 'b', status: 'started', savedAt: 1200, startedAt: 1500, readAt: 1600, isMessage: true };
+    f.board.transfers = () => [transfer];
+    const first = f.board.snapshot(), fingerprint = first.sessions[0].fingerprint, result = first.items.find(i => i.sessionId === 'a');
+    expect(first.sessions[0].delegatedWait).toMatchObject({ count: 1, childIds: ['b'] });
+    expect(f.board.snapshot(first.revision).unchanged).toBe(true);
+    const thin = f.board.delegatedWaitSnapshot();
+    expect(Object.keys(thin)).toEqual(['revision', 'sessions']); expect(thin.sessions.a).toEqual(first.sessions[0].delegatedWait);
+    expect(f.board.delegatedWaitSnapshot(thin.revision)).toEqual({ revision: thin.revision, unchanged: true });
+    f.board.observe({ id: 'b', event: 'done', received_at: 2500, assistant_message: 'child response' });
+    expect(f.board.snapshot().sessions[0].delegatedWait).toBeUndefined();
+    expect(f.board.delegatedWaitSnapshot(thin.revision).sessions).toEqual({});
+    f.board.observe({ id: 'b', event: 'working', received_at: 3000 });
+    const restored = new ProjectBoard({ ...f.options, transfers: () => [transfer] }).snapshot();
+    expect(restored.sessions[0].delegatedWait).toBeUndefined();
+    expect(restored.sessions[0].fingerprint).toBe(fingerprint); expect(restored.items).toContainEqual(result);
+    expect(transfer.readAt).toBe(1600);
+  });
   it('projects bounded delivery phases without message bodies or private notification keys', () => {
     const f = fixture(); f.board.transfers = () => [{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', savedAt: 1000, message: 'private body', notificationKey: 'private-key' }];
     expect(f.board.snapshot().transfers).toEqual([{ id: 't', from: 'a', to: 'b', status: 'queued', reason: 'turn-working', summary: '', savedAt: 1000, sentAt: null, receivedAt: null, readAt: null, startedAt: null, isMessage: false }]);
@@ -46,6 +66,9 @@ describe('Independent project board', () => {
   it('persists the selected table mode and validates its IPC contract alongside local layout', async () => {
     const { createRequire } = await import('node:module');
     const contract = createRequire(import.meta.url)('../ipc-contract.cjs'), f = fixture();
+    for (const layoutVersion of [2, 3]) expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { layoutVersion } }).preferences.layoutVersion).toBe(layoutVersion);
+    expect(contract.assertInvokeRequest('project_board_delegated_wait', { revision: 'a'.repeat(64) })).toEqual({ revision: 'a'.repeat(64) });
+    expect(() => contract.assertInvokeRequest('project_board_delegated_wait', { markRead: true })).toThrow();
     f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'transfers', zoom: .8 } }).preferences);
     expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ viewMode: 'transfers', zoom: .8 });
     expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'invalid' } })).toThrow();

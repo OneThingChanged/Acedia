@@ -27,6 +27,7 @@ import { loadSshHosts, sshHostSummary } from "../lib/sshHosts";
 import { useAppLanguage } from "../lib/appLanguage";
 import { recentSidebarSessions } from "../lib/sidebarNavigation";
 import { SidebarIcon } from "./SidebarIcon";
+import { useDelegatedWait } from '../hooks/useDelegatedWait';
 
 const LS_EXPANDED_PROJECTS = "multiagent.expandedProjects.v1";
 const LS_NAVIGATION_EXPANDED_PROJECTS = "multiagent.sidebarExpandedProjects.v1";
@@ -229,6 +230,7 @@ export function SidebarProjectTree({
   revealProject?: { id: string };
 }) {
   const { text } = useAppLanguage();
+  const delegatedWait = useDelegatedWait(agents, !navigationOnly);
   const localizedDetachedLabel =
     detachedLabel === "다른 창" ? text("다른 창", "Other window") : detachedLabel;
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
@@ -679,16 +681,22 @@ export function SidebarProjectTree({
     const isActiveGroup = groupId === activeGroupId;
     const screen = screenByAgentId.get(a.id);
     const sleeping = isStandbySession(a);
+    const delegatedCount = delegatedWait[a.id]?.count || 0;
+    const background = !sleeping && (a.status === 'background' || delegatedCount > 0);
+    const waitingLabel = delegatedCount ? text(`자식 작업 ${delegatedCount}개 대기`, `Waiting for ${delegatedCount} child task${delegatedCount === 1 ? '' : 's'}`)
+      : text(...backgroundWaitingLabels(a.activity?.backgroundCount));
     const statusTitle = sleeping
       ? a.idleResumeSessionId
         ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
         : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
-      : a.status === 'background' ? text(...backgroundWaitingLabels(a.activity?.backgroundCount))
+      : background ? waitingLabel
       : a.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : text(a.status, a.status);
     return (
       <li
         key={a.id}
-        aria-label={hasUnreadCompletion ? `${a.name} · ${text('읽지 않은 작업 완료', 'Unread completion')}` : undefined}
+        data-background-wait={background || undefined}
+        data-delegated-wait={delegatedCount || undefined}
+        aria-label={background || hasUnreadCompletion ? [a.name, background ? statusTitle : '', hasUnreadCompletion ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
         className={[
           "agent-item",
           "agent-item-nested",
@@ -700,7 +708,7 @@ export function SidebarProjectTree({
           multi && isActiveGroup ? "agent-grouped-active" : "",
           isDetached ? "agent-detached" : "",
           hasUnreadCompletion ? "agent-completion-unread" : "",
-          !sleeping && a.status === 'background' ? 'has-background-work' : '',
+          background ? 'has-background-work' : '',
         ]
           .filter(Boolean)
           .join(" ")}
@@ -727,7 +735,7 @@ export function SidebarProjectTree({
       >
         <div className="agent-row-top">
           <span
-            className={`status status-${sleeping ? "sleeping" : a.status}`}
+            className={`status status-${sleeping ? "sleeping" : background ? 'background' : a.status}`}
             title={statusTitle}
             role="img"
             aria-label={statusTitle}
@@ -793,6 +801,7 @@ export function SidebarProjectTree({
             </button>
           )}
         </div>
+        {background && <span className="sidebar-background-label">{waitingLabel}</span>}
         {!compact && (
           <div className="agent-folder" title={a.lastSessionId ?? ""}>
             {a.lastSessionId

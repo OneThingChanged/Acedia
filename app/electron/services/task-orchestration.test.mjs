@@ -257,6 +257,18 @@ describe('durable independent Codex task orchestration', () => {
     const detail = await f.call('get', { runId: run.id }); expect(await f.call('get', { runId: run.id, revision: detail.revision })).toEqual({ unchanged: true, revision: detail.revision });
     expect((await f.call('wait', { runId: run.id, revision: detail.revision, waitMs: 10 })).changed).toBe(false);
   });
+  it('observes concurrent owner waits for their exact runtime and clears them on return, excluding operator polling', async () => {
+    const f = fixture(), { run } = await f.plan(); await until(() => f.engine.data.runs[0].tasks[0].state === 'running');
+    const body = { runId: run.id, revision: f.engine.data.revision, waitMs: 10000 };
+    const first = f.call('wait', body), second = f.call('wait', body);
+    expect(f.engine.waitingSince('a')).toBeGreaterThan(0); expect(f.engine.ownerWaits.size).toBe(2);
+    const entry = f.live.get('a'); f.live.set('a', {}); expect(f.engine.waitingSince('a')).toBe(0);
+    f.live.set('a', entry); expect(f.engine.waitingSince('a')).toBeGreaterThan(0);
+    f.engine.data.revision++; await Promise.all([first, second]);
+    expect(f.engine.waitingSince('a')).toBe(0); expect(f.engine.ownerWaits.size).toBe(0);
+    const operator = f.call('wait', { ...body, revision: f.engine.data.revision, waitMs: 10 }, 'a', true);
+    expect(f.engine.waitingSince('a')).toBe(0); await operator;
+  });
   it('audits new changes while preserving dirty baseline files and hides fingerprints from clients', async () => {
     const f = fixture(); let files = { 'prior.txt': 'existing-user-edit' };
     f.engine.audit = async () => ({ available: true, files: { ...files } });

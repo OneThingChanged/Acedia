@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
+  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags",
   "app_startup_get", "app_startup_set",
@@ -293,6 +293,7 @@ function assertInvokeRequest(command, rawArgs) {
   switch (command) {
     case 'open_project_board':
     case 'project_board_snapshot':
+    case 'project_board_delegated_wait':
       if (Object.keys(args).some(key => command === 'open_project_board' || key !== 'revision')
         || args.revision !== undefined && !/^[a-f0-9]{64}$/.test(args.revision)) throw new TypeError('Invalid board snapshot');
       break;
@@ -321,7 +322,7 @@ function assertInvokeRequest(command, rawArgs) {
             || Object.keys(p.projectPositions).length > 2000 || Object.entries(p.projectPositions).some(([id, value]) => !id || id.length > 256 || /[\x00-\x1f]/.test(id)
               || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || Object.keys(value).some(key => !['x', 'y'].includes(key))
               || ['x', 'y'].some(key => !Number.isFinite(value[key]) || Math.abs(value[key]) > 1000000)))
-          || p.layoutVersion !== undefined && p.layoutVersion !== 2
+          || p.layoutVersion !== undefined && ![2, 3].includes(p.layoutVersion)
           || p.motion !== undefined && typeof p.motion !== 'boolean'
           || p.collapsedProjects !== undefined && (!Array.isArray(p.collapsedProjects) || p.collapsedProjects.length > 2000 || p.collapsedProjects.some(id => typeof id !== 'string' || id.length > 256))
         || ['zoom', 'x', 'y'].some(key => p[key] !== undefined && (!Number.isFinite(p[key]) || Math.abs(p[key]) > 1000000))

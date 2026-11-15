@@ -251,6 +251,43 @@ read-receipt preservation and persisted view-mode checks. See the
 [1.8.2.18 release record](release-1-8-2-18.md) for package and publication evidence.
 No GUI automation or production session input was performed.
 
+## Leader waiting for child work (2026-11-15 source)
+
+A leader waiting for actual Acedia child work has a purple status dot, a
+`Waiting for N child tasks` label and a light travelling around its border once
+every 3.6 seconds. Project and recent conversation rows share the same state;
+the existing board also shows the waiting count and border. Earlier unread
+results remain available. Reduced-motion preferences use a stationary outline.
+
+This display needs the current running task attempt with a confirmed start, or
+the latest started handoff to a current child. Durable messages additionally
+need an actual original-text read receipt. A live child or organizational parent
+alone does not establish delegation. Child turn completion retires the old
+handoff even when the child later starts unrelated work. This is a display of
+pending child work, not acceptance of the result or proof that the task passed.
+
+Foreground work, questions, failures, suspension and stopped sessions take
+precedence. The authenticated owner's active `task_wait` is observed against
+its exact runtime, including calls through generic tool wrappers. Operator/UI
+polling does not mark the owner as waiting. Explicit Acedia wait/receipt tools
+can also retain the waiting display while a delegated child is working.
+Uncertain or disconnected state clears the
+display; a newly observed local work/stop event wins before the next poll.
+
+The sidebar polls `project_board_delegated_wait` every two seconds, receiving
+only a revision and the waiting leaders' counts, child IDs and observation
+times. It pauses polling while hidden/collapsed and clears stale observations
+after six seconds. The same optional `delegatedWait` metadata is available in
+the existing read-only `acedia_board` / workspace board HTTP snapshot. These are
+source changes after the 1.8.2.18 release and require a new app build/update.
+
+Validation: all 261 Vitest files / 2,110 tests, TypeScript/Vite production build
+and Electron service syntax checks passed. Regression cases cover receipt and
+turn boundaries, newer foreground activity, completed/stopped children,
+concurrent owner waits and runtime replacement, restart retention, both sidebar
+lists and the board's separate unread-result inbox. No GUI automation or
+installation was performed.
+
 ## 작업 분담과 모델 정책 (2026-10-19, 배포 전 소스)
 
 로컬 Codex 대화의 **작업 분담** 토글은 이후 전송하는 요청에 A의 계획·배정·결과 검토 지침을 붙인다. 새 모델 호출을 자동으로 만들거나 이미 실행 중인 A의 모델·계정을 변경하지 않는다. **작업 흐름 → 모델 정책**에서 경량·일반·고성능 등급의 모델, effort와 Fast를 설치된 카탈로그에 맞춰 설정한다. 별도 정책이 없으면 기존 Codex 기본 모델을 세 등급 모두에 사용하며 특정 모델 이름·가격을 추가로 고정하지 않는다. 정책 변경은 다음 실행부터 적용된다. 시작 전 작업과 실패한 작업의 다음 시도 모델을 개별 지정할 수 있다.
@@ -579,12 +616,40 @@ Top-right **Sleeping** and **Idle / stopped** switches default to hidden and sav
 file. Sleeping has its own category; the second switch covers non-sleeping Idle,
 paused, interrupted and stopped sessions. Ancestors of visible sessions remain,
 including parents in a different project. Hidden rows are compacted and empty
-project cards disappear, while necessary project ancestors and full-board project
-origins are retained. References to hidden sessions are hidden too. Inbox items
+project cards disappear, while necessary project ancestors are retained.
+References to hidden sessions are hidden too. Inbox items
 and summary counts still cover the complete selected-project data. Locating a
 hidden inbox session temporarily reveals only it and its ancestors, without
 changing the saved switches; **Hide again** clears the exception. Reset layout
 does not reset visibility preferences.
+
+2026-11-15 source: hiding Sleeping or Idle/stopped sessions, folding projects or
+session subtrees, and the zoomed-out header overview automatically arrange the
+visible board. Project layout measures the actual retained rows or header-only
+height; it no longer reserves expanded-card space or copies full-board origins
+into the hidden view. Project/session relationships and inbox records are intact.
+Search and state highlighting still do not move matching rows.
+
+Saved full-board project positions remain separate. Automatic views start from
+compact positions, with temporary drag placement for the current visibility and
+folding combination. Changing visibility does not save those positions over the
+full board. Showing everything, unfolding and returning to detailed zoom restores
+the full-board placement. Align by work and Reset layout operate on the automatic
+view while preserving the full-board project positions; deliberate session-order
+changes remain shared. The legend identifies temporary placement.
+
+Layout version 3 migrates the viewport once so old large offsets do not leave
+the new compact layout offscreen. Version 2 preferences remain readable. Fit
+board retains the current overview density to avoid fitting to short headers
+and immediately expanding them again. These changes follow the 1.8.2.18 release
+and require a new build/update.
+
+Validation: all 261 Vitest files / 2,113 tests and the TypeScript/Vite production
+build passed. Node interaction checks exercise visibility toggles, temporary
+dragging, alignment, full-board position restoration and deferred viewport
+migration. Geometry cases cover folded/overview header heights, compact project
+hierarchies and unchanged input records. No GUI automation or installation was
+performed.
 
 The saved session catalog now owns display names when merging live PTYs for the
 board and integration API. UUID defaults or stale launch-time aliases cannot

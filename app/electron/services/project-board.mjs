@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { normalizeSessionModel } from '../shared/session-model.mjs';
+import { delegatedWaitProjection } from './delegated-wait.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const short = (value, size = 1000) => typeof value === 'string' ? value.slice(0, size) : '';
@@ -11,8 +12,8 @@ const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, at
 
 /** Host-owned, bounded projection. No transcripts, tool arguments, credentials or PTY subscriptions. */
 export class ProjectBoard {
-  constructor({ file, catalog, live, hook, runs, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
-    Object.assign(this, { file, catalog, live, hook, runs, transfers, transferContent, runtimeInfo, now });
+  constructor({ file, catalog, live, hook, runs, waitingSince = () => 0, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
+    Object.assign(this, { file, catalog, live, hook, runs, waitingSince, transfers, transferContent, runtimeInfo, now });
     this.data = { version: 2, acknowledged: {}, preferences: {}, results: {}, inbox: {} };
     this.observed = new Map();
     this.devices = new Map();
@@ -44,6 +45,7 @@ export class ProjectBoard {
       const previous = this.observed.get(event.id) || this.data.results[event.id];
       const result = { event: state, at: event.received_at || this.now(), summary: short(event.assistant_message), reason: short(event.interactive_question), detachedTask: previous?.detachedTask || null,
         execution: previous?.execution || '', resultKey: previous?.resultKey || null, startedAt: previous?.startedAt || 0, tool: event.event === 'tool-start' ? short(event.tool_name, 160) : '', backgroundCount: state === 'background-wait' ? event.background_count : undefined };
+      result.lastCompletedAt = state === 'done' ? result.at : previous?.lastCompletedAt || (previous?.event === 'done' ? previous.at : 0);
       if (event.event === 'working') {
         result.execution = digest([event.session_id || event.id, result.at]); result.startedAt = result.at;
       }
@@ -228,16 +230,26 @@ export class ProjectBoard {
     const itemCounts = new Map();
     for (const item of items) { const count = itemCounts.get(item.sessionId) || { results: 0, total: 0 }; count.total++; if (item.kind === 'result') count.results++; itemCounts.set(item.sessionId, count); }
     for (const session of sessions) { const count = itemCounts.get(session.id); session.unreviewedResults = count?.results || 0; session.needsAttention = !!count?.total; }
+    const transfers = this.transfers(), completedAt = new Map();
+    for (const [id, result] of Object.entries(this.data.results)) if (result.lastCompletedAt || result.event === 'done') completedAt.set(id, result.lastCompletedAt || result.at);
+    for (const item of Object.values(this.data.inbox)) if (item.scope === 'response') completedAt.set(item.sessionId, Math.max(completedAt.get(item.sessionId) || 0, item.createdAt));
+    const delegated = delegatedWaitProjection({ sessions, transfers, runs: this.runs() || [], completedAt, hook: this.hook, waitingSince: this.waitingSince });
+    for (const session of sessions) if (delegated.has(session.id)) session.delegatedWait = delegated.get(session.id);
     const references = [...this.references.values()].filter(r => byId.has(r.from) && byId.has(r.to)).map(({ readers, ...r }) => ({ ...r, active: readers > 0 }));
     const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096),
       ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),
       ...(p.hierarchy?.parentId ? { hierarchy: { parentId: short(p.hierarchy.parentId, 256) } } : {}) })),
-      items, references, devices, transfers: this.transfers().filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
+      items, references, devices, transfers: transfers.filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
         status: short(t.status, 50), reason: short(t.reason, 300), summary: short(t.summary, 200), savedAt: t.savedAt || null,
         sentAt: t.sentAt || null, receivedAt: t.receivedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
       preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
+  }
+  delegatedWaitSnapshot(revision) {
+    const sessions = Object.fromEntries(this.snapshot().sessions.filter(s => s.delegatedWait).map(s => [s.id, s.delegatedWait]));
+    const nextRevision = digest(sessions);
+    return revision === nextRevision ? { revision, unchanged: true } : { revision: nextRevision, sessions };
   }
   transferDetail(id) {
     const transfer = this.snapshot().transfers.find(t => t.id === id);

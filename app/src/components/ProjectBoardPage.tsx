@@ -57,14 +57,15 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const [kind, setKind] = useState<'all' | 'question' | 'error' | 'result'>('all');
   const [workingOnly, setWorkingOnly] = useState(false), [backgroundOnly, setBackgroundOnly] = useState(false);
   const [visibleCount, setVisibleCount] = useState(50);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set()), [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
-  const [view, setView] = useState({ zoom: .8, x: 24, y: 24 }), [motion, setMotion] = useState(true), [reducedMotion, setReducedMotion] = useState(systemReducedMotion);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(initialSnapshot?.preferences.collapsed || [])), [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set(initialSnapshot?.preferences.collapsedProjects || []));
+  const [view, setView] = useState({ zoom: initialSnapshot?.preferences.zoom ?? .8, x: initialSnapshot?.preferences.x ?? 24, y: initialSnapshot?.preferences.y ?? 24 }), [motion, setMotion] = useState(true), [reducedMotion, setReducedMotion] = useState(systemReducedMotion);
   const [busy, setBusy] = useState(false), [sampledAt, setSampledAt] = useState(initialSnapshot?.sampledAt || Date.now());
   const [connected, setConnected] = useState(true);
   const [groupScroll, setGroupScroll] = useState<Record<string, number>>({});
   const [showSleeping, setShowSleeping] = useState(initialSnapshot?.preferences.showSleeping === true), [showStopped, setShowStopped] = useState(initialSnapshot?.preferences.showStopped === true);
   const [revealedSession, setRevealedSession] = useState<string | null>(null);
-  const [projectPositions, setProjectPositions] = useState<BoardProjectPositions>({}), [sessionOrder, setSessionOrder] = useState<string[]>([]);
+  const [projectPositions, setProjectPositions] = useState<BoardProjectPositions>(() => boardProjectPositions(initialSnapshot?.preferences.projectPositions)), [sessionOrder, setSessionOrder] = useState<string[]>(() => boardSessionOrder(initialSnapshot?.preferences.sessionOrder));
+  const [compactPlacement, setCompactPlacement] = useState<{ key: string; positions: BoardProjectPositions }>({ key: '', positions: {} });
   const [projectPreview, setProjectPreview] = useState<{ id: string; x: number; y: number } | null>(null);
   const [sessionDragging, setSessionDragging] = useState<string | null>(null), [sessionDrop, setSessionDrop] = useState<{ id: string; after: boolean } | null>(null);
   const [placementStatus, setPlacementStatus] = useState<'saved' | 'saving' | 'failed'>('saved'), [placementError, setPlacementError] = useState('');
@@ -117,7 +118,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   }, []);
   useEffect(() => {
     if (!initialized.current) return;
-    const preferences = { viewMode, layoutVersion: BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
+    const preferences = { viewMode, layoutVersion: resetView.current ? 2 : BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
       ...(data?.items ? { collapsedProjects: [...collapsedProjects], motion } : {}) };
     const timer = setTimeout(() => { void invoke('project_board_preferences', { preferences }).catch(reason => setError(String(reason))); }, 500);
     return () => clearTimeout(timer);
@@ -129,9 +130,13 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const sessionsById = useMemo(() => new Map(data?.sessions.map(s => [s.id, s])), [data]);
   const projectSessions = useMemo(() => data?.sessions.filter(s => !projectId || s.projectId === projectId) || [], [data, projectId]);
   const counts = useMemo(() => boardCounts(projectSessions, allItems), [projectSessions, allItems]);
-  const displayedPositions = useMemo(() => projectPreview ? { ...projectPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : projectPositions, [projectPositions, projectPreview]);
-  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, revealId: revealedSession }) : null,
-    [data, viewMode, projectId, collapsed, displayedPositions, sessionOrder, showSleeping, showStopped, revealedSession]);
+  const overview = view.zoom < .62;
+  const compactKey = !showSleeping || !showStopped || overview || collapsed.size || collapsedProjects.size
+    ? JSON.stringify([showSleeping, showStopped, overview, [...collapsed].sort(), [...collapsedProjects].sort()]) : '';
+  const placementPositions = useMemo(() => compactKey ? compactPlacement.key === compactKey ? compactPlacement.positions : {} : projectPositions, [compactKey, compactPlacement, projectPositions]);
+  const displayedPositions = useMemo(() => projectPreview ? { ...placementPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : placementPositions, [placementPositions, projectPreview]);
+  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, revealId: revealedSession }) : null,
+    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, sessionOrder, showSleeping, showStopped, revealedSession]);
   const nodes = useMemo(() => layout?.nodes.filter(n => !collapsedProjects.has(n.session.projectId)) || [], [layout, collapsedProjects]);
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.session.id, n])), [nodes]);
   const groupById = useMemo(() => new Map(layout?.groups.map(g => [g.id, g])), [layout]);
@@ -146,9 +151,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     const left = Math.min(...layout.groups.map(g => g.x)), top = Math.min(...layout.groups.map(g => g.y));
     const width = Math.max(...layout.groups.map(g => g.x + g.width)) - left, height = Math.max(...layout.groups.map(g => g.y + g.height)) - top;
     // Migrate only the old column layout's viewport, once. Never pan on new events.
-    const zoom = Math.max(.65, Math.min(1, (rect.width - 48) / width, (rect.height - 48) / height));
+    const zoom = Math.max(overview ? .2 : .65, Math.min(overview ? .61 : 1, (rect.width - 48) / width, (rect.height - 48) / height));
     setView({ zoom, x: width * zoom <= rect.width - 48 ? (rect.width - width * zoom) / 2 - left * zoom : 24 - left * zoom, y: 24 - top * zoom });
-  }, [layout, viewMode]);
+  }, [layout, viewMode, overview]);
   const matches = useCallback((s: BoardSession) => (!workingOnly || s.state === 'working') && (!backgroundOnly || s.state === 'background') && (kind === 'all' || itemsBySession.get(s.id)?.some(i => i.kind === kind))
     && (!data || sessionTableMatches(data, s, query)), [workingOnly, backgroundOnly, kind, query, data, itemsBySession]);
   const highlighted = useMemo(() => {
@@ -211,6 +216,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   };
   const locate = (id: string) => {
     setViewMode('board');
+    setView(v => v.zoom < .62 ? { ...v, zoom: .65 } : v);
     const session = sessionsById.get(id); if (!session) return;
     const visibility = boardSessionVisibilityKind(session);
     setRevealedSession(visibility === 'sleeping' && !showSleeping || visibility === 'stopped' && !showStopped ? id : null);
@@ -226,7 +232,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       const left = Math.min(...layout.groups.map(g => g.x)), top = Math.min(...layout.groups.map(g => g.y));
       const width = Math.max(...layout.groups.map(g => g.x + g.width)) - left;
       const height = Math.max(...layout.groups.map(g => g.y + (collapsedProjects.has(g.id) ? BOARD_CARD.header : g.height))) - top;
-      const zoom = Math.max(.2, Math.min(1, (rect.width - 48) / width, (rect.height - 48) / height));
+      const zoom = Math.max(.2, Math.min(overview ? .61 : 1, (rect.width - 48) / width, (rect.height - 48) / height));
       setView({ zoom, x: 24 - left * zoom, y: 24 - top * zoom });
     }
   };
@@ -262,8 +268,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     suppressProjectClick.current = anchor.id;
     const group = groupById.get(anchor.id); if (!group) return;
     const point = placeBoardProject({ ...group, ...anchor.point }, (layout?.groups || []).filter(g => g.id !== anchor.id));
-    const next = { ...projectPositions, [anchor.id]: point };
-    setProjectPositions(next); savePlacement({ projectPositions: next, sessionOrder });
+    const next = { ...placementPositions, [anchor.id]: point };
+    if (compactKey) setCompactPlacement({ key: compactKey, positions: next });
+    else { setProjectPositions(next); savePlacement({ projectPositions: next, sessionOrder }); }
   };
   const moveSessionOrder = (from: string, to: string, after: boolean) => {
     if (!data) return;
@@ -281,7 +288,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     try { const result = await invoke<BoardSnapshot>('project_board_ack_results', { id, results }); revision.current = result.revision; setData(result); }
     catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   };
-  const step = (s: BoardSession) => boardDisplayState(s, itemsBySession.get(s.id)?.filter(i => i.kind === 'result').length || 0) === 'responded' ? text('응답 확인 완료 · 새 지시 대기', 'Response read · awaiting a new instruction') : s.state === 'background' ? text(...backgroundWaitingLabels(s.backgroundCount || undefined))
+  const step = (s: BoardSession) => s.delegatedWait?.count ? text(`자식 작업 ${s.delegatedWait.count}개 대기`, `Waiting for ${s.delegatedWait.count} child task${s.delegatedWait.count === 1 ? '' : 's'}`)
+    : boardDisplayState(s, itemsBySession.get(s.id)?.filter(i => i.kind === 'result').length || 0) === 'responded' ? text('응답 확인 완료 · 새 지시 대기', 'Response read · awaiting a new instruction') : s.state === 'background' ? text(...backgroundWaitingLabels(s.backgroundCount || undefined))
     : s.reason || s.step || s.task?.title || (s.state === 'idle' || s.state === 'planned' ? text('할당된 작업 없음', 'No assigned work') : text(...labels[s.state]));
   const actionLabel = (item: BoardItem) => item.kind === 'question' ? text('답변하기', 'Answer') : item.kind === 'error' ? text('원인 보기', 'View cause') : text('결과 보기', 'View result');
   return <main className="work-board-page" data-motion={motion && !reducedMotion && connected ? 'on' : 'off'} data-density={view.zoom < .62 ? 'overview' : 'detail'} onKeyDown={e => { if (e.key === 'Escape') {
@@ -297,9 +305,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
       <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
         <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide sleeping sessions. Parents of visible children stay.')}
-          onClick={() => { const next = !showSleeping; setShowSleeping(next); setRevealedSession(null); savePlacement({ projectPositions, sessionOrder, showSleeping: next }); }}>Sleeping <span className="wb-switch-track"/></button>
+          onClick={() => { const next = !showSleeping; cancelProjectDrag(); setShowSleeping(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showSleeping: next }); }}>Sleeping <span className="wb-switch-track"/></button>
         <button role="switch" aria-checked={showStopped} aria-label={text('대기·정지 세션 표시', 'Show idle and stopped sessions')} title={text('Idle·일시정지·중단·종료 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide idle, paused, interrupted and stopped sessions. Parents of visible children stay.')}
-          onClick={() => { const next = !showStopped; setShowStopped(next); setRevealedSession(null); savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>
+          onClick={() => { const next = !showStopped; cancelProjectDrag(); setShowStopped(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>
       </div>
       <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button></header>
 
@@ -328,7 +336,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         onPointerMove={e => { const anchor = drag.current; if (!anchor) return; const x = anchor.left + e.clientX - anchor.x, y = anchor.top + e.clientY - anchor.y; setView(v => ({ ...v, x, y })); }}
         onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
         onWheel={e => { if (projectDrag.current) return; const r = e.currentTarget.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; setView(v => { const zoom = Math.max(.2, Math.min(2, v.zoom * (e.deltaY > 0 ? .9 : 1.1))); return { zoom, x: px - (px - v.x) * zoom / v.zoom, y: py - (py - v.y) * zoom / v.zoom }; }); }}>
-        <div className="wb-legend"><span className="hierarchy">{text('계층', 'Hierarchy')}</span><span className="reference">{text('관측된 읽기 참조', 'Observed message reads')}</span><small>{text('제목을 끌어 배치 · 이 컴퓨터에 저장', 'Drag project headers to arrange · saved on this computer')}</small></div>
+        <div className="wb-legend"><span className="hierarchy">{text('계층', 'Hierarchy')}</span><span className="reference">{text('관측된 읽기 참조', 'Observed message reads')}</span><small>{compactKey ? text('보이는 항목 자동 정렬 · 드래그 배치는 이 보기에서만 유지', 'Visible items auto-arranged · drag placement stays in this view') : text('제목을 끌어 배치 · 이 컴퓨터에 저장', 'Drag project headers to arrange · saved on this computer')}</small></div>
         {!data ? <p className="wb-empty">{text('업무 현황을 불러오는 중…', 'Loading work status…')}</p> : !layout?.groups.length ? <p className="wb-empty">{text('표시할 세션이 없습니다.', 'No matching sessions.')}</p> : <div className="wb-world" style={{ width: layout.width, height: layout.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
           {layout.groups.map(g => {
             const members = data.sessions.filter(s => s.projectId === g.id), c = boardCounts(members, allItems), folded = collapsedProjects.has(g.id);
@@ -342,7 +350,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 onLostPointerCapture={() => { if (projectDrag.current?.id === g.id) cancelProjectDrag(); }}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') suppressProjectClick.current = null; }}
                 onClick={() => { if (suppressProjectClick.current === g.id) { suppressProjectClick.current = null; return; }
-                  setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; }); }}>
+                  resetView.current = true; setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; }); }}>
                 <span className="wb-project-name"><BoardIcon name="folder"/><strong title={g.name}>{g.name}</strong><BoardIcon name="chevron"/></span>
                 <span className="wb-project-counts"><span>{members.length} {text('세션', 'sessions')}</span>{c.working > 0 && <span data-state="working">{text('작업 중', 'Working')} {c.working}</span>}{c.background > 0 && <span data-state="background">{text('백그라운드', 'Background')} {c.background}</span>}{c.questions > 0 && <span data-state="waiting">{text('질문', 'Questions')} {c.questions}</span>}{c.errors > 0 && <span data-state="failed">{text('오류', 'Errors')} {c.errors}</span>}{c.results > 0 && <span data-state="review">{text('결과', 'Results')} {c.results}</span>}</span>
               </button>
@@ -354,7 +362,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                   <svg className="wb-edges wb-session-edges" width={g.width} height={g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} d={route.path}/>)}</svg>
                   {rows.map(n => {
                     const session = n.session, results = itemsBySession.get(session.id)?.filter(i => i.kind === 'result').length || 0, displayState = boardDisplayState(session, results);
-                    return <div key={session.id} data-session-id={session.id} className={`wb-node ${session.runtime !== 'running' || ['idle', 'responded', 'paused', 'interrupted'].includes(displayState) ? 'inactive' : ''} ${session.state === 'background' ? 'has-background-work' : ''} ${selected?.sessionId === session.id ? 'selected' : ''} ${highlighted.has(session.id) ? '' : 'dimmed'} ${sessionDragging === session.id ? 'dragging-session' : ''}`} data-state={displayState} data-drop={sessionDrop?.id === session.id ? sessionDrop.after ? 'after' : 'before' : undefined} style={{ left: n.x - g.x, top: n.y - g.y - BOARD_CARD.header, width: n.width, height: n.height }}
+                    return <div key={session.id} data-session-id={session.id} className={`wb-node ${session.runtime !== 'running' || ['idle', 'responded', 'paused', 'interrupted'].includes(displayState) ? 'inactive' : ''} ${displayState === 'background' ? 'has-background-work' : ''} ${selected?.sessionId === session.id ? 'selected' : ''} ${highlighted.has(session.id) ? '' : 'dimmed'} ${sessionDragging === session.id ? 'dragging-session' : ''}`} data-state={displayState} data-drop={sessionDrop?.id === session.id ? sessionDrop.after ? 'after' : 'before' : undefined} style={{ left: n.x - g.x, top: n.y - g.y - BOARD_CARD.header, width: n.width, height: n.height }}
                       onContextMenu={e => { e.preventDefault(); setMenu({ id: session.id, x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 110), results: (itemsBySession.get(session.id) || []).filter(i => i.kind === 'result').map(i => ({ id: i.id, fingerprint: i.fingerprint })) }); }}
                       onDragOver={e => { if (!sessionDrag.current || !canReorderBoardSession(data.sessions, sessionDrag.current, session.id)) return;
                         e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
@@ -376,7 +384,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 <StateIcon state={displayState}/><span className="wb-node-copy"><span className="wb-node-top"><span className="wb-node-title"><ProviderLogo toolId={session.provider}/><strong title={session.name}>{session.name}</strong></span><span className="wb-status-badge" data-state={displayState} title={text(...labels[displayState])}>{text(...labels[displayState])}</span></span><small title={step(session)}>{step(session)}{session.runtime === 'sleeping' && ' · Sleeping'}{session.state === 'working' && elapsed(session.startedAt, sampledAt) && ` · ${elapsed(session.startedAt, sampledAt)}`}</small>
                   {results > 0 && <span className="wb-node-extra"><span className="wb-result-badge">{text('미확인 결과', 'Results')} {results}</span></span>}</span>
                 {(transfersBySession.get(session.id) || []).slice(-1).map(t => <span key={t.id} className="wb-transfer-badge" data-status={t.status} title={`${t.from === session.id ? '→' : '←'} ${sessionsById.get(t.from === session.id ? t.to : t.from)?.name} · ${text(...boardTransferLabel(t))}${t.reason ? ` · ${t.reason}` : ''}`}>{t.from === session.id ? '→' : '←'} {text(...boardTransferLabel(t))}</span>)}
-              </button>{n.children > 0 && <button className="wb-collapse" aria-expanded={!collapsed.has(session.id)} aria-label={text('자식 세션 접기·펼치기', 'Collapse or expand child sessions')} onClick={() => setCollapsed(current => { const next = new Set(current); if (!next.delete(session.id)) next.add(session.id); return next; })}>{collapsed.has(session.id) ? '+' : '−'} {n.children}</button>}
+              </button>{n.children > 0 && <button className="wb-collapse" aria-expanded={!collapsed.has(session.id)} aria-label={text('자식 세션 접기·펼치기', 'Collapse or expand child sessions')} onClick={() => { resetView.current = true; setCollapsed(current => { const next = new Set(current); if (!next.delete(session.id)) next.add(session.id); return next; }); }}>{collapsed.has(session.id) ? '+' : '−'} {n.children}</button>}
                     </div>;
                   })}
                 </div>
@@ -401,12 +409,14 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             })}
           </svg>
         </div>}
-      </div><div className="wb-controls" hidden={viewMode !== 'board'}><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { setCollapsed(new Set()); setCollapsedProjects(new Set()); }}>{text('모두 펼치기', 'Expand all')}</button>
-        <button disabled={!Object.keys(projectPositions).length && !sessionOrder.length} onClick={() => { cancelProjectDrag(); setProjectPositions({}); setSessionOrder([]); savePlacement({ projectPositions: {}, sessionOrder: [] }); resetView.current = true; }}>{text('배치 초기화', 'Reset layout')}</button></div>
+      </div><div className="wb-controls" hidden={viewMode !== 'board'}><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { cancelProjectDrag(); setCollapsed(new Set()); setCollapsedProjects(new Set()); resetView.current = true; }}>{text('모두 펼치기', 'Expand all')}</button>
+        <button disabled={!Object.keys(placementPositions).length && !sessionOrder.length} onClick={() => { cancelProjectDrag(); if (compactKey) setCompactPlacement({ key: compactKey, positions: {} }); else setProjectPositions({}); setSessionOrder([]); savePlacement({ projectPositions: compactKey ? projectPositions : {}, sessionOrder: [] }); resetView.current = true; }}>{text('배치 초기화', 'Reset layout')}</button></div>
         <button className="wb-align" disabled={!data?.sessions.length} title={text('한 번 정렬합니다. 답변 필요·실행·하위 작업 대기 순으로 부모 트리를 유지해 정렬하고 이후 수동 배치를 보존합니다.', 'Arrange once by attention, execution and background wait, preserving parent trees. Later manual placement is retained.')}
-          onClick={() => { if (!data) return; cancelProjectDrag(); const order = boardPriorityOrder(data.sessions, allItems, sessionOrder), automatic = boardLayout(data, { collapsed, sessionOrder: order });
-            const positions = Object.fromEntries(automatic.groups.map(g => [g.id, { x: g.x, y: g.y }])); setProjectPositions(positions); setSessionOrder(order); savePlacement({ projectPositions: positions, sessionOrder: order }); resetView.current = true; }}>{text('업무순 정렬', 'Align by work')}</button>
-        <span className="wb-placement-status" role="status" data-status={placementStatus}>{placementStatus === 'saving' ? text('배치 저장 중…', 'Saving layout…') : placementStatus === 'failed' ? text('배치 저장 실패', 'Layout save failed') : text('이 컴퓨터에 배치 저장', 'Layout saved on this computer')}{placementStatus === 'failed' && <button onClick={() => savePlacement({ projectPositions, sessionOrder })}>{text('다시 저장', 'Retry save')}</button>}</span>
+          onClick={() => { if (!data) return; cancelProjectDrag(); const order = boardPriorityOrder(data.sessions, allItems, sessionOrder);
+            if (compactKey) { setCompactPlacement({ key: compactKey, positions: {} }); savePlacement({ projectPositions, sessionOrder: order }); }
+            else { const automatic = boardLayout(data, { collapsed, sessionOrder: order }), positions = Object.fromEntries(automatic.groups.map(g => [g.id, { x: g.x, y: g.y }])); setProjectPositions(positions); savePlacement({ projectPositions: positions, sessionOrder: order }); }
+            setSessionOrder(order); resetView.current = true; }}>{text('업무순 정렬', 'Align by work')}</button>
+        <span className="wb-placement-status" role="status" data-status={placementStatus}>{placementStatus === 'saving' ? text('배치 저장 중…', 'Saving layout…') : placementStatus === 'failed' ? text('배치 저장 실패', 'Layout save failed') : compactKey ? text('보이는 항목 기준 자동 정렬', 'Auto-arranged for visible items') : text('이 컴퓨터에 배치 저장', 'Layout saved on this computer')}{placementStatus === 'failed' && <button onClick={() => savePlacement({ projectPositions, sessionOrder })}>{text('다시 저장', 'Retry save')}</button>}</span>
         <button className="wb-motion" role="switch" aria-checked={motion && !reducedMotion} disabled={reducedMotion} title={reducedMotion ? text('시스템의 모션 줄이기 설정 적용 중', 'System reduced-motion setting is active') : ''} onClick={() => setMotion(v => !v)}>{text('모션', 'Motion')} <span className="wb-switch-track"/></button></div>
       <div className="wb-device-strip"><span>{text('컴퓨터 사용', 'Computer activity')}</span>{!data?.devices.length ? <small>{text('현재 수신된 사용 신호 없음', 'No current activity signals')}</small> : data.devices.map((device, i) => <button key={`${device.sessionId}:${i}`} onClick={() => choose(device.sessionId)}>{device.kind === 'desktop' ? '🖱' : '🌐'} {sessionsById.get(device.sessionId)?.name} · {device.tool}{device.state === 'unconfirmed' ? ` · ${text('종료 신호 확인 필요', 'Awaiting end signal')}` : ''}</button>)}</div>
     </section>

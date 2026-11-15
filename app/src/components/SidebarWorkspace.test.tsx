@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import type { Agent } from "../types";
+import { useDelegatedWait } from '../hooks/useDelegatedWait';
+vi.mock('../hooks/useDelegatedWait', () => ({ useDelegatedWait: vi.fn(() => ({})) }));
 
 const project = { id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 };
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: project.folder, aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
@@ -11,6 +13,16 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it('shows the same purple waiting border and count in project and recent rows while preserving unread results', () => {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'multiagent.sidebarExpandedProjects.v1' ? '["p"]' : null, setItem: vi.fn() });
+    vi.mocked(useDelegatedWait).mockReturnValueOnce({ leader: { count: 1, childIds: ['child'], observedAt: 1000 } });
+    const html = render([agent('leader', { status: 'running', runtimeStatus: 'running' }), agent('child', { status: 'working', runtimeStatus: 'running', sessionHierarchy: { parentId: 'leader' } })],
+      { unreadCompletedAgentIds: new Set(['leader']) });
+    expect(html.match(/data-delegated-wait="1"/g)).toHaveLength(2);
+    expect(html.match(/status-background/g)).toHaveLength(2);
+    expect(html).toContain('자식 작업 1개 대기'); expect(html).toContain('agent-completion-unread');
+    expect(html).toContain('leader · 자식 작업 1개 대기 · 읽지 않은 작업 완료');
+  });
   it('gives background waiting its own outline, count and accessible reason without hiding earlier completion evidence', () => {
     const html = render([agent('Claude', { aiToolId: 'claude', status: 'background', runtimeStatus: 'running',
       activity: { workStatus: 'background', source: 'terminal', receivedAt: 1, stateStartedAt: 1, backgroundCount: 2 } })], { unreadCompletedAgentIds: new Set(['Claude']) });

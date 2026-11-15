@@ -684,6 +684,7 @@ let savedBoardCatalog = { projects: [], agents: [] };
 const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-board.json'),
   catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
+  waitingSince: id => taskOrchestration.waitingSince(id),
   transfers: () => [
     ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
     ...sessionMessages.records.slice(-50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
@@ -5465,6 +5466,8 @@ async function invokeCommand(event, command, rawArgs) {
     }
     case 'project_board_snapshot':
       await warmProjectBoard(); return projectBoard.snapshot(args.revision);
+    case 'project_board_delegated_wait':
+      await warmProjectBoard(); return projectBoard.delegatedWaitSnapshot(args.revision);
     case 'project_board_transfer_detail':
       await warmProjectBoard(); return projectBoard.transferDetail(args.id);
     case 'project_board_ack':

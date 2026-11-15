@@ -1,7 +1,7 @@
 import { folderProjectParents } from './projectBoard';
 import type { BoardProjectPositions } from './boardPlacement';
 
-export const BOARD_LAYOUT_VERSION = 2;
+export const BOARD_LAYOUT_VERSION = 3;
 export const BOARD_CARD = { width: 320, header: 84, row: 92, node: 86, visibleRows: 6, padding: 7 } as const;
 export type BoardState = 'idle' | 'working' | 'background' | 'waiting' | 'waiting_external' | 'paused' | 'review' | 'responded' | 'completed' | 'interrupted' | 'failed' | 'unknown' | 'planned';
 export type BoardSession = {
@@ -10,6 +10,7 @@ export type BoardSession = {
   fingerprint: string; needsAttention: boolean; unreviewedResults?: number;
   startedAt?: number; lastActivityAt?: number; step?: string;
   backgroundCount?: number | null;
+  delegatedWait?: { childIds: string[]; count: number; observedAt: number };
   model?: { model: string; effort?: string; serviceTier?: string | null } | null;
   accountLabel?: string;
   task: { title: string; state: string; reason: string; runId: string; taskId: string } | null;
@@ -40,6 +41,7 @@ export function boardCounts(sessions: BoardSession[], items: BoardItem[]) {
     errors: unique.filter(i => i.kind === 'error').length, results: unique.filter(i => i.kind === 'result').length, attention: unique.length };
 }
 export function boardDisplayState(session: BoardSession, unreadResults: number): BoardState {
+  if (session.delegatedWait?.count) return 'background';
   return session.state === 'review' && unreadResults === 0 ? 'responded' : session.state;
 }
 export function boardTransferLabel(t: BoardTransfer): [string, string] {
@@ -81,17 +83,15 @@ type BoardLayoutResult = {
   nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[];
   edges: { from: string; to: string }[]; projectEdges: { from: string; to: string }[]; width: number; height: number;
 };
-export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), projectPositions = {}, sessionOrder = [], showSleeping = true, showStopped = true, revealId }:
-  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; revealId?: string | null }): BoardLayoutResult {
+export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, sessionOrder = [], showSleeping = true, showStopped = true, revealId }:
+  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; revealId?: string | null }): BoardLayoutResult {
   if (!showSleeping || !showStopped) {
     const visible = boardVisibleSessionIds(data.sessions, showSleeping, showStopped, revealId);
     if (visible.size < data.sessions.length) {
-      const options = { projectId, query, filter, collapsed, sessionOrder };
-      // Compact hidden rows, while retaining the full board's project origins.
-      // Toggling visibility must not overwrite the user's saved placement.
-      const full = boardLayout(data, { ...options, projectPositions });
-      const origins = Object.fromEntries(full.groups.map(g => [g.id, { x: g.x, y: g.y }]));
-      return boardLayout({ ...data, sessions: data.sessions.filter(s => visible.has(s.id)) }, { ...options, projectPositions: { ...origins, ...projectPositions } });
+      // Re-measure only the retained sessions and their project ancestors.
+      // The renderer keeps saved full-board placement separate from this view.
+      return boardLayout({ ...data, sessions: data.sessions.filter(s => visible.has(s.id)) },
+        { projectId, query, filter, collapsed, collapsedProjects, overview, sessionOrder, projectPositions });
     }
   }
   const byId = new Map(data.sessions.map(s => [s.id, s])), included = new Set<string>();
@@ -140,8 +140,9 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
   const visibleProjects = new Set(data.projects.filter(p => slots.get(p.id)!.length).map(p => p.id));
   for (const id of [...visibleProjects]) { let parent = parents.get(id); while (parent) { visibleProjects.add(parent); parent = parents.get(parent); } }
   const children = new Map(data.projects.map(p => [p.id, data.projects.filter(c => visibleProjects.has(c.id) && parents.get(c.id) === p.id)]));
-  const cardHeight = (id: string) => BOARD_CARD.header + Math.min(BOARD_CARD.visibleRows, slots.get(id)!.length) * BOARD_CARD.row
-    + BOARD_CARD.padding * 2 + (slots.get(id)!.length > BOARD_CARD.visibleRows ? 28 : 0);
+  const cardHeight = (id: string) => overview || collapsedProjects.has(id) ? BOARD_CARD.header
+    : BOARD_CARD.header + Math.min(BOARD_CARD.visibleRows, slots.get(id)!.length) * BOARD_CARD.row
+      + BOARD_CARD.padding * 2 + (slots.get(id)!.length > BOARD_CARD.visibleRows ? 28 : 0);
   const measures = new Map<string, { width: number; height: number }>();
   const gapX = 48, gapY = 64;
   const measure = (id: string): { width: number; height: number } => {
@@ -178,7 +179,7 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     const { x, y } = position, ordered = slots.get(project.id)!;
     if (!projectId || projectId === project.id) {
       groups.push({ id: project.id, name: project.name, x, y, width: BOARD_CARD.width, height: cardHeight(project.id), rows: ordered.length,
-        bodyHeight: Math.min(ordered.length, BOARD_CARD.visibleRows) * BOARD_CARD.row + BOARD_CARD.padding * 2 });
+        bodyHeight: overview || collapsedProjects.has(project.id) ? 0 : Math.min(ordered.length, BOARD_CARD.visibleRows) * BOARD_CARD.row + BOARD_CARD.padding * 2 });
       ordered.forEach(({ session, depth, hidden }, index) => {
         if (!included.has(session.id) || hidden) return;
         const indent = Math.min(depth, 4) * 14;

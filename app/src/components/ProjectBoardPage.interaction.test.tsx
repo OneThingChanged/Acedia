@@ -103,7 +103,7 @@ it('reviews captured session results from the context menu without acknowledging
 });
 
 it('keeps zero-count summary rings static and aligns explicitly without consuming attention items', async () => {
-  const data = fixture(); data.sessions.forEach(s => { s.state = 'review'; });
+  const data = fixture(); data.preferences.showSleeping = data.preferences.showStopped = true; data.sessions.forEach(s => { s.state = 'review'; });
   let tree = render(data); const summary = elements(tree).find(e => e.props.className === 'wb-summary')!;
   expect(elements(summary).filter(e => typeof e.type === 'function' && ['working', 'background'].includes(e.props.state)).every(e => e.props.active === false)).toBe(true);
   const original = structuredClone(data.items);
@@ -153,6 +153,7 @@ it('locates a hidden stopped result temporarily, then hides it again without cha
 
 it('drags a project in world coordinates, saves on release and suppresses the following fold click', async () => {
   const data = fixture(); data.references = [{ id: 'read', from: 'c', to: 'b', active: true, kind: 'message', source: 'inbox', startedAt: 0, endedAt: null }];
+  data.preferences.showSleeping = data.preferences.showStopped = true;
   hooks.invoke.mockResolvedValue({});
   let tree = render(data); const start = project(tree, 'p').props.style, other = project(tree, 'p2').props.style;
   const edge = elements(tree).find(e => e.props.className === 'wb-ref-line')!.props.d;
@@ -163,7 +164,7 @@ it('drags a project in world coordinates, saves on release and suppresses the fo
   expect(project(tree, 'p2').props.style).toEqual(other);
   expect(hooks.invoke).not.toHaveBeenCalled();
   header(tree).props.onPointerUp(pointer(80, 460));
-  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: { p: { x: start.left - 150, y: start.top + 350 } }, sessionOrder: [], showSleeping: false, showStopped: false } });
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: { p: { x: start.left - 150, y: start.top + 350 } }, sessionOrder: [], showSleeping: true, showStopped: true } });
   tree = render(data); header(tree).props.onClick(); tree = render(data);
   expect(header(tree).props['aria-expanded']).toBe(true);
   expect(elements(tree).find(e => e.props.className === 'wb-ref-line')!.props.d).not.toBe(edge);
@@ -185,18 +186,41 @@ it.each(['cancel', 'escape'] as const)('cancels a project preview with %s withou
   expect(hooks.invoke).not.toHaveBeenCalled();
 });
 
+it('auto-arranges hidden items, keeps compact dragging temporary and restores saved placement when shown again', async () => {
+  const data = fixture(), saved = { p: { x: -580, y: 760 } };
+  data.preferences = { viewMode: 'board', showSleeping: true, showStopped: true, projectPositions: saved };
+  const original = structuredClone(data); let tree = render(data);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
+  elements(tree).find(e => e.props['aria-label'] === 'Sleeping 세션 표시')!.props.onClick();
+  await Promise.resolve(); tree = render(data);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: 28, top: 38 });
+  const writes = hooks.invoke.mock.calls.length;
+  header(tree).props.onPointerDown(pointer(200, 180)); header(tree).props.onPointerMove(pointer(80, 460));
+  tree = render(data); header(tree).props.onPointerUp(pointer(80, 460)); tree = render(data);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: -122, top: 388 });
+  expect(hooks.invoke).toHaveBeenCalledTimes(writes);
+  elements(tree).find(e => e.props.className === 'wb-align')!.props.onClick();
+  await Promise.resolve(); tree = render(data);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: 28, top: 38 });
+  elements(tree).find(e => e.props['aria-label'] === 'Sleeping 세션 표시')!.props.onClick();
+  await Promise.resolve(); tree = render(data);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
+  expect(hooks.invoke.mock.calls.every(([command, args]) => command === 'project_board_preferences' && JSON.stringify(args.preferences.projectPositions) === JSON.stringify(saved))).toBe(true);
+  expect(data).toEqual(original);
+});
+
 it('restores host-saved placement on a fresh board and keeps it during polling, filtering, then resets only layout', async () => {
   vi.useFakeTimers();
   vi.stubGlobal('window', { setInterval, requestAnimationFrame: (callback: () => void) => callback() });
   vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-  const data = fixture(); data.preferences = { viewMode: 'board', layoutVersion: 2, projectPositions: { p: { x: -580, y: 760 } }, sessionOrder: ['b', 'a', 'c'], showSleeping: true, showStopped: false };
+  const data = fixture(); data.preferences = { viewMode: 'board', layoutVersion: 2, projectPositions: { p: { x: -580, y: 760 } }, sessionOrder: ['b', 'a', 'c'], showSleeping: true, showStopped: true };
   hooks.invoke.mockImplementation(async (command, args) => command === 'project_board_snapshot' ? data : Object.assign(data.preferences, args.preferences));
   let tree = render(data);
   const stop = hooks.effects[1].run() as () => void;
   await Promise.resolve(); await Promise.resolve(); tree = render(data);
   expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
   expect(elements(tree).find(e => e.props['aria-label'] === 'Sleeping 세션 표시')!.props['aria-checked']).toBe(true);
-  expect(elements(tree).find(e => e.props['aria-label'] === '대기·정지 세션 표시')!.props['aria-checked']).toBe(false);
+  expect(elements(tree).find(e => e.props['aria-label'] === '대기·정지 세션 표시')!.props['aria-checked']).toBe(true);
   elements(tree).find(e => e.props.className === 'wb-refresh')!.props.onClick();
   await Promise.resolve(); tree = render(data);
   const filters = elements(tree).find(e => e.props.className === 'wb-inbox-filters')!;
@@ -204,10 +228,15 @@ it('restores host-saved placement on a fresh board and keeps it during polling, 
   tree = render(data); expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
   const saveView = hooks.effects[2].run() as () => void; await vi.advanceTimersByTimeAsync(500); saveView();
   expect(data.preferences.projectPositions).toEqual({ p: { x: -580, y: 760 } });
+  expect(data.preferences.layoutVersion).toBe(2); // Migration waits until the viewport is actually fitted.
+  elements(tree).find(e => e.props.className === 'wb-canvas')!.props.ref.current = { getBoundingClientRect: () => ({ width: 1000, height: 720 }) };
+  hooks.effects[3].run(); tree = render(data);
+  const saveMigrated = hooks.effects[2].run() as () => void; await vi.advanceTimersByTimeAsync(500); saveMigrated();
+  expect(data.preferences.layoutVersion).toBe(3);
   elements(tree).find(e => e.type === 'button' && content(e) === '배치 초기화')!.props.onClick();
   await Promise.resolve(); tree = render(data);
   expect(project(tree, 'p').props.style).toMatchObject({ left: 28, top: 38 });
-  expect(data.preferences).toMatchObject({ projectPositions: {}, sessionOrder: [], layoutVersion: 2 });
+  expect(data.preferences).toMatchObject({ projectPositions: {}, sessionOrder: [], layoutVersion: 3 });
   expect(data.items).toHaveLength(3); stop();
 });
 
@@ -239,6 +268,7 @@ it('drags sibling sessions by the handle, saving display order without changing 
 
 it('reports a failed local layout write and can retry it without invoking session operations', async () => {
   const data = fixture(); hooks.invoke.mockRejectedValueOnce(Error('disk full'));
+  data.preferences.showSleeping = data.preferences.showStopped = true;
   let tree = render(data);
   header(tree).props.onPointerDown(pointer(200, 180)); header(tree).props.onPointerMove(pointer(80, 460)); header(tree).props.onPointerUp(pointer(80, 460));
   await Promise.resolve(); await Promise.resolve(); tree = render(data);
@@ -275,13 +305,15 @@ it('opens the selected question in its session composer without deciding or revi
   expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_open_session', { id: 'c', compose: true });
 });
 
-it('preserves totals and other project positions when folding a project and filtering results', () => {
-  const data = fixture(); let tree = render(data);
+it('repacks projects when folding while preserving totals, hierarchy and result filtering', () => {
+  const data = fixture(); data.projects[1].hierarchy = { parentId: 'p' }; let tree = render(data);
+  const previousTop = project(tree, 'p2').props.style.top;
   const other = elements(tree).find(e => e.props.className?.includes('wb-node ') && content(e).includes('Session c'))!;
   const position = other.props.style;
   const summary = content(elements(tree).find(e => e.props.className === 'wb-summary')!);
   elements(tree).find(e => e.props.className === 'wb-project-header')!.props.onClick();
   tree = render(data);
+  expect(project(tree, 'p2').props.style.top).toBeLessThan(previousTop);
   expect(elements(tree).filter(e => e.props.className?.includes('wb-node '))).toHaveLength(1);
   expect(elements(tree).find(e => e.props.className?.includes('wb-node ') && content(e).includes('Session c'))!.props.style).toEqual(position);
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);

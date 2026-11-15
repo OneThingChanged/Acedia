@@ -34,18 +34,31 @@ describe('Work board node projection', () => {
     expect(boardVisibleSessionIds(cyclic, false, false)).toEqual(new Set(['a', 'b']));
   });
 
-  it('compacts hidden rows, removes empty projects, and preserves full-board project origins and saved placement', () => {
-    const data = { ...snapshot, projects: [...snapshot.projects, { id: 'q', name: 'Other', folder: 'D:/other' }, { id: 'hidden', name: 'Hidden', folder: 'D:/hidden' }],
+  it('repacks hidden rows and empty projects while retaining hierarchy and leaving supplied placement untouched', () => {
+    const data = { ...snapshot, projects: [...snapshot.projects, { id: 'q', name: 'Other', folder: 'D:/other', hierarchy: { parentId: 'p' } }, { id: 'hidden', name: 'Hidden', folder: 'D:/hidden' }],
       sessions: [session('a', null), ...Array.from({ length: 24 }, (_, i) => ({ ...session(`s${i}`, null, 'idle'), runtime: 'sleeping' })), session('b', 'a'),
         { ...session('q1', null), projectId: 'q' }, { ...session('hidden1', null), projectId: 'hidden', runtime: 'stopped' }] };
     const before = structuredClone(data), full = boardLayout(data, {}), hidden = boardLayout(data, { showSleeping: false, showStopped: false });
     expect(hidden.nodes.map(n => n.session.id)).toEqual(['a', 'b', 'q1']);
     expect(hidden.groups.map(g => g.id)).toEqual(['p', 'q']);
     expect(hidden.groups.find(g => g.id === 'p')!.height).toBeLessThan(full.groups.find(g => g.id === 'p')!.height);
-    for (const g of hidden.groups) { const previous = full.groups.find(p => p.id === g.id)!; expect([g.x, g.y]).toEqual([previous.x, previous.y]); }
-    const moved = boardLayout(data, { showSleeping: false, showStopped: false, projectPositions: { p: { x: -410, y: 800 } } });
+    expect(hidden.groups.find(g => g.id === 'q')!.y).toBeLessThan(full.groups.find(g => g.id === 'q')!.y);
+    expect(hidden.projectEdges).toEqual([{ from: 'p', to: 'q' }]);
+    const positions = { p: { x: -410, y: 800 } }, moved = boardLayout(data, { showSleeping: false, showStopped: false, projectPositions: positions });
     expect(moved.groups.find(g => g.id === 'p')).toMatchObject({ x: -410, y: 800 });
+    expect(positions).toEqual({ p: { x: -410, y: 800 } });
     expect(data).toEqual(before);
+  });
+  it('uses header heights for folded projects and zoom overview instead of retaining expanded gaps', () => {
+    const projects = [{ id: 'p', name: 'Parent', folder: 'G:/root' }, { id: 'q', name: 'Child', folder: 'G:/root/q' }];
+    const data = { ...snapshot, projects, sessions: [...Array.from({ length: 24 }, (_, i) => session(`p${i}`, null)), { ...session('q1', null), projectId: 'q' }] };
+    const full = boardLayout(data, {}), folded = boardLayout(data, { collapsedProjects: new Set(['p']) }), overview = boardLayout(data, { overview: true });
+    expect(folded.groups[0]).toMatchObject({ height: BOARD_CARD.header, bodyHeight: 0, rows: 24 });
+    expect(folded.groups[1].y).toBe(folded.groups[0].y + BOARD_CARD.header + 64);
+    expect(folded.height).toBeLessThan(full.height); expect(overview.height).toBeLessThan(folded.height);
+    expect(overview.groups.every(g => g.height === BOARD_CARD.header && g.bodyHeight === 0)).toBe(true);
+    expect(overview.projectEdges).toEqual(full.projectEdges);
+    expect(boardLayout(data, {}).groups).toEqual(full.groups);
   });
   it('branches actual project folders like the supplied HTML, retaining an empty ancestor card', () => {
     const projects = ['master', 'automation', 'movie', 'max', 'unity'].map((id, i) => ({ id, name: id, folder: i ? `G:/Master/${id}` : 'G:/Master' }));

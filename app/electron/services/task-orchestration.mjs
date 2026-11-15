@@ -61,7 +61,7 @@ export class TaskOrchestration {
     defaults, audit = async () => ({ available: false, reason: '파일 관찰 어댑터 없음' }), publish = () => {}, now = Date.now }) {
     Object.assign(this, { file, catalog, createSession, delivery, runtime, read, models, launchedModel, actualModel, answer, stop, defaults, audit, publish, now });
     this.data = { version: 1, revision: 0, policyRevision: 0, policy: null, startupTrust: {}, runs: [] };
-    this.queue = Promise.resolve(); this.inflight = new Set(); this.closed = false;
+    this.queue = Promise.resolve(); this.inflight = new Set(); this.ownerWaits = new Map(); this.closed = false;
     try {
       if (fs.statSync(file).size > 8 * 1024 * 1024) throw Error('작업 기록이 너무 큽니다.');
       const data = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -153,15 +153,25 @@ export class TaskOrchestration {
     return { revision: this.data.revision, run: { ...this.summary(run), policy: copy(run.policy) }, tasks: copy(changed), taskIds: tasks.map(t => t.id), taskVersions,
       ...(detailChanged ? { detail, detailVersion } : {}) };
   }
+  waitingSince(ownerId) {
+    if (this.closed) return 0;
+    return Math.max(0, ...[...this.ownerWaits.values()].filter(w => w.ownerId === ownerId && this.runtime(ownerId) === w.entry).map(w => w.since));
+  }
   async handle({ agentId, action, body = {}, operator = false }) {
     if (action === 'wait') {
       if (this.unavailable || this.closed) throw fail('작업 저장소를 사용할 수 없습니다.', 503);
       if (!Number.isSafeInteger(body.revision) || !Number.isInteger(body.waitMs ?? 10000) || (body.waitMs ?? 10000) < 0 || (body.waitMs ?? 10000) > 10000) throw fail('잘못된 대기 요청', 400);
       if (!operator && !this.runtime(agentId)) throw fail('호출 세션이 실행 중이 아닙니다.', 403);
-      this.owned(agentId, body.runId, operator);
+      const run = this.owned(agentId, body.runId, operator);
       const deadline = this.now() + (body.waitMs ?? 10000);
-      while (!this.closed && this.data.revision === body.revision && this.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
-      return { revision: this.data.revision, changed: this.data.revision !== body.revision, run: this.view(this.owned(agentId, body.runId, operator)) };
+      const token = Symbol();
+      // Observe the authenticated owner's actual wait, including calls wrapped
+      // by functions.exec. UI/operator polling and worker observers do not mark A.
+      if (!operator && run.ownerId === agentId && deadline > this.now()) this.ownerWaits.set(token, { ownerId: agentId, entry: this.runtime(agentId), since: this.now() });
+      try {
+        while (!this.closed && this.data.revision === body.revision && this.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+        return { revision: this.data.revision, changed: this.data.revision !== body.revision, run: this.view(this.owned(agentId, body.runId, operator)) };
+      } finally { this.ownerWaits.delete(token); }
     }
     const operation = this.queue.catch(() => {}).then(() => this.command({ agentId, action, body, operator }));
     this.queue = operation; return operation;

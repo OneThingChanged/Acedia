@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.19](release-1-8-2-19.md) - 리더의 자식 작업 대기 표시·회전 테두리와 보드 숨김·접기·축소 화면 자동 정렬, 저장 배치 보존.
+
 * [Acedia 1.8.2.18](release-1-8-2-18.md) - 세션·업무 전달 표, 읽기 전용 현황 API, 원문 줄바꿈·인계 작성 지침과 Codex 하위 세션 Fast 설정 검증 수정.
 
 * [Acedia 1.8.2.12](release-1-8-2-12.md) - 원본 기준 보드 카드, 노드 우회 연결선과 Remote 부모·자식 동기화 수정.
