@@ -22,9 +22,11 @@ export function presentChatSessionMessages(result, { agentId, messages, deliveri
     const match = normalize(block.text).match(envelope);
     if (!match) return block;
     const [, deliveryId, from, body] = match;
-    const id = body.match(reference)?.[1], record = id ? incoming.get(id) : null;
+    const id = body.match(reference)?.[1];
     let delivery = receipts.get(deliveryId);
     if (delivery && delivery.messageHash !== hash(block.text)) return block;
+    const stored = id && body === sessionMessageNotification(id) ? incoming.get(id) || (!messages?.unavailable && messages?.findRecord?.(id)) : null;
+    const record = stored?.targetId === agentId ? stored : null;
     // Completed delivery receipts rotate out of the hot history. The inbox
     // still pins the exact notification/delivery and conversation; no archive
     // scan or provider transcript mutation is needed for old chat pages.

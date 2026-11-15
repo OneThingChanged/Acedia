@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { SessionMessageArchive } from './session-message-archive.mjs';
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const sha = value => createHash('sha256').update(value, 'utf8').digest('hex');
@@ -8,6 +9,12 @@ const validId = value => typeof value === 'string' && value.length > 0 && value.
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const maxText = 64 * 1024, maxStore = 16 * 1024 * 1024;
 const pendingNotification = status => ['queued', 'notifying', 'sending', 'sent', 'received'].includes(status);
+const validRecord = r => r && /^[a-f0-9-]{36}$/.test(r.messageId)
+  && validId(r.sourceId) && validId(r.targetId) && typeof r.requestKey === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(r.requestKey)
+  && typeof r.message === 'string' && Buffer.byteLength(r.message, 'utf8') <= maxText && sha(r.message) === r.sha256
+  && /^[a-f0-9]{64}$/.test(r.signature) && Number.isSafeInteger(r.sequence) && r.sequence > 0
+  && Number.isFinite(r.createdAt) && typeof r.notify === 'boolean'
+  && (r.delivery?.status !== 'queued' || (r.pinConversationId === null || validId(r.pinConversationId)) && ['codex', 'claude'].includes(r.pinProvider));
 
 export function sessionMessageNotification(messageId) {
   return `Acedia session message ${messageId}. Read the original UTF-8 text with acedia_session_message_receive({"messageId":"${messageId}"}). The message body is stored in your inbox; do not infer it from this notification. Follow existing session instructions.`;
@@ -53,6 +60,8 @@ export class SessionMessages {
   constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, publish = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
     Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, publish, readActivity, now });
     this.records = []; this.inflight = new Map(); this.targets = new Set(); this.sequence = 0; this.closed = false;
+    this.persisted = new Map();
+    this.archive = new SessionMessageArchive(file + '.archive.sqlite', validRecord);
     try {
       if (fs.statSync(file).size > maxStore) throw Error();
       const records = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -60,26 +69,55 @@ export class SessionMessages {
       const ids = new Set(), keys = new Set(); let sequence = 0;
       for (const r of records) {
         const key = r?.sourceId + ':' + r?.requestKey;
-        if (!r || !/^[a-f0-9-]{36}$/.test(r.messageId) || ids.has(r.messageId) || keys.has(key)
-          || !validId(r.sourceId) || !validId(r.targetId) || typeof r.requestKey !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(r.requestKey)
-          || typeof r.message !== 'string' || Buffer.byteLength(r.message, 'utf8') > maxText || sha(r.message) !== r.sha256
-          || !/^[a-f0-9]{64}$/.test(r.signature) || !Number.isSafeInteger(r.sequence) || r.sequence <= sequence
-          || !Number.isFinite(r.createdAt) || typeof r.notify !== 'boolean'
-          || r.delivery?.status === 'queued' && (r.pinConversationId !== null && !validId(r.pinConversationId) || !['codex', 'claude'].includes(r.pinProvider))) throw Error();
+        if (!validRecord(r) || ids.has(r.messageId) || keys.has(key) || r.sequence <= sequence) throw Error();
         sequence = r.sequence; ids.add(r.messageId); keys.add(key);
         if (r.delivery?.status === 'notifying') r.delivery = { status: 'unconfirmed', reason: 'app-restarted' };
       }
       this.records = records; this.sequence = sequence;
-    } catch (error) { if (error.code !== 'ENOENT') this.unavailable = true; }
+      this.persisted = new Map(records.map(r => [r.messageId, JSON.stringify(r)]));
+    } catch (error) { if (error.code !== 'ENOENT' || fs.existsSync(this.archive.file)) this.unavailable = true; }
+    if (!this.unavailable) {
+      try { this.sequence = Math.max(this.sequence, this.archive.maxSequence()); }
+      catch { this.unavailable = true; this.archive.close(); }
+    }
+  }
+  archiveRead(read) {
+    if (this.unavailable) throw fail('메시지 저장소를 확인할 수 없습니다.', 503);
+    try { return read(); } catch { this.unavailable = true; throw fail('메시지 보관소를 확인할 수 없습니다. 원문과 요청 키를 보존한 채 복구가 필요합니다.', 503); }
+  }
+  findRecord(messageId) {
+    if (typeof messageId !== 'string' || !/^[a-f0-9-]{36}$/.test(messageId)) return null;
+    return this.records.find(r => r.messageId === messageId) || this.archiveRead(() => this.archive.byId(messageId));
   }
   save() {
     if (this.unavailable) throw fail('메시지 저장소를 확인할 수 없습니다.', 503);
-    const json = JSON.stringify(this.records);
-    if (this.records.length > 1000 || Buffer.byteLength(json, 'utf8') > maxStore) throw fail('메시지 저장 한도를 초과했습니다.', 507);
+    let records = this.records, json = JSON.stringify(records);
+    const encoded = new Map(records.map(r => [r.messageId, JSON.stringify(r)]));
+    const archived = [];
+    if (records.length > 1000 || Buffer.byteLength(json, 'utf8') > maxStore) {
+      // Do not archive newly changed state before it is durable. This makes
+      // archive/hot duplicates after a crash identical and safe to reconcile.
+      let bytes = Buffer.byteLength(json, 'utf8'), count = records.length;
+      for (const r of records) {
+        if (count <= 800 && bytes <= 12 * 1024 * 1024) break;
+        if (!r.readAt || !['inbox', 'started', 'failed'].includes(r.delivery?.status) || this.inflight.has(r.messageId)
+          || this.persisted.get(r.messageId) !== encoded.get(r.messageId)) continue;
+        archived.push(r); count--; bytes -= Buffer.byteLength(encoded.get(r.messageId), 'utf8') + 1;
+      }
+      const ids = new Set(archived.map(r => r.messageId));
+      records = records.filter(r => !ids.has(r.messageId)); json = JSON.stringify(records);
+      if (records.length > 1000 || Buffer.byteLength(json, 'utf8') > maxStore) {
+        const error = fail('미확인·전달 대기 메시지로 활성 저장 한도(1,000건·16 MiB)에 도달했습니다. 원문 읽음과 전달 상태를 확인해 주세요.', 507);
+        error.code = 'MESSAGE_STORE_FULL'; throw error;
+      }
+    }
     try {
+      this.archive.put(archived);
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       fs.writeFileSync(this.file + '.tmp', json, { encoding: 'utf8', mode: 0o600 }); fs.renameSync(this.file + '.tmp', this.file);
     } catch { this.unavailable = true; throw fail('메시지 저장에 실패했습니다. 전송 상태를 다시 확인하세요.', 503); }
+    this.records = records;
+    this.persisted = new Map(records.map(r => [r.messageId, encoded.get(r.messageId)]));
   }
   async view(record, { content = false, includeBase64 = false } = {}) {
     const { message, signature, notificationKey, pinConversationId, pinStartedAt, pinProvider, ...value } = record;
@@ -96,7 +134,17 @@ export class SessionMessages {
     if (!this.sessionFor(agentId)) throw fail('호출 세션을 찾을 수 없습니다.', 404);
     return action === 'message-send' ? this.send(agentId, body) : action === 'message-receive' ? this.receive(agentId, body) : Promise.reject(fail('지원하지 않는 메시지 작업입니다.', 404));
   }
-  async list(id) { return Promise.all(this.records.filter(r => r.sourceId === id || r.targetId === id).slice(-20).reverse().map(r => this.view(r))); }
+  async list(id) {
+    const archived = this.archiveRead(() => this.archive.select({ agentId: id, recent: true, limit: 20, exclude: this.records.map(r => r.messageId) }));
+    return Promise.all([...this.records.filter(r => r.sourceId === id || r.targetId === id), ...archived]
+      .sort((a, b) => b.sequence - a.sequence).slice(0, 20).map(r => this.view(r)));
+  }
+  recentRecords(limit = 50) {
+    const hot = this.records.slice(-limit);
+    if (hot.length >= limit && hot[0].sequence > this.archiveRead(() => this.archive.maxSequence())) return hot;
+    const archived = this.archiveRead(() => this.archive.select({ recent: true, limit, exclude: this.records.map(r => r.messageId) }));
+    return [...hot, ...archived].sort((a, b) => a.sequence - b.sequence).slice(-limit);
+  }
   notice(value) {
     return { ...value.delivery, deliveryId: value.delivery?.deliveryId || value.messageId, requestKey: 'text_' + value.messageId.replace(/-/g, ''),
       sourceId: value.sourceId, targetId: value.targetId, sourceName: value.sourceName, targetName: value.targetName,
@@ -182,7 +230,7 @@ export class SessionMessages {
       await Promise.all(due.map(r => this.dispatch(r, 0)));
     } finally { this.polling = false; }
   }
-  close() { this.closed = true; }
+  close() { this.closed = true; this.archive.close(); }
   async send(sourceId, body) {
     if (Object.keys(body).some(k => !['sessionId', 'message', 'messageBase64', 'messageFile', 'expectedSha256', 'expectedConversationId', 'requestKey', 'notify', 'replyTo', 'waitMs'].includes(k))
       || !validId(body.sessionId) || typeof body.requestKey !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(body.requestKey) || body.sessionId === sourceId
@@ -194,7 +242,8 @@ export class SessionMessages {
     if (!target) throw fail('받는 세션을 찾을 수 없습니다.', 404);
     const message = sessionMessageText(body), notify = body.notify !== false;
     const signature = sha(JSON.stringify([body.sessionId, message, notify, body.replyTo || null, body.expectedConversationId || null]));
-    const old = this.records.find(r => r.sourceId === sourceId && r.requestKey === body.requestKey);
+    const old = this.records.find(r => r.sourceId === sourceId && r.requestKey === body.requestKey)
+      || this.archiveRead(() => this.archive.byKey(sourceId, body.requestKey));
     if (old) {
       if (old.signature !== signature) throw fail('같은 requestKey에 다른 메시지를 보낼 수 없습니다.', 409);
       // An explicit repeat of the original API call may restart a bounded retry
@@ -206,7 +255,10 @@ export class SessionMessages {
       if (old.delivery?.status === 'queued' && (old.delivery.nextAttemptAt || 0) <= this.now()) await this.dispatch(old, waitMs);
       await this.inflight.get(old.messageId); return this.view(old);
     }
-    if (body.replyTo && !this.records.some(r => r.messageId === body.replyTo && r.targetId === sourceId && r.sourceId === body.sessionId)) throw fail('받은 메시지의 발신 세션에만 replyTo로 답장할 수 있습니다.', 409);
+    if (body.replyTo) {
+      const replied = this.findRecord(body.replyTo);
+      if (!replied || replied.targetId !== sourceId || replied.sourceId !== body.sessionId) throw fail('받은 메시지의 발신 세션에만 replyTo로 답장할 수 있습니다.', 409);
+    }
     const liveContext = this.context(body.sessionId);
     const context = liveContext ? { ...liveContext } : liveContext;
     if (notify && (!['codex', 'claude'].includes(target.aiToolId) || !context?.entry || context.entry.ssh)) throw fail('자동 알림은 실행 중인 로컬 Codex·Claude에 지원합니다. 다른 제공자·OFFLINE 대상은 notify:false로 수신함에 저장하세요.', 409);
@@ -231,9 +283,12 @@ export class SessionMessages {
       || (body.after !== undefined && (!Number.isSafeInteger(body.after) || body.after < 0))
       || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 20))) throw fail('수신함 조회 옵션을 확인하세요.');
     const outgoing = body.direction === 'outbox';
-    const candidates = this.records.filter(r => (outgoing ? r.sourceId : r.targetId) === agentId
+    const archived = body.messageId ? [this.findRecord(body.messageId)].filter(r => r && !this.records.includes(r))
+      : outgoing || body.unreadOnly === false ? this.archiveRead(() => this.archive.select({ agentId, outgoing, after: body.after || 0,
+        limit: (body.limit || 10) + 1, exclude: this.records.map(r => r.messageId) })) : [];
+    const candidates = [...this.records, ...archived].filter(r => (outgoing ? r.sourceId : r.targetId) === agentId
       && (!body.messageId || r.messageId === body.messageId) && (body.messageId || r.sequence > (body.after || 0))
-      && (body.messageId || outgoing || body.unreadOnly === false || !r.readAt));
+      && (body.messageId || outgoing || body.unreadOnly === false || !r.readAt)).sort((a, b) => a.sequence - b.sequence);
     if (body.messageId && !candidates.length) throw fail('이 세션의 메시지를 찾을 수 없습니다.', 404);
     const records = []; let bytes = 0;
     for (const r of candidates) { if (records.length >= (body.limit || 10) || bytes + Buffer.byteLength(r.message, 'utf8') > 128 * 1024) break; records.push(r); bytes += Buffer.byteLength(r.message, 'utf8'); }

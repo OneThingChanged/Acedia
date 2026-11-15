@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 프로젝트·세션 MCP
 description: 기존 MCP 연결에서 프로젝트·세션과 조직도를 관리하고, UTF-8 전용 수신함·한글 메시지·답장·읽음 확인과 Codex 작업 전달을 지원한다.
 status: stable
-last_updated: 2026-11-14
+last_updated: 2026-11-16
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
@@ -28,6 +28,8 @@ sources:
   - resource: ../app/electron/services/session-delivery.mjs
   - resource: ../app/electron/services/session-messages.mjs
   - resource: ../app/electron/services/session-messages.test.mjs
+  - resource: ../app/electron/services/session-message-archive.mjs
+  - resource: ../app/electron/services/session-message-archive.test.mjs
   - resource: ../app/electron/services/pty-submit.mjs
   - resource: ../app/src/components/SessionDeliveryNotice.tsx
   - resource: ../app/scripts/codex-session-delivery-smoke.mjs
@@ -245,7 +247,34 @@ Base64도 함께 반환한다. 기본 조회 `{}`는 자신의 안 읽은 메시
 잘못된 UTF-8 바이트를 거부하며 선두 UTF-8 BOM은 제거한다. 선택적인 `expectedSha256`은
 BOM 제거 뒤 원문 UTF-8의 SHA-256과 비교하고, 다르면 저장·알림 전에 거부한다. 원문에는
 탭·줄바꿈·이모지를 보존하며 셸 명령으로 평가하지 않는다. 한 번에 최대 20개·본문 합계
-128 KiB까지 조회하고 `nextAfter`와 `hasMore`로 이어 읽는다. 저장소는 최대 1000개·16 MiB다.
+128 KiB까지 조회하고 `nextAfter`와 `hasMore`로 이어 읽는다. 활성 저장소는 최대 1000개·16 MiB이며,
+1.8.2.21부터 읽음·전달 완료가 확인된 오래된 원문을 자동 보관해 공간을 확보한다.
+
+### 메시지 자동 보관 (1.8.2.21)
+
+기존 `session-messages-v1.json`은 최근 기록과 미확인·진행 중 기록을 유지한다. 건수 또는
+크기 한도에 도달하면 이미 저장된 읽음 기록 중 `inbox`·`started`·`failed` 상태를 오래된
+순서로 `session-messages-v1.json.archive.sqlite`에 보관하고, 가능한 범위에서 활성 기록을
+800건·12 MiB 이하로 줄인다. 읽음은 업무 완료를 뜻하지 않으며 원문은 계속 조회할 수 있다.
+미확인·queued·notifying·sending·sent·received·unconfirmed·notification-error와 현재
+저장 중인 변경은 자동 보관하지 않는다. 모두 미확인·전달 대기 상태여서 공간을 확보할 수
+없으면 기록을 버리지 않고 507 오류로 이유를 알린다.
+
+보관소는 Electron/Node의 내장 [SQLite API](https://nodejs.org/api/sqlite.html)를 사용한다.
+메시지 ID, 발신 세션+요청 키, 수신 세션+순번에 색인을 두어 과거 본문 전체를 매번 읽지
+않는다. `messageId` 조회, 발신함·전체 수신함의 순번 페이지, `replyTo`, 최근 전달 목록과
+과거 Chat 카드의 원문 복원은 보관 후에도 유지한다. 다른 세션의 수신함 권한은 확장하지
+않으며 화면 열람은 AI 읽음 영수증을 새로 만들지 않는다.
+
+보관 트랜잭션을 먼저 완료한 뒤 활성 JSON을 교체한다. 중간 종료로 양쪽에 같은 기록이
+남아도 조회에서 중복을 제거하고 같은 요청 키를 새 작업으로 실행하지 않는다. 원문·해시·
+읽음·전달 상태를 보존하며, 보관소가 필요한 상태임을 `.archive.sqlite.required` 파일로
+기록한다. 보관소 누락·손상·충돌은 전송을 차단한다. 프로필 백업·복원 시 활성 JSON,
+보관 SQLite와 required 파일을 함께 보존한다. 실행 중인 프로필을 수동 편집하지 않는다.
+
+작업 중인 대상의 알림은 기존 준비 확인과 순서 있는 대기열을 사용한다. 1.8.2.20 이전에
+저장 한도로 거부된 본문은 대기열에도 없으므로 자동 복구·재전송하지 않는다. 발신자가
+기존 요청 키와 같은 본문으로 다시 보내고, 저장·읽음·착수·완료를 각각 확인해야 한다.
 
 HTTP 경로는 `POST /integration/v1/workspace/messages/send`와
 `POST /integration/v1/workspace/messages/receive`다. 기존 loopback 인증·Origin 거부와

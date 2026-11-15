@@ -687,9 +687,9 @@ const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-bo
   waitingSince: id => taskOrchestration.waitingSince(id),
   transfers: () => [
     ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
-    ...sessionMessages.records.slice(-50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
+    ...sessionMessages.recentRecords(50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
       summary: r.message?.split(/\r?\n/).find(line => line.trim())?.trim().slice(0, 200), savedAt: r.createdAt, sentAt: r.delivery?.sentAt, receivedAt: r.delivery?.receivedAt, readAt: r.readAt, startedAt: r.delivery?.startedAt, isMessage: true })),
-  ], transferContent: id => sessionMessages.records.find(r => r.messageId === id)?.message ?? null,
+  ], transferContent: id => sessionMessages.findRecord(id)?.message ?? null,
   runtimeInfo: id => {
     const entry = ptys.get(id); if (!entry) return {};
     const provider = entry.aiToolId;

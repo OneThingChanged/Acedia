@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
+import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SessionMessages } from './session-messages.mjs';
 import { SessionDeliveries } from './session-delivery.mjs';
@@ -91,6 +92,26 @@ it('uses the exact inbox delivery binding after a completed receipt rotates out 
   expect(f.present(otherConversation)).toBe(otherConversation);
   f.messages.records[0].delivery.deliveryId = 'unrelated';
   const page = f.page(raw); expect(f.present(page)).toBe(page);
+});
+
+it('restores an archived original after both hot message and delivery histories rotate without changing read receipts', async () => {
+  const f = fixture(), raw = await f.send(), first = f.messages.records[0];
+  cleanups.push(() => f.messages.close());
+  first.readAt = 10000; first.delivery.status = 'started';
+  for (let i = 1; i < 1000; i++) {
+    const messageId = randomUUID();
+    f.messages.records.push({ ...first, messageId, sequence: i + 1, requestKey: 'archive-' + i, notificationKey: 'text_' + messageId.replace(/-/g, '') });
+  }
+  f.messages.sequence = 1000; f.messages.save();
+  await f.messages.handle({ action: 'message-send', agentId: 'caller', body: { sessionId: 'target', message: '새 보고', requestKey: 'after-archive', notify: false } });
+  expect(f.messages.records.some(r => r.messageId === first.messageId)).toBe(false);
+  f.deliveries.records.clear();
+  const saved = fs.readFileSync(f.mailOptions.file), archived = fs.readFileSync(f.mailOptions.file + '.archive.sqlite');
+  expect(f.present(f.page(raw)).blocks[0].sessionMessage.message).toBe(original);
+  expect(fs.readFileSync(f.mailOptions.file)).toEqual(saved);
+  expect(fs.readFileSync(f.mailOptions.file + '.archive.sqlite')).toEqual(archived);
+  const otherTarget = presentChatSessionMessages(f.page(raw), { agentId: 'caller', messages: f.messages, deliveries: f.deliveries });
+  expect(otherTarget.blocks[0]).not.toHaveProperty('sessionMessage');
 });
 
 it('never resolves another target, conversation, altered text, or quoted assistant/tool reference', async () => {
