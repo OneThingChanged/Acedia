@@ -251,7 +251,7 @@ read-receipt preservation and persisted view-mode checks. See the
 [1.8.2.18 release record](release-1-8-2-18.md) for package and publication evidence.
 No GUI automation or production session input was performed.
 
-## Leader waiting for child work (2026-11-15 source)
+## Leader waiting for child work (1.8.2.19)
 
 A leader waiting for actual Acedia child work has a purple status dot, a
 `Waiting for N child tasks` label and a light travelling around its border once
@@ -278,10 +278,10 @@ The sidebar polls `project_board_delegated_wait` every two seconds, receiving
 only a revision and the waiting leaders' counts, child IDs and observation
 times. It pauses polling while hidden/collapsed and clears stale observations
 after six seconds. The same optional `delegatedWait` metadata is available in
-the existing read-only `acedia_board` / workspace board HTTP snapshot. These are
-source changes after the 1.8.2.18 release and require a new app build/update.
+the existing read-only `acedia_board` / workspace board HTTP snapshot. This ships
+in [1.8.2.19](release-1-8-2-19.md); existing installations need an update.
 
-Validation: all 261 Vitest files / 2,110 tests, TypeScript/Vite production build
+Validation: all 261 Vitest files / 2,113 tests, TypeScript/Vite production build
 and Electron service syntax checks passed. Regression cases cover receipt and
 turn boundaries, newer foreground activity, completed/stopped children,
 concurrent owner waits and runtime replacement, restart retention, both sidebar
@@ -623,7 +623,7 @@ hidden inbox session temporarily reveals only it and its ancestors, without
 changing the saved switches; **Hide again** clears the exception. Reset layout
 does not reset visibility preferences.
 
-2026-11-15 source: hiding Sleeping or Idle/stopped sessions, folding projects or
+1.8.2.19: hiding Sleeping or Idle/stopped sessions, folding projects or
 session subtrees, and the zoomed-out header overview automatically arrange the
 visible board. Project layout measures the actual retained rows or header-only
 height; it no longer reserves expanded-card space or copies full-board origins
@@ -641,8 +641,8 @@ changes remain shared. The legend identifies temporary placement.
 Layout version 3 migrates the viewport once so old large offsets do not leave
 the new compact layout offscreen. Version 2 preferences remain readable. Fit
 board retains the current overview density to avoid fitting to short headers
-and immediately expanding them again. These changes follow the 1.8.2.18 release
-and require a new build/update.
+and immediately expanding them again. This ships in
+[1.8.2.19](release-1-8-2-19.md); existing installations need an update.
 
 Validation: all 261 Vitest files / 2,113 tests and the TypeScript/Vite production
 build passed. Node interaction checks exercise visibility toggles, temporary

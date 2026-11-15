@@ -87,11 +87,13 @@ Markdown 목록·빈 줄을 사용한다. 경로·실행 ID·해시·로그 위�
 HTTP에서도 검증했다. 기존 설치본은 업데이트하고 CLI를 다시 시작해야 새
 도구를 검색한다. [배포·검증 기록](release-1-8-2-18.md)을 따른다.
 
-2026-11-15 추가 소스에서는 해당 스냅샷의 리더 세션에 선택적 `delegatedWait`
+1.8.2.19에서는 해당 스냅샷의 리더 세션에 선택적 `delegatedWait`
 (`count`, `childIds`, `observedAt`)를 제공한다. 현재 작업 시도의 시작 증거 또는
 자식에게 전달한 최신 지시의 착수·원문 읽음과 진행 상태로 표시하며, 단순한
 부모 관계로 대기를 추정하지 않는다. 원문 읽음·결과 확인·작업 완료 상태는
-변경하지 않는다. [리더 대기 표시와 검증 범위](workspace-interactions.md#leader-waiting-for-child-work-2026-11-15-source)를 따른다.
+변경하지 않는다. 고정 EXE 패키지의 인증된 작업 대기·보드 HTTP 조회에서도
+확인했다. [리더 대기 표시와 검증 범위](workspace-interactions.md#leader-waiting-for-child-work-18219),
+[배포 기록](release-1-8-2-19.md)을 따른다.
 
 | 도구 | 기능 |
 | --- | --- |
