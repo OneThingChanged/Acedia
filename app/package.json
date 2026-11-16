@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.2",
-  "multiAgentReleaseVersion": "1.8.2.22",
+  "multiAgentReleaseVersion": "1.8.2.23",
   "multiAgentVariant": "standard",
   "type": "module",
   "engines": {
@@ -28,6 +28,7 @@
     "account-pool:tools-smoke": "node scripts/account-pool-tools-smoke.mjs",
     "account-pool:image-context-smoke": "node scripts/account-pool-tools-smoke.mjs --image-context",
     "electron:workspace-mcp-smoke": "node scripts/electron-workspace-mcp-smoke.mjs",
+    "electron:resumed-delivery-smoke": "node scripts/electron-workspace-mcp-smoke.mjs --resumed-delivery",
     "electron:session-routing-smoke": "node scripts/electron-workspace-mcp-smoke.mjs --routing",
     "electron:connection-smoke": "node scripts/electron-workspace-mcp-smoke.mjs --connection",
     "codex:skills-smoke": "node scripts/acedia-skills-cli-smoke.mjs",
@@ -179,9 +180,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.2.22-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.2.23-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.2.22",
+      "uninstallDisplayName": "Acedia 1.8.2.23",
       "include": "electron/installer.nsh"
     },
     "publish": [

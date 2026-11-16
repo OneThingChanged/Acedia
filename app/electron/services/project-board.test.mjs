@@ -97,10 +97,11 @@ describe('Independent project board', () => {
     const write = preferences => f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences }).preferences);
     const first = f.board.snapshot(), item = first.items[0];
     f.board.acknowledge(item.sessionId, item.fingerprint, item.id);
-    write({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true });
+    write({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true, activeOnly: true });
     write({ zoom: .7, x: 100, y: -20 });
     const reopened = new ProjectBoard(f.options);
-    expect(reopened.snapshot().preferences).toEqual({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true, zoom: .7, x: 100, y: -20 });
+    expect(reopened.snapshot().preferences).toEqual({ projectPositions: positions, sessionOrder: ['b', 'a'], showSleeping: false, showStopped: true, activeOnly: true, zoom: .7, x: 100, y: -20 });
+    expect(() => write({ activeOnly: 'yes' })).toThrow();
     expect(reopened.snapshot().items).toHaveLength(0); expect(f.source).toEqual(before);
     reopened.preferences({ projectPositions: {}, sessionOrder: [] });
     expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ projectPositions: {}, sessionOrder: [], zoom: .7 });

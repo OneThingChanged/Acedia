@@ -134,6 +134,7 @@ export type TerminalReplay = Required<
 export type SpawnTerminalResult = { reattached: boolean; cancelled?: boolean };
 
 export type SpawnTerminalArgs = {
+  resumeContext?: import('../types').SessionResumeContext;
   sessionInstructions?: string;
   sessionReferenceFolders?: { path: string; access: "read" | "write" }[];
   poolResumeOwnerId?: string;

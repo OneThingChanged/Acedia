@@ -6,6 +6,15 @@ const require = createRequire(import.meta.url);
 const contract = require("./ipc-contract.cjs");
 
 describe("Electron IPC contract", () => {
+  it('accepts bounded resume metadata and rejects malformed identity or folders', () => {
+    const base = { id: 'fixture', cols: 120, rows: 30 };
+    expect(contract.assertInvokeRequest('spawn_pty', { ...base, resumeContext: { sessionId: 'existing-thread', folder: 'C:/fixture' } })).toBeTruthy();
+    for (const resumeContext of [null, [], {}, { sessionId: '../other', folder: 'C:/fixture' },
+      { sessionId: 'existing', folder: '' }, { sessionId: 'existing', folder: 'C:/fixture\0' },
+      { sessionId: 'existing', folder: 'C:/fixture', extra: true }]) {
+      expect(() => contract.assertInvokeRequest('spawn_pty', { ...base, resumeContext })).toThrow();
+    }
+  });
   it('accepts bounded local board placement and rejects malformed coordinates or ordering', () => {
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: { p: { x: -30, y: 750 } }, sessionOrder: ['b', 'a'] } })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [] } })).toBeTruthy();

@@ -314,9 +314,9 @@ function assertInvokeRequest(command, rawArgs) {
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-          || Object.keys(p).some(key => !['viewMode', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped'].includes(key))
+          || Object.keys(p).some(key => !['viewMode', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped', 'activeOnly'].includes(key))
           || p.viewMode !== undefined && !['sessions', 'transfers', 'board'].includes(p.viewMode)
-          || ['showSleeping', 'showStopped'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
+          || ['showSleeping', 'showStopped', 'activeOnly'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
           || p.sessionOrder !== undefined && (!Array.isArray(p.sessionOrder) || p.sessionOrder.length > 2000 || p.sessionOrder.some(id => typeof id !== 'string' || !id || id.length > 256 || /[\x00-\x1f]/.test(id)))
           || p.projectPositions !== undefined && (!p.projectPositions || typeof p.projectPositions !== 'object' || Array.isArray(p.projectPositions)
             || Object.keys(p.projectPositions).length > 2000 || Object.entries(p.projectPositions).some(([id, value]) => !id || id.length > 256 || /[\x00-\x1f]/.test(id)
@@ -458,6 +458,14 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "spawn_pty":
       assertId(args);
+      if (args.resumeContext !== undefined) {
+        const resume = args.resumeContext;
+        if (!resume || typeof resume !== 'object' || Array.isArray(resume)
+          || Object.keys(resume).some(key => !['sessionId', 'folder'].includes(key))
+          || typeof resume.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(resume.sessionId)) throw new TypeError('Invalid session resume context');
+        assertPathString(resume.folder, 'resume folder');
+        if (/[\x00-\x1f]/.test(resume.folder)) throw new TypeError('Invalid resume folder');
+      }
       if (args.initialPrompt != null && (typeof args.initialPrompt !== "string" || !args.initialPrompt.trim() || args.initialPrompt.length > 4096 || args.initialPrompt.includes("\0"))) throw new TypeError("Invalid initial handoff prompt");
       if (args.sessionInstructions != null && (typeof args.sessionInstructions !== "string" || !args.sessionInstructions.trim() || args.sessionInstructions.length > 20000 || args.sessionInstructions.includes("\0"))) throw new TypeError("Invalid session instructions");
       if (args.codexAccountId != null && (typeof args.codexAccountId !== "string" || (args.codexAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.codexAccountId)))) throw new TypeError("Invalid Codex account id");

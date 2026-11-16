@@ -66,6 +66,27 @@ afterEach(() => {
 });
 
 describe("terminal launch lifecycle", () => {
+  it.each(['codex', 'claude'])('retains only the exact %s resume identity and copies it before registering a PTY', async provider => {
+    const f = fixture(), registered = vi.fn();
+    const context = { sessionId: 'existing-thread', folder: os.tmpdir() };
+    const launch = createTerminalLauncher({ ...f.dependencies, onRegistered: registered });
+    await launch({ ...f.args, aiToolId: provider, initCommand: provider === 'codex' ? 'codex resume existing-thread' : 'claude --resume existing-thread', resumeContext: context });
+    const entry = f.sessions.get(f.args.id);
+    expect(entry.resumeContext).toEqual(context); expect(entry.resumeContext).not.toBe(context);
+    expect(registered).toHaveBeenCalledWith(entry);
+    context.sessionId = 'changed-after-spawn'; expect(entry.resumeContext.sessionId).toBe('existing-thread');
+  });
+
+  it('rejects stale, conflicting or remote resume metadata before creating a process', async () => {
+    const f = fixture(), resumeContext = { sessionId: 'original', folder: os.tmpdir() };
+    for (const patch of [
+      { initCommand: 'codex' }, { initCommand: 'codex resume another' }, { initCommand: 'echo resume original' },
+      { initCommand: 'codex resume original resume another' },
+      { initCommand: 'codex resume original', launchOptions: { args: ['--resume', 'another'] } },
+      { initCommand: 'codex resume original', ssh: { host: 'example.invalid' } },
+    ]) await expect(f.launch({ ...f.args, resumeContext, ...patch })).rejects.toThrow(/resume|Resume/);
+    expect(f.dependencies.spawnProcess).not.toHaveBeenCalled(); expect(f.sessions.has(f.args.id)).toBe(false);
+  });
   it('enables Qwen atomic repaints only on local terminals and preserves an explicit opt-out', async () => {
     const f = fixture();
     await f.launch({ ...f.args, aiToolId: 'qwen' });

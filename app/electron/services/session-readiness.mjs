@@ -51,7 +51,11 @@ export class SessionReadiness {
       return result('ready', 'first-message-ready', { ready: true, firstMessageReady: true });
     }
     if (current?.lifecycle === 'working') return result('working', 'turn-working');
-    if (current && target.conversationId && current.sessionId === target.conversationId && this.ready(target)) {
+    // Resumption is not a pristine first prompt: clearing a draft must not
+    // disable this path. Transcript questions/work and the live composer gate
+    // remain authoritative even if no new SessionStart hook was emitted.
+    const resumedSession = !!current?.sessionId && entry.resumeContext?.sessionId === current.sessionId && current.sessionId === target.conversationId;
+    if (current && target.conversationId && current.sessionId === target.conversationId && this.ready(target, { resumedSession })) {
       return result('ready', 'ready', { ready: true });
     }
     if (this.canWait(sessionId)) return result('starting', 'first-message-initializing');

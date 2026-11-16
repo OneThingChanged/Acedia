@@ -18,13 +18,16 @@ export function startupPrompt(entry) {
 // The operator opt-in or API creation grants only the current project directory.
 // No window navigation and no persisted Codex config edits are needed.
 export class StartupAutomation {
-  constructor({ entry, allowedRoot, write, blocked = () => false, publish = () => {} }) {
-    Object.assign(this, { entry, allowedRoot, write, blocked, publish });
+  constructor({ entry, allowedRoot, write, verifyHooks = () => null, blocked = () => false, publish = () => {} }) {
+    Object.assign(this, { entry, allowedRoot, write, verifyHooks, blocked, publish });
     this.attempted = new WeakSet();
     this.moved = new WeakMap();
+    this.hookAttempted = new WeakSet();
+    this.hookMoved = new WeakMap();
   }
   check(id) {
     const entry = this.entry(id), prompt = startupPrompt(entry);
+    if (prompt?.startupKind === 'hook-review') return this.checkHooks(id, entry, prompt);
     if (!entry || this.attempted.has(entry) || this.blocked(id) || prompt?.startupKind !== 'folder-trust' || prompt.selectedIndex === undefined) return false;
     const inputAt = entry.lastInputAt;
     let root, folder, trustRoot;
@@ -55,6 +58,34 @@ export class StartupAutomation {
       this.write(id, '\r');
       entry.startupTrustConfirmation = { folder, trustRoot, at: Date.now() };
       this.publish({ id, ...entry.startupTrustConfirmation });
+      return true;
+    } catch { return false; }
+  }
+
+  checkHooks(id, entry, prompt) {
+    if (this.hookAttempted.has(entry) || this.blocked(id) || entry.aiToolId !== 'codex'
+      || ![0, 1].includes(prompt.selectedIndex) || !Number.isSafeInteger(prompt.changedHookCount) || prompt.changedHookCount < 1) return false;
+    try {
+      const inputAt = entry.lastInputAt, proof = this.verifyHooks(entry);
+      if (!proof || prompt.changedHookCount > proof.count || canonical(proof.cwd) !== canonical(entry.cwd)) return false;
+      const fingerprint = proof.fingerprint, moved = this.hookMoved.get(entry);
+      if (moved && (inputAt !== moved.inputAt || fingerprint !== moved.fingerprint || prompt.changedHookCount !== moved.count)) return false;
+      const current = this.entry(id), live = startupPrompt(current), verified = this.verifyHooks(current);
+      if (current !== entry || entry.lastInputAt !== inputAt || this.blocked(id)
+        || JSON.stringify(live) !== JSON.stringify(prompt) || verified?.fingerprint !== fingerprint) return false;
+      if (prompt.selectedIndex === 0) {
+        if (moved) return false;
+        const movement = { fingerprint, count: prompt.changedHookCount, at: Date.now(), inputAt };
+        this.hookMoved.set(entry, movement);
+        try { this.write(id, '\x1b[B'); movement.inputAt = entry.lastInputAt; }
+        catch { this.hookAttempted.add(entry); }
+        return false;
+      }
+      if (moved && Date.now() - moved.at < 200) return false;
+      this.hookAttempted.add(entry);
+      this.write(id, '\r');
+      entry.startupHookConfirmation = { folder: proof.cwd, fingerprint, hookCount: prompt.changedHookCount, at: Date.now() };
+      this.publish({ id, kind: 'hook-review', ...entry.startupHookConfirmation });
       return true;
     } catch { return false; }
   }

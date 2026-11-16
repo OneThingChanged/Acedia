@@ -239,12 +239,13 @@ export class SessionDeliveries {
       // conversations, drafts, questions and managed worker model checks stay
       // authoritative even when no conversation has been published yet.
       const firstTurn = !!fresh && fresh.sessionId === target.conversationId && !current?.turn;
+      const resumedSession = !!current?.sessionId && entry.resumeContext?.sessionId === current.sessionId && current.sessionId === target.conversationId;
       const blocked = !current ? 'transcript-unavailable'
         : current.sessionId !== target.conversationId ? 'conversation-changed'
         : unbound && !firstTurn ? 'first-message-not-ready'
         : current.question ? 'question-pending'
         : current.lifecycle === 'working' && !firstTurn ? 'turn-working'
-        : !this.ready(target, { freshSession: firstTurn }) ? 'composer-or-runtime-not-ready'
+        : !this.ready(target, { freshSession: firstTurn, resumedSession }) ? 'composer-or-runtime-not-ready'
         : this.context(body.sessionId)?.entry !== entry ? 'session-changed'
         : entry.lastInputAt !== inputAt ? 'input-changed' : null;
       if (blocked) throw fail(`Receiving session is not ready (${blocked}); nothing sent`);

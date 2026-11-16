@@ -26,7 +26,7 @@ export type BoardSnapshot = {
   devices: { sessionId: string; kind: string; tool: string; state: string; source: string; startedAt: number }[];
   items?: BoardItem[]; references?: BoardReference[]; sampledAt?: number;
   transfers?: BoardTransfer[];
-  preferences: { viewMode?: BoardViewMode; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean };
+  preferences: { viewMode?: BoardViewMode; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean };
   storageError: string | null;
 };
 export function boardItems(data: BoardSnapshot): BoardItem[] {
@@ -70,11 +70,22 @@ export function boardSessionVisibilityKind(s: BoardSession): 'sleeping' | 'stopp
   // reported work state was Idle or Interrupted.
   return s.runtime === 'sleeping' ? 'sleeping' : s.runtime === 'stopped' || ['idle', 'paused', 'interrupted'].includes(s.state) ? 'stopped' : null;
 }
-export function boardVisibleSessionIds(sessions: BoardSession[], showSleeping: boolean, showStopped: boolean, revealId?: string | null): Set<string> {
+export function boardVisibleSessionIds(sessions: BoardSession[], showSleeping: boolean, showStopped: boolean, revealId?: string | null, activeOnly = false): Set<string> {
   const byId = new Map(sessions.map(s => [s.id, s])), visible = new Set<string>();
+  const hasActiveParent = (s: BoardSession) => {
+    const seen = new Set([s.id]); let parent = byId.get(s.parentId || '');
+    while (parent && !seen.has(parent.id)) {
+      if (parent.runtime === 'running') return true;
+      seen.add(parent.id); parent = byId.get(parent.parentId || '');
+    }
+    return false;
+  };
   for (const s of sessions) {
     const kind = boardSessionVisibilityKind(s);
-    if (s.id !== revealId && (kind === 'sleeping' && !showSleeping || kind === 'stopped' && !showStopped)) continue;
+    if (s.id !== revealId && (activeOnly
+      ? s.runtime !== 'running' && !(s.runtime === 'sleeping' && showSleeping && hasActiveParent(s))
+      : kind === 'sleeping' && !showSleeping || kind === 'stopped' && !showStopped)) continue;
+    if (s.id !== revealId && activeOnly && s.runtime === 'running' && kind === 'stopped' && !showStopped) continue;
     let current: BoardSession | undefined = s;
     while (current && !visible.has(current.id)) { visible.add(current.id); current = byId.get(current.parentId || ''); }
   }
@@ -85,10 +96,10 @@ type BoardLayoutResult = {
   nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[];
   edges: { from: string; to: string }[]; projectEdges: { from: string; to: string }[]; width: number; height: number;
 };
-export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, sessionOrder = [], showSleeping = true, showStopped = true, revealId }:
-  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; revealId?: string | null }): BoardLayoutResult {
-  if (!showSleeping || !showStopped) {
-    const visible = boardVisibleSessionIds(data.sessions, showSleeping, showStopped, revealId);
+export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, sessionOrder = [], showSleeping = true, showStopped = true, activeOnly = false, revealId }:
+  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean; revealId?: string | null }): BoardLayoutResult {
+  if (activeOnly || !showSleeping || !showStopped) {
+    const visible = boardVisibleSessionIds(data.sessions, showSleeping, showStopped, revealId, activeOnly);
     if (visible.size < data.sessions.length) {
       // Re-measure only the retained sessions and their project ancestors.
       // The renderer keeps saved full-board placement separate from this view.

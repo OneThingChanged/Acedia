@@ -534,7 +534,7 @@ const activeQuestions = new ActiveQuestions({
   resolveTranscript: ({ id, tool, root, sessionId }) => {
     const entry = ptys.get(id);
     if (!entry || entry.ssh || entry.aiToolId !== tool || !['codex', 'claude'].includes(tool)
-      || (agentSessionIds.get(id) || accountBindings.get(id)?.sessionId) !== sessionId
+      || (agentSessionIds.get(id) || accountBindings.get(id)?.sessionId || entry.resumeContext?.sessionId) !== sessionId
       || (transcriptMissUntil.get(id) || 0) > Date.now()) return null;
     // A resumed CLI can be ready before its first hook supplies a transcript
     // path. Resolve only the exact conversation in the selected account, just
@@ -569,13 +569,13 @@ function sessionNotificationPreference(id, change) {
 async function currentQuestion(id) {
   const entry = ptys.get(id);
   if (!entry || entry.ssh) return null;
-  const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId;
+  const sessionId = agentSessionIds.get(id) || accountBindings.get(id)?.sessionId || entry.resumeContext?.sessionId;
   const approval = commandApprovals.read(id, sessionId);
   if (approval) return approval;
   const root = entry.aiToolId === 'qwen' ? sessionService.transcriptRoots('qwen')[0]
     : accountTranscriptRoot(entry.aiToolId, selectedAccountId(entry));
   const result = await activeQuestions.read({ id, tool: entry.aiToolId, root, sessionId,
-    transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt });
+    transcriptPath: agentTranscripts.get(id), startedAt: entry.startedAt, resumeSessionId: entry.resumeContext?.sessionId });
   if (ptys.get(id) !== entry) return null;
   const resolvedApproval = commandApprovals.read(id, result?.sessionId);
   if (resolvedApproval) return resolvedApproval;
@@ -1093,8 +1093,8 @@ function deliveryContext(id) {
 const sessionDeliveries = new SessionDeliveries({
   freshRead: freshDeliverySession,
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
-  ready: (target, { freshSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
-    && (freshSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
+  ready: (target, { freshSession = false, resumedSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
+    && (freshSession || resumedSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
   submit: async (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
     const previous = entry.firstMessageSubmitted;
@@ -1493,9 +1493,10 @@ const taskOrchestration = new TaskOrchestration({
 workspaceManagement.tasks = taskOrchestration;
 const startupAutomation = new StartupAutomation({
   entry: id => ptys.get(id), allowedRoot: id => taskOrchestration.startupTrustRoot(id),
+  verifyHooks: entry => hookService.verifyStartupHooks(entry),
   blocked: id => forceClosing || questionResponder.isBusy(id) || capacityRetry.isActive(id),
   write: (id, key) => terminalSessions.write(id, key),
-  publish: payload => { console.info('[electron] project folder trust confirmed', payload.id, payload.trustRoot); sendEventToAll('chat:changed', { agentId: payload.id }); },
+  publish: payload => { console.info('[electron] startup trust confirmed', payload.id, payload.kind || 'folder-trust'); sendEventToAll('chat:changed', { agentId: payload.id }); },
 });
 async function readTaskSession(id) {
   const entry = ptys.get(id), startup = startupPrompt(entry);
@@ -3801,7 +3802,12 @@ const spawnPty = createTerminalLauncher({
   terminalSessions,
   resolveModelSettings: args => sessionModelMemory.resolve(args),
   onModelSettings: entry => sessionModelMemory.remember(entry),
-  onRegistered: entry => sessionModelMemory.started(entry),
+  onRegistered: entry => {
+    // A resumed CLI need not append its transcript or emit SessionStart until
+    // its first new prompt. Bind only the identity validated against argv.
+    if (entry.resumeContext) agentSessionIds.set(entry.id, entry.resumeContext.sessionId);
+    sessionModelMemory.started(entry);
+  },
   hookService,
   ensureBrowserIntegrationReady,
   waitForHooks: () => hookReady?.catch(() => {}),

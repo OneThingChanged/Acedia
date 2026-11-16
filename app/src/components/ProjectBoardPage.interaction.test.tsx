@@ -133,8 +133,26 @@ it('defaults both visibility switches to hidden, retaining active children, thei
   expect(stoppedToggle.props['aria-checked']).toBe(false); stoppedToggle.props.onClick();
   await Promise.resolve(); tree = render(data); expect(ids(tree)).toEqual(['a', 'b', 'sleep', 'c', 'idle']);
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);
-  expect(hooks.invoke.mock.calls[1]).toEqual(['project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [], showSleeping: true, showStopped: true } }]);
+  expect(hooks.invoke.mock.calls[1]).toEqual(['project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [], showSleeping: true, showStopped: true, activeOnly: false } }]);
   expect(hooks.invoke.mock.calls.every(([command]) => command === 'project_board_preferences')).toBe(true);
+});
+
+it('persists Active only and applies Sleeping to active families in the board and session table', async () => {
+  const data = fixture(); data.preferences.showSleeping = data.preferences.showStopped = true;
+  data.sessions[0].runtime = 'running'; data.sessions[1].parentId = 'a'; data.sessions[1].runtime = 'sleeping';
+  data.sessions[2].runtime = 'stopped';
+  data.sessions.push({ ...data.sessions[1], id: 'hidden', parentId: 'c' });
+  hooks.invoke.mockResolvedValue({});
+  let tree = render(data);
+  elements(tree).find(e => e.props['aria-label'] === '활성 세션만 표시')!.props.onClick();
+  await Promise.resolve(); tree = render(data);
+  expect(elements(tree).filter(e => e.props['data-session-id']).map(e => e.props['data-session-id'])).toEqual(['a', 'b']);
+  expect(hooks.invoke).toHaveBeenLastCalledWith('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [], activeOnly: true, showSleeping: true, showStopped: true } });
+  elements(tree).find(e => content(e) === '세션' && e.type === 'button')!.props.onClick();
+  tree = render(data);
+  expect(elements(tree).find(e => e.type === SessionTableView)!.props.visible).toEqual(new Set(['a', 'b']));
+  data.sessions[0].runtime = 'stopped';
+  tree = render(data); expect(elements(tree).find(e => e.type === SessionTableView)!.props.visible.size).toBe(0);
 });
 
 it('locates a hidden stopped result temporarily, then hides it again without changing the saved switches', () => {
@@ -164,7 +182,7 @@ it('drags a project in world coordinates, saves on release and suppresses the fo
   expect(project(tree, 'p2').props.style).toEqual(other);
   expect(hooks.invoke).not.toHaveBeenCalled();
   header(tree).props.onPointerUp(pointer(80, 460));
-  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: { p: { x: start.left - 150, y: start.top + 350 } }, sessionOrder: [], showSleeping: true, showStopped: true } });
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: { p: { x: start.left - 150, y: start.top + 350 } }, sessionOrder: [], showSleeping: true, showStopped: true, activeOnly: false } });
   tree = render(data); header(tree).props.onClick(); tree = render(data);
   expect(header(tree).props['aria-expanded']).toBe(true);
   expect(elements(tree).find(e => e.props.className === 'wb-ref-line')!.props.d).not.toBe(edge);
@@ -253,7 +271,7 @@ it('drags sibling sessions by the handle, saving display order without changing 
   node.props.onDrop(event); await Promise.resolve(); tree = render(data);
   const positions = elements(tree).filter(e => e.props['data-session-id']).map(e => [e.props['data-session-id'], e.props.style.top]);
   expect(positions.find(([id]) => id === 'd')![1]).toBeLessThan(positions.find(([id]) => id === 'b')![1]);
-  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: ['a', 'd', 'b', 'c'], showSleeping: false, showStopped: false } });
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: ['a', 'd', 'b', 'c'], showSleeping: false, showStopped: false, activeOnly: false } });
   // Cross-project drops cannot reparent or move the session registration.
   elements(tree).find(e => e.props['aria-label'] === 'Session d · 세션 순서 이동')!.props.onDragStart({ stopPropagation: vi.fn(), dataTransfer: transfer });
   elements(tree).find(e => e.props['data-session-id'] === 'c')!.props.onDrop(event);

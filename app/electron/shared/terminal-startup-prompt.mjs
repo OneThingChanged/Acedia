@@ -54,5 +54,6 @@ export function parseTerminalStartupPrompt(screen, provider) {
   const repository = /Trusting\s+will\s+apply\s+to\s+the\s+repository\s+root:\s*\n\s*([^\n]+)/.exec(text)?.[1]?.trim();
   return { startupKind, kind: 'permission', answerStyle: selectedIndex === undefined ? 'terminal' : 'arrow', text,
     options: selectedIndex === undefined ? [] : choices.map(c => ({ label: c.label, send: String(c.number) })), selectedIndex,
-    ...(startupKind === 'folder-trust' ? { folder: lines[1]?.trim(), trustRoot: repository || (/repository root/i.test(text) ? null : lines[1]?.trim()) } : {}) };
+    ...(startupKind === 'folder-trust' ? { folder: lines[1]?.trim(), trustRoot: repository || (/repository root/i.test(text) ? null : lines[1]?.trim()) }
+      : { confirmIndex: 1, changedHookCount: Number(/(?:^|\n)\s*(\d+) hooks? (?:are|is) new or changed\./.exec(text)?.[1]) || null }) };
 }

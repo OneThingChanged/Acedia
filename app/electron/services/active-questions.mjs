@@ -43,7 +43,7 @@ export class ActiveQuestions {
     const live = new Set(ids);
     for (const id of this.cache.keys()) if (!live.has(id)) this.cache.delete(id);
   }
-  async read({ id, tool, root, transcriptPath, sessionId, startedAt = 0 }) {
+  async read({ id, tool, root, transcriptPath, sessionId, startedAt = 0, resumeSessionId = null }) {
     if (!['codex', 'claude', 'qwen'].includes(tool) || !sessionId || !root) return null;
     const scoped = candidate => typeof candidate === 'string' && candidate.toLowerCase().includes(sessionId.toLowerCase()) && isTranscriptInsideRoot(root, candidate);
     if (!scoped(transcriptPath)) {
@@ -51,19 +51,21 @@ export class ActiveQuestions {
       catch { return null; }
     }
     if (!scoped(transcriptPath)) return null;
-    if (this.pending.has(id)) { await this.pending.get(id); return this.read({ id, tool, root, transcriptPath, sessionId, startedAt }); }
-    const operation = this.#read({ id, tool, transcriptPath, sessionId, startedAt });
+    if (this.pending.has(id)) { await this.pending.get(id); return this.read({ id, tool, root, transcriptPath, sessionId, startedAt, resumeSessionId }); }
+    const operation = this.#read({ id, tool, transcriptPath, sessionId, startedAt, resumed: ['codex', 'claude'].includes(tool) && resumeSessionId === sessionId });
     this.pending.set(id, operation);
     try { return await operation; } finally { this.pending.delete(id); }
   }
-  async #read({ id, tool, transcriptPath, sessionId, startedAt }) {
+  async #read({ id, tool, transcriptPath, sessionId, startedAt, resumed }) {
     let handle;
     try {
       handle = await fs.open(transcriptPath, 'r');
       const stat = await handle.stat();
-      if (!stat.isFile() || stat.mtimeMs < startedAt) return null;
+      // Only a launch whose argv pins this exact conversation may inspect its
+      // older history. Keep new launches and other account roots fail-closed.
+      if (!stat.isFile() || stat.mtimeMs < startedAt && !resumed) return null;
       const previous = this.cache.get(id);
-      const same = previous?.path === transcriptPath && previous.startedAt === startedAt;
+      const same = previous?.path === transcriptPath && previous.startedAt === startedAt && previous.resumed === resumed;
       if (same && previous.size === stat.size && previous.mtime === stat.mtimeMs) return previous.result;
       const length = Math.min(stat.size, QUESTION_TAIL_BYTES);
       const bytes = Buffer.alloc(length);
@@ -78,8 +80,10 @@ export class ActiveQuestions {
       const lifecycle = tool === 'codex' && !hasTurnMarker ? same ? previous.result.lifecycle : 'working' : deriveTurnLifecycle(text, tool);
       const delivery = ['codex', 'claude'].includes(tool) ? (tool === 'claude' ? claudeDeliveryEvidence : deliveryEvidence)(text, same && stat.size >= previous.size ? previous.delivery : undefined) : undefined;
       const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : delivery?.turn || null;
-      const result = { question, lifecycle, sessionId, turn, ...(delivery ? { deliveries: delivery.receipts } : {}) };
-      this.cache.set(id, { path: transcriptPath, startedAt, size: stat.size, mtime: stat.mtimeMs, questions, delivery, result });
+      const result = { question, lifecycle, sessionId, turn,
+        ...(resumed && stat.mtimeMs < startedAt ? { resumedHistory: true } : {}),
+        ...(delivery ? { deliveries: delivery.receipts } : {}) };
+      this.cache.set(id, { path: transcriptPath, startedAt, resumed, size: stat.size, mtime: stat.mtimeMs, questions, delivery, result });
       return result;
     } catch { return null; } finally { await handle?.close(); }
   }

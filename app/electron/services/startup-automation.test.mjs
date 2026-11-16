@@ -110,3 +110,50 @@ it('does not replay an uncertain key or race a changed native selection, permiss
   h.automation.allowedRoot = () => ++permissions === 1 ? h.root : null;
   expect(h.automation.check('child')).toBe(false); expect(h.write).not.toHaveBeenCalled();
 });
+
+function hooksFixture(index = 0) {
+  const f = fixture(); let selected = index;
+  const screen = () => `Hooks need review\n6 hooks are new or changed.\nHooks can run outside the sandbox after you trust them.\n${selected === 0 ? '›' : ' '} 1. Review hooks\n${selected === 1 ? '›' : ' '} 2. Trust all and continue\n${selected === 2 ? '›' : ' '} 3. Continue without trusting (hooks won't run)\nenter confirm · esc skip`;
+  f.entry.filter.viewportText = screen;
+  const proof = { count: 6, fingerprint: 'verified', cwd: f.child };
+  f.automation.verifyHooks = () => proof;
+  return { ...f, screen, select: value => { selected = value; }, proof };
+}
+it('moves Review to Trust all, observes the repainted selection, and confirms once', () => {
+  vi.useFakeTimers();
+  try {
+    const f = hooksFixture();
+    expect(f.automation.check('child')).toBe(false); expect(f.write).toHaveBeenCalledExactlyOnceWith('child', '\x1b[B');
+    vi.advanceTimersByTime(300); expect(f.automation.check('child')).toBe(false); expect(f.write).toHaveBeenCalledTimes(1);
+    f.select(1); expect(f.automation.check('child')).toBe(true);
+    expect(f.write.mock.calls).toEqual([['child', '\x1b[B'], ['child', '\r']]);
+    expect(f.entry.startupHookConfirmation).toMatchObject({ hookCount: 6, fingerprint: 'verified' });
+    expect(f.automation.check('child')).toBe(false); expect(f.write).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
+});
+it('handles folder trust and hook review independently on the same PTY', () => {
+  const f = hooksFixture(1), hookScreen = f.screen;
+  f.entry.filter.viewportText = () => fixtureScreen(f);
+  function fixtureScreen(f) { return `Folder access\n${f.child}\n\nTrust this folder?\n› 1. Trust and continue\n  2. Quit\nenter continue · esc quit`; }
+  f.allow(f.child); expect(f.automation.check('child')).toBe(true);
+  f.entry.filter.viewportText = hookScreen; expect(f.automation.check('child')).toBe(true);
+  expect(f.write.mock.calls).toEqual([['child', '\r'], ['child', '\r']]);
+});
+it('leaves unknown hooks, count mismatches, partial dialogs, SSH, and selected Skip untouched', () => {
+  for (const change of [f => { f.automation.verifyHooks = () => null; }, f => { f.proof.count = 5; },
+    f => { f.entry.filter.viewportText = () => f.screen().replace('6 hooks are new or changed.', ''); },
+    f => { f.entry.ssh = {}; }, f => f.select(2)]) {
+    const f = hooksFixture(1); change(f); expect(f.automation.check('child')).toBe(false); expect(f.write).not.toHaveBeenCalled();
+  }
+});
+it('does not confirm a changed proof or user input after moving, nor replay an uncertain write', () => {
+  vi.useFakeTimers();
+  try {
+    for (const change of [f => { f.proof.fingerprint = 'changed'; }, f => { f.entry.lastInputAt++; }]) {
+      const f = hooksFixture(); f.automation.check('child'); f.select(1); vi.advanceTimersByTime(300); change(f);
+      expect(f.automation.check('child')).toBe(false); expect(f.write).toHaveBeenCalledTimes(1);
+    }
+    const f = hooksFixture(1); f.write.mockImplementation(() => { throw Error('uncertain'); });
+    f.automation.check('child'); f.automation.check('child'); expect(f.write).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
+});

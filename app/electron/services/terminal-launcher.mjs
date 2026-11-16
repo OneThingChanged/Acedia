@@ -18,6 +18,20 @@ const HOOK_TOOLS = new Set(["codex", "claude", "qwen"]);
 const CLI_TOOLS = new Set([...HOOK_TOOLS, "cline", "agy"]);
 
 const asString = (value) => typeof value === "string" ? value : "";
+export function launchResumeContext(args) {
+  const context = args.resumeContext;
+  if (context === undefined) return undefined;
+  if (!context || typeof context !== 'object' || Array.isArray(context) || Object.keys(context).some(key => !['sessionId', 'folder'].includes(key))
+    || !['codex', 'claude'].includes(args.aiToolId) || args.ssh
+    || typeof context.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(context.sessionId)
+    || typeof context.folder !== 'string' || /[\x00-\x1f]/.test(context.folder) || !path.isAbsolute(context.folder)) throw new Error('Invalid session resume context');
+  const tokens = splitGeneratedCommand(asString(args.initCommand));
+  const flag = args.aiToolId === 'codex' ? 'resume' : '--resume', index = tokens.indexOf(flag);
+  if (![args.aiToolId, args.aiToolId + '.cmd', args.aiToolId + '.exe'].includes(path.win32.basename(tokens[0] || '').toLowerCase())
+    || index < 1 || tokens[index + 1] !== context.sessionId || tokens.lastIndexOf(flag) !== index
+    || args.launchOptions?.args?.some(value => value === 'resume' || /^--resume(?:=|$)/.test(value))) throw new Error('Resume identity does not match the launched command');
+  return { sessionId: context.sessionId, folder: context.folder };
+}
 export function referenceFolderArgs(value, tool, ssh = false) {
   if (value === undefined) return [];
   if (ssh || !["codex", "claude"].includes(tool) || !Array.isArray(value) || value.length > 20) throw new Error("Unsupported reference folders");
@@ -172,9 +186,13 @@ export function createTerminalLauncher({
         extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : [...modelArgs, ...referenceArgs]), ...instructionArgs, ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
+      const startupHookProof = !ssh && aiToolId === 'codex' ? hookService.captureStartupHooks?.({
+        cwd, home: launchEnvironment.CODEX_HOME || path.join(os.homedir(), '.codex'),
+        args: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? [])],
+      }) : null;
       return {
         ssh, executable, shellArgs, reversePort, cwd, accountId,
-        ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted: Boolean(poolLaunch), release,
+        ptyCols, ptyRows, launchEnvironment, launchCommand, startupHookProof, poolRouted: Boolean(poolLaunch), release,
         nativeModel: () => nativeModel,
       };
     } catch (error) {
@@ -192,7 +210,7 @@ export function createTerminalLauncher({
 
     const aiToolId = asString(args.aiToolId).trim();
     const remembered = resolveModelSettings(args);
-    args = { ...args, modelSettings: remembered.settings, modelMemoryLaunchId: randomUUID() };
+    args = { ...args, resumeContext: launchResumeContext(args), modelSettings: remembered.settings, modelMemoryLaunchId: randomUUID() };
     if (HOOK_TOOLS.has(aiToolId)) {
       // A CLI reads MCP configuration only during its own startup. Do not spawn
       // it until the hidden browser profile and authenticated loopback broker
@@ -206,7 +224,7 @@ export function createTerminalLauncher({
     if (cancelled()) return { reattached: false, cancelled: true };
     const {
       ssh, executable, shellArgs, reversePort, cwd, accountId,
-      ptyCols, ptyRows, launchEnvironment, launchCommand, poolRouted, release, nativeModel,
+      ptyCols, ptyRows, launchEnvironment, launchCommand, startupHookProof, poolRouted, release, nativeModel,
     } = await prepareLaunch(args, id, aiToolId);
     if (cancelled()) {
       release();
@@ -255,6 +273,7 @@ export function createTerminalLauncher({
       modelMemoryToken: remembered.token,
       modelMemoryLaunchId: args.modelMemoryLaunchId,
       resumeContext: args.resumeContext,
+      startupHookProof,
       initTimer: null,
       aiToolId,
       cwd,

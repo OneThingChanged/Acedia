@@ -15,13 +15,14 @@ const messagesOnly = process.argv.includes('--messages') || process.env.ACEDIA_W
 const dangerousOnly = process.argv.includes('--dangerous-defaults') || process.env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE === '1';
 const routingOnly = process.argv.includes('--routing') || process.env.ACEDIA_WORKSPACE_ROUTING_FIXTURE === '1';
 const connectionOnly = process.argv.includes('--connection') || process.env.ACEDIA_WORKSPACE_CONNECTION_FIXTURE === '1';
+const resumedOnly = process.argv.includes('--resumed-delivery') || process.env.ACEDIA_WORKSPACE_RESUMED_FIXTURE === '1';
 if (process.versions.electron) {
   const { app, BrowserWindow } = require('electron');
   app.on('browser-window-created', (_event, win) => win.on('show', () => win.hide()));
   void (async () => {
   const root = process.env.ACEDIA_WORKSPACE_MCP_FIXTURE;
   assert.ok(root && path.basename(root).startsWith('acedia-workspace-mcp-smoke-'));
-  const timeout = setTimeout(() => { console.error('Workspace MCP smoke timeout'); app.exit(1); }, dangerousOnly ? 120000 : 60000);
+  const timeout = setTimeout(() => { console.error('Workspace MCP smoke timeout'); app.exit(1); }, dangerousOnly || resumedOnly ? 120000 : 60000);
   let window;
   try {
     const routingFixture = routingOnly ? await import('./fixtures/session-routing-workspace.mjs').then(module => module.installRoutingFixture()) : null;
@@ -87,6 +88,13 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
     console.log('WORKSPACE_FIXTURE_PROJECT_CREATED');
     assert.equal(first.created, true); assert.equal(first.active, true, JSON.stringify(first));
     assert.equal((await call('/projects', { folder: projectFolder })).created, false);
+    if (resumedOnly) {
+      const { exerciseResumedDelivery } = await import('./fixtures/resumed-delivery-workspace.mjs');
+      await exerciseResumedDelivery({ root, window, invoke, first, call, base, headers, wait });
+      for (const id of [first.sessionId, 'workspace-mcp-caller']) await invoke('kill_pty', { id });
+      await wait(800);
+      clearTimeout(timeout); app.quit(); return;
+    }
     if (connectionOnly) {
       const { exerciseConnection } = await import('./fixtures/acedia-connection-workspace.mjs');
       await exerciseConnection({ root, window, invoke, first, base, headers, executable });
@@ -367,16 +375,22 @@ Write-Host -NoNewline (([char]27) + '[2J' + ([char]27) + '[H')
   env.ACEDIA_WORKSPACE_DANGEROUS_FIXTURE = dangerousOnly ? '1' : '0';
   env.ACEDIA_WORKSPACE_ROUTING_FIXTURE = routingOnly ? '1' : '0';
   env.ACEDIA_WORKSPACE_CONNECTION_FIXTURE = connectionOnly ? '1' : '0';
+  env.ACEDIA_WORKSPACE_RESUMED_FIXTURE = resumedOnly ? '1' : '0';
+  env.ACEDIA_FIXTURE_NODE = process.execPath;
+  if (resumedOnly) env.ACEDIA_RESUMED_REPORT = path.join(appRoot, '../output/resumed-development-app.json');
   delete env.ELECTRON_RUN_AS_NODE;
   try {
     const child = spawn(require('electron'), [fileURLToPath(import.meta.url)], { env, cwd: appRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', chunk => { output = (output + chunk).slice(-16000); });
     child.stderr.on('data', chunk => { output = (output + chunk).slice(-16000); });
-    const timer = setTimeout(() => child.kill(), dangerousOnly ? 135000 : 75000);
+    const timer = setTimeout(() => child.kill(), dangerousOnly || resumedOnly ? 135000 : 75000);
     const code = await new Promise((resolve, reject) => { child.on('exit', resolve); child.on('error', reject); }).finally(() => clearTimeout(timer));
     assert.equal(code, 0, output);
-    if (connectionOnly) {
+    if (resumedOnly) {
+      assert.ok(output.includes('ACEDIA_RESUMED_DELIVERY_REAL_DEV_APP_READ_STARTED_ONCE_DRAFT_GUARD_OK'), output);
+      console.log('ACEDIA_RESUMED_DELIVERY_REAL_DEV_APP_READ_STARTED_ONCE_DRAFT_GUARD_OK');
+    } else if (connectionOnly) {
       const marker = 'ACEDIA_CONNECTION_HOST_CAPABILITIES_BOTH_PROVIDER_SKILLS_NO_MUTATION_NO_FOCUS_OK';
       assert.ok(output.includes(marker), output); console.log(marker);
     } else if (routingOnly) {

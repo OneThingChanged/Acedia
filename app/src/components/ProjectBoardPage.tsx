@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardTransferLabel, boardSessionVisibilityKind, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
+import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
 import { workBoardConnections } from '../lib/workBoardConnections';
 import { boardProjectPositions, boardSessionOrder, canReorderBoardSession, placeBoardProject, reorderBoardSession, type BoardProjectPositions } from '../lib/boardPlacement';
 import { ProviderLogo } from './ProviderLogo';
@@ -63,6 +63,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const [connected, setConnected] = useState(true);
   const [groupScroll, setGroupScroll] = useState<Record<string, number>>({});
   const [showSleeping, setShowSleeping] = useState(initialSnapshot?.preferences.showSleeping === true), [showStopped, setShowStopped] = useState(initialSnapshot?.preferences.showStopped === true);
+  const [activeOnly, setActiveOnly] = useState(initialSnapshot?.preferences.activeOnly === true);
   const [revealedSession, setRevealedSession] = useState<string | null>(null);
   const [projectPositions, setProjectPositions] = useState<BoardProjectPositions>(() => boardProjectPositions(initialSnapshot?.preferences.projectPositions)), [sessionOrder, setSessionOrder] = useState<string[]>(() => boardSessionOrder(initialSnapshot?.preferences.sessionOrder));
   const [compactPlacement, setCompactPlacement] = useState<{ key: string; positions: BoardProjectPositions }>({ key: '', positions: {} });
@@ -103,7 +104,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             setView(resetView.current ? { zoom: .8, x: 24, y: 24 } : { zoom: p.zoom ?? .8, x: p.x ?? 24, y: p.y ?? 24 }); setCollapsed(new Set(p.collapsed || []));
             setCollapsedProjects(new Set(p.collapsedProjects || [])); setProject(p.projectId || ''); setMotion(p.motion ?? true);
             setProjectPositions(boardProjectPositions(p.projectPositions)); setSessionOrder(boardSessionOrder(p.sessionOrder));
-            setShowSleeping(p.showSleeping === true); setShowStopped(p.showStopped === true);
+            setShowSleeping(p.showSleeping === true); setShowStopped(p.showStopped === true); setActiveOnly(p.activeOnly === true);
           }
         }
         setError('');
@@ -131,16 +132,16 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const projectSessions = useMemo(() => data?.sessions.filter(s => !projectId || s.projectId === projectId) || [], [data, projectId]);
   const counts = useMemo(() => boardCounts(projectSessions, allItems), [projectSessions, allItems]);
   const overview = view.zoom < .62;
-  const compactKey = !showSleeping || !showStopped || overview || collapsed.size || collapsedProjects.size
-    ? JSON.stringify([showSleeping, showStopped, overview, [...collapsed].sort(), [...collapsedProjects].sort()]) : '';
+  const compactKey = activeOnly || !showSleeping || !showStopped || overview || collapsed.size || collapsedProjects.size
+    ? JSON.stringify([activeOnly, showSleeping, showStopped, overview, [...collapsed].sort(), [...collapsedProjects].sort()]) : '';
   const placementPositions = useMemo(() => compactKey ? compactPlacement.key === compactKey ? compactPlacement.positions : {} : projectPositions, [compactKey, compactPlacement, projectPositions]);
   const displayedPositions = useMemo(() => projectPreview ? { ...placementPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : placementPositions, [placementPositions, projectPreview]);
-  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, revealId: revealedSession }) : null,
-    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, sessionOrder, showSleeping, showStopped, revealedSession]);
+  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, activeOnly, revealId: revealedSession }) : null,
+    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, sessionOrder, showSleeping, showStopped, activeOnly, revealedSession]);
   const nodes = useMemo(() => layout?.nodes.filter(n => !collapsedProjects.has(n.session.projectId)) || [], [layout, collapsedProjects]);
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.session.id, n])), [nodes]);
   const groupById = useMemo(() => new Map(layout?.groups.map(g => [g.id, g])), [layout]);
-  const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, revealedSession), [data?.sessions, showSleeping, showStopped, revealedSession]);
+  const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, revealedSession, activeOnly), [data?.sessions, showSleeping, showStopped, revealedSession, activeOnly]);
   const displayedReferences = useMemo(() => data?.references?.filter(r => visibleSessionIds.has(r.from) && visibleSessionIds.has(r.to)) || [], [data?.references, visibleSessionIds]);
   const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
     [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, view.zoom < .62]);
@@ -218,8 +219,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     setViewMode('board');
     setView(v => v.zoom < .62 ? { ...v, zoom: .65 } : v);
     const session = sessionsById.get(id); if (!session) return;
-    const visibility = boardSessionVisibilityKind(session);
-    setRevealedSession(visibility === 'sleeping' && !showSleeping || visibility === 'stopped' && !showStopped ? id : null);
+    setRevealedSession(boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, null, activeOnly).has(id) ? null : id);
     if (projectId && session.projectId !== projectId) setProject('');
     setCollapsedProjects(current => { const next = new Set(current); next.delete(session.projectId); return next; });
     setCollapsed(current => { const next = new Set(current), seen = new Set<string>(); let s: BoardSession | undefined = session;
@@ -236,8 +236,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       setView({ zoom, x: 24 - left * zoom, y: 24 - top * zoom });
     }
   };
-  const savePlacement = (placement: { projectPositions: BoardProjectPositions; sessionOrder: string[]; showSleeping?: boolean; showStopped?: boolean }) => {
-    const preferences = { showSleeping, showStopped, ...placement };
+  const savePlacement = (placement: { projectPositions: BoardProjectPositions; sessionOrder: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean }) => {
+    const preferences = { showSleeping, showStopped, activeOnly, ...placement };
     const sequence = ++placementSave.current;
     setPlacementStatus('saving'); setPlacementError('');
     // Save each completed drop immediately to the host's local board file. The
@@ -304,7 +304,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <label className="wb-project-picker"><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
       <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
-        <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide sleeping sessions. Parents of visible children stay.')}
+        <button role="switch" aria-checked={activeOnly} aria-label={text('활성 세션만 표시', 'Show active sessions only')} title={text('실행 중인 세션만 표시합니다. Sleeping을 켜면 활성 부모의 sleeping 자식도 표시합니다.', 'Show running sessions. Sleeping also shows sleeping descendants of active parents.')}
+          onClick={() => { const next = !activeOnly; cancelProjectDrag(); setActiveOnly(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, activeOnly: next }); }}>{text('Active만', 'Active only')} <span className="wb-switch-track"/></button>
+        <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. Active만 보기에서는 활성 부모 아래의 자식만 표시합니다.', 'Show sleeping sessions. In Active only, include only descendants of active parents.')}
           onClick={() => { const next = !showSleeping; cancelProjectDrag(); setShowSleeping(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showSleeping: next }); }}>Sleeping <span className="wb-switch-track"/></button>
         <button role="switch" aria-checked={showStopped} aria-label={text('대기·정지 세션 표시', 'Show idle and stopped sessions')} title={text('Idle·일시정지·중단·종료 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide idle, paused, interrupted and stopped sessions. Parents of visible children stay.')}
           onClick={() => { const next = !showStopped; cancelProjectDrag(); setShowStopped(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>

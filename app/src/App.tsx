@@ -3720,6 +3720,7 @@ function App() {
             modelSettings,
             sessionInstructions,
             sessionReferenceFolders,
+            resumeContext,
             poolResumeOwnerId: options.poolResumeOwnerId,
             initialPrompt,
             aiToolId: agent.aiToolId,

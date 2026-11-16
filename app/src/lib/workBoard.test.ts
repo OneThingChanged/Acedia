@@ -34,6 +34,28 @@ describe('Work board node projection', () => {
     expect(boardVisibleSessionIds(cyclic, false, false)).toEqual(new Set(['a', 'b']));
   });
 
+  it('shows sleeping descendants of active parents only in Active only, retaining context ancestors and compacting all views', () => {
+    const sessions = [
+      { ...session('active', null, 'working'), runtime: 'running' },
+      { ...session('sleep', 'active', 'review'), runtime: 'sleeping' },
+      { ...session('deep', 'sleep', 'idle'), runtime: 'sleeping' },
+      { ...session('offline', null, 'review'), runtime: 'stopped' },
+      { ...session('hidden', 'offline', 'review'), runtime: 'sleeping' },
+      { ...session('root-sleep', null, 'review'), runtime: 'sleeping' },
+      { ...session('worker', 'offline', 'working'), runtime: 'running' },
+      { ...session('cycle-a', 'cycle-b', 'review'), runtime: 'sleeping' },
+      { ...session('cycle-b', 'cycle-a', 'review'), runtime: 'sleeping' },
+    ];
+    const before = structuredClone(sessions);
+    expect(boardVisibleSessionIds(sessions, false, true, null, true)).toEqual(new Set(['active', 'worker', 'offline']));
+    const shown = new Set(['active', 'sleep', 'deep', 'worker', 'offline']);
+    expect(boardVisibleSessionIds(sessions, true, true, null, true)).toEqual(shown);
+    expect(new Set(boardLayout({ ...snapshot, sessions }, { activeOnly: true }).nodes.map(n => n.session.id))).toEqual(shown);
+    expect(boardVisibleSessionIds(sessions, true, true, 'hidden', true)).toContain('hidden');
+    sessions[0].runtime = 'stopped';
+    expect(boardVisibleSessionIds(sessions, true, true, null, true)).toEqual(new Set(['worker', 'offline']));
+    expect(before[0].runtime).toBe('running');
+  });
   it('repacks hidden rows and empty projects while retaining hierarchy and leaving supplied placement untouched', () => {
     const data = { ...snapshot, projects: [...snapshot.projects, { id: 'q', name: 'Other', folder: 'D:/other', hierarchy: { parentId: 'p' } }, { id: 'hidden', name: 'Hidden', folder: 'D:/hidden' }],
       sessions: [session('a', null), ...Array.from({ length: 24 }, (_, i) => ({ ...session(`s${i}`, null, 'idle'), runtime: 'sleeping' })), session('b', 'a'),

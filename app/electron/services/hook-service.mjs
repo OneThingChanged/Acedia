@@ -7,6 +7,7 @@ import { parse as parseToml } from "smol-toml";
 import { checkProjectPath, makeWritable, projectManagementPlan } from "./project-managed-files.mjs";
 import { AcediaSkills } from './acedia-skills.mjs';
 import { MIRACONTROL_API_VERSION } from "./miracontrol-integration.mjs";
+import { captureStartupHookProof } from './startup-hook-proof.mjs';
 
 const HOOK_MARKER = "multiagent";
 const CODEX_EVENTS = [
@@ -869,6 +870,18 @@ export class HookService {
       });
     }
     return this.#mergeSettings(updates, { root, aiToolId });
+  }
+
+  captureStartupHooks(options) {
+    return captureStartupHookProof({ ...options, helperPath: this.helperPath, helperScript: HELPER_SCRIPT,
+      commands: Object.fromEntries(CODEX_EVENTS.map(([name, event]) => [name, commandFor(this.helperPath, event, name)])) });
+  }
+
+  verifyStartupHooks(entry) {
+    const proof = entry?.startupHookProof;
+    if (!proof || entry.ssh || entry.aiToolId !== 'codex') return null;
+    const current = this.captureStartupHooks({ cwd: entry.cwd, home: proof.home });
+    return current?.fingerprint === proof.fingerprint && current.cwd === proof.cwd ? current : null;
   }
 
   async setupCodexHome(home) {
