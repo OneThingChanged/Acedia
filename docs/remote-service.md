@@ -216,9 +216,10 @@ Hub separately at the ingress. A host-only configuration still serves Remote at
 `/`. The local status URL also includes the mount. Saving configuration does not
 start Remote or expose a tunnel.
 
-The root-route correction is not yet published. Its 34 targeted HTTP/auth tests
-passed, covering GET/HEAD, query preservation, authenticated/unauthenticated
-requests, `/acedia`, `/dddd`, nested mounts and host-only root deployment.
+The root-route correction is included in [1.8.2.22](release-1-8-2-22.md).
+Targeted HTTP/auth tests and packaged HTTP checks passed, covering GET/HEAD,
+query preservation, authenticated/unauthenticated requests, `/acedia`, `/dddd`,
+nested mounts and host-only root deployment. Existing hosts need the update.
 
 Cloudflare must separately route the hostname **and** the original path to the
 local port, for example:
@@ -431,7 +432,7 @@ fit reset and transition to HTML previews. This does not claim an installed APK 
 
 ## Original file downloads
 
-### Office/PDF downloads (2026-11-16 source, publication pending)
+### Office/PDF downloads (1.8.2.22)
 
 PPT/PPTX·PPS/PPSX·DOC/DOCX·XLS/XLSX·PDF, Office의 DOTX/XLTX/POTX 템플릿,
 ODT/ODS/ODP·RTF·HWP/HWPX를 원본 다운로드 형식으로 지원한다. 채팅의 링크·경로·
@@ -443,7 +444,7 @@ ODT/ODS/ODP·RTF·HWP/HWPX를 원본 다운로드 형식으로 지원한다. 채
 열어 415 오류를 표시했다. 다운로드와 미리보기의 지원 범위를 구분하고 PWA 캐시를
 **v118**로 갱신했다. 원본 파일명·바이트, 2MiB 미리보기 제한과 별개의 다운로드,
 Remote 인증·소유자·프로젝트 경계와 하위 서비스 경로를 유지한다. 실행 중인 설치본에는
-새 빌드 적용이 필요하며 배포 전 소스 수정이다.
+1.8.2.22 업데이트 적용이 필요하며 게시·검증 결과는 [배포 기록](release-1-8-2-22.md)에 유지한다.
 
 검증: 전체 267개 테스트 파일의 **2,165개 검사**와 TypeScript/Vite 빌드를 통과했다.
 격리 Remote·Dashboard·하위 경로의 HTTP에서 GET/HEAD·한글 파일명·원본 바이트와
@@ -1311,7 +1312,7 @@ Validation: 64 related tests in four files, TypeScript checking, and
 Remote and Dashboard at 1100px, 390px and 820px, with nested selection, remembered
 folds, filtered search, inactive ancestor/child visibility and live reparenting.
 
-### Child visibility toggles (2026-11-16 source, publication pending)
+### Child visibility toggles (1.8.2.22)
 
 Remote·Dashboard의 세션 필터 아래에 **자식 세션 표시**와 독립적인 **Idle / Stopped /
 Sleeping** 토글을 제공한다. 기본값은 모두 표시이며 브라우저의
@@ -1331,8 +1332,9 @@ Sleeping은 호스트가 확인한 재개 가능한 휴면 상태다. 실행 중
 일치하는 세션과 부모 경로를 찾고, 검색을 지우면 저장된 토글을 다시 적용한다. **전체 세션
 보기** 초기화 버튼은 검색·상위 필터와 자식 토글을 모두 표시 상태로 복원한다.
 
-PWA 캐시는 **v118**이다. 배포 전 소스 변경이며 운영 세션이나 사용자 프로필을 수정하지
-않고 Node의 실제 탐색 렌더러·클릭 처리와 격리 HTTP로 검증한다.
+PWA 캐시는 **v118**이다. 1.8.2.22에 포함하며 운영 세션이나 사용자 프로필을 수정하지
+않고 Node의 실제 탐색 렌더러·클릭 처리와 격리 HTTP로 검증했다. 게시 근거는
+[배포 기록](release-1-8-2-22.md)에 유지한다.
 
 검증: 관련 5개 파일의 33개 검사와 전체 267개 테스트 파일의 **2,171개 검사**,
 TypeScript/Vite 빌드를 통과했다. 개별 토글·저장 복원·저장소 오류·검색·상태 변화·
