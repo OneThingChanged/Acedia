@@ -922,7 +922,7 @@ links. The targeted 16 tests and TypeScript check passed. This source change is
 included in source 1.8.1.80; publication is tracked in the
 [release record](release-1-8-1-80.md).[^terminal-links-smoke]
 
-2026-11-17 source also recovers extensionless folder paths split by a TUI hard
+Standard EXE 1.8.2.24 also recovers extensionless folder paths split by a TUI hard
 line break, including the reported `Client/Saved/Recordings/ThreeBuildGameplay/Native24-20261116-QA-…`
 prefix. Parentheses, brackets and quoted/code spans provide explicit boundaries;
 bare highlighted paths require the same foreground run, a near-edge break and
@@ -935,8 +935,7 @@ The regression uses the real xterm buffer in Node, with no GUI automation. It
 checks hard/soft wraps, either-row hits and activation callbacks, three-row image
 routing, Unicode cell positions and resolution to a real temporary folder.
 Before the change, five cases reproduced the truncated folder target; after the
-change, the related path checks pass. This correction is in source and requires
-a subsequent build/update to reach the installed application.
+change, the related path checks pass. Published in [Standard EXE 1.8.2.24](release-1-8-2-24.md); apply the host update to use the correction.
 
 File URLs such as `file:///C:/Users/name/.codex/generated_images/result.png`
 use the local filesystem resolver. Clicking the scheme, drive, or a wrapped
