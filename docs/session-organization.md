@@ -73,7 +73,7 @@ sources:
 토글 값을 바꾸지 않는다. 토글은 `preferences.showSleeping`·`showStopped`로 로컬에
 즉시 저장하고 재실행 시 복원하며, 배치 초기화로 바뀌지 않는다.
 
-2026-11-16 배포 전 소스에는 **Active만** 토글(`preferences.activeOnly`)을 추가했다.
+Standard EXE 1.8.2.23에는 **Active만** 토글(`preferences.activeOnly`)을 추가했다.
 세션 표·전달 표·보드에 같은 규칙을 적용한다. 켜면 실행 중인 세션으로 범위를 좁히고,
 **Sleeping**도 켜면 실행 중인 부모 아래의 sleeping 자식·손자를 함께 표시한다.
 활성 조상이 없는 sleeping 세션과 종료 세션은 제외한다. 활성 자식의 관계를 보여주는
