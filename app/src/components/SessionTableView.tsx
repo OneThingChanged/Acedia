@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { useAppLanguage } from '../lib/appLanguage';
 import { boardTransferLabel, type BoardSession, type BoardSnapshot, type BoardTransfer } from '../lib/workBoard';
-import { latestIncoming, sessionTableMatches, sessionTableRows, transferTime } from '../lib/sessionTable';
+import { latestIncoming, sessionTableMatches, sessionTableRows, transferTime, transferTitle } from '../lib/sessionTable';
 import { ProviderLogo } from './ProviderLogo';
 import './SessionTableView.css';
 
@@ -25,8 +25,10 @@ export function SessionTableView({ data, mode, projectId, query, visible, filter
   const origin = (t?: BoardTransfer) => <><strong>{source(t)}</strong><small>{t ? text(...boardTransferLabel(t)) : text('수신 지시 기록 없음', 'No recorded incoming request')}</small></>;
   const identity = (s: BoardSession, t?: BoardTransfer, context = false) => <button type="button" className="st-identity" aria-pressed={selectedId === s.id && (mode === 'sessions' || selectedTransferId === t?.id)}
     onClick={e => onChoose(s.id, e.currentTarget, mode === 'transfers' ? t?.id : undefined)}>
-    <ProviderLogo toolId={s.provider}/><span><strong>{mode === 'transfers' ? t?.summary || text('본문은 상세에서 확인', 'View request in details') : s.name}</strong>
+    <ProviderLogo toolId={s.provider}/><span><strong>{mode === 'transfers' && t ? text(...transferTitle(t, source(t))) : s.name}</strong>
       <small>{mode === 'transfers' ? s.name : s.task?.title || (t?.summary ? `${text('최근 수신', 'Last request')}: ${t.summary}` : step(s))}</small>
+      {mode === 'transfers' && t?.summary?.trim() && <small>#{t.id.slice(0, 8)}</small>}
+      {mode === 'transfers' && t && !t.summary?.trim() && <small>{text('요약이 저장되지 않은 과거 기록', 'Historical record without a saved summary')}</small>}
       {s.parentId && <small className="st-parent">↳ {byId.get(s.parentId)?.name || text('부모 세션', 'Parent session')}</small>}
       {context && <small className="st-context">{text('하위 세션의 부모 · 관계 표시', 'Parent context for a matching session')}</small>}
     </span></button>;

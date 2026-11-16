@@ -208,8 +208,17 @@ For that example the browser URL is `https://agent.example.com/acedia/` and the
 GitHub OAuth callback is `https://agent.example.com/acedia/auth/github/callback`.
 Settings shows the derived callback; the GitHub OAuth App must use that URL.
 Requests to `/acedia` redirect to `/acedia/`, while sibling service paths and
-unprefixed APIs are not served by Remote. The local status URL also includes the
-mount. Saving configuration does not start Remote or expose a tunnel.
+unprefixed APIs are not served by Remote. The source correction after 1.8.2.21
+also leaves the domain root `/` unclaimed: Remote returns 404 without a redirect
+when mounted beneath a path. Only its own bare mount receives the trailing-slash
+redirect, for both GET and HEAD, preserving the query. Route a root homepage or
+Hub separately at the ingress. A host-only configuration still serves Remote at
+`/`. The local status URL also includes the mount. Saving configuration does not
+start Remote or expose a tunnel.
+
+The root-route correction is not yet published. Its 34 targeted HTTP/auth tests
+passed, covering GET/HEAD, query preservation, authenticated/unauthenticated
+requests, `/acedia`, `/dddd`, nested mounts and host-only root deployment.
 
 Cloudflare must separately route the hostname **and** the original path to the
 local port, for example:
@@ -421,6 +430,28 @@ scale bounds, existing document layout and service endpoints, and real Electron
 fit reset and transition to HTML previews. This does not claim an installed APK test.
 
 ## Original file downloads
+
+### Office/PDF downloads (2026-11-16 source, publication pending)
+
+PPT/PPTX·PPS/PPSX·DOC/DOCX·XLS/XLSX·PDF, Office의 DOTX/XLTX/POTX 템플릿,
+ODT/ODS/ODP·RTF·HWP/HWPX를 원본 다운로드 형식으로 지원한다. 채팅의 링크·경로·
+관련 파일 카드, 결과 폴더와 Markdown 문서 링크에서 선택하면 텍스트 미리보기 대신
+기존 `HEAD` 확인과 `/api/docs/download` 스트리밍을 사용한다. 미리보기용 외부
+서비스에 파일을 보내지 않으며 문서 내용이나 매크로를 실행하지 않는다.
+
+이전 소스에서는 이 형식들이 다운로드 허용 목록에 없었고, 관련 파일 카드는 텍스트로
+열어 415 오류를 표시했다. 다운로드와 미리보기의 지원 범위를 구분하고 PWA 캐시를
+**v118**로 갱신했다. 원본 파일명·바이트, 2MiB 미리보기 제한과 별개의 다운로드,
+Remote 인증·소유자·프로젝트 경계와 하위 서비스 경로를 유지한다. 실행 중인 설치본에는
+새 빌드 적용이 필요하며 배포 전 소스 수정이다.
+
+검증: 전체 267개 테스트 파일의 **2,165개 검사**와 TypeScript/Vite 빌드를 통과했다.
+격리 Remote·Dashboard·하위 경로의 HTTP에서 GET/HEAD·한글 파일명·원본 바이트와
+인증·경로 제한을 확인했고, 클라이언트 실행 검사에서 텍스트 오분류의 다운로드 전환과
+실패 후 같은 파일 재시도를 확인했다. 실제 운영 서버나 사용자 브라우저의 저장 경로는
+조작하지 않았다.
+
+### Existing document and ZIP downloads
 
 Remote와 Dashboard에서 채팅 파일 미리보기 또는 Documents의 상단 **다운로드**를
 누르면 원본 파일을 저장한다. 문서 목록 우클릭 메뉴와 모바일 **⋮ 문서 작업**에도
@@ -1279,6 +1310,33 @@ Validation: 64 related tests in four files, TypeScript checking, and
 `node app/scripts/electron-remote-session-tree-smoke.mjs`. The latter covers
 Remote and Dashboard at 1100px, 390px and 820px, with nested selection, remembered
 folds, filtered search, inactive ancestor/child visibility and live reparenting.
+
+### Child visibility toggles (2026-11-16 source, publication pending)
+
+Remote·Dashboard의 세션 필터 아래에 **자식 세션 표시**와 독립적인 **Idle / Stopped /
+Sleeping** 토글을 제공한다. 기본값은 모두 표시이며 브라우저의
+`multiagent.remote.childSessionVisibility.v1`에 선택을 저장한다. 손상된 값이나 저장소
+접근 오류는 표시 기본값으로 복원한다. 토글은 탐색 목록만 갱신하며 세션을 시작·중지·
+휴면 전환하거나 현재 대화를 바꾸지 않는다. 데스크톱의 세션별 숨김 설정도 수정하지 않는다.
+
+Idle은 입력 대기 또는 아직 실행되지 않은 세션, Stopped는 종료·오프라인·연결 불가,
+Sleeping은 호스트가 확인한 재개 가능한 휴면 상태다. 실행 중인 세션의 작업·질문·승인
+대기·백그라운드 대기·완료 상태와 시작/복구 상태는 이 세 토글로 숨기지 않는다. 활성 런타임이
+보고된 경우 오래된 휴면 표시보다 현재 실행 상태를 우선한다.
+
+토글은 유효한 부모 관계가 있는 자식에 적용한다. 표시 중인 자식의 상위 경로는 유지하고,
+하위 항목이 모두 숨겨지면 불필요한 문맥용 부모 행도 없앤다. 표시 개수와 접기 버튼은
+필터 결과로 다시 계산한다. Active에서는 Remote의 토글을 사용해 자식 상태를 선택하며
+이전의 `sidebarShowInactiveChildren` 상속에 의존하지 않는다. 검색은 숨김을 잠시 풀어
+일치하는 세션과 부모 경로를 찾고, 검색을 지우면 저장된 토글을 다시 적용한다. **전체 세션
+보기** 초기화 버튼은 검색·상위 필터와 자식 토글을 모두 표시 상태로 복원한다.
+
+PWA 캐시는 **v118**이다. 배포 전 소스 변경이며 운영 세션이나 사용자 프로필을 수정하지
+않고 Node의 실제 탐색 렌더러·클릭 처리와 격리 HTTP로 검증한다.
+
+검증: 관련 5개 파일의 33개 검사와 전체 267개 테스트 파일의 **2,171개 검사**,
+TypeScript/Vite 빌드를 통과했다. 개별 토글·저장 복원·저장소 오류·검색·상태 변화·
+부모 경로 유지·표시 개수·선택 대화 유지와 서비스가 제공하는 버튼 마크업을 확인했다.
 
 ### Remote family metadata follow-up (1.8.2.12)
 

@@ -10,7 +10,7 @@ import './BackgroundWork.css';
 import { backgroundWaitingLabels } from '../lib/agentActivity';
 import { SessionTableView } from './SessionTableView';
 import { BoardRequestDetail } from './BoardRequestDetail';
-import { latestIncoming, sessionTableMatches } from '../lib/sessionTable';
+import { latestIncoming, sessionTableMatches, transferTitle } from '../lib/sessionTable';
 import type { BoardViewMode } from '../lib/workBoard';
 
 const labels: Record<BoardState, [string, string]> = {
@@ -426,7 +426,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         <div className="wb-detail-state"><StateIcon state={boardDisplayState(selectedSession, itemsBySession.get(selectedSession.id)?.filter(i => i.kind === 'result').length || 0)}/><strong>{text(...labels[boardDisplayState(selectedSession, itemsBySession.get(selectedSession.id)?.filter(i => i.kind === 'result').length || 0)])}</strong><span>{selectedSession.runtime === 'sleeping' ? 'Sleeping' : selectedSession.runtime}</span></div>
         <p className="wb-copy">{step(selectedSession)}</p><button className="wb-locate" onClick={() => locate(selectedSession.id)}>{text('보드에서 찾기', 'Locate on board')}</button>
         {!!transfersBySession.get(selectedSession.id)?.length && <section className="wb-transfers"><h3>{text('업무 전달', 'Handoffs')}</h3>{[...(transfersBySession.get(selectedSession.id) || [])].reverse().slice(0, 8).map(t => <p key={t.id} data-status={t.status}>
-          <button onClick={() => { choose(t.to); setSelectedTransferId(t.id); }}>{t.from === selectedSession.id ? '→' : '←'} {sessionsById.get(t.from === selectedSession.id ? t.to : t.from)?.name} · {t.summary || text('전달 상세', 'Handoff details')}</button><br/>{text(...boardTransferLabel(t))}{t.reason && <small> · {t.reason}</small>}</p>)}</section>}
+          <button onClick={() => { choose(t.to); setSelectedTransferId(t.id); }}>{t.from === selectedSession.id ? '→' : '←'} {sessionsById.get(t.from === selectedSession.id ? t.to : t.from)?.name} · {text(...transferTitle(t, sessionsById.get(t.from)?.name || text('이전 세션', 'Former session')))}
+            {t.summary?.trim() && <small>{t.savedAt ? new Date(t.savedAt).toLocaleString() : ''} · #{t.id.slice(0, 8)}</small>}</button><br/>{text(...boardTransferLabel(t))}{t.reason && <small> · {t.reason}</small>}</p>)}</section>}
         {selectedTransfer && <BoardRequestDetail transfer={selectedTransfer} sender={sessionsById.get(selectedTransfer.from)?.name || text('이전 세션', 'Former session')} receiver={selectedSession.name}/>}
         {selectedTransferId && !selectedTransfer && <p role="status">{text('선택한 전달 기록이 목록 범위를 벗어났습니다. 업무 전달 표에서 다시 선택하세요.', 'The selected handoff is no longer in this snapshot. Select a record from Handoffs.')}</p>}
         {selectedItem ? <article className="wb-result-detail"><span className="wb-detail-kind"><StateIcon state={selectedItem.kind}/>{text(...kinds[selectedItem.kind])}</span><h3>{selectedItem.kind === 'result' ? text('선택한 결과', 'Selected result') : actionLabel(selectedItem)}</h3><time>{new Date(selectedItem.createdAt).toLocaleString()}</time><p className="wb-copy">{selectedItem.summary || text('요약이 없습니다. 세션 대화에서 확인해 주세요.', 'Open the conversation for details.')}</p>

@@ -387,6 +387,13 @@ html[data-native-app="true"] .android-download-button { display: none !important
 #filters button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .session-filter-count { min-width: 18px; padding: 0 4px; border-radius: 999px; color: var(--text); background: var(--panel-3); text-align: center; font-variant-numeric: tabular-nums; }
 #filters button.active .session-filter-count { color: var(--cyan); }
+.child-session-visibility { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.child-session-visibility-label { flex-basis: 100%; color: var(--muted); font-size: var(--font-caption); }
+.child-session-visibility button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: transparent; font-size: var(--font-caption); }
+.child-session-visibility button::before { content: ''; width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; }
+.child-session-visibility button[aria-pressed="true"] { color: var(--cyan); border-color: rgba(80, 223, 208, .35); background: rgba(80, 223, 208, .06); }
+.child-session-visibility button[aria-pressed="true"]::before { background: currentColor; }
+.child-session-visibility button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .project-label { margin: 7px 3px 2px; color: #698295; font-size: var(--font-caption); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
 .session-row {
   display: block;

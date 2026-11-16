@@ -8,6 +8,10 @@
 3. Start an existing OFFLINE target with `acedia_session_start`. An active
    target is retained. The background API does not select a pane or focus a
    window. A successful start is not evidence that a prompt was accepted.
+   When the user authorized a task for that existing session, a supported
+   `acedia_session_message_send` call with `startIfOffline:true` combines durable
+   storage, background start and readiness-gated notification. Use the separate
+   start API when starting without a task. Check the current tool schema first.
 4. Read `acedia_session_status` by the Acedia ID, even before its first native
    conversation exists. Inspect phase/reason and input readiness. Bounded
    waitMs may wait for initialization. Trust within the registered folder can

@@ -1,6 +1,13 @@
 import type { BoardSession, BoardSnapshot, BoardTransfer } from './workBoard';
 
 export const transferTime = (t: BoardTransfer) => t.savedAt || t.startedAt || t.readAt || t.receivedAt || t.sentAt || 0;
+export function transferTitle(t: BoardTransfer, sender: string): [string, string] {
+  if (t.summary?.trim()) return [t.summary, t.summary];
+  const at = transferTime(t), stamp = at && Number.isFinite(at) ? ` · ${new Date(at).toLocaleString()}` : '';
+  const number = ` · #${t.id.slice(0, 8)}`;
+  return t.isMessage ? [`${sender}의 세션 메시지${stamp}${number}`, `Session message from ${sender}${stamp}${number}`]
+    : [`${sender}의 직접 전달${stamp}${number}`, `Direct handoff from ${sender}${stamp}${number}`];
+}
 export function latestIncoming(data: BoardSnapshot, id: string): BoardTransfer | undefined {
   return (data.transfers || []).filter(t => t.to === id).reduce<BoardTransfer | undefined>((last, t) => !last || transferTime(t) >= transferTime(last) ? t : last, undefined);
 }

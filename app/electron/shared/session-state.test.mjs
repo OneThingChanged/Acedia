@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { isAgentRuntimeActive } from '../../src/lib/agentActivity';
 import { isStandbySession } from '../../src/lib/sessionStandby';
-import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, projectSessionRuntime, sessionFilterCounts, resolveSessionWorkStatus } from './session-state.mjs';
+import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, projectSessionRuntime, sessionFilterCounts, resolveSessionWorkStatus, childSessionVisibilityState } from './session-state.mjs';
 
 describe('Remote session lifecycle filters', () => {
+  it('separates idle, stopped and sleeping children using runtime before stale work metadata', () => {
+    expect(childSessionVisibilityState({ status: 'working', runtimeStatus: 'idle' })).toBe('idle');
+    expect(childSessionVisibilityState({ status: 'idle', runtimeStatus: 'exited' })).toBe('stopped');
+    expect(childSessionVisibilityState({ status: 'offline', hook: { event: 'working' } })).toBe('stopped');
+    expect(childSessionVisibilityState({ status: 'idle', runtimeStatus: 'idle', deferredStart: true, resumeEligible: true })).toBe('sleeping');
+    expect(childSessionVisibilityState({ status: 'running', runtimeStatus: 'running' })).toBe('idle');
+    expect(childSessionVisibilityState({ status: 'working', runtimeStatus: 'running', hook: { event: 'idle' } })).toBe('idle');
+    expect(childSessionVisibilityState({ status: 'offline', runtimeStatus: 'starting' })).toBeNull();
+    expect(childSessionVisibilityState({ status: 'working', runtimeStatus: 'running', deferredStart: true, resumeEligible: true })).toBeNull();
+    for (const status of ['working', 'starting', 'recovering', 'question', 'waiting', 'blocked', 'done', 'background']) {
+      expect(childSessionVisibilityState({ status, runtimeStatus: 'running' }), status).toBeNull();
+    }
+  });
   it('keeps background waiting active and distinct from user questions or completion', () => {
     const agent = { status: 'working', runtimeStatus: 'running', hook: { event: 'background-wait', background_count: 2 } };
     expect(resolveSessionWorkStatus(agent)).toBe('background'); expect(matchesSessionFilter(agent, 'active')).toBe(true);

@@ -35,3 +35,13 @@ it('selects an exact historical transfer with one click and opens the existing r
   row.props.onDoubleClick(); expect(props.onOpen).toHaveBeenCalledExactlyOnceWith('worker');
   expect(props.data.transfers?.[0].readAt).toBeUndefined();
 });
+
+it('distinguishes old direct handoffs and new summaries without replacing or merging their history rows', () => {
+  const props = fixture();
+  props.data.transfers = ['12345678-first', '87654321-second'].map((id, i) => ({ id, from: 'sender', to: 'worker', savedAt: 100 + i, status: 'started', reason: '' }));
+  const markup = renderToStaticMarkup(<SessionTableView {...props} mode="transfers"/>);
+  expect(markup).toContain('#12345678'); expect(markup).toContain('#87654321');
+  expect(markup).toContain('&lt;actual sender&gt;의 직접 전달'); expect(markup).toContain('요약이 저장되지 않은 과거 기록');
+  expect(markup).not.toContain('본문은 상세에서 확인'); expect(markup.match(/data-transfer-id=/g)).toHaveLength(2);
+  expect(props.data.transfers.every(transfer => !transfer.summary)).toBe(true);
+});

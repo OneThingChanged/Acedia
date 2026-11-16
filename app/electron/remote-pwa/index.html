@@ -117,6 +117,12 @@
             <button type="button" data-filter="active" aria-pressed="false" title="활성 세션만 보기"><span class="session-filter-label">Active</span><span class="session-filter-count">0</span></button>
             <button type="button" data-filter="sleeping" aria-pressed="false" title="휴면 세션만 보기"><span class="session-filter-label">Sleeping</span><span class="session-filter-count">0</span></button>
           </div>
+          <div class="child-session-visibility" id="childSessionVisibility" role="group" aria-label="자식 세션 표시">
+            <span class="child-session-visibility-label">자식 세션 표시</span>
+            <button type="button" data-child-visibility="idle" aria-pressed="true">Idle</button>
+            <button type="button" data-child-visibility="stopped" aria-pressed="true">Stopped</button>
+            <button type="button" data-child-visibility="sleeping" aria-pressed="true">Sleeping</button>
+          </div>
           <div class="session-list" id="sessionList" aria-live="polite"></div>
           <div class="empty-state" id="emptyState" hidden><p id="emptySessionMessage">조건에 맞는 세션이 없습니다.</p><button class="small-button" id="resetSessionFilter" type="button">전체 세션 보기</button></div>
         </section>

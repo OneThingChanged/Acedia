@@ -45,6 +45,8 @@ export function boardDisplayState(session: BoardSession, unreadResults: number):
   return session.state === 'review' && unreadResults === 0 ? 'responded' : session.state;
 }
 export function boardTransferLabel(t: BoardTransfer): [string, string] {
+  if (t.status === 'queued' && t.reason === 'target-starting') return ['세션 시작 중', 'Starting session'];
+  if (t.status === 'queued' && t.reason === 'startup-pending') return ['입력 준비 확인 중', 'Checking input readiness'];
   if (t.status === 'queued') return ['입력 준비 후 전달 대기', 'Queued until input is ready'];
   if (t.status === 'notification-error' || t.status === 'failed') return ['전달 실패', 'Delivery failed'];
   if (t.status === 'unconfirmed') return ['전달 확인 필요', 'Delivery outcome uncertain'];

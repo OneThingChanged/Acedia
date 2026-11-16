@@ -66,6 +66,23 @@ describe('Remote mounted at a full public address', () => {
     expect((await logout({ origin: 'https://unrelated.example.com' })).status).toBe(403);
     expect((await logout()).headers.get('set-cookie')).toContain('Path=/acedia/; Max-Age=0');
   });
+  it('only canonicalizes its own mount and leaves the domain root and sibling services unclaimed', async () => {
+    for (const mount of ['/acedia', '/dddd', '/tools/acedia']) {
+      const f = await fixture('agent.example.com' + mount);
+      for (const method of ['GET', 'HEAD']) {
+        for (const headers of [f.headers, { 'cf-connecting-ip': '203.0.113.5' }]) {
+          for (const route of ['/', '/?source=root', '/hub/', '/music/', mount + '-other/']) {
+            const response = await fetch(f.origin + route, { method, headers, redirect: 'manual' });
+            expect(response.status).toBe(404); expect(response.headers.get('location')).toBeNull();
+          }
+          const canonical = await fetch(f.origin + mount + '?agent=one', { method, headers, redirect: 'manual' });
+          expect(canonical.status).toBe(308); expect(canonical.headers.get('location')).toBe(mount + '/?agent=one');
+        }
+      }
+      const login = await fetch(f.origin + mount + '/', { headers: { 'cf-connecting-ip': '203.0.113.5' }, redirect: 'manual' });
+      expect(login.status).toBe(302); expect(login.headers.get('location')).toBe(mount + '/login');
+    }
+  });
   it('routes authenticated APIs and original document previews with nested mounts and reserved path names', async () => {
     for (const mount of ['/dddd', '/tools/acedia', '/api']) {
       const f = await fixture('agent.example.com' + mount);

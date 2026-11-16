@@ -32,3 +32,11 @@ it('ignores a late original-text response after the user selects another record 
     ['project_board_transfer_detail', { id: 'first' }], ['project_board_transfer_detail', { id: 'second' }],
   ]);
 });
+
+it('identifies the selected historical handoff and distinguishes its saved summary from an unavailable full original', () => {
+  const direct = { ...transfer, isMessage: false, summary: '수정 검사 결과를 확인하세요.' };
+  hooks.value = { id: direct.id, value: { id: direct.id, message: null } };
+  const text = content(render(direct));
+  expect(text).toContain('선택한 전달 기록'); expect(text).toContain('전달 번호: first');
+  expect(text).toContain(direct.summary); expect(text).toContain('원문 보관 기록이 없습니다.');
+});

@@ -15,7 +15,9 @@ export function BoardRequestDetail({ transfer, sender, receiver }: { transfer: B
     return () => { cancelled = true; };
   }, [transfer.id]);
   const loaded = content?.id === transfer.id ? content : null;
-  return <section className="wb-request"><h3>{text('최근 수신 업무', 'Incoming request record')}</h3><p>{sender} → {receiver}</p>
+  return <section className="wb-request"><h3>{text('선택한 전달 기록', 'Selected handoff')}</h3><p>{sender} → {receiver}</p>
+    <small>{text('전달 번호', 'Handoff ID')}: {transfer.id}</small>
+    <h4>{text('요청 요약', 'Request summary')}</h4><p className="wb-copy">{transfer.summary || text('이 과거 기록에는 요약이 저장되지 않았습니다.', 'No summary was saved for this historical record.')}</p>
     <small>{text('과거 기록일 수 있습니다. 현재 실행이나 전체 업무 완료를 뜻하지 않습니다.', 'This may be historical. It does not establish current execution or task completion.')}</small>
     <p>{text(...boardTransferLabel(transfer))}</p>{transfer.reason && <p className="wb-copy">{transfer.reason}</p>}
     <ol aria-label={text('업무 전달 확인 단계', 'Handoff evidence stages')}>{transferStages(transfer).map(stage => <li key={stage.label[1]} data-confirmed={!!stage.at}>

@@ -23,6 +23,16 @@ stored original to improve its presentation or silently change its meaning.
 
 ## Transport and receipts
 
+For an authorized instruction to an existing inactive local Codex/Claude session,
+set `startIfOffline:true` with the same message and stable requestKey. The host
+saves the original before starting that exact registered session in the background,
+then checks input readiness and queues/notifies in order. Existing active sessions
+are retained. The default is false; `notify:false` never starts a session.
+Inspect `activation` separately from `delivery`: a process starting does not prove
+the instruction was received or the work began. Login, questions, drafts and
+approvals remain explicit. An interrupted startup becomes unconfirmed; reconcile
+the same session/key before an explicit retry. Never use another key just to retry.
+
 The inbox stores the original text and notifies the receiver with an ASCII
 reference. On receiving such a notification, fetch that exact messageId with
 `acedia_session_message_receive` before acting; do not infer its body from the

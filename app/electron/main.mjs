@@ -686,7 +686,7 @@ const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-bo
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
   waitingSince: id => taskOrchestration.waitingSince(id),
   transfers: () => [
-    ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
+    ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, summary: r.summary, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
     ...sessionMessages.recentRecords(50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
       summary: r.message?.split(/\r?\n/).find(line => line.trim())?.trim().slice(0, 200), savedAt: r.createdAt, sentAt: r.delivery?.sentAt, receivedAt: r.delivery?.receivedAt, readAt: r.readAt, startedAt: r.delivery?.startedAt, isMessage: true })),
   ], transferContent: id => sessionMessages.findRecord(id)?.message ?? null,
@@ -1113,6 +1113,7 @@ const sessionReadiness = new SessionReadiness({
 const sessionMessages = new SessionMessages({
   readActivity: (id, targets, task) => projectBoard.referenceRead(id, targets, task),
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
+  start: (sessionId, waitMs) => sessionStart.handle({ sessionId, waitMs }),
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
   prepare: (id, { waitMs, context }) => sessionReadiness.waitForReady(id, waitMs, context),

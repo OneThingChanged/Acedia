@@ -1633,7 +1633,7 @@ export class RemoteDashboardService {
         const url = new URL(request.url || "/", "http://127.0.0.1");
         const basePath = this.basePath();
         request.acediaBasePath = basePath;
-        if (basePath !== '/' && [basePath.slice(0, -1), '/'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
+        if (basePath !== '/' && url.pathname === basePath.slice(0, -1) && ['GET', 'HEAD'].includes(request.method)) {
           response.writeHead(308, { location: basePath + url.search, 'cache-control': 'no-store' }).end(); return;
         }
         const pathname = remoteRequestPath(url.pathname, basePath);

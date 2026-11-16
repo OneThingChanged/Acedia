@@ -34,6 +34,17 @@ export function sessionFilterCounts(agents) {
   return counts;
 }
 
+// A child visibility toggle is independent of the top-level lifecycle filter.
+// Keep live work, questions, background waits, startup and completion visible.
+export function childSessionVisibilityState(agent) {
+  const runtime = runtimeStatus(agent);
+  if (['starting', 'recovering'].includes(runtime)) return null;
+  if (isSleepingSession(agent) && runtime !== 'running') return 'sleeping';
+  if (['exited', 'unreachable', 'offline'].includes(runtime) || ['exited', 'unreachable', 'offline'].includes(agent?.status)) return 'stopped';
+  if (runtime === 'idle') return 'idle';
+  return ['idle', 'running'].includes(resolveSessionWorkStatus(agent)) ? 'idle' : null;
+}
+
 // The renderer can keep its previous work status after a completion hook.
 // Runtime transitions still win; otherwise use the latest host-owned hook.
 export function resolveSessionWorkStatus(agent) {

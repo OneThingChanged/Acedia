@@ -9,9 +9,14 @@ const keyPattern = /^[a-zA-Z0-9_-]{1,128}$/;
 const watching = r => ['sending', 'sent', 'received', 'unconfirmed'].includes(r.status);
 const validRecord = r => r && /^[0-9a-f-]{36}$/.test(r.deliveryId || '') && typeof r.sourceId === 'string' && typeof r.targetId === 'string'
   && keyPattern.test(r.requestKey || '') && /^[0-9a-f]{64}$/.test(r.signature || '') && /^[0-9a-f]{64}$/.test(r.messageHash || '')
+  && (r.summary === undefined || typeof r.summary === 'string' && r.summary.length <= 200 && r.summary.isWellFormed())
   && ['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(r.status) && Number.isFinite(r.createdAt);
 const marker = /\[Acedia handoff: ([0-9a-f-]{36})\]/;
 const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
+export function deliverySummary(message) {
+  const line = message.split(/\r?\n/).find(value => value.trim()) || '';
+  return line.trim().replace(/\s+/g, ' ').slice(0, 200).replace(/[\uD800-\uDBFF]$/, '');
+}
 
 export function deliveryComposerReady(entry, { allowWorking = false } = {}) {
   const screen = entry.filter.viewportText?.() || '';
@@ -249,6 +254,7 @@ export class SessionDeliveries {
       if (Buffer.byteLength(message, 'utf8') > 12288) throw fail('Delivery envelope too large', 400);
       const record = { deliveryId, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
         targetId: body.sessionId, targetName: target.name || body.sessionId, conversationId: target.conversationId ?? null,
+        ...(!asciiEnvelope ? { summary: deliverySummary(body.message) } : {}),
         ...(unbound ? { freshUnbound: true } : {}),
         signature, messageHash: hash(message), previousTurnId: current.turn?.id || null,
         status: 'sending', createdAt: this.now(), updatedAt: this.now() };

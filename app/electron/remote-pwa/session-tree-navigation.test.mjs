@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { expect, it, vi } from 'vitest';
-import { buildSessionFamilies } from './session-tree.js';
-import { matchesSessionFilter, sessionFilterCounts } from '../shared/session-state.mjs';
+import { buildSessionFamilies, normalizeChildSessionVisibility } from './session-tree.js';
+import { matchesSessionFilter, sessionFilterCounts, childSessionVisibilityState } from '../shared/session-state.mjs';
 import { remoteAgentStatus, remoteAgentView } from '../../src/lib/remoteSessionProjection.ts';
 
 const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
@@ -31,7 +31,7 @@ class Element {
   querySelectorAll(selector) {
     const [first, ...rest] = selector.split(' '), descendants = this.children.flatMap(child => [child, ...child.querySelectorAll('*')]);
     const matches = node => first === '*' || first.startsWith('.') ? first === '*' || node.className.split(' ').includes(first.slice(1))
-      : first === '[data-filter]' ? !!node.dataset.filter : node.tag === first;
+      : first === '[data-filter]' ? !!node.dataset.filter : first === '[data-child-visibility]' ? !!node.dataset.childVisibility : node.tag === first;
     const found = descendants.filter(matches);
     return rest.length ? found.flatMap(node => node.querySelectorAll(rest.join(' '))) : found;
   }
@@ -41,19 +41,24 @@ const make = (tag, className, value) => new Element(tag, className || '', value 
 const records = () => [
   { id: 'manager', name: 'RnDHub', runtimeStatus: 'exited' },
   { id: 'middle', name: 'VFX_New · Codex', deferredStart: true, resumeEligible: true, runtimeStatus: 'idle', sessionHierarchy: { parentId: 'manager' } },
-  { id: 'worker', name: '몬스터 · Sol', runtimeStatus: 'running', sessionHierarchy: { parentId: 'middle' } },
+  { id: 'worker', name: '몬스터 · Sol', status: 'working', runtimeStatus: 'running', sessionHierarchy: { parentId: 'middle' } },
   { id: 'sibling', name: 'Sleeping sibling', deferredStart: true, resumeEligible: true, runtimeStatus: 'idle', sessionHierarchy: { parentId: 'middle' } },
 ].map(agent => ({ projectId: 'p', aiToolId: 'codex', status: 'idle', ...agent }));
 
-function fixture() {
+function fixture(visibility = { idle: false, stopped: false, sleeping: false }) {
   const all = records(), names = new Map([['p', 'RnDHub']]);
   const catalog = () => JSON.parse(JSON.stringify(all.map(a => ({ ...remoteAgentView(a), ...remoteAgentStatus(a, names) }))));
-  const ui = Object.fromEntries(['filters', 'screenCount', 'screenList', 'visibleSessionCount', 'sessionList', 'emptyState', 'emptySessionMessage', 'resetSessionFilter', 'overviewButton', 'documentsButton', 'usageButton', 'hostingButton', 'mobileHostingButton', 'detailFamily'].map(key => [key, make('div')]));
+  const ui = Object.fromEntries(['filters', 'childSessionVisibility', 'screenCount', 'screenList', 'visibleSessionCount', 'sessionList', 'emptyState', 'emptySessionMessage', 'resetSessionFilter', 'overviewButton', 'documentsButton', 'usageButton', 'hostingButton', 'mobileHostingButton', 'detailFamily'].map(key => [key, make('div')]));
+  for (const key of ['idle', 'stopped', 'sleeping']) {
+    const button = make('button', '', key); button.dataset.childVisibility = key; ui.childSessionVisibility.append(button);
+  }
   ui.searchInput = { value: '' };
-  const context = vm.createContext({ ui, make, buildSessionFamilies, sessionFilterCounts, text: value => String(value || ''),
+  const stored = new Map(), storage = { getItem: key => stored.get(key) ?? null, setItem: vi.fn((key, value) => stored.set(key, value)) };
+  const context = vm.createContext({ ui, make, buildSessionFamilies, normalizeChildSessionVisibility, childSessionVisibilityState, sessionFilterCounts, text: value => String(value || ''),
+    childSessionVisibility: normalizeChildSessionVisibility(visibility), CHILD_SESSION_VISIBILITY_KEY: 'multiagent.remote.childSessionVisibility.v1',
     t: (value, values = []) => value.replace(/\{(\d+)\}/g, (_, index) => String(values[index])), getLanguage: () => 'ko',
     sessionModelEditor: { update() {} }, navigationAgents: catalog,
-    visibleAgents: all => all.filter(a => ui.searchInput.value ? a.name.includes(ui.searchInput.value) : matchesSessionFilter(a, 'active')),
+    visibleAgents: all => all.filter(a => ui.searchInput.value ? a.name.includes(ui.searchInput.value) : matchesSessionFilter(a, context.activeFilter)),
     screenGroups: () => [], agentMap: () => new Map(catalog().map(a => [a.id, a])), projectName: () => 'RnDHub',
     remoteState: { view: { projects: [{ id: 'p', name: 'RnDHub' }] } }, activeFilter: 'active', selection: { type: 'session', id: 'worker' },
     sessionFamilyRevealKey: '', sessionFamilyTrailKey: '', sessionNavigationStructureKey: '', projectFolds: new Set(), sessionFamilyFolds: new Set(),
@@ -61,11 +66,63 @@ function fixture() {
     providerLogo: () => make('svg'), outputPreview: () => 'terminal output',
     displayStatusOf: a => a.deferredStart ? 'sleeping' : a.runtimeStatus === 'running' ? 'working' : 'offline',
     STATUS: { sleeping: { label: 'Sleeping' }, working: { label: 'Working' }, offline: { label: 'Offline' } },
-    document: { createDocumentFragment: () => make('fragment') }, localStorage: { setItem() {} },
+    document: { createDocumentFragment: () => make('fragment') }, localStorage: storage,
   });
-  vm.runInContext(['sessionFamilyAncestors', 'renderSessionFamilyTrail', 'renderNavigation'].map(implementation).join('\n'), context);
-  return { all, ui, context };
+  vm.runInContext(['loadChildSessionVisibility', 'isChildSessionVisible', 'syncChildSessionVisibility', 'bindChildSessionVisibility', 'sessionFamilyAncestors', 'renderSessionFamilyTrail', 'renderNavigation'].map(implementation).join('\n'), context);
+  context.bindChildSessionVisibility();
+  return { all, ui, context, stored, storage };
 }
+
+it('toggles idle, stopped and sleeping children independently and persists the local choice without changing sessions', () => {
+  const { all, ui, context, stored } = fixture(null);
+  all.push({ id: 'idle', name: 'Idle child', projectId: 'p', aiToolId: 'codex', status: 'idle', runtimeStatus: 'running', sessionHierarchy: { parentId: 'manager' } },
+    { id: 'stopped', name: 'Stopped child', projectId: 'p', aiToolId: 'codex', status: 'exited', runtimeStatus: 'exited', sessionHierarchy: { parentId: 'manager' } });
+  const original = JSON.stringify(all);
+  const ids = () => ui.sessionList.querySelectorAll('.session-row').map(row => row.dataset.agentId);
+  const buttons = ui.childSessionVisibility.querySelectorAll('[data-child-visibility]');
+  const click = key => ui.childSessionVisibility.listeners.click({ target: { closest: () => buttons.find(button => button.dataset.childVisibility === key) } });
+  context.renderNavigation(); expect(ids()).toEqual(['manager', 'middle', 'worker', 'sibling', 'idle', 'stopped']);
+  click('idle'); expect(ids()).not.toContain('idle'); expect(ids()).toContain('stopped'); expect(ids()).toContain('sibling');
+  click('stopped'); expect(ids()).not.toContain('stopped');
+  click('sleeping'); expect(ids()).toEqual(['manager', 'middle', 'worker']);
+  expect(ui.visibleSessionCount.textContent).toBe('3');
+  expect(ui.sessionList.querySelectorAll('.session-family-count').map(node => node.textContent)).toEqual(['1', '1']);
+  expect(buttons.map(button => button.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false']);
+  expect(context.loadChildSessionVisibility()).toEqual({ idle: false, stopped: false, sleeping: false });
+  expect(JSON.parse(stored.get(context.CHILD_SESSION_VISIBILITY_KEY))).toEqual({ idle: false, stopped: false, sleeping: false });
+  expect(JSON.stringify(all)).toBe(original);
+  expect(context.selection.id).toBe('worker'); expect(context.selectSession).not.toHaveBeenCalled(); expect(context.closeRemoteSession).not.toHaveBeenCalled();
+  click('sleeping'); expect(ids()).toContain('sibling'); expect(ids()).not.toContain('idle'); expect(ids()).not.toContain('stopped');
+  expect(buttons[2].getAttribute('aria-pressed')).toBe('true');
+});
+
+it('finds hidden children in search and reapplies saved visibility when search clears or runtime changes', () => {
+  const { all, ui, context } = fixture();
+  const ids = () => ui.sessionList.querySelectorAll('.session-row').map(row => row.dataset.agentId);
+  context.renderNavigation(); expect(ids()).not.toContain('sibling');
+  ui.searchInput.value = 'Sleeping sibling'; context.renderNavigation();
+  expect(ids()).toEqual(['manager', 'middle', 'sibling']);
+  ui.searchInput.value = ''; context.renderNavigation(); expect(ids()).not.toContain('sibling');
+  Object.assign(all[3], { deferredStart: false, resumeEligible: true, runtimeStatus: 'running', status: 'working' });
+  context.renderNavigation(); expect(ids()).toContain('sibling');
+  all[3].status = 'idle'; context.renderNavigation(); expect(ids()).not.toContain('sibling');
+});
+
+it('applies child preferences in All/Sleeping and recovers from invalid or inaccessible local storage', () => {
+  const { ui, context, stored, storage } = fixture();
+  context.activeFilter = 'all'; context.renderNavigation();
+  expect(ui.sessionList.querySelectorAll('.session-row').map(row => row.dataset.agentId)).toEqual(['manager', 'middle', 'worker']);
+  context.activeFilter = 'sleeping'; context.renderNavigation();
+  expect(ui.sessionList.querySelectorAll('.session-row')).toHaveLength(0); expect(ui.emptyState.hidden).toBe(false); expect(ui.resetSessionFilter.hidden).toBe(false);
+  stored.set(context.CHILD_SESSION_VISIBILITY_KEY, '{broken');
+  expect(context.loadChildSessionVisibility()).toEqual({ idle: true, stopped: true, sleeping: true });
+  storage.getItem = () => { throw Error('Storage disabled'); };
+  expect(context.loadChildSessionVisibility()).toEqual({ idle: true, stopped: true, sleeping: true });
+  storage.setItem.mockImplementation(() => { throw Error('Storage disabled'); });
+  const button = ui.childSessionVisibility.querySelectorAll('[data-child-visibility]')[2];
+  expect(() => ui.childSessionVisibility.listeners.click({ target: { closest: () => button } })).not.toThrow();
+  expect(ui.sessionList.querySelectorAll('.session-row').map(row => row.dataset.agentId)).toEqual(['manager', 'middle', 'sibling']);
+});
 
 it('renders real projected Active sessions under their inactive ancestors, folds and updates the editable parent', () => {
   const { all, ui, context } = fixture(); context.renderNavigation();

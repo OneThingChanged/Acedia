@@ -14,6 +14,8 @@ const validRecord = r => r && /^[a-f0-9-]{36}$/.test(r.messageId)
   && typeof r.message === 'string' && Buffer.byteLength(r.message, 'utf8') <= maxText && sha(r.message) === r.sha256
   && /^[a-f0-9]{64}$/.test(r.signature) && Number.isSafeInteger(r.sequence) && r.sequence > 0
   && Number.isFinite(r.createdAt) && typeof r.notify === 'boolean'
+  && (r.startIfOffline === undefined || typeof r.startIfOffline === 'boolean')
+  && (r.activation === undefined || r.startIfOffline === true && r.notify && ['pending', 'starting', 'started', 'failed', 'unconfirmed'].includes(r.activation?.status))
   && (r.delivery?.status !== 'queued' || (r.pinConversationId === null || validId(r.pinConversationId)) && ['codex', 'claude'].includes(r.pinProvider));
 
 export function sessionMessageNotification(messageId) {
@@ -57,8 +59,8 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, prepare = null, receipt = async () => null, publish = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, prepare, receipt, publish, readActivity, now });
+  constructor({ file, sessionFor, context, notify, start = null, prepare = null, receipt = async () => null, publish = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, start, prepare, receipt, publish, readActivity, now });
     this.records = []; this.inflight = new Map(); this.targets = new Set(); this.sequence = 0; this.closed = false;
     this.persisted = new Map();
     this.archive = new SessionMessageArchive(file + '.archive.sqlite', validRecord);
@@ -72,6 +74,10 @@ export class SessionMessages {
         if (!validRecord(r) || ids.has(r.messageId) || keys.has(key) || r.sequence <= sequence) throw Error();
         sequence = r.sequence; ids.add(r.messageId); keys.add(key);
         if (r.delivery?.status === 'notifying') r.delivery = { status: 'unconfirmed', reason: 'app-restarted' };
+        if (r.activation?.status === 'starting') {
+          r.activation = { ...r.activation, status: 'unconfirmed' };
+          r.delivery = { status: 'notification-error', reason: 'target-start-unconfirmed', nothingSent: true };
+        }
       }
       this.records = records; this.sequence = sequence;
       this.persisted = new Map(records.map(r => [r.messageId, JSON.stringify(r)]));
@@ -156,15 +162,48 @@ export class SessionMessages {
     void this.view(record).then(value => this.publish(value)).catch(() => {});
   }
   #queue(record, reason) { this.#state(record, { status: 'queued', reason, nextAttemptAt: this.now() + Math.min(30000, 1000 * 2 ** Math.min(record.notificationAttempts || 0, 5)) }); }
-  async dispatch(record, waitMs = 0) {
+  async dispatch(record, waitMs = 0, activationOnly = false) {
     if (this.closed || record.delivery?.status !== 'queued') return;
+    if (activationOnly && record.activation?.status !== 'pending') return;
     if (this.inflight.has(record.messageId)) return this.inflight.get(record.messageId);
     if (this.targets.has(record.targetId)) return;
-    if (this.records.some(r => r.sequence < record.sequence && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status))) return;
+    if (!activationOnly && this.records.some(r => r.sequence < record.sequence && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status))) return;
     this.targets.add(record.targetId);
-    const operation = Promise.resolve().then(() => this.#notify(record, waitMs));
+    const operation = Promise.resolve().then(() => activationOnly ? this.#activate(record, waitMs) : this.#notify(record, waitMs));
     this.inflight.set(record.messageId, operation);
     try { await operation; } finally { this.inflight.delete(record.messageId); this.targets.delete(record.targetId); }
+  }
+  async #activate(record, waitMs) {
+    if (this.closed || this.unavailable || record.readAt) return;
+    if (!this.context(record.sourceId)?.entry) { this.#queue(record, 'sender-offline'); return; }
+    let context = this.context(record.targetId);
+    const matches = current => {
+      const target = this.sessionFor(record.targetId);
+      return target && target.aiToolId === record.pinProvider && !target.sshHostId && !current?.entry?.ssh
+        && (!record.pinConversationId || current?.conversationId === record.pinConversationId);
+    };
+    if (!matches(context)) {
+      record.activation = { status: 'failed', at: this.now() };
+      this.#state(record, { status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true }); return;
+    }
+    record.activation = { status: 'starting', at: this.now() };
+    this.#state(record, { status: 'queued', reason: 'target-starting' });
+    try {
+      // SessionStart is idempotent for an already-running target and never
+      // selects a pane, creates a replacement session or changes permissions.
+      const result = context?.entry ? { active: true, started: false } : await this.start(record.targetId, waitMs);
+      if (this.closed) return;
+      context = this.context(record.targetId);
+      if (!result?.active || !context?.entry) throw Error('target-start-not-confirmed');
+      if (!matches(context)) throw Error('session-or-conversation-changed');
+      record.pinStartedAt = Number.isFinite(context.entry.startedAt) ? context.entry.startedAt : null;
+      record.activation = { status: 'started', at: this.now(), started: result.started === true, background: true };
+      this.#state(record, { status: 'queued', reason: 'startup-pending' });
+    } catch (error) {
+      if (this.closed || this.unavailable) return;
+      record.activation = { ...record.activation, status: 'failed' };
+      this.#state(record, { status: 'notification-error', reason: String(error.message || error).slice(0, 1000), nothingSent: true });
+    }
   }
   async #notify(record, waitMs) {
     if (this.closed || this.unavailable) return;
@@ -224,6 +263,9 @@ export class SessionMessages {
         const receipt = await this.receipt(r.sourceId, r.notificationKey).catch(() => null);
         if (receipt && JSON.stringify(receipt) !== JSON.stringify(r.delivery)) this.#state(r, receipt);
       }
+      const starting = this.records.filter(r => r.delivery?.status === 'queued' && r.activation?.status === 'pending'
+        && (r.delivery.nextAttemptAt || 0) <= this.now()).slice(0, 4);
+      await Promise.all(starting.map(r => this.dispatch(r, 0, true)));
       const first = new Map();
       for (const r of this.records) if (r.notify && pendingNotification(r.delivery?.status) && !first.has(r.targetId)) first.set(r.targetId, r);
       const due = [...first.values()].filter(r => r.delivery.status === 'queued' && (r.delivery.nextAttemptAt || 0) <= this.now()).slice(0, 4);
@@ -232,27 +274,36 @@ export class SessionMessages {
   }
   close() { this.closed = true; this.archive.close(); }
   async send(sourceId, body) {
-    if (Object.keys(body).some(k => !['sessionId', 'message', 'messageBase64', 'messageFile', 'expectedSha256', 'expectedConversationId', 'requestKey', 'notify', 'replyTo', 'waitMs'].includes(k))
+    if (Object.keys(body).some(k => !['sessionId', 'message', 'messageBase64', 'messageFile', 'expectedSha256', 'expectedConversationId', 'requestKey', 'notify', 'startIfOffline', 'replyTo', 'waitMs'].includes(k))
       || !validId(body.sessionId) || typeof body.requestKey !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(body.requestKey) || body.sessionId === sourceId
       || (body.notify !== undefined && typeof body.notify !== 'boolean') || (body.expectedConversationId !== undefined && !validId(body.expectedConversationId))
+      || (body.startIfOffline !== undefined && typeof body.startIfOffline !== 'boolean') || body.startIfOffline === true && body.notify === false
       || (body.replyTo !== undefined && !validId(body.replyTo))) throw fail('대상 세션·requestKey·메시지 옵션을 확인하세요.');
     const waitMs = body.waitMs ?? 8000;
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 10000) throw fail('waitMs는 0~10000입니다.');
     const target = this.sessionFor(body.sessionId), source = this.sessionFor(sourceId);
     if (!target) throw fail('받는 세션을 찾을 수 없습니다.', 404);
     const message = sessionMessageText(body), notify = body.notify !== false;
-    const signature = sha(JSON.stringify([body.sessionId, message, notify, body.replyTo || null, body.expectedConversationId || null]));
+    const signature = sha(JSON.stringify([body.sessionId, message, notify, body.replyTo || null, body.expectedConversationId || null,
+      ...(body.startIfOffline === true ? [{ startIfOffline: true }] : [])]));
     const old = this.records.find(r => r.sourceId === sourceId && r.requestKey === body.requestKey)
       || this.archiveRead(() => this.archive.byKey(sourceId, body.requestKey));
     if (old) {
       if (old.signature !== signature) throw fail('같은 requestKey에 다른 메시지를 보낼 수 없습니다.', 409);
+      if (old.startIfOffline && ['failed', 'unconfirmed'].includes(old.activation?.status) && old.delivery?.nothingSent) {
+        old.activation = { status: 'pending' }; this.#state(old, { status: 'queued', reason: 'explicit-start-retry' });
+      }
       // An explicit repeat of the original API call may restart a bounded retry
       // cycle only when every prior attempt is proven to have written no input.
       // Ordinary polling and application restart never reset this limit.
       if (old.delivery?.status === 'notification-error' && old.delivery.nothingSent === true && old.delivery.reason?.startsWith('retry-limit:') && old.pinProvider) {
         old.notificationAttempts = 0; this.#state(old, { status: 'queued', reason: 'explicit-safe-retry' });
       }
-      if (old.delivery?.status === 'queued' && (old.delivery.nextAttemptAt || 0) <= this.now()) await this.dispatch(old, waitMs);
+      if (old.delivery?.status === 'queued' && (old.delivery.nextAttemptAt || 0) <= this.now()) {
+        const deadline = performance.now() + waitMs;
+        await this.dispatch(old, waitMs, true);
+        await this.dispatch(old, Math.max(0, Math.floor(deadline - performance.now())));
+      }
       await this.inflight.get(old.messageId); return this.view(old);
     }
     if (body.replyTo) {
@@ -261,19 +312,25 @@ export class SessionMessages {
     }
     const liveContext = this.context(body.sessionId);
     const context = liveContext ? { ...liveContext } : liveContext;
-    if (notify && (!['codex', 'claude'].includes(target.aiToolId) || !context?.entry || context.entry.ssh)) throw fail('자동 알림은 실행 중인 로컬 Codex·Claude에 지원합니다. 다른 제공자·OFFLINE 대상은 notify:false로 수신함에 저장하세요.', 409);
+    const needsStart = notify && !context?.entry && body.startIfOffline === true;
+    if (notify && (!['codex', 'claude'].includes(target.aiToolId) || !context?.entry && !needsStart || context?.entry?.ssh || target.sshHostId)) throw fail('자동 알림은 로컬 Codex·Claude에 지원합니다. 비활성 대상은 startIfOffline:true로 시작하거나 notify:false로 저장하세요.', 409);
+    if (needsStart && !this.start) throw fail('비활성 세션 시작 기능을 사용할 수 없습니다.', 503);
     if (body.expectedConversationId && context?.conversationId !== body.expectedConversationId) throw fail('받는 대화가 변경되었습니다. 다시 조회하세요.', 409);
     const record = { messageId: randomUUID(), sequence: ++this.sequence, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
       targetId: body.sessionId, targetName: target.name || body.sessionId, message, sha256: sha(message), signature, notify,
+      ...(body.startIfOffline === true ? { startIfOffline: true } : {}),
+      ...(needsStart ? { activation: { status: 'pending' } } : {}),
       ...(body.replyTo ? { replyTo: body.replyTo } : {}), createdAt: this.now(), readAt: null,
-      ...(notify ? { pinConversationId: context.conversationId ?? null, pinStartedAt: Number.isFinite(context.entry.startedAt) ? context.entry.startedAt : null, pinProvider: target.aiToolId } : {}),
+      ...(notify ? { pinConversationId: context?.conversationId ?? null, pinStartedAt: Number.isFinite(context?.entry?.startedAt) ? context.entry.startedAt : null, pinProvider: target.aiToolId } : {}),
       delivery: { status: notify ? 'queued' : 'inbox' } };
     record.notificationKey = 'text_' + record.messageId.replace(/-/g, '');
     this.records.push(record);
     try { this.save(); } catch (error) { this.records.pop(); throw error; }
     if (!notify) return this.view(record);
+    const deadline = performance.now() + waitMs;
+    if (needsStart) await this.dispatch(record, waitMs, true);
     const earlier = this.records.some(r => r !== record && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status));
-    if (!earlier) await this.dispatch(record, waitMs);
+    if (!earlier) await this.dispatch(record, Math.max(0, Math.floor(deadline - performance.now())));
     return this.view(record);
   }
   async receive(agentId, body) {

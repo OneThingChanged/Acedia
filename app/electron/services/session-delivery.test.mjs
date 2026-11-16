@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
-import { deliveryComposerReady, deliveryEvidence, SessionDeliveries } from './session-delivery.mjs';
+import { deliveryComposerReady, deliveryEvidence, deliverySummary, SessionDeliveries } from './session-delivery.mjs';
 import { CodexScrollbackFilter } from './terminal-stream.mjs';
 
 const cleanups = [];
@@ -65,13 +65,34 @@ it('reports actual sent, received and identified new-turn stages; keeps the orig
   expect(await f.service.handle({ action: 'delivery', agentId: 'caller', body: { requestKey: f.body.requestKey } })).toMatchObject({ status: 'started', startedAt: 10050, turnId: 'new-turn' });
   expect(f.updates.map(u => u.status)).toEqual(['sending', 'sent', 'received', 'started']);
   expect(f.service.list('target')[0].deliveryId).toBe(f.service.list('caller')[0].deliveryId);
-  expect(fs.readFileSync(f.options.file, 'utf8')).not.toContain('UI 초안');
+  const stored = JSON.parse(fs.readFileSync(f.options.file, 'utf8'))[0];
+  expect(stored.summary).toBe('UI 초안 → 확인'); expect(stored.message).toBeUndefined();
 });
 it('keeps mailbox reference envelopes ASCII even when sender/project labels are Korean', async () => {
   const f = fixture(); f.contexts.caller.name = '관리자'; f.contexts.caller.projectName = '한글 프로젝트';
   const body = { ...f.body, message: 'Read acedia_session_message_receive for the original UTF-8 text.' };
   await f.service.handle({ action: 'send', agentId: 'caller', body, asciiEnvelope: true });
   expect(f.options.submit.mock.calls[0][2]).toMatch(/^[\x00-\x7f]+$/);
+});
+
+it('retains a bounded Unicode summary through restart without storing the full direct-handoff body', async () => {
+  const f = fixture(), message = '\n  수정 검증   결과입니다. 🚀\n상세 근거는 별도 문서를 확인하세요.';
+  const first = await f.send({ message });
+  expect(first.summary).toBe('수정 검증 결과입니다. 🚀');
+  const stored = JSON.parse(fs.readFileSync(f.options.file, 'utf8'))[0];
+  expect(stored.summary).toBe(first.summary); expect(stored.message).toBeUndefined();
+  expect(JSON.stringify(stored)).not.toContain('상세 근거');
+  const restored = new SessionDeliveries(f.options);
+  expect((await restored.handle({ action: 'send', agentId: 'caller', body: { ...f.body, message } })).summary).toBe(first.summary);
+  expect(f.options.submit).toHaveBeenCalledOnce();
+  delete stored.summary; fs.writeFileSync(f.options.file, JSON.stringify([stored]));
+  const legacy = new SessionDeliveries(f.options);
+  expect(legacy.unavailable).toBeFalsy(); expect(legacy.list('caller')[0].summary).toBeUndefined();
+});
+
+it('keeps summary truncation on a valid Unicode boundary', () => {
+  const summary = deliverySummary('a'.repeat(199) + '🚀' + '\nprivate detail');
+  expect(summary.length).toBe(199); expect(summary.isWellFormed()).toBe(true); expect(summary).not.toContain('private detail');
 });
 it('allows only the internal first-turn path with an empty composer and no previous turn', async () => {
   const f = fixture();

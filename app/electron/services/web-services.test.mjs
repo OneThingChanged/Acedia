@@ -469,7 +469,9 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v116');
+    expect(workerBody).toContain('multiagent-remote-v118');
+    expect(pageBody).toContain('id="childSessionVisibility"');
+    for (const status of ['idle', 'stopped', 'sleeping']) expect(pageBody).toContain(`data-child-visibility="${status}"`);
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
     expect(pageBody).toContain('type="module" src="/pwa/app.js"');

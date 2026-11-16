@@ -13,7 +13,7 @@ import { submissionId, requestJson, LatestRequest } from "./requests.js";
 import { text, make, copyText } from "./dom.js";
 import { escapeHtml, cleanChatFilePath, isAbsoluteChatFilePath, chatFileKind, localHostingUrl, inlineMd, mdToHtml } from "./chat-markup.js";
 import { providerLogo, screenColor, searchText, reconcileChat } from './workspace-ui.js';
-import { buildSessionFamilies } from './session-tree.js';
+import { buildSessionFamilies, normalizeChildSessionVisibility } from './session-tree.js';
 import { createChatRequests } from './chat-requests.js';
 import { createQueueInputGate } from './queue-delivery.js';
 import { filesForTurn, renderStoredImages } from './chat-files.js';
@@ -23,7 +23,7 @@ import { mergeChatPages, rawChatKey } from "./chat-history.js";
 import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, CHAT_CACHED_SESSIONS, selectChatTurns, touchChatCache } from './chat-pagination.js';
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
-import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus } from "./session-state.js";
+import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus, childSessionVisibilityState } from "./session-state.js";
 import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage, remoteAttachmentIsText, remoteAttachmentSizeError } from "./attachments.js";
 
 bindShellTranslations(document);
@@ -66,6 +66,7 @@ const ui = {
   visibleSessionCount: $("#visibleSessionCount"),
   newSessionButton: $("#newSessionButton"),
   filters: $("#filters"),
+  childSessionVisibility: $("#childSessionVisibility"),
   sessionList: $("#sessionList"),
   emptyState: $("#emptyState"),
   emptySessionMessage: $("#emptySessionMessage"),
@@ -254,6 +255,38 @@ const STATUS = {
 const STATUS_ORDER = Object.keys(STATUS);
 const FILTER_LABELS = { get all() { return t("전체 세션"); }, get active() { return t("활성 세션"); }, get sleeping() { return t("휴면 세션"); } };
 const SESSION_FILTER_KEY = "multiagent.remote.sessionFilter.v1";
+const CHILD_SESSION_VISIBILITY_KEY = 'multiagent.remote.childSessionVisibility.v1';
+
+function loadChildSessionVisibility() {
+  try { return normalizeChildSessionVisibility(JSON.parse(localStorage.getItem(CHILD_SESSION_VISIBILITY_KEY))); }
+  catch { return normalizeChildSessionVisibility(null); }
+}
+let childSessionVisibility = loadChildSessionVisibility();
+
+function isChildSessionVisible(agent) {
+  return childSessionVisibility[childSessionVisibilityState(agent)] !== false;
+}
+
+function syncChildSessionVisibility() {
+  for (const button of ui.childSessionVisibility.querySelectorAll('[data-child-visibility]')) {
+    const shown = childSessionVisibility[button.dataset.childVisibility] !== false;
+    button.setAttribute('aria-pressed', String(shown));
+    button.title = t(shown ? '{0} 자식 세션 숨기기' : '{0} 자식 세션 보기', [button.textContent]);
+    button.setAttribute('aria-label', button.title);
+  }
+  ui.childSessionVisibility.setAttribute('aria-label', t('자식 세션 표시'));
+}
+
+function bindChildSessionVisibility() {
+  ui.childSessionVisibility.addEventListener('click', event => {
+    const button = event.target.closest('[data-child-visibility]');
+    if (!button || !Object.hasOwn(childSessionVisibility, button.dataset.childVisibility)) return;
+    const key = button.dataset.childVisibility;
+    childSessionVisibility[key] = !childSessionVisibility[key];
+    try { localStorage.setItem(CHILD_SESSION_VISIBILITY_KEY, JSON.stringify(childSessionVisibility)); } catch {}
+    renderNavigation();
+  });
+}
 
 function storedList(key) { try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.slice(-500) : []; } catch { return []; } }
 function launchPreferences() { try { const value = JSON.parse(localStorage.getItem(launchPreferenceKey) || '{}'); return value && typeof value === 'object' ? value : {}; } catch { return {}; } }
@@ -874,6 +907,7 @@ const sessionModelEditor = createSessionModelEditor({
 
 function renderNavigation() {
   sessionModelEditor.update();
+  syncChildSessionVisibility();
   const catalog = navigationAgents();
   const counts = sessionFilterCounts(catalog);
   for (const button of ui.filters.querySelectorAll("[data-filter]")) {
@@ -908,7 +942,8 @@ function renderNavigation() {
   if (screens.length === 0) screenFragment.appendChild(make("p", "empty-state", query ? t("검색된 Screen이 없습니다.") : t("분할 Screen이 없습니다.")));
   ui.screenList.replaceChildren(screenFragment);
 
-  const families = buildSessionFamilies(visibleAgents(catalog), catalog, { includeDescendants: activeFilter === 'active' && !query });
+  const families = buildSessionFamilies(visibleAgents(catalog), catalog, { includeDescendants: activeFilter === 'active' && !query,
+    showInactiveChildren: true, isChildVisible: agent => !!query || isChildSessionVisible(agent) });
   const agents = families.agents;
   const selected = selection.type === 'session' ? catalog.find(agent => agent.id === selection.id) : null;
   const ancestors = [];
@@ -1018,7 +1053,7 @@ function renderNavigation() {
   ui.emptySessionMessage.textContent = query ? t("조건에 맞는 세션이 없습니다.")
     : activeFilter === "sleeping" ? t("휴면 세션이 없습니다.")
     : activeFilter === "active" ? t("활성 세션이 없습니다.") : t("조건에 맞는 세션이 없습니다.");
-  ui.resetSessionFilter.hidden = activeFilter === "all" && !query;
+  ui.resetSessionFilter.hidden = activeFilter === "all" && !query && Object.values(childSessionVisibility).every(Boolean);
   ui.overviewButton.classList.toggle("selected", selection.type === "monitor");
   ui.documentsButton.classList.toggle("selected", selection.type === "documents");
   ui.usageButton.classList.toggle("selected", selection.type === "usage");
@@ -2318,7 +2353,7 @@ async function openChatFolder(agentId, projectId, rawPath, trail = []) {
 }
 
 async function openChatFilePreview(agentId, projectId, rawPath, kind) {
-  if (kind === 'archive') {
+  if (['archive', 'download'].includes(kind) || ['archive', 'download'].includes(chatFileKind(rawPath))) {
     await downloadRemoteFile({ agentId, projectId, path: cleanChatFilePath(rawPath) });
     return;
   }
@@ -5886,6 +5921,7 @@ ui.summaryGrid.addEventListener("click", (event) => {
   const card = event.target.closest("[data-summary-filter]");
   if (card) selectMonitor(card.dataset.summaryFilter);
 });
+bindChildSessionVisibility();
 ui.filters.addEventListener("click", (event) => {
   const button = event.target.closest("[data-filter]");
   if (!button) return;
@@ -5899,6 +5935,8 @@ ui.searchInput.addEventListener("input", () => {
 });
 ui.resetSessionFilter.addEventListener("click", () => {
   ui.searchInput.value = "";
+  childSessionVisibility = normalizeChildSessionVisibility(null);
+  try { localStorage.setItem(CHILD_SESSION_VISIBILITY_KEY, JSON.stringify(childSessionVisibility)); } catch {}
   setActiveFilter("all", { push: true });
   renderNavigation();
   if (selection.type === "monitor") renderMonitor();
@@ -5989,7 +6027,7 @@ ui.documentMarkdown.addEventListener("click", (event) => {
     }
   }
   const resolved = parts.join("/");
-  if (["image", "archive"].includes(targetKind)) {
+  if (["image", "archive", "download"].includes(targetKind)) {
     void openChatFilePreview("", selection.id, resolved, targetKind);
     return;
   }

@@ -1,6 +1,9 @@
 // Remote UI messages. Columns: Korean, English, Simplified Chinese, Traditional Chinese, Japanese, Spanish.
 // Missing translations use English, matching the desktop language policy.
 export const messages = [
+  ["자식 세션 표시","Show child sessions","显示子会话","顯示子工作階段","子セッションを表示","Mostrar sesiones secundarias"],
+  ["{0} 자식 세션 숨기기","Hide {0} child sessions","隐藏 {0} 子会话","隱藏 {0} 子工作階段","{0} の子セッションを非表示","Ocultar sesiones secundarias {0}"],
+  ["{0} 자식 세션 보기","Show {0} child sessions","显示 {0} 子会话","顯示 {0} 子工作階段","{0} の子セッションを表示","Mostrar sesiones secundarias {0}"],
   ["세션 간 메시지","Session message","会话间消息","工作階段間訊息","セッション間メッセージ","Mensaje entre sesiones"],
   ["수신됨","Received","已接收","已接收","受信済み","Recibido"],
   ["전달 본문 복사","Copy message body","复制消息正文","複製訊息本文","メッセージ本文をコピー","Copiar mensaje"],

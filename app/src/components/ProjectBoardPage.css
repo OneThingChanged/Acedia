@@ -79,6 +79,8 @@
 .wb-transfers { margin-top: 16px; border-top: 1px solid #364b66; font-size: 12px; overflow-wrap: anywhere; }
 .wb-transfers p { padding: 7px 0; }
 .wb-transfers h3 { font-size: 13px; }
+.wb-transfers button { width: 100%; text-align: left; }
+.wb-transfers button small { display: block; margin-top: 5px; color: var(--wb-muted); font-size: 10px; }
 .wb-node.dragging-session { opacity: .45; }
 .wb-node[data-drop]::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--wb-blue); pointer-events: none; }
 .wb-node[data-drop=before]::after { top: -5px; }

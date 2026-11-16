@@ -5,7 +5,7 @@ import { text } from "./dom.js";
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
-const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:zip|mp4|webm|md|markdown|html?|jsonc?|png|jpe?g|gif|webp|bmp|svg|ico|txt|tsx?|jsx?|mjs|cjs|py|rs|go|cpp|hpp|cc|cs|c|h|java|kt|swift|css|scss|ya?ml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)(?![a-z0-9]|\.[a-z0-9])(?::\d+(?::\d+)?)?/gi;
+const CHAT_FILE_PATH_RE = /(?:\/?[A-Za-z]:[\\/])?(?:\.{1,2}[\\/])?(?:[^\s"'<>|:*?()[\]{},;]+[\\/])*[^\s"'<>|:*?()[\]{},;]+\.(?:zip|pdf|docx?|dotx|xlsx?|xltx|pptx?|ppsx?|potx|odt|ods|odp|rtf|hwpx?|mp4|webm|md|markdown|html?|jsonc?|png|jpe?g|gif|webp|bmp|svg|ico|txt|tsx?|jsx?|mjs|cjs|py|rs|go|cpp|hpp|cc|cs|c|h|java|kt|swift|css|scss|ya?ml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)(?![a-z0-9]|\.[a-z0-9])(?::\d+(?::\d+)?)?/gi;
 const CODE_FILE = /\.(?:txt|ts|tsx|js|jsx|mjs|cjs|py|rs|go|c|h|cpp|hpp|cc|cs|java|kt|swift|css|scss|jsonc|yaml|yml|toml|xml|ini|sql|sh|ps1|bat|cmd|cmake)$/i;
 
 function localHostingUrl(value) {
@@ -50,6 +50,7 @@ function chatFileKind(value) {
   if (/\.(?:png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(path)) return "image";
   if (/\.(?:mp4|webm)$/i.test(path)) return "video";
   if (/\.zip$/i.test(path)) return 'archive';
+  if (/\.(?:pdf|docx?|dotx|xlsx?|xltx|pptx?|ppsx?|potx|odt|ods|odp|rtf|hwpx?)$/i.test(path)) return 'download';
   if (isAbsoluteChatFilePath(path) && !/\.[^\\/]+$/.test(path.replace(/[\\/]+$/, ""))) return "folder";
   return null;
 }

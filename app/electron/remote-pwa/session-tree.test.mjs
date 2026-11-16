@@ -1,9 +1,29 @@
 import { expect, it } from 'vitest';
-import { buildSessionFamilies } from './session-tree.js';
+import { buildSessionFamilies, normalizeChildSessionVisibility } from './session-tree.js';
 
 const agent = (id, parent, extra = {}) => ({ id, name: id, projectId: 'p',
   ...(parent ? { sessionHierarchy: { parentId: parent } } : {}), ...extra });
 const ids = values => values.map(value => value.id);
+
+it('defaults child visibility to shown while accepting only explicit boolean preferences', () => {
+  for (const value of [undefined, null, 'bad', [], { idle: 'false', stopped: 0 }]) {
+    expect(normalizeChildSessionVisibility(value)).toEqual({ idle: true, stopped: true, sleeping: true });
+  }
+  expect(normalizeChildSessionVisibility({ idle: false, sleeping: false, unknown: false })).toEqual({ idle: false, stopped: true, sleeping: false });
+});
+
+it('filters child states after inherited expansion and retains only necessary hidden ancestors', () => {
+  const all = [agent('manager', null, { sidebarShowInactiveChildren: false }), agent('idle', 'manager'),
+    agent('sleep', 'manager'), agent('worker', 'idle'), agent('stopped', 'manager')];
+  const original = JSON.stringify(all);
+  const tree = buildSessionFamilies([all[0]], all, { includeDescendants: true, showInactiveChildren: true,
+    isChildVisible: item => item.id === 'worker' });
+  expect(ids(tree.agents)).toEqual(['manager', 'idle', 'worker']);
+  expect(ids(tree.children.get('manager'))).toEqual(['idle']);
+  expect(ids(tree.children.get('idle'))).toEqual(['worker']);
+  expect(JSON.stringify(all)).toBe(original);
+  expect(ids(buildSessionFamilies(all, all, { isChildVisible: () => false }).agents)).toEqual(['manager']);
+});
 
 it('uses the editable parent and builds multiple levels without duplicating sessions', () => {
   const all = [agent('child', 'manager', { sessionHierarchy: { parentId: 'manager', createdById: 'old' } }),

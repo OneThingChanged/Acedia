@@ -9,6 +9,23 @@ const appScript = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.
 describe("Remote chat file links", () => {
   const agent = { id: "agent-1", projectId: "project-1" };
 
+  it('recognizes binary document links as downloads, including recorded filename-only results', () => {
+    for (const extension of ['PPTX', 'ppt', 'pps', 'ppsx', 'potx', 'doc', 'docx', 'dotx', 'xls', 'xlsx', 'xltx', 'pdf', 'odt', 'ods', 'odp', 'rtf', 'hwp', 'hwpx']) {
+      const path = `D:/AI/AXWiki/outputs/weekly/report.${extension}`;
+      for (const message of [path, `\`${path}\``, `[보고서](${path})`, `(${path}).`]) {
+        const html = links.inlineMd(message, agent);
+        expect(html).toContain(`data-chat-file-path="${path}"`);
+        expect(html).toContain('data-chat-file-kind="download"');
+        expect(html.match(/class="chat-file-link/g)).toHaveLength(1);
+      }
+      expect(links.inlineMd(`\`report.${extension}\``, agent, [{ path }])).toContain(`data-chat-file-path="${path}"`);
+      expect(links.chatFileKind(`result.${extension}.exe`)).toBeNull();
+      expect(links.inlineMd(`result.${extension}.exe`, agent)).not.toContain('data-chat-file-path');
+    }
+    expect(links.inlineMd('[보고서](file:///D:/outputs/%EC%A3%BC%EA%B0%84%20%EB%B3%B4%EA%B3%A0.PPTX)', agent)).toContain('data-chat-file-path="D:/outputs/주간 보고.PPTX"');
+    expect(links.inlineMd('https://example.com/result.pptx', agent)).toContain('href="https://example.com/result.pptx"');
+  });
+
   it('resolves filename-only results from the same answer to their recorded full path', () => {
     const file = { path:'G:/Unreal/Saved/ToonStyleClaude/video/ToonStylePlus_WithCharacter.mp4', sourceSequence:2 };
     const turn = [{sequence:2,kind:'tool-result'}, {sequence:3,kind:'text'}];

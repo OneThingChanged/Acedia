@@ -15,7 +15,7 @@ afterEach(async () => {
   }
 });
 
-async function fixture(channel = "remote") {
+async function fixture(channel = "remote", publicHostname = "") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "acedia-document-download-"));
   roots.push(root);
   const project = path.join(root, "project");
@@ -42,15 +42,63 @@ async function fixture(channel = "remote") {
   } else {
     service = new RemoteDashboardService({ baseDir: root });
     service.config.server_port = 0;
+    service.config.public_hostname = publicHostname;
     service.syncView(view);
   }
   services.push(service);
   const { url } = await service.start();
   const download = (requestedPath, options, extra = {}) => fetch(`${url}/api/docs/download?${new URLSearchParams({ projectId: "p1", path: requestedPath, ...extra })}`, options);
-  return { root, project, other, outside, source, name, url, download };
+  return { root, project, other, outside, source, name, url, download, service };
 }
 
 describe("Remote original document downloads", () => {
+  it.each(['remote', 'local', 'mounted'])('streams Office/PDF and document attachments with original names and bytes on %s', async channel => {
+    const { project, url, download } = await fixture(channel === 'local' ? 'local' : 'remote', channel === 'mounted' ? 'agent.example.com/dddd' : '');
+    const extensions = ['PPTX', 'ppt', 'pps', 'ppsx', 'potx', 'docx', 'doc', 'dotx', 'xlsx', 'xls', 'xltx', 'pdf', 'odt', 'ods', 'odp', 'rtf', 'hwp', 'hwpx'];
+    const source = Buffer.from([0x50, 0x4b, 3, 4, 0, 255, 128, 0, 10, 13]);
+    for (const extension of extensions) {
+      const name = `주간 보고 ('최종').${extension}`;
+      fs.writeFileSync(path.join(project, 'docs', name), source);
+      const head = await download(`docs/${name}`, { method: 'HEAD' });
+      expect(head.status, name).toBe(200); expect(await head.text()).toBe('');
+      expect(head.headers.get('content-length')).toBe(String(source.length));
+      expect(decodeURIComponent(head.headers.get('content-disposition').split("filename*=UTF-8''")[1])).toBe(name);
+      const response = await download(name, undefined, { agentId: 'a1' });
+      expect(response.status, name).toBe(200);
+      expect(response.headers.get('content-type')).toBe('application/octet-stream');
+      expect(response.headers.get('content-disposition')).toBe(head.headers.get('content-disposition'));
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(source);
+      expect((await fetch(`${url}/api/docs/read?${new URLSearchParams({projectId:'p1',path:`docs/${name}`})}`)).status).toBe(415);
+    }
+    const folder = await fetch(`${url}/api/files/folder?projectId=p1&path=docs`).then(response => response.json());
+    expect(folder.entries.filter(entry => extensions.some(extension => entry.name.endsWith('.' + extension))).map(entry => entry.kind)).toEqual(extensions.map(() => 'download'));
+  });
+
+  it('keeps authentication and owner/project boundaries for binary document downloads at a mounted address', async () => {
+    const { project, outside, url, download, service } = await fixture('remote', 'agent.example.com/acedia');
+    service.config.owner = 'owner'; service.access.approved = ['guest'];
+    const source = Buffer.from([0x50, 0x4b, 0, 255]);
+    fs.writeFileSync(path.join(project, 'docs', 'result.pptx'), source);
+    fs.writeFileSync(path.join(project, 'docs', 'result.pptx.exe'), source);
+    fs.writeFileSync(path.join(outside, 'result.pptx'), source);
+    fs.symlinkSync(outside, path.join(project, 'docs', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    const headers = login => ({ 'cf-connecting-ip': '203.0.113.5', ...(login ? { cookie: `${service.cookieName()}=${service.sign(login)}` } : {}) });
+    for (const method of ['GET', 'HEAD']) {
+      expect((await download('docs/result.pptx', { method, headers: headers() })).status).toBe(401);
+      for (const login of ['guest', 'owner']) {
+        const result = await download('docs/result.pptx', { method, headers: headers(login) });
+        expect(result.status).toBe(200); if (method === 'GET') expect(Buffer.from(await result.arrayBuffer())).toEqual(source);
+        expect((await download('../outside/result.pptx', { method, headers: headers(login) })).status).toBe(403);
+        expect((await download('docs/escape/result.pptx', { method, headers: headers(login) })).status).toBe(403);
+        expect((await download('docs/result.pptx.exe', { method, headers: headers(login) })).status).toBe(415);
+        expect((await download('docs/missing.pptx', { method, headers: headers(login) })).status).toBe(404);
+      }
+      expect((await download(path.join(outside, 'result.pptx'), { method, headers: headers('guest') })).status).toBe(403);
+      expect((await download(path.join(outside, 'result.pptx'), { method, headers: headers('owner') })).status).toBe(200);
+    }
+  });
+
   it.each(['remote', 'local'])('downloads ZIP links and folder entries without treating the binary as text on %s', async channel => {
     const { project, outside, url, download } = await fixture(channel);
     const name = '연동 묶음 (공개키).ZIP', source = Buffer.from([0x50,0x4b,3,4,0,0,0,0,255,128,0,0]);
@@ -111,11 +159,15 @@ describe("Remote original document downloads", () => {
     const { project, url, download } = await fixture();
     const source = Buffer.alloc(2 * 1024 * 1024 + 1, 65);
     fs.writeFileSync(path.join(project, "large.md"), source);
+    fs.writeFileSync(path.join(project, "large.pptx"), source);
     fs.writeFileSync(path.join(project, "empty.md"), "");
     expect((await fetch(`${url}/api/docs/read?projectId=p1&path=large.md`)).status).toBe(413);
     const response = await download("large.md");
     expect(response.status).toBe(200);
     expect(Buffer.from(await response.arrayBuffer()).equals(source)).toBe(true);
+    const presentation = await download('large.pptx');
+    expect(presentation.status).toBe(200);
+    expect(Buffer.from(await presentation.arrayBuffer()).equals(source)).toBe(true);
     const empty = await download("empty.md");
     expect(empty.status).toBe(200);
     expect(empty.headers.get("content-length")).toBe("0");

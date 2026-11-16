@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { latestIncoming, sessionTableMatches, sessionTableRows, transferStages } from './sessionTable';
+import { latestIncoming, sessionTableMatches, sessionTableRows, transferStages, transferTitle } from './sessionTable';
 import type { BoardSnapshot } from './workBoard';
 
 const data = { projects: [{ id: 'p', name: 'Project', folder: 'D:/Project' }], sessions: [
@@ -35,4 +35,15 @@ it('keeps notification start and original text read as independent evidence, eve
   expect(stages.find(s => s.label[1] === 'Text read')?.at).toBeUndefined();
   expect(stages.find(s => s.label[1] === 'Response started')?.at).toBe(200);
   expect(stages.find(s => s.label[1] === 'Notification sent')?.at).toBeUndefined();
+});
+
+it('gives old handoffs distinct sender, timestamp and record labels without inventing a summary', () => {
+  const first = { id: '12345678-first', from: 'sender', to: 'worker', status: 'started', reason: '', savedAt: 1000 };
+  const second = { ...first, id: '87654321-second', savedAt: 2000 };
+  const title = transferTitle(first, 'Sender');
+  expect(title[0]).toContain('Sender'); expect(title[1]).toContain('Direct handoff');
+  expect(title[0]).toContain(new Date(1000).toLocaleString()); expect(title[0]).toContain('#12345678');
+  expect(transferTitle(second, 'Sender')[0]).not.toBe(title[0]);
+  expect(first).not.toHaveProperty('summary');
+  expect(transferTitle({ ...first, summary: '실제 요청 요약' }, 'Sender')).toEqual(['실제 요청 요약', '실제 요청 요약']);
 });
