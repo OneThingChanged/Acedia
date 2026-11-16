@@ -575,29 +575,30 @@ function boundPathMatchToForeground(
   logical: { text: string; cellMap: CellRef[] },
   match: MarkdownPathMatch
 ): MarkdownPathMatch {
-  const first = logical.cellMap[match.startIndex];
+  const raw = logical.text.slice(match.startIndex, match.endIndex);
+  const cleanedStart = raw.indexOf(match.text);
+  if (cleanedStart < 0) return match;
+  const pathStart = match.startIndex + cleanedStart;
+  const first = logical.cellMap[pathStart];
   const firstCell = first && term.buffer.active.getLine(first.row)?.getCell(first.col);
   if (!firstCell || firstCell.isFgDefault()) return match;
 
-  // Parenthesized file paths already have an explicit boundary. A TUI may
+  // Delimited file and folder paths already have an explicit boundary. A TUI may
   // repaint a wrapped continuation with another foreground color; that does
   // not shorten the path. Keep color-based trimming for adjacent prose.
-  if (logical.text[match.startIndex - 1] === "(" &&
-      logical.text[match.endIndex] === ")" &&
-      /\.[A-Za-z0-9]{1,16}(?::\d+(?::\d+)?)?$/.test(match.text)) return match;
+  const closing: Record<string, string> = { '(': ')', '[': ']', '`': '`', '"': '"', "'": "'" };
+  const close = closing[logical.text[pathStart - 1]];
+  if (close && (close === logical.text[match.endIndex] || close === logical.text[pathStart + match.text.length])) return match;
 
   // Highlighted paths can touch prose, e.g. green `SubStorage` + default `는`.
   // Use the ANSI foreground boundary for both the target and clickable range;
   // uncolored paths retain their ordinary Unicode filename matching.
   const mode = firstCell.getFgColorMode();
   const color = firstCell.getFgColor();
-  for (let index = match.startIndex + 1; index < match.endIndex; index++) {
+  for (let index = pathStart + 1; index < match.endIndex; index++) {
     const ref = logical.cellMap[index];
     const cell = ref && term.buffer.active.getLine(ref.row)?.getCell(ref.col);
     if (!cell || (cell.getFgColorMode() === mode && cell.getFgColor() === color)) continue;
-    const raw = logical.text.slice(match.startIndex, match.endIndex);
-    const cleanedStart = raw.indexOf(match.text);
-    if (cleanedStart < 0) return match;
     const text = match.text.slice(0, index - match.startIndex - cleanedStart).trimEnd();
     if (!text) return match;
     return {
@@ -886,7 +887,7 @@ function registerUrlLinkProvider(term: Terminal, onUrl: UrlHandler) {
   });
 }
 
-function registerMarkdownLinkProvider(
+export function registerMarkdownLinkProvider(
   term: Terminal,
   id: string,
   onMarkdownPath: MarkdownPathHandler,

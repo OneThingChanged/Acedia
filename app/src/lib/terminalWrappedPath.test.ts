@@ -19,7 +19,7 @@ function buffer(rows: string[], wrapped: number[] = []) {
         translateToString: () => text.trimEnd(),
         getCell(c: number) {
           const cell = cells[c] ?? { chars: "", width: 1 };
-          return { getChars: () => cell.chars, getWidth: () => cell.width };
+          return { getChars: () => cell.chars, getWidth: () => cell.width, isFgDefault: () => true };
         },
       };
     },
