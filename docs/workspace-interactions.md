@@ -597,7 +597,9 @@ and the delayed-updater null-reference error without GUI automation.
 
 ## Project Board review inbox (1.8.2.10)
 
-### Working-child priority and delegated completion (2026-11-17 source, unreleased)
+### Working-child priority and delegated completion (Standard EXE 1.8.2.25)
+
+Published in [Standard EXE 1.8.2.25](release-1-8-2-25.md); update the installed host to use this behavior.
 
 The Board temporarily brings a working child's whole branch above inactive
 siblings under the same parent. Manual `sessionOrder` stays unchanged and returns

@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-11-17
+
+* **1.8.2.25 EXE release**: Publish working-child board priority, delegation flow/context actions, final-leader completion notifications, ordinary Claude folder startup and opt-in previous-run session restoration. All 277 source files/2,258 tests, mobile 26 checks/typecheck, fixed-source packaging, actual ASAR contracts, packaged runtime regression and installer/public download verification passed. Product source 0961473; published 2026-11-17 09:47:17 KST, public verified 2026-11-17 09:48:39 KST. Existing signed APK 1.8.1.39 reused; user installation remains separate. See [release record](release-1-8-2-25.md).
+
 ## 2026-10-09
 
 * **1.8.1.73 EXE release**: Combine visible persistent unread completion, Windows notification/taskbar fixes and Tab-selected Chat steering/completion reservations. All 181 files/1,247 tests and 24 mobile checks, dark/light sidebar lifecycle, actual Windows show events, native Codex same-turn steering and Chat/Desktop/Remote/model regressions passed. Fixed-source EXE build, packaged bridge/Dashboard/notification policy/lifecycle, 281-file source equality and installer version/manifest/hash checks passed. Published stable v1.8.1.73 at 23:32:27 KST from bfc98fd; updater detection from 1.8.1.70/71/72, actual public download and all three asset hashes passed at 23:33:08 KST. Reuses signed APK 1.8.1.39/code 21; user installation remains separate. See [release scope and verification](release-1-8-1-73.md).

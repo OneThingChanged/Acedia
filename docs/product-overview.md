@@ -56,6 +56,13 @@ installers. Closing all workspace windows can leave the tray-owned application,
 shared browser profile, and browser MCP broker running invisibly; a coordinated
 full exit tears down PTYs and services.[^desktop-manifest][^electron-main]
 
+Standard EXE [1.8.2.25](release-1-8-2-25.md) checkpoints active local
+Codex/Claude sessions before full exit and offers an explicit Yes/No restore
+on the next run. Working sessions receive one guarded continuation request;
+existing input and unresolved questions remain protected. The board prioritizes
+working child branches and distinguishes outstanding delegated work from final
+leader completion.
+
 The Android package is a separate client for the authenticated Remote service.
 It stores multiple server profiles and displays the Remote UI through a
 constrained WebView; it does not embed the desktop runtime.[^mobile-manifest]

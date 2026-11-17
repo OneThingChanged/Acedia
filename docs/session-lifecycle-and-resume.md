@@ -118,7 +118,9 @@ remaining permanently busy.[^activity][^hook-service]
 
 ## Window close and full exit
 
-### Previous-run recovery confirmation (2026-11-17 source, unreleased)
+### Previous-run recovery confirmation (Standard EXE 1.8.2.25)
+
+Published in [Standard EXE 1.8.2.25](release-1-8-2-25.md); update the installed host to use this behavior.
 
 A full exit now checkpoints the live local Codex/Claude session set before the
 renderer receives its save/quit request. The existing workspace snapshot retains
@@ -158,7 +160,9 @@ and `status` for the current coordinator. Decisions bind an exact checkpoint ID,
 and launches bind exact Acedia/session/account identities. Status contains only
 concise metadata. Board renderers and other workspaces cannot launch a restore.
 
-### Claude startup activation (2026-11-17 source, unreleased)
+### Claude startup activation (Standard EXE 1.8.2.25)
+
+Published in [Standard EXE 1.8.2.25](release-1-8-2-25.md); update the installed host to use this behavior.
 
 An explicitly activated ordinary local Claude session can now confirm the
 registered project/working folder even without API-created provenance. The
