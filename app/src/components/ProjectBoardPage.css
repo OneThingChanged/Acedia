@@ -116,13 +116,15 @@
 .wb-node[data-state=background] { background: #2c253a; border-color: #88719f; }
 .wb-state-icon[data-state=background] { border: 3px solid #665476; border-top-color: #e0c7ff; border-right-color: #e0c7ff; border-radius: 50%; animation: wb-spin 3.2s linear infinite; }
 .wb-edges { position: absolute; z-index: 0; inset: 0; pointer-events: none; overflow: visible; }
-.wb-edges path { fill: none; stroke: #7192b8; stroke-width: 1.5; opacity: .62; }
+.wb-edges path { fill: none; stroke: #7192b8; stroke-width: 2; opacity: .72; }
+.wb-edges path[data-delegated=true] { stroke: #c4a5ff; stroke-width: 2.8; opacity: 1; animation: wb-delegation 2.2s ease-in-out infinite; }
+@keyframes wb-delegation { 0%, 100% { opacity: .65; filter: drop-shadow(0 0 1px #b99bff44); } 50% { opacity: 1; filter: drop-shadow(0 0 5px #c4a5ffaa); } }
 .wb-session-edges { z-index: 1; }
 .wb-reference-edges { position: absolute; z-index: 3; inset: 0; pointer-events: none; overflow: visible; }
 .wb-reference-edges g { pointer-events: stroke; cursor: pointer; opacity: .45; }
 .wb-reference-edges g[data-active=true] { opacity: 1; }
 .wb-reference-edges g.dimmed { opacity: .16; }
-.wb-ref-line { fill: none; stroke: #a48ad3; stroke-width: 2; stroke-dasharray: 5 7; pointer-events: none; }
+.wb-ref-line { fill: none; stroke: #b197de; stroke-width: 2.4; stroke-dasharray: 5 7; pointer-events: none; animation: wb-flow 4s linear infinite; }
 .wb-reference-edges marker { fill: var(--wb-purple); }
 .wb-ref-hit { fill: none; stroke: transparent; stroke-width: 16; }
 .wb-reference-edges g[data-active=true] .wb-ref-line { stroke: var(--wb-purple); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 1 13; animation: wb-flow 1.8s linear infinite; filter: drop-shadow(0 0 3px #b99bff55); }

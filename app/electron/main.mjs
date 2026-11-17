@@ -20,7 +20,8 @@ import { captureBrowserPng } from "./services/browser-capture.mjs";
 import { collectBrowserPage, captureBrowserAsset, readBrowserCollection } from './services/browser-page-collection.mjs';
 import { BrowserActivity } from "./services/browser-activity.mjs";
 import { ProjectBoard } from './services/project-board.mjs';
-import { ProjectBoardWindow, BoardSessionNavigation, BOARD_COMMANDS, assertBoardAccess } from './services/project-board-window.mjs';
+import { DelegatedWork, pendingTaskDelegations, delegatedCompletion } from './services/delegated-work.mjs';
+import { ProjectBoardWindow, BoardSessionNavigation, BoardSessionActions, BOARD_COMMANDS, assertBoardAccess } from './services/project-board-window.mjs';
 import {
   app,
   BrowserWindow,
@@ -78,7 +79,8 @@ import { createChatMessageSubmitter } from './services/chat-message-submission.m
 import { SessionDeliveries, deliveryComposerReady } from './services/session-delivery.mjs';
 import { firstMessageSession, noteFirstMessageInput } from './services/session-first-message.mjs';
 import { SessionReadiness, startupBlocker } from './services/session-readiness.mjs';
-import { StartupAutomation, startupPrompt } from './services/startup-automation.mjs';
+import { StartupAutomation, startupPrompt, registeredClaudeTrustRoot } from './services/startup-automation.mjs';
+import { SessionRecovery, recoveryConfiguration, recoveryWorkMode } from './services/session-recovery.mjs';
 import { confirmCodexConversationReset } from './services/codex-conversation-reset.mjs';
 import { CodexCapacityRetry, codexRetryPromptReady } from "./services/codex-capacity-retry.mjs";
 import { RemoteSessionCreateBroker } from "./services/remote-session-create-broker.mjs";
@@ -619,10 +621,10 @@ async function pollActiveQuestions() {
     activeQuestions.prune(ptys.keys());
     capacityRetry.prune(ptys.keys());
     sessionDeliveries.poll();
-    void sessionMessages.poll().catch(error => console.warn('[electron] message queue unavailable', error.message));
+    if (!sessionRecovery.waitingDecision()) void sessionMessages.poll().catch(error => console.warn('[electron] message queue unavailable', error.message));
     for (const id of ptys.keys()) startupAutomation.check(id);
-    await taskOrchestration.tick();
-    await sessionRuns.tick();
+    if (!sessionRecovery.waitingDecision()) { await taskOrchestration.tick(); await sessionRuns.tick(); }
+    void sessionRecovery.tick().catch(error => console.warn('[electron] session recovery unavailable', error.message));
     asyncQuestionNotifier.prune(ptys.keys());
     for (const id of announcedAsyncQuestions.keys()) if (!ptys.has(id)) announcedAsyncQuestions.delete(id);
     for (const [id, entry] of ptys) {
@@ -681,10 +683,17 @@ const browserMcpScriptPath = app.isPackaged
   : path.join(appRoot, "electron", "services", "browser-mcp-server.mjs");
 
 let savedBoardCatalog = { projects: [], agents: [] };
+const delegatedWork = new DelegatedWork({ file: path.join(hookBaseDir, 'delegated-work.json'),
+  parentOf: id => (monitorService.state?.agents || savedBoardCatalog.agents).find(a => a.id === id)?.sessionHierarchy?.parentId });
+let taskDelegationRuns = () => [];
+const pendingDelegations = () => [...delegatedWork.edges(), ...pendingTaskDelegations(taskDelegationRuns())];
+const completionBlocked = id => delegatedWork.blocks(id) || pendingTaskDelegations(taskDelegationRuns()).some(d => d.from === id);
 const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-board.json'),
   catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
   waitingSince: id => taskOrchestration.waitingSince(id),
+  delegations: pendingDelegations,
+  delegationError: () => delegatedWork.error ? '하달 상태 기록을 확인할 수 없어 완료 알림을 보류합니다. delegated-work.json을 확인하세요.' : null,
   transfers: () => [
     ...[...sessionDeliveries.records.values()].filter(r => !r.requestKey.startsWith('text_')).slice(-50).map(r => ({ id: r.deliveryId, from: r.sourceId, to: r.targetId, summary: r.summary, status: r.status, reason: r.reason, savedAt: r.createdAt, sentAt: r.sentAt, receivedAt: r.receivedAt, startedAt: r.startedAt })),
     ...sessionMessages.recentRecords(50).map(r => ({ id: r.messageId, from: r.sourceId, to: r.targetId, status: r.delivery?.status, reason: r.delivery?.reason,
@@ -725,6 +734,7 @@ function publishAgentHookEvent(eventName, payload) {
       if (announcedQuestions.size > 256) announcedQuestions.delete(announcedQuestions.keys().next().value);
     } else if (['done', 'cancelled', 'session-start'].includes(payload.event)) announcedQuestions.delete(payload.id);
     payload = backgroundWorkMonitor?.hook(payload) || payload;
+    payload = delegatedCompletion(payload, delegatedWork, taskDelegationRuns());
     projectBoard.observe(payload);
     powerPolicy.hook(payload);
     // Remote/monitor views only need concise state. Keep tool input and the
@@ -1104,13 +1114,14 @@ const sessionDeliveries = new SessionDeliveries({
     if (!submitted && ptys.get(id) === entry) entry.firstMessageSubmitted = previous;
     return submitted;
   },
-  publish: payload => sendEventToAll('agent:session-delivery', payload),
+  publish: payload => { delegatedWork.transfer(payload); sendEventToAll('agent:session-delivery', payload); },
 });
 const sessionReadiness = new SessionReadiness({
   context: deliveryContext, read: currentQuestion, freshRead: freshDeliverySession,
   ready: (target, options) => sessionDeliveries.ready(target, options),
 });
 const sessionMessages = new SessionMessages({
+  observe: record => delegatedWork.transfer(record, true),
   readActivity: (id, targets, task) => projectBoard.referenceRead(id, targets, task),
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
   start: (sessionId, waitMs) => sessionStart.handle({ sessionId, waitMs }),
@@ -1220,6 +1231,28 @@ const sessionStart = new SessionStart({
   writable: id => !forceClosing && !accountSwitches.has(id),
   activate: id => remoteSessionActivationBroker.activate(id),
 });
+const sessionRecovery = new SessionRecovery({ file: path.join(app.getPath('userData'), 'session-recovery.json'),
+  catalog: () => Array.isArray(monitorService.state?.agents) ? monitorService.state : savedBoardCatalog,
+  context: deliveryContext, readiness: id => sessionReadiness.inspect(id),
+  closing: () => forceClosing || closeCoordinator?.isPending() === true,
+  submit: (_id, entry, message, isCurrent) => submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
+    encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined }),
+});
+function captureSessionRecovery() {
+  const catalog = Array.isArray(monitorService.state?.agents) ? monitorService.state : savedBoardCatalog;
+  return sessionRecovery.capture([...ptys].map(([id, entry]) => {
+    const agent = catalog.agents?.find(a => a.id === id) || usageIndex.catalog.agents.find(a => a.id === id) || {};
+    const project = catalog.projects?.find(p => p.id === agent.projectId);
+    const sessionId = agentSessionIds.get(id) || entry.resumeContext?.sessionId || accountBindings.get(id)?.sessionId || null;
+    const mode = recoveryWorkMode(agent, monitorHooks.get(id), pendingDelegations().some(t => t.from === id));
+    return { id, name: agent.name || id, provider: entry.aiToolId, cwd: entry.cwd, ssh: entry.ssh || agent.sshHostId || project?.sshHostId,
+      sessionId, fresh: !sessionId && mode !== 'working' && !entry.resumeContext && !agent.lastSessionId
+        && !entry.firstMessageInput && !entry.firstMessageSubmitted && !entry.initialPromptSubmitted && !sessionService.notes.get(id)?.sessionId,
+      configuration: recoveryConfiguration(agent, project), parentId: agent.sessionHierarchy?.parentId,
+      mode,
+      poolResumeOwnerId: entry.poolRouted ? accountPool.state.sessions[id]?.accountId : null };
+  }));
+}
 const sessionRegistry = new SessionRegistry({
   catalog: () => monitorService?.state || {},
   active: id => ptys.has(id),
@@ -1491,8 +1524,10 @@ const taskOrchestration = new TaskOrchestration({
   defaults: (provider = 'codex') => sessionModelDefaults.get(provider).settings,
 });
 workspaceManagement.tasks = taskOrchestration;
+taskDelegationRuns = () => taskOrchestration.data.runs;
 const startupAutomation = new StartupAutomation({
-  entry: id => ptys.get(id), allowedRoot: id => taskOrchestration.startupTrustRoot(id),
+  entry: id => ptys.get(id), allowedRoot: id => taskOrchestration.startupTrustRoot(id)
+    || registeredClaudeTrustRoot(Array.isArray(monitorService.state?.agents) ? monitorService.state : savedBoardCatalog, id),
   verifyHooks: entry => hookService.verifyStartupHooks(entry),
   blocked: id => forceClosing || questionResponder.isBusy(id) || capacityRetry.isActive(id),
   write: (id, key) => terminalSessions.write(id, key),
@@ -1766,6 +1801,7 @@ if (runtimeVariant.updateProvider === "github") {
 }
 closeCoordinator = new CloseCoordinator({
   onRequest() {
+    captureSessionRecovery();
     sendEventToAll("app:close-requested", null);
     return [...workspaceWindows.keys()];
   },
@@ -3619,7 +3655,13 @@ function completeCloseAction(action, trigger) {
  *  close if the renderer does not call confirm_close within the timeout. */
 function requestGracefulClose(action = "quit") {
   if (forceClosing) return false;
-  return closeCoordinator?.request(action) ?? false;
+  try { return closeCoordinator?.request(action) ?? false; }
+  catch (error) {
+    closeCoordinator?.cancel();
+    sendEventToAll('app:close-cancelled', { action, message: `현재 세션 상태를 저장하지 못했습니다: ${String(error)}` });
+    showWorkspaceWindow();
+    return false;
+  }
 }
 
 // Check whether each agent CLI is installed/resolvable on the app's PATH, so
@@ -5483,6 +5525,8 @@ async function invokeCommand(event, command, rawArgs) {
       await warmProjectBoard(); return projectBoard.acknowledgeResults(args.id, args.results);
     case 'project_board_preferences':
       return projectBoard.preferences(args.preferences);
+    case 'project_board_session_action':
+      return new BoardSessionActions({ active: id => ptys.has(id), start: body => sessionStart.handle(body), stop: (operation, body) => sessionRegistry.handle(operation, body) }).handle(args);
     case 'project_board_open_session': {
       await warmProjectBoard();
       const opened = boardSessionNavigation.open(args);
@@ -5501,6 +5545,16 @@ async function invokeCommand(event, command, rawArgs) {
     case 'capacity_retry_cancel': {
       if (!claimAgentForWindow(args.id, event.sender.id)) throw new Error('다른 작업창에서 사용 중인 세션입니다.');
       return capacityRetry.cancel(args.id);
+    }
+    case 'session_recovery': {
+      const runtime = runtimeByWebContents.get(event.sender.id);
+      if (!runtime?.workspace_window || event.sender.id !== coordinatorWebContentsId) throw new Error('기본 작업창에서 이전 세션을 복구하세요.');
+      await warmProjectBoard();
+      if (args.action === 'offer') return sessionRecovery.offer();
+      if (args.action === 'status') return sessionRecovery.status();
+      if (args.action === 'decide') return sessionRecovery.decide(args);
+      if (args.action === 'claim') return sessionRecovery.claim(args);
+      return sessionRecovery.launched(args);
     }
     case "runtime_flags":
       return {
@@ -5677,6 +5731,7 @@ async function invokeCommand(event, command, rawArgs) {
     case "power_policy_status": return powerPolicy.status();
     case "notification_policy_check": {
       const focused = BrowserWindow.fromWebContents(event.sender)?.isFocused() ?? false;
+      if (args.kind === 'completion' && args.id && completionBlocked(args.id)) return false;
       return allowNotification(notificationSettings.get(), args.kind, focused, args.id ? sessionNotifications.get(args.id).enabled : true);
     }
     case "session_notifications_get": return sessionNotificationPreference(asString(args.id));

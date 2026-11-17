@@ -1,0 +1,5 @@
+.session-recovery-backdrop { z-index: 2100; }
+.session-recovery-status { position: fixed; z-index: 100; right: 18px; bottom: 38px; max-width: min(440px, 90vw); max-height: 40vh; overflow: auto; padding: 12px 35px 12px 16px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-panel); color: var(--app-text); box-shadow: 0 6px 24px #0006; font-size: 12px; }
+.session-recovery-status p { margin: 5px 0; }
+.session-recovery-status details { margin-top: 8px; }
+.session-recovery-dismiss { position: absolute; right: 6px; top: 4px; background: transparent; border: 0; color: inherit; font-size: 18px; }

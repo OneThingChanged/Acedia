@@ -387,6 +387,9 @@ export class TaskOrchestration {
         if (!['running', 'paused', 'awaiting_summary'].includes(run.state)) continue;
         for (const task of run.tasks) if (['dispatching', 'running', 'waiting_user', 'waiting_approval'].includes(task.state)) await this.syncAttempt(run, task);
         if (run.state !== 'running') continue;
+        // A cold start / declined session restore must not create workers for
+        // an offline owner. Existing workers can still report their results.
+        if (!this.runtime(run.ownerId)) continue;
         for (const task of run.tasks) {
           if (!['planned', 'ready'].includes(task.state)) continue;
           if (!task.dependsOn.every(id => run.tasks.find(t => t.id === id).state === 'completed')) { this.waiting(run, task, '선행 작업의 검증 완료 대기'); continue; }

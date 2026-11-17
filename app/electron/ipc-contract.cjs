@@ -11,9 +11,9 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session",
+  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session", "project_board_session_action",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
-  "runtime_flags",
+  "runtime_flags", "session_recovery",
   "app_startup_get", "app_startup_set",
   "codex_accounts_switch",
   "claude_accounts_switch",
@@ -291,6 +291,20 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case 'session_recovery': {
+      const keys = { offer: [], status: [], decide: ['checkpointId', 'restore'], claim: ['checkpointId', 'id'], launched: ['checkpointId', 'id', 'failed'] };
+      if (!Object.hasOwn(keys, args.action) || Object.keys(args).some(k => k !== 'action' && !keys[args.action].includes(k))
+        || !['offer', 'status'].includes(args.action) && (typeof args.checkpointId !== 'string' || !/^[a-f0-9-]{36}$/.test(args.checkpointId))
+        || args.action === 'decide' && typeof args.restore !== 'boolean'
+        || ['claim', 'launched'].includes(args.action) && (typeof args.id !== 'string' || !args.id || args.id.length > 256 || /[\x00-\x1f]/.test(args.id))
+        || args.failed !== undefined && typeof args.failed !== 'boolean') throw new TypeError('Invalid session recovery request');
+      break;
+    }
+    case 'project_board_session_action':
+      assertId(args);
+      if (Object.keys(args).some(k => !['id', 'action', 'expectedActive'].includes(k)) || !['start', 'stop'].includes(args.action)
+        || typeof args.expectedActive !== 'boolean') throw new TypeError('Invalid board session action');
+      break;
     case 'open_project_board':
     case 'project_board_snapshot':
     case 'project_board_delegated_wait':

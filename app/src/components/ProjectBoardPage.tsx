@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
+import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
 import { workBoardConnections } from '../lib/workBoardConnections';
 import { boardProjectPositions, boardSessionOrder, canReorderBoardSession, placeBoardProject, reorderBoardSession, type BoardProjectPositions } from '../lib/boardPlacement';
 import { ProviderLogo } from './ProviderLogo';
@@ -9,6 +9,7 @@ import './ProjectBoardPage.css';
 import './BackgroundWork.css';
 import { backgroundWaitingLabels } from '../lib/agentActivity';
 import { SessionTableView } from './SessionTableView';
+import { SessionLifecycleButton } from './SessionLifecycleButton';
 import { BoardRequestDetail } from './BoardRequestDetail';
 import { latestIncoming, sessionTableMatches, transferTitle } from '../lib/sessionTable';
 import type { BoardViewMode } from '../lib/workBoard';
@@ -136,11 +137,31 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     ? JSON.stringify([activeOnly, showSleeping, showStopped, overview, [...collapsed].sort(), [...collapsedProjects].sort()]) : '';
   const placementPositions = useMemo(() => compactKey ? compactPlacement.key === compactKey ? compactPlacement.positions : {} : projectPositions, [compactKey, compactPlacement, projectPositions]);
   const displayedPositions = useMemo(() => projectPreview ? { ...placementPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : placementPositions, [placementPositions, projectPreview]);
-  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder, showSleeping, showStopped, activeOnly, revealId: revealedSession }) : null,
-    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, sessionOrder, showSleeping, showStopped, activeOnly, revealedSession]);
+  const effectiveOrder = useMemo(() => boardWorkingOrder(data?.sessions || [], sessionOrder), [data?.sessions, sessionOrder]);
+  const delegationEdges = useMemo(() => new Set(data?.delegations?.map(d => `${d.from}:${d.to}`)), [data?.delegations]);
+  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder: effectiveOrder, showSleeping, showStopped, activeOnly, revealId: revealedSession }) : null,
+    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, effectiveOrder, showSleeping, showStopped, activeOnly, revealedSession]);
   const nodes = useMemo(() => layout?.nodes.filter(n => !collapsedProjects.has(n.session.projectId)) || [], [layout, collapsedProjects]);
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.session.id, n])), [nodes]);
   const groupById = useMemo(() => new Map(layout?.groups.map(g => [g.id, g])), [layout]);
+  const previousWorking = useRef(new Set<string>());
+  useEffect(() => {
+    if (viewMode !== 'board' || !layout || overview) return;
+    const current = new Set(nodes.filter(n => n.session.runtime === 'running' && n.session.state === 'working').map(n => n.session.id));
+    const newlyWorking = nodes.filter(n => current.has(n.session.id) && !previousWorking.current.has(n.session.id));
+    previousWorking.current = current;
+    // Reveal a promoted worker once, without undoing a user's later scrolling.
+    for (const projectId of new Set(newlyWorking.map(n => n.session.projectId))) {
+      const node = newlyWorking.filter(n => n.session.projectId === projectId).sort((a, b) => b.depth - a.depth || a.y - b.y)[0];
+      const group = groupById.get(projectId), body = projectBodies.current.get(projectId);
+      if (!group || !body) continue;
+      const top = node.y - group.y - BOARD_CARD.header;
+      if (top < body.scrollTop || top + node.height > body.scrollTop + group.bodyHeight) {
+        const next = Math.max(0, top - BOARD_CARD.padding);
+        body.scrollTop = next; setGroupScroll(value => ({ ...value, [projectId]: next }));
+      }
+    }
+  }, [data?.sessions, layout, nodes, groupById, viewMode, overview]);
   const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, revealedSession, activeOnly), [data?.sessions, showSleeping, showStopped, revealedSession, activeOnly]);
   const displayedReferences = useMemo(() => data?.references?.filter(r => visibleSessionIds.has(r.from) && visibleSessionIds.has(r.to)) || [], [data?.references, visibleSessionIds]);
   const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
@@ -361,11 +382,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 onWheel={e => { if (!e.ctrlKey && g.rows > BOARD_CARD.visibleRows) e.stopPropagation(); }}
                 aria-label={`${g.name} · ${text('세션 목록', 'Sessions')}`} tabIndex={g.rows > BOARD_CARD.visibleRows ? 0 : undefined}>
                 <div className="wb-project-content" style={{ height: g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2 }}>
-                  <svg className="wb-edges wb-session-edges" width={g.width} height={g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} d={route.path}/>)}</svg>
+                  <svg className="wb-edges wb-session-edges" width={g.width} height={g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} data-delegated={delegationEdges.has(id) || undefined} d={route.path}/>)}</svg>
                   {rows.map(n => {
                     const session = n.session, results = itemsBySession.get(session.id)?.filter(i => i.kind === 'result').length || 0, displayState = boardDisplayState(session, results);
                     return <div key={session.id} data-session-id={session.id} className={`wb-node ${session.runtime !== 'running' || ['idle', 'responded', 'paused', 'interrupted'].includes(displayState) ? 'inactive' : ''} ${displayState === 'background' ? 'has-background-work' : ''} ${selected?.sessionId === session.id ? 'selected' : ''} ${highlighted.has(session.id) ? '' : 'dimmed'} ${sessionDragging === session.id ? 'dragging-session' : ''}`} data-state={displayState} data-drop={sessionDrop?.id === session.id ? sessionDrop.after ? 'after' : 'before' : undefined} style={{ left: n.x - g.x, top: n.y - g.y - BOARD_CARD.header, width: n.width, height: n.height }}
-                      onContextMenu={e => { e.preventDefault(); setMenu({ id: session.id, x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 110), results: (itemsBySession.get(session.id) || []).filter(i => i.kind === 'result').map(i => ({ id: i.id, fingerprint: i.fingerprint })) }); }}
+                      onContextMenu={e => { e.preventDefault(); setMenu({ id: session.id, x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), results: (itemsBySession.get(session.id) || []).filter(i => i.kind === 'result').map(i => ({ id: i.id, fingerprint: i.fingerprint })) }); }}
                       onDragOver={e => { if (!sessionDrag.current || !canReorderBoardSession(data.sessions, sessionDrag.current, session.id)) return;
                         e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
                         const rect = e.currentTarget.getBoundingClientRect(); setSessionDrop({ id: session.id, after: e.clientY > rect.top + rect.height / 2 }); }}
@@ -398,7 +419,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             return route ? <path key={`${edge.from}:${edge.to}`} data-edge-kind="project" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
           })}{layout.edges.map(edge => {
             const route = connections.routes.get(`session:${edge.from}:${edge.to}`);
-            return route ? <path key={`session:${edge.from}:${edge.to}`} data-edge-kind="session" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
+            return route ? <path key={`session:${edge.from}:${edge.to}`} data-delegated={delegationEdges.has(`${edge.from}:${edge.to}`) || undefined} data-edge-kind="session" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
           })}</svg>
           <svg className="wb-reference-edges" width={layout.width} height={layout.height} aria-label={text('세션 간 관측된 참조', 'Observed session references')}>
             <defs><marker id="wb-reference-arrow" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10Z"/></marker></defs>
@@ -446,8 +467,9 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         })}{inbox.length > visibleCount && <button onClick={() => setVisibleCount(n => n + 50)}>{text('더 보기', 'Show more')} · {inbox.length - visibleCount}</button>}{!inbox.length && <div className="wb-inbox-empty"><span>✓</span><p>{query ? text('검색과 일치하는 항목이 없습니다.', 'No matching items.') : text('확인할 새 항목이 없습니다.', 'Nothing needs your attention.')}</p></div>}</div><p className="wb-inbox-help">{text('결과나 대화를 열면 기존 결과를 확인 처리합니다. 이후 새 결과와 질문은 유지합니다.', 'Opening a result or conversation marks captured results read; later results and questions remain.')}</p></>}
     </aside></div>
     {menu && <div className="wb-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: Math.max(0, menu.x), top: Math.max(0, menu.y) }}>
+      <SessionLifecycleButton key={menu.id} id={menu.id} active={sessionsById.get(menu.id)?.runtime === 'running'} onSuccess={() => { setMenu(null); void refreshRef.current(); }} onError={setError}/>
       <strong>{sessionsById.get(menu.id)?.name}</strong><button role="menuitem" disabled={busy || !!data?.storageError || !menu.results.length} onClick={() => { void reviewSession(menu.id, menu.results); }}>{text('현재 결과 확인완료', 'Mark current results read')} · {menu.results.length}</button>
       <button role="menuitem" onClick={() => { const id = menu.id; setMenu(null); void open(id); }}>{text('세션 대화 열기', 'Open conversation')}</button><button role="menuitem" onClick={() => setMenu(null)}>{text('닫기', 'Close')}</button></div>}
-    <footer className="wb-footer"><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('실제 읽기 구간에서만 흐름', 'Flow only during observed reads')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
+    <footer className="wb-footer"><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('보라색: 읽기 참조 · 밝기 강조: 하달 진행 중', 'Purple: observed reads · glow: outstanding delegation')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
   </main>;
 }

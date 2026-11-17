@@ -12,8 +12,8 @@ const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, at
 
 /** Host-owned, bounded projection. No transcripts, tool arguments, credentials or PTY subscriptions. */
 export class ProjectBoard {
-  constructor({ file, catalog, live, hook, runs, waitingSince = () => 0, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
-    Object.assign(this, { file, catalog, live, hook, runs, waitingSince, transfers, transferContent, runtimeInfo, now });
+  constructor({ file, catalog, live, hook, runs, waitingSince = () => 0, delegations = () => [], delegationError = () => null, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
+    Object.assign(this, { file, catalog, live, hook, runs, waitingSince, delegations, delegationError, transfers, transferContent, runtimeInfo, now });
     this.data = { version: 2, acknowledged: {}, preferences: {}, results: {}, inbox: {} };
     this.observed = new Map();
     this.devices = new Map();
@@ -234,15 +234,22 @@ export class ProjectBoard {
     for (const [id, result] of Object.entries(this.data.results)) if (result.lastCompletedAt || result.event === 'done') completedAt.set(id, result.lastCompletedAt || result.at);
     for (const item of Object.values(this.data.inbox)) if (item.scope === 'response') completedAt.set(item.sessionId, Math.max(completedAt.get(item.sessionId) || 0, item.createdAt));
     const delegated = delegatedWaitProjection({ sessions, transfers, runs: this.runs() || [], completedAt, hook: this.hook, waitingSince: this.waitingSince });
+    const delegations = this.delegations().filter(t => byId.has(t.from) && byId.has(t.to));
+    for (const job of delegations) {
+      const owner = byId.get(job.from);
+      if (owner?.runtime !== 'running' || !['idle', 'review', 'responded', 'completed', 'background', 'waiting_external'].includes(owner.state)) continue;
+      const childIds = [...new Set([...(delegated.get(owner.id)?.childIds || []), job.to])].sort();
+      delegated.set(owner.id, { childIds, count: childIds.length, observedAt: owner.lastActivityAt || 0 });
+    }
     for (const session of sessions) if (delegated.has(session.id)) session.delegatedWait = delegated.get(session.id);
     const references = [...this.references.values()].filter(r => byId.has(r.from) && byId.has(r.to)).map(({ readers, ...r }) => ({ ...r, active: readers > 0 }));
     const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096),
       ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),
       ...(p.hierarchy?.parentId ? { hierarchy: { parentId: short(p.hierarchy.parentId, 256) } } : {}) })),
-      items, references, devices, transfers: transfers.filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
+      items, references, devices, delegations, transfers: transfers.filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
         status: short(t.status, 50), reason: short(t.reason, 300), summary: short(t.summary, 200), savedAt: t.savedAt || null,
         sentAt: t.sentAt || null, receivedAt: t.receivedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
-      preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || null };
+      preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || this.delegationError() || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
   }

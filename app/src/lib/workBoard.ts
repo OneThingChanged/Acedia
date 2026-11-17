@@ -26,6 +26,7 @@ export type BoardSnapshot = {
   devices: { sessionId: string; kind: string; tool: string; state: string; source: string; startedAt: number }[];
   items?: BoardItem[]; references?: BoardReference[]; sampledAt?: number;
   transfers?: BoardTransfer[];
+  delegations?: { id: string; from: string; to: string }[];
   preferences: { viewMode?: BoardViewMode; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean };
   storageError: string | null;
 };
@@ -64,6 +65,22 @@ export function boardPriorityOrder(sessions: BoardSession[], items: BoardItem[],
     while (current && !seen.has(current.id)) { seen.add(current.id); score.set(current.id, Math.min(priority, score.get(current.id)!)); current = byId.get(current.parentId || ''); } }
   const ranks = new Map([...new Set([...previous, ...sessions.map(s => s.id)])].map((id, i) => [id, i]));
   return [...sessions].sort((a, b) => score.get(a.id)! - score.get(b.id)! || ranks.get(a.id)! - ranks.get(b.id)!).map(s => s.id);
+}
+/** Temporary sibling priority; never write this projection to manual preferences. */
+export function boardWorkingOrder(sessions: BoardSession[], previous: string[]): string[] {
+  const byId = new Map(sessions.map(s => [s.id, s])), working = new Set<string>();
+  for (const s of sessions) if (s.runtime === 'running' && s.state === 'working') {
+    let current: BoardSession | undefined = s;
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id); working.add(current.id);
+      const parent = byId.get(current.parentId || '');
+      current = parent?.projectId === s.projectId ? parent : undefined;
+    }
+  }
+  const ranks = new Map([...new Set([...previous, ...sessions.map(s => s.id)])].map((id, i) => [id, i]));
+  const priority = (s: BoardSession) => s.parentId && byId.get(s.parentId)?.projectId === s.projectId && working.has(s.id) ? 0 : 1;
+  return [...sessions].sort((a, b) => priority(a) - priority(b) || ranks.get(a.id)! - ranks.get(b.id)!).map(s => s.id);
 }
 export function boardSessionVisibilityKind(s: BoardSession): 'sleeping' | 'stopped' | null {
   // Sleeping is independent of the Idle/Stopped switch, even when its last

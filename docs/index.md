@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.25](release-1-8-2-25.md) - 작업 중인 자식 우선 배치·하달 애니메이션·최종 리더 완료 알림, Claude 자동 활성화와 종료 후 복구 선택.
+
 * [Acedia 1.8.2.24](release-1-8-2-24.md) - 터미널의 줄바꿈 폴더·파일 경로 복원과 색상 변경에 의한 링크 잘림 수정.
 
 * [Acedia 1.8.2.23](release-1-8-2-23.md) - 기존 대화 재개·지시 전달 준비 수정, 검증된 후크 자동 확인과 활성 세션 필터.

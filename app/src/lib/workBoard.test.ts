@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { BOARD_CARD, boardCounts, boardLayout, boardViewedAgent, boardDisplayState, boardPriorityOrder, boardTransferLabel, boardVisibleSessionIds, type BoardSnapshot, type BoardSession, type BoardItem } from './workBoard';
+import { BOARD_CARD, boardCounts, boardLayout, boardViewedAgent, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardSnapshot, type BoardSession, type BoardItem } from './workBoard';
 const session = (id: string, parentId: string | null, state = 'working') => ({ id, name: id, projectId: 'p', parentId, state, folder: 'D:/child', needsAttention: state === 'review' } as BoardSession);
 const snapshot = { projects: [{ id: 'p', name: 'Project', folder: 'G:/root' }], sessions: [session('a', null), session('b', 'a', 'review'), session('c', 'b', 'completed')] } as BoardSnapshot;
+
+it('temporarily promotes a working child branch, preserves siblings/subtrees and restores the saved order', () => {
+  const sessions = [session('leader', null, 'review'), session('idle', 'leader', 'review'), session('idleChild', 'idle', 'review'),
+    session('workerBranch', 'leader', 'review'), session('worker', 'workerBranch'), session('secondLeader', null, 'review')]
+    .map(s => ({ ...s, runtime: 'running' }));
+  const saved = sessions.map(s => s.id);
+  const rows = () => boardLayout({ ...snapshot, sessions }, { sessionOrder: boardWorkingOrder(sessions, saved) }).nodes.map(n => n.session.id);
+  expect(rows()).toEqual(['leader', 'workerBranch', 'worker', 'idle', 'idleChild', 'secondLeader']);
+  expect(saved).toEqual(sessions.map(s => s.id));
+  sessions.find(s => s.id === 'worker')!.state = 'review';
+  expect(rows()).toEqual(saved);
+  sessions.find(s => s.id === 'worker')!.state = 'working'; sessions.find(s => s.id === 'worker')!.runtime = 'sleeping';
+  expect(rows()).toEqual(saved);
+});
 describe('Work board node projection', () => {
   it('distinguishes read responses from unread results and sorts parent subtrees only on explicit request', () => {
     expect(boardDisplayState(session('a', null, 'review'), 0)).toBe('responded');

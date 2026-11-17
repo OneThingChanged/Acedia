@@ -273,6 +273,7 @@ export function createTerminalLauncher({
       modelMemoryToken: remembered.token,
       modelMemoryLaunchId: args.modelMemoryLaunchId,
       resumeContext: args.resumeContext,
+      initialPromptSubmitted: !!asString(args.initialPrompt).trim(),
       startupHookProof,
       initTimer: null,
       aiToolId,

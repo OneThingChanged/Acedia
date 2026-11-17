@@ -25,6 +25,7 @@ export type AgentHookEvent = {
   interactive_question?: string | null;
   question_id?: string | null;
   question_notification?: boolean;
+  completion_notification?: boolean;
   assistant_message?: string | null;
   background_count?: number | null;
 };

@@ -131,3 +131,7 @@
   .org-overview { grid-template-columns: minmax(0, 1fr); }
   .org-map-note { font-size: 9px; }
 }
+.org-context-menu { position: fixed; z-index: 60; min-width: 210px; padding: 6px; background: #172331; border: 1px solid #506077; border-radius: 9px; box-shadow: 0 8px 30px #0008; }
+.org-context-menu strong { display: block; padding: 5px 8px; }
+.org-context-menu button { display: block; width: 100%; padding: 7px 8px; border: 0; text-align: left; background: transparent; color: inherit; }
+.org-action-error { position: absolute; bottom: 16px; left: 16px; z-index: 61; color: #ff9393; background: #172331; padding: 8px; }

@@ -59,8 +59,8 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, start = null, prepare = null, receipt = async () => null, publish = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, start, prepare, receipt, publish, readActivity, now });
+  constructor({ file, sessionFor, context, notify, start = null, prepare = null, receipt = async () => null, publish = () => {}, observe = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, start, prepare, receipt, publish, observe, readActivity, now });
     this.records = []; this.inflight = new Map(); this.targets = new Set(); this.sequence = 0; this.closed = false;
     this.persisted = new Map();
     this.archive = new SessionMessageArchive(file + '.archive.sqlite', validRecord);
@@ -159,6 +159,7 @@ export class SessionMessages {
   }
   #state(record, delivery) {
     record.delivery = delivery; this.save();
+    this.observe(record);
     void this.view(record).then(value => this.publish(value)).catch(() => {});
   }
   #queue(record, reason) { this.#state(record, { status: 'queued', reason, nextAttemptAt: this.now() + Math.min(30000, 1000 * 2 ** Math.min(record.notificationAttempts || 0, 5)) }); }
@@ -326,6 +327,7 @@ export class SessionMessages {
     record.notificationKey = 'text_' + record.messageId.replace(/-/g, '');
     this.records.push(record);
     try { this.save(); } catch (error) { this.records.pop(); throw error; }
+    this.observe(record);
     if (!notify) return this.view(record);
     const deadline = performance.now() + waitMs;
     if (needsStart) await this.dispatch(record, waitMs, true);
@@ -353,7 +355,7 @@ export class SessionMessages {
     if (changed.length) {
       const at = this.now(); changed.forEach(r => { r.readAt = at; });
       try { this.save(); } catch (error) { changed.forEach(r => { r.readAt = null; }); throw error; }
-      for (const r of changed) void this.view(r).then(value => this.publish(value)).catch(() => {});
+      for (const r of changed) { this.observe(r); void this.view(r).then(value => this.publish(value)).catch(() => {}); }
     }
     return this.readActivity(agentId, outgoing ? [] : records.map(r => r.sourceId), async () => ({
       direction: outgoing ? 'outbox' : 'inbox', messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true }))),

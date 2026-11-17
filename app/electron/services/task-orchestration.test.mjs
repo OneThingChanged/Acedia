@@ -48,6 +48,12 @@ function fixture(options = {}) {
 }
 
 describe('durable independent Codex task orchestration', () => {
+  it('does not dispatch persisted pending tasks while their owner is offline after a cold start or declined restore', async () => {
+    const f = fixture(); f.live.delete('a');
+    f.engine.data.runs.push({ id: 'previous-run', ownerId: 'a', state: 'running', tasks: [{ id: 'pending', state: 'planned', dependsOn: [], scopes: [] }] });
+    await f.engine.tick();
+    expect(f.createSession).not.toHaveBeenCalled(); expect(f.engine.data.runs[0].tasks[0].state).toBe('planned');
+  });
   for (const owner of ['codex', 'claude']) for (const child of ['codex', 'claude']) it(`${owner} parent → ${child} worker completes the same result/review contract`, async () => {
     const f = fixture(); f.catalog.agents[0].aiToolId = owner;
     const claude = { model: 'sonnet', effort: 'medium' };

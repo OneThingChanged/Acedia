@@ -1,5 +1,5 @@
 export type RuntimeCommand =
-  | "open_project_board" | "project_board_snapshot" | "project_board_delegated_wait" | "project_board_transfer_detail" | "project_board_ack" | "project_board_ack_results" | "project_board_preferences" | "project_board_open_session"
+  | "open_project_board" | "project_board_snapshot" | "project_board_delegated_wait" | "project_board_transfer_detail" | "project_board_ack" | "project_board_ack_results" | "project_board_preferences" | "project_board_open_session" | "project_board_session_action"
   | "app_startup_get" | "app_startup_set"
   | "collector_status" | "collector_enroll" | "collector_accounts" | "collector_configure" | "collector_flush" | "collector_sources" | "collector_pause"
   | "accounts_removed" | "codex_accounts_rename" | "claude_accounts_rename" | "codex_accounts_remove" | "claude_accounts_remove"
@@ -25,7 +25,7 @@ export type RuntimeCommand =
   | "claude_accounts_login"
   | "codex_accounts_cancel_login"
   | "claude_accounts_cancel_login"
-  | "runtime_flags" | "renderer_ready" | "spawn_pty"
+  | "runtime_flags" | "session_recovery" | "renderer_ready" | "spawn_pty"
   | "attach_terminal" | "detach_terminal" | "terminal_session_action"
   | "write_pty" | "submit_chat_message" | "resize_pty" | "kill_pty" | "confirm_close"
   | "show_main_window" | "open_new_app_window" | "get_detached_agents"

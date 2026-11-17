@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProjectBoardPage } from './ProjectBoardPage';
 import { SessionTableView } from './SessionTableView';
 import { BoardRequestDetail } from './BoardRequestDetail';
+import { SessionLifecycleButton } from './SessionLifecycleButton';
 import type { BoardSnapshot } from '../lib/workBoard';
 import { BOARD_CARD, boardLayout } from '../lib/workBoard';
 
@@ -60,6 +61,20 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 function project(tree: ReactNode, id: string) { return elements(tree).find(e => e.props['data-project-id'] === id)!; }
 function header(tree: ReactNode, id = 'p') { return elements(project(tree, id)).find(e => e.props.className === 'wb-project-header')!; }
 function pointer(x: number, y: number, extra = {}) { return { button: 0, pointerId: 4, clientX: x, clientY: y, stopPropagation: vi.fn(), preventDefault: vi.fn(), currentTarget: { setPointerCapture: vi.fn() }, ...extra }; }
+
+it('shows lifecycle actions only on context request and lights only actual outstanding assignment edges', () => {
+  const data = fixture(); data.delegations = [{ id: 'job', from: 'a', to: 'b' }];
+  let tree = render(data);
+  expect(elements(tree).some(e => e.type === 'path' && e.props['data-delegated'] === true)).toBe(true);
+  expect(elements(tree).some(e => e.type === SessionLifecycleButton)).toBe(false);
+  elements(tree).find(e => e.props['data-session-id'] === 'b')!.props.onContextMenu({ preventDefault: vi.fn(), clientX: 200, clientY: 250 });
+  tree = render(data);
+  const action = elements(tree).find(e => e.type === SessionLifecycleButton)!;
+  expect(action.props).toMatchObject({ id: 'b', active: true });
+  expect(hooks.invoke).not.toHaveBeenCalled();
+  hooks.values[0] = { ...data, delegations: [] }; tree = render(data);
+  expect(elements(tree).some(e => e.type === 'path' && e.props['data-delegated'] === true)).toBe(false);
+});
 
 it('defaults to the session table and pins the selected request across polling and view changes without starting work', () => {
   const data = fixture(); data.preferences = {};
@@ -248,7 +263,7 @@ it('restores host-saved placement on a fresh board and keeps it during polling, 
   expect(data.preferences.projectPositions).toEqual({ p: { x: -580, y: 760 } });
   expect(data.preferences.layoutVersion).toBe(2); // Migration waits until the viewport is actually fitted.
   elements(tree).find(e => e.props.className === 'wb-canvas')!.props.ref.current = { getBoundingClientRect: () => ({ width: 1000, height: 720 }) };
-  hooks.effects[3].run(); tree = render(data);
+  hooks.effects.find(e => e.deps?.[0] && typeof e.deps[0] === 'object' && e.deps?.[1] === 'board' && typeof e.deps?.[2] === 'boolean')!.run(); tree = render(data);
   const saveMigrated = hooks.effects[2].run() as () => void; await vi.advanceTimersByTimeAsync(500); saveMigrated();
   expect(data.preferences.layoutVersion).toBe(3);
   elements(tree).find(e => e.type === 'button' && content(e) === '배치 초기화')!.props.onClick();

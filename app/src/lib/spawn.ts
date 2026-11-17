@@ -85,7 +85,7 @@ export async function buildSpawnArgs(
   inputAgent: Agent,
   sessionPins: Record<string, string> | null,
   setAgentSessionId: (id: string, sessionId: string | null) => void,
-  options: { resumeSessionId?: string; agents?: readonly Agent[]; projects?: readonly Project[] } = {}
+  options: { resumeSessionId?: string; freshSession?: boolean; agents?: readonly Agent[]; projects?: readonly Project[] } = {}
 ): Promise<SpawnArgs> {
   const settings = resolveSessionSettings(inputAgent, options.agents ?? [inputAgent], options.projects);
   const project = options.projects?.find(item => item.id === inputAgent.projectId);
@@ -93,6 +93,9 @@ export async function buildSpawnArgs(
   if (settings.instructions.length > 20000 || settings.instructions.includes("\0")) throw new Error("상속을 포함한 추가 지침은 20,000자 이내여야 합니다. Inherited instructions must be within 20,000 characters.");
   const agent = { ...inputAgent, folder: settings.folder, remoteFolder: settings.remoteFolder, modelSettings: settings.modelSettings };
   const exactResumeId = options.resumeSessionId || agent.idleResumeSessionId;
+  if (options.freshSession && (exactResumeId || sessionPins?.[agent.id] || agent.lastSessionId || inputAgent.sessionHierarchy?.resumeContext?.sessionId)) {
+    throw new Error('새 세션의 대화 상태가 변경되었습니다. 기존 대화를 확인하세요.');
+  }
   if (agent.aiToolId === "gemini") throw new Error("Gemini CLI는 제거되었습니다. 새 Antigravity CLI 세션을 만드세요. Gemini CLI was removed; create a new Antigravity CLI session.");
   if (exactResumeId && (agent.sshHostId || !agent.folder || !["codex","claude"].includes(agent.aiToolId) || (sessionPins?.[agent.id] && sessionPins[agent.id] !== exactResumeId))) throw new Error("세션의 복원 대상이 변경되었습니다. 확인 후 다시 여세요.");
   const tool = toolForId(agent.aiToolId);
@@ -141,7 +144,7 @@ export async function buildSpawnArgs(
         (agent.aiToolId === "codex" || agent.aiToolId === "claude")
       ) {
         try {
-          const resolved = await invoke<string | null>("resolve_cli_session", {
+          const resolved = options.freshSession ? null : await invoke<string | null>("resolve_cli_session", {
             aiToolId: agent.aiToolId,
             // Verify the child's own transcript before applying a different inherited cwd.
             folder: resumeFolder,
@@ -178,7 +181,7 @@ export async function buildSpawnArgs(
           cmd = `${cmd} --resume ${sessionId}`;
         }
       } else if (agent.aiToolId === "codex" || agent.aiToolId === "claude") {
-        initialPrompt = handoffPromptForAccount(
+        initialPrompt = options.freshSession ? undefined : handoffPromptForAccount(
           agent.pendingAccountHandoff,
           accountId || "default",
         );

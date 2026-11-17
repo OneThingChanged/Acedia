@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ProjectBoardWindow, BoardSessionNavigation, assertBoardAccess, BOARD_COMMANDS } from './project-board-window.mjs';
+import { ProjectBoardWindow, BoardSessionNavigation, BoardSessionActions, assertBoardAccess, BOARD_COMMANDS } from './project-board-window.mjs';
 function fixture(settings = {}) {
   const created = [];
   class Window extends EventEmitter {
@@ -21,6 +21,19 @@ function fixture(settings = {}) {
   return { manager, created, save, register, unregister, load };
 }
 afterEach(() => { vi.useRealTimers(); });
+it('routes explicit context actions through acknowledged start/stop and rejects stale state', async () => {
+  let active = false;
+  const start = vi.fn(async () => { active = true; return { active: true }; }), stop = vi.fn(async () => { active = false; return { stopped: true }; });
+  const actions = new BoardSessionActions({ active: () => active, start, stop });
+  await expect(actions.handle({ id: 'child', action: 'start', expectedActive: false })).resolves.toEqual({ active: true });
+  expect(start).toHaveBeenCalledExactlyOnceWith({ sessionId: 'child', waitMs: 0 });
+  await expect(actions.handle({ id: 'child', action: 'stop', expectedActive: false })).rejects.toThrow('상태가 변경');
+  expect(stop).not.toHaveBeenCalled();
+  await actions.handle({ id: 'child', action: 'stop', expectedActive: true });
+  expect(stop).toHaveBeenCalledExactlyOnceWith('stop', { sessionId: 'child' });
+  expect(() => assertBoardAccess({ project_board_window: true }, 'project_board_session_action')).not.toThrow();
+  expect(() => assertBoardAccess({ project_board_window: true }, 'spawn_agent')).toThrow();
+});
 describe('Board-only window lifecycle without GUI', () => {
   it('rejects execution, credentials and terminal ownership from a board renderer', () => {
     for (const command of BOARD_COMMANDS) expect(() => assertBoardAccess({ project_board_window: true }, command)).not.toThrow();

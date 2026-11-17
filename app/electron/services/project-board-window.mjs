@@ -1,10 +1,10 @@
-export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session']);
+export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session', 'project_board_session_action']);
 export function assertBoardAccess(runtime, command) {
   if (runtime?.project_board_window && !BOARD_COMMANDS.includes(command)) throw new Error('보드 전용 창에서는 작업 실행 명령을 사용할 수 없습니다.');
   if ((BOARD_COMMANDS.includes(command) || command === 'open_project_board') && !runtime?.project_board_window && !runtime?.workspace_window) throw new Error('Acedia 작업창에서 보드를 사용하세요.');
 }
 
-/** Dedicated read-only renderer; never registered as a workspace or PTY owner. */
+/** Dedicated renderer with narrow host-owned actions; never a workspace or PTY owner. */
 export class ProjectBoardWindow {
   constructor({ BrowserWindow, screen, preload, arguments: args, icon, load, settings, save, register, unregister }) {
     Object.assign(this, { BrowserWindow, screen, preload, args, icon, load, settings, save, register, unregister });
@@ -63,4 +63,15 @@ export class BoardSessionNavigation {
   }
   loaded(id) { const next = this.pending.get(id); if (!next) return; this.pending.delete(id); if (!next.win.isDestroyed()) this.send(next.win, next.payload); }
   closed(id) { this.pending.delete(id); }
+}
+
+/** Explicit context-menu actions reuse the coordinator's acknowledged lifecycle. */
+export class BoardSessionActions {
+  constructor({ active, start, stop }) { Object.assign(this, { active, start, stop }); }
+  async handle({ id, action, expectedActive }) {
+    if (this.active(id) !== expectedActive) throw new Error('세션 상태가 변경되었습니다. 목록을 새로고침하세요.');
+    if (action === 'start' && !expectedActive) return this.start({ sessionId: id, waitMs: 0 });
+    if (action === 'stop' && expectedActive) return this.stop('stop', { sessionId: id });
+    throw new Error('현재 상태에서 사용할 수 없는 세션 작업입니다.');
+  }
 }

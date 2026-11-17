@@ -28,6 +28,15 @@ describe("Electron IPC contract", () => {
   it('bounds board-only commands to metadata, exact result identity and navigation', () => {
     expect(contract.assertInvokeRequest('open_project_board', {})).toEqual({});
     expect(contract.assertInvokeRequest('project_board_open_session', { id: 'a', compose: true })).toEqual({ id: 'a', compose: true });
+    expect(contract.assertInvokeRequest('session_recovery', { action: 'offer' })).toEqual({ action: 'offer' });
+    const checkpointId = '11111111-1111-4111-8111-111111111111';
+    expect(contract.assertInvokeRequest('session_recovery', { action: 'decide', checkpointId, restore: false }).restore).toBe(false);
+    for (const args of [{ action: 'decide', checkpointId }, { action: 'claim', checkpointId, id: 'a', command: 'run' },
+      { action: 'launched', checkpointId: 'wrong', id: 'a' }, { action: 'offer', restore: true }, { action: 'kill' }])
+      expect(() => contract.assertInvokeRequest('session_recovery', args)).toThrow();
+    expect(contract.assertInvokeRequest('project_board_session_action', { id: 'a', action: 'stop', expectedActive: true }).action).toBe('stop');
+    for (const args of [{ id: 'a', action: 'kill', expectedActive: true }, { id: 'a', action: 'start' }, { id: 'a', action: 'start', expectedActive: false, command: 'echo hi' }])
+      expect(() => contract.assertInvokeRequest('project_board_session_action', args)).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results: [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64) }] })).toBeTruthy();
     for (const results of [null, [{ id: 'a'.repeat(64) }], [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64), execute: true }], Array(1501).fill({})]) expect(() => contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results })).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64) })).toBeTruthy();

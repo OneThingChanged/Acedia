@@ -9,13 +9,24 @@ const canonical = value => {
   return process.platform === 'win32' ? result.toLowerCase() : result;
 };
 const within = (root, value) => value === root || value.startsWith(root + path.sep);
+// Explicit local Claude activation may trust its registered project/folder,
+// including ordinary sessions without API-created provenance. Scope is still
+// checked against the actual native prompt and live cwd before any key is sent.
+export function registeredClaudeTrustRoot(catalog, id) {
+  const agent = catalog.agents?.find(a => a.id === id), project = catalog.projects?.find(p => p.id === agent?.projectId);
+  if (agent?.aiToolId !== 'claude' || agent.sshHostId || !project || project.sshHostId) return null;
+  try {
+    const root = canonical(project.folder), folder = canonical(agent.folder || project.folder);
+    return within(root, folder) ? root : folder;
+  } catch { return null; }
+}
 export function startupPrompt(entry) {
   if (!entry || entry.ssh || !['codex', 'claude'].includes(entry.aiToolId)) return null;
   const screen = entry.filter?.shadow ? readTerminalStartupScreen(entry.filter.shadow) : entry.filter?.viewportText?.() || '';
   return parseTerminalStartupPrompt(screen, entry.aiToolId);
 }
 
-// The operator opt-in or API creation grants only the current project directory.
+// Explicit activation policy or API creation grants only the registered directory.
 // No window navigation and no persisted Codex config edits are needed.
 export class StartupAutomation {
   constructor({ entry, allowedRoot, write, verifyHooks = () => null, blocked = () => false, publish = () => {} }) {

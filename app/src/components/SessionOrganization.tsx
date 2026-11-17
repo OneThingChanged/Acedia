@@ -9,6 +9,7 @@ import { canParentSession, layoutSessionHierarchy, normalizeSessionHierarchy, re
 import "./SessionOrganization.css";
 import { ProjectBoard, type ProjectBoardChange } from "./ProjectBoard";
 import { TaskFlow } from './TaskFlow';
+import { SessionLifecycleButton } from './SessionLifecycleButton';
 import { PixelOffice } from './PixelOffice';
 
 type Props = {
@@ -59,6 +60,8 @@ function SessionState({ agent }: { agent: Agent }) {
 }
 
 export function SessionOrganization(props: Props) {
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [actionError, setActionError] = useState('');
   useNativeViewOcclusion();
   const { text } = useAppLanguage();
   const rootRef = useRef<HTMLElement>(null);
@@ -108,7 +111,8 @@ export function SessionOrganization(props: Props) {
     return agent ? <HierarchyInspector key={id} agent={agent} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={close}/> : null;
   }}/>;
 
-  return <section ref={rootRef} className={`terminal-area session-organization${inspectorCollapsed ? " org-inspector-collapsed" : ""}${mobileInspector ? " org-inspector-shown" : ""}`} aria-label={text("세션 조직도", "Session organization")}>
+  const context = (id: string, event: React.MouseEvent) => { event.preventDefault(); setActionError(''); setContextMenu({ id, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 220)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 140)) }); };
+  return <section onKeyDown={e => { if (e.key === 'Escape') setContextMenu(null); }} onPointerDown={e => { if (!(e.target as Element).closest('.org-context-menu')) setContextMenu(null); }} ref={rootRef} className={`terminal-area session-organization${inspectorCollapsed ? " org-inspector-collapsed" : ""}${mobileInspector ? " org-inspector-shown" : ""}`} aria-label={text("세션 조직도", "Session organization")}>
     <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1><NetworkIcon/>{text("세션 조직도", "Session organization")}</h1><p>{text("작업을 묶고, 필요한 설정을 이어받습니다.", "Group work and inherit the settings you need.")}</p></div><div className="org-header-actions"><button onClick={() => setTaskView(true)}>작업 흐름</button>
       <select aria-label={text("조직도 프로젝트", "Organization project")} value={scope} onChange={(event) => { setScope(event.target.value); setQuery(""); }}><option value="all">{text("전체 프로젝트", "All projects")}</option>{props.projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <button className="btn-primary" disabled={!selected} onClick={() => selected && props.onCreateChild(selected.id)}>＋ {text("자식 세션", "Child session")}</button><button className="org-icon-button" aria-label={text("세션 정보 패널 전환", "Toggle session inspector")} onClick={toggleInspector}>▥</button>
@@ -127,7 +131,7 @@ export function SessionOrganization(props: Props) {
           const rows: { agent: Agent; depth: number }[] = [];
           function visit(agent: Agent, depth: number) { rows.push({ agent, depth }); members.filter((child) => child.sessionHierarchy?.parentId === agent.id).forEach((child) => visit(child, depth + 1)); }
           members.filter((agent) => !agent.sessionHierarchy?.parentId || !members.some((candidate) => candidate.id === agent.sessionHierarchy?.parentId)).forEach((agent) => visit(agent, 0));
-          return <section key={item.id} className="org-project-group"><button className="org-project-heading" onClick={() => setScope(item.id)}><span aria-hidden="true">▱</span><strong>{item.name}</strong><small>{members.length}</small></button><div className="org-overview-rows">{rows.map(({ agent, depth }) => <button key={agent.id} className={`org-overview-row${selected?.id === agent.id ? " selected" : ""}${!matches(agent) ? " dimmed" : ""}`} style={{ marginLeft: Math.min(depth, 5) * 17 }} onClick={() => choose(agent.id)}><span className="org-provider" style={{ color: toolForId(agent.aiToolId).iconColor }}>{toolForId(agent.aiToolId).icon}</span><span className="org-overview-name">{agent.name}<small>{agent.sessionHierarchy?.parentId ? text("자식 세션", "Child session") : toolForId(agent.aiToolId).label}</small></span><SessionState agent={agent}/></button>)}</div></section>;
+          return <section key={item.id} className="org-project-group"><button className="org-project-heading" onClick={() => setScope(item.id)}><span aria-hidden="true">▱</span><strong>{item.name}</strong><small>{members.length}</small></button><div className="org-overview-rows">{rows.map(({ agent, depth }) => <button key={agent.id} className={`org-overview-row${selected?.id === agent.id ? " selected" : ""}${!matches(agent) ? " dimmed" : ""}`} style={{ marginLeft: Math.min(depth, 5) * 17 }} onContextMenu={e => context(agent.id, e)} onClick={() => choose(agent.id)}><span className="org-provider" style={{ color: toolForId(agent.aiToolId).iconColor }}>{toolForId(agent.aiToolId).icon}</span><span className="org-overview-name">{agent.name}<small>{agent.sessionHierarchy?.parentId ? text("자식 세션", "Child session") : toolForId(agent.aiToolId).label}</small></span><SessionState agent={agent}/></button>)}</div></section>;
         })}</div> : <div className="org-stage" style={{ width: layout.width * zoom, height: layout.height * zoom }}><div className="org-content" style={{ width: layout.width, height: layout.height, transform: `scale(${zoom})` }}>
           <svg className="org-edges" width={layout.width} height={layout.height} aria-hidden="true">{layout.nodes.map((node) => {
             const parent = layout.nodes.find((item) => item.agent.id === node.agent.sessionHierarchy?.parentId);
@@ -137,7 +141,7 @@ export function SessionOrganization(props: Props) {
           })}</svg>
           <div className="org-project-root" style={{ left: (layout.width - 220) / 2 }}><span aria-hidden="true">▱</span><div><strong>{project?.name}</strong><small>{text("프로젝트 · 기본 설정", "Project · Default settings")}</small></div></div>
           {layout.nodes.map((node) => { const childCount = catalog.filter((agent) => agent.sessionHierarchy?.parentId === node.agent.id).length; return <div key={node.agent.id} className="org-node-wrap" style={{ left: node.x, top: node.y }}>
-            <button className={`org-node${selected?.id === node.agent.id ? " selected" : ""}${!matches(node.agent) ? " dimmed" : ""}`} aria-pressed={selected?.id === node.agent.id} onClick={() => choose(node.agent.id)}><div className="org-node-top"><span className="org-provider" style={{ color: toolForId(node.agent.aiToolId).iconColor }}>{toolForId(node.agent.aiToolId).icon}</span><div><strong title={node.agent.name}>{node.agent.name}</strong><small>{toolForId(node.agent.aiToolId).label}{childCount ? ` · ${text("자식", "Children")} ${childCount}` : ` · ${text("독립 대화", "Independent chat")}`}</small></div></div><p>{node.agent.activity?.lastPrompt || (node.agent.sessionHierarchy?.parentId ? text("부모의 설정을 이어받는 세션", "Session with inherited settings") : text("프로젝트에 직접 연결된 세션", "Session under the project"))}</p><div className="org-node-bottom"><SessionState agent={node.agent}/><span>{node.agent.sessionHierarchy?.parentId ? text("↳ 설정 상속", "↳ Inherited settings") : text("프로젝트 직속", "Under project")}</span></div></button>
+            <button className={`org-node${selected?.id === node.agent.id ? " selected" : ""}${!matches(node.agent) ? " dimmed" : ""}`} aria-pressed={selected?.id === node.agent.id} onContextMenu={e => context(node.agent.id, e)} onClick={() => choose(node.agent.id)}><div className="org-node-top"><span className="org-provider" style={{ color: toolForId(node.agent.aiToolId).iconColor }}>{toolForId(node.agent.aiToolId).icon}</span><div><strong title={node.agent.name}>{node.agent.name}</strong><small>{toolForId(node.agent.aiToolId).label}{childCount ? ` · ${text("자식", "Children")} ${childCount}` : ` · ${text("독립 대화", "Independent chat")}`}</small></div></div><p>{node.agent.activity?.lastPrompt || (node.agent.sessionHierarchy?.parentId ? text("부모의 설정을 이어받는 세션", "Session with inherited settings") : text("프로젝트에 직접 연결된 세션", "Session under the project"))}</p><div className="org-node-bottom"><SessionState agent={node.agent}/><span>{node.agent.sessionHierarchy?.parentId ? text("↳ 설정 상속", "↳ Inherited settings") : text("프로젝트 직속", "Under project")}</span></div></button>
             {!!childCount && <button className="org-collapse" aria-label={collapsed.has(node.agent.id) ? text("자식 펼치기", "Expand children") : text("자식 접기", "Collapse children")} aria-expanded={!collapsed.has(node.agent.id)} onClick={() => setCollapsed((current) => { const next = new Set(current); next.has(node.agent.id) ? next.delete(node.agent.id) : next.add(node.agent.id); return next; })}>{collapsed.has(node.agent.id) ? "+" : "−"}</button>}
           </div>; })}
         </div></div>}
@@ -148,6 +152,13 @@ export function SessionOrganization(props: Props) {
       <div className="org-map-note">{text("폴더 관계는 설정 상속의 기준입니다. 각 세션은 독립적으로 실행됩니다.", "Folder relationships define inheritance. Each session runs independently.")}</div>
     </div>
     {selected && <HierarchyInspector key={selected.id} agent={selected} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={() => { if ((rootRef.current?.clientWidth || 1200) < 820) setMobileInspector(false); else setInspectorCollapsed(true); }}/>}</div>
+    {actionError && <p className="org-action-error" role="alert">{actionError}</p>}
+    {contextMenu && <div className="org-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: contextMenu.x, top: contextMenu.y }}>
+      <strong>{catalog.find(a => a.id === contextMenu.id)?.name}</strong>
+      <SessionLifecycleButton key={contextMenu.id} id={contextMenu.id} active={isAgentRuntimeActive(catalog.find(a => a.id === contextMenu.id) || { status: 'idle' })} onSuccess={() => setContextMenu(null)} onError={setActionError}/>
+      <button role="menuitem" onClick={() => { props.onOpenSession(contextMenu.id); setContextMenu(null); }}>{text('세션 대화 열기', 'Open conversation')}</button>
+      <button role="menuitem" onClick={() => setContextMenu(null)}>{text('닫기', 'Close')}</button>
+    </div>}
   </section>;
 }
 

@@ -20,6 +20,19 @@ function fixture() {
   return { board: new ProjectBoard(options), source, live, hooks, runs, options, time: value => { now = value; } };
 }
 describe('Independent project board', () => {
+  it('keeps an idle leader waiting through queued work and result collection without overriding foreground work/questions', () => {
+    const f = fixture();
+    let pending = [{ id: 'job', from: 'a', to: 'b' }];
+    f.board.delegations = () => pending;
+    f.board.observe({ id: 'a', event: 'done', received_at: 1900, assistant_message: '하달했습니다' });
+    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toMatchObject({ count: 1, childIds: ['b'] });
+    expect(f.board.snapshot().delegations).toEqual(pending);
+    f.board.observe({ id: 'a', event: 'working', received_at: 2000 });
+    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toBeUndefined();
+    f.board.observe({ id: 'a', event: 'waiting', interactive_question: '확인?', received_at: 2100 });
+    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toBeUndefined();
+    pending = []; expect(f.board.snapshot().delegations).toEqual([]);
+  });
   it('projects delegated waiting without consuming a result or read receipt, and retires old work across restarts', () => {
     const f = fixture(); f.live.add('b');
     f.board.observe({ id: 'b', event: 'working', received_at: 2000 });

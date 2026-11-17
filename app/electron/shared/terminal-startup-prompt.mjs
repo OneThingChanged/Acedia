@@ -26,14 +26,15 @@ export function parseTerminalStartupPrompt(screen, provider) {
       || lines.at(-1) !== 'Enter to confirm · Esc to cancel'
       || !lines.some(line => line.startsWith('Quick safety check: Is this a project you created or one you trust?'))
       || !lines.includes("Claude Code'll be able to read, edit, and execute files here.")) return null;
-    const choices = lines.filter(line => /^(?:❯\s*)?(?:No, exit|Yes, I trust this folder)$/.test(line));
-    if (choices.length !== 2 || choices[0].replace(/^❯\s*/, '') !== 'No, exit'
-      || choices[1].replace(/^❯\s*/, '') !== 'Yes, I trust this folder'
-      || choices.filter(line => line.startsWith('❯')).length !== 1) return null;
+    const marker = /^[❯›>]\s*/;
+    const choices = lines.filter(line => /^(?:[❯›>]\s*)?(?:No, exit|Yes, I trust this folder)$/.test(line));
+    if (choices.length !== 2 || choices[0].replace(marker, '') !== 'No, exit'
+      || choices[1].replace(marker, '') !== 'Yes, I trust this folder'
+      || choices.filter(line => marker.test(line)).length !== 1) return null;
     const folder = lines.slice(start + 1).find(Boolean);
     return { startupKind: 'folder-trust', kind: 'permission', answerStyle: 'arrow', text: lines.slice(start, lines.indexOf(choices[0])).join('\n'),
-      options: choices.map((line, i) => ({ label: line.replace(/^❯\s*/, ''), send: String(i + 1) })),
-      selectedIndex: choices.findIndex(line => line.startsWith('❯')), confirmIndex: 1, folder, trustRoot: folder };
+      options: choices.map((line, i) => ({ label: line.replace(marker, ''), send: String(i + 1) })),
+      selectedIndex: choices.findIndex(line => marker.test(line)), confirmIndex: 1, folder, trustRoot: folder };
   }
   if (provider !== 'codex') return null;
   const lines = screen.trim().split(/\r?\n/), header = lines[0]?.trim();

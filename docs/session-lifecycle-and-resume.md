@@ -118,11 +118,62 @@ remaining permanently busy.[^activity][^hook-service]
 
 ## Window close and full exit
 
+### Previous-run recovery confirmation (2026-11-17 source, unreleased)
+
+A full exit now checkpoints the live local Codex/Claude session set before the
+renderer receives its save/quit request. The existing workspace snapshot retains
+the catalog, tabs, layout, parent relationships and launch settings; the host's
+`session-recovery.json` retains exact conversation IDs, account selection scope,
+working/idle/question state and routed-account ownership. No credentials or
+conversation bodies are copied. Failure to save cancels full exit with an error.
+Closing workspace windows to the tray keeps the existing processes running and
+does not request a previous-run restore.
+
+On the next cold launch, the coordinator asks **Restore sessions from the
+previous run?** No keeps the catalog/layout and dormant sessions without launching
+them. Pending mailbox activation/task ticks wait for the decision; task dispatch
+also requires a live owner, including after No. Yes restores the captured local
+sessions through the existing exact-resume launcher, two at a time, with child
+workers before leaders. Completed/idle sessions reopen without another task;
+question/approval sessions receive no automatic answer. SSH and arbitrary shell
+commands stay dormant instead of being re-executed.
+
+Only previously working sessions receive one continuation request, after their
+exact conversation, process, unchanged configuration and empty native composer
+are confirmed. The request tells the agent to consult current artifacts, workers
+and results before continuing the existing user request. Original tasks are not
+copied/replayed. An already-working session or a delivered message/user draft
+prevents another request. Unknown transcripts, changed accounts/configuration,
+login/questions and startup timeouts remain visible for manual attention.
+An unused startup without a conversation ID can reopen fresh only when the host
+observed no prior conversation, user input, submitted message or launch-time
+prompt. This path rejects old pins/history and does not replay account handoffs
+or send a continuation; its existing queued first task uses the normal mailbox.
+Submission intent is durable before paste; an uncertain paste or interrupted
+launch is not retried. `continued` records successful submission, while ordinary
+native work hooks remain the evidence that execution actually started.
+
+Workspace IPC `session_recovery` exposes `offer`, `decide`, `claim`, `launched`
+and `status` for the current coordinator. Decisions bind an exact checkpoint ID,
+and launches bind exact Acedia/session/account identities. Status contains only
+concise metadata. Board renderers and other workspaces cannot launch a restore.
+
+### Claude startup activation (2026-11-17 source, unreleased)
+
+An explicitly activated ordinary local Claude session can now confirm the
+registered project/working folder even without API-created provenance. The
+native workspace dialog parser recognizes `❯`, `›` and `>` selectors. Automation
+moves from No to Yes once, observes the repainted native selection, then sends
+Enter once. Actual cwd and canonical registered folder scope must still match.
+Unknown folders, transcript/tool prose, SSH, login/API-key prompts and unrelated
+approvals remain manual. The existing durable mailbox then waits for actual
+composer readiness and exact receipt evidence before reporting task start.
+
 Closing a workspace window can leave sessions owned by the tray process. A full
-application exit cannot preserve OS processes: live sessions are journaled,
-their process trees are closed, and the next launch restores their placeholders.
-Processes are reconstructed on selection using provider resume
-metadata.[^reopen-journal][^spawn]
+application exit cannot preserve OS processes: live sessions are journaled and
+their process trees are closed. The next launch offers the recovery flow above;
+declining keeps dormant placeholders that can still be opened individually
+through the normal provider-resume path.[^reopen-journal][^spawn]
 
 Full teardown also invalidates launch generations that are still waiting for
 browser or account setup. Completion of that asynchronous preparation cannot

@@ -597,6 +597,42 @@ and the delayed-updater null-reference error without GUI automation.
 
 ## Project Board review inbox (1.8.2.10)
 
+### Working-child priority and delegated completion (2026-11-17 source, unreleased)
+
+The Board temporarily brings a working child's whole branch above inactive
+siblings under the same parent. Manual `sessionOrder` stays unchanged and returns
+when work ends. Newly visible workers outside a project's scroll viewport are
+revealed once; later manual scrolling is preserved. Project placement and parent
+relationships stay unchanged. Hierarchy strokes are slightly thicker. Retained
+observed-read references flow in purple; an outstanding parent-to-child handoff
+also pulses the hierarchy line. Motion off and reduced-motion settings disable
+both animations.
+
+Board and session-organization context menus provide **Start session** and
+**Stop session** through `project_board_session_action` with exact `id`,
+`action: start | stop`, and `expectedActive: boolean`. The host rejects stale
+state and reuses the existing local-session start and acknowledged registry stop
+services. The board renderer gains no raw PTY/spawn/kill access. Opening a
+conversation still does not start it.
+
+A leader's handoff turn is not a workflow completion. The host retains a separate
+metadata ledger (`local/delegated-work.json`) for new parent-to-child handoffs,
+including queued/offline targets, beyond the UI's recent-transfer limit. It waits
+for actual original-text reads (or direct-handoff starts), child final completion
+and result return/read by the leader. A child that has its own pending delegation
+has not finalized. `replyTo` correlates results to an exact request; without it,
+return receipts cover earlier started requests between the same two sessions.
+Task orchestration also retains pending dispatch and result verification.
+
+Intermediate leader turns and assigned workers' completion reports retain their
+conversation/results but suppress completion attention, pet, desktop and Remote
+push notifications. After all outstanding work is collected, the leader's final
+turn may notify. No final completion is synthesized just because a child stops,
+a message is saved, or a result is read. Questions retain their notifications.
+The ledger survives restarts, does not reinterpret old history as new commands,
+and suppresses completion with a visible board error if its state cannot be
+saved/read. External/unrecorded delegation cannot be inferred.
+
 Board placement supports free project-header dragging and sibling session-row
 reordering with a handle (or its Up/Down keys). Dragging a parent keeps its subtree
 together without reparenting sessions. Project positions and session display order

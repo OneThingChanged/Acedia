@@ -17,6 +17,14 @@ beforeEach(() => {
 });
 
 describe("inherited session launch", () => {
+  it('reopens a proven empty startup without transcript fallback, an old pinned conversation or a repeated account handoff', async () => {
+    invokeMock.mockResolvedValue('unrelated-old-conversation');
+    const agent = { id: 'fresh', folder: 'C:/workspace', aiToolId: 'claude', pendingAccountHandoff: { toAccountId: 'default', prompt: 'Must not replay' } } as Agent;
+    const result = await buildSpawnArgs(agent, null, vi.fn(), { freshSession: true });
+    expect(result.initCommand).toBe('claude'); expect(result.initialPrompt).toBeUndefined(); expect(result.resumeContext).toBeUndefined();
+    expect(invokeMock).not.toHaveBeenCalled();
+    await expect(buildSpawnArgs(agent, { fresh: 'old-pinned' }, vi.fn(), { freshSession: true })).rejects.toThrow('대화 상태');
+  });
   it("keeps the original conversation folder for fresh project-inherited sessions across later cwd changes", async () => {
     invokeMock.mockImplementation(async (_command, args) => args?.preferredSessionId || null);
     const projects: Project[] = [

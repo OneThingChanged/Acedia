@@ -1293,7 +1293,7 @@ export class RemoteDashboardService {
   }
 
   notifyAgentDone(payload) {
-    if (payload?.event !== "done" || !payload?.id) return Promise.resolve(null);
+    if (payload?.event !== "done" || !payload?.id || payload.completion_notification === false) return Promise.resolve(null);
     return this.notifyAgentEvent(payload, "done");
   }
 

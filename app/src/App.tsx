@@ -1,5 +1,7 @@
 import { markIdleSuspended } from './lib/idleSessions';
 import { StartupUpdatePrompt } from "./components/StartupUpdatePrompt";
+import { SessionRecoveryPrompt } from './components/SessionRecoveryPrompt';
+import { restorePreviousSessions } from './lib/sessionRecovery';
 import { SessionNoteOverlay } from './components/SessionNotes';
 import { openSessionNotes, sessionNotes } from './lib/sessionNotes';
 import { viewedImagePaths } from './lib/viewedImagePath';
@@ -1963,7 +1965,7 @@ function App() {
               currentAgent.activity?.workStatus === "working" ||
               currentAgent.activity?.workStatus === "waiting" ||
               currentAgent.activity?.workStatus === "blocked");
-          if (currentAgent && hadActiveWork) {
+          if (currentAgent && hadActiveWork && payload.completion_notification !== false) {
             const project = projectsRef.current.find(
               (candidate) => candidate.id === currentAgent.projectId
             );
@@ -3632,7 +3634,7 @@ function App() {
   const spawnAgentInBackground = useCallback(
     async (
       agentId: string,
-      options: { recovering?: boolean; verifyActive?: boolean; resumeSessionId?: string; poolResumeOwnerId?: string } = {}
+      options: { recovering?: boolean; verifyActive?: boolean; resumeSessionId?: string; freshSession?: boolean; poolResumeOwnerId?: string } = {}
     ) => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) {
@@ -3709,7 +3711,7 @@ function App() {
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId,
-            { resumeSessionId: options.resumeSessionId, agents: agentsRef.current, projects: projectsRef.current }
+            { resumeSessionId: options.resumeSessionId, freshSession: options.freshSession, agents: agentsRef.current, projects: projectsRef.current }
           );
           const result = await invoke<SpawnTerminalResult>("spawn_pty", {
             id: agentId,
@@ -3775,6 +3777,9 @@ function App() {
       text,
     ]
   );
+
+  const restorePreviousRun = useCallback((checkpointId: string, ids: string[]) => restorePreviousSessions(checkpointId, ids,
+    args => invoke('session_recovery', args), spawnAgentInBackground), [spawnAgentInBackground]);
 
   const onContextAction = useCallback((action: SessionContextAction) => {
     if (!contextMenu) return;
@@ -4703,6 +4708,8 @@ function App() {
         />
       )}
       <StartupUpdatePrompt enabled={runtimeFlags?.startup_update_enabled ?? false} />
+      <SessionRecoveryPrompt enabled={!!runtimeFlags?.workspace_window && isCoordinatorWindow}
+        onRestore={restorePreviousRun} onOpenSession={id => { void requestSelectAgent(id); }}/>
       {standaloneNoteId && agents.some(agent => agent.id === standaloneNoteId) && <SessionNoteOverlay agent={agents.find(agent => agent.id === standaloneNoteId)!} onClose={() => setStandaloneNoteId(null)} />}
       {settingsOpen && (
         <SettingsModal
