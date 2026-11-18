@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.28](release-1-8-2-28.md) - Pixel Office 표시 스위치와 이동 렌더링, Codex 계정 툴팁, Dashboard·Remote 초기화 개선.
+
 * [Acedia 1.8.2.27](release-1-8-2-27.md) - 부모의 자식 작업 대기 집계와 Codex CLI 업데이트 선택창에서의 입력 대기 수정.
 
 * [Acedia 1.8.2.26](release-1-8-2-26.md) - 세션 현황의 Pixel Office 탭, Dashboard MCP 제어와 개인 수정 허용 라이선스 1.1.
