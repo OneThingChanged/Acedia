@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session", "project_board_session_action",
+  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session", "project_board_session_action", "project_board_manage_session",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags", "session_recovery",
   "app_startup_get", "app_startup_set",
@@ -194,6 +194,7 @@ const INVOKE_COMMANDS = Object.freeze([
 
 const DELIVERED_EVENTS = Object.freeze([
   "project-board:open-session",
+  "project-board:manage-session",
   "accounts:changed",
   "usage:changed",
   "pty:data",
@@ -304,6 +305,11 @@ function assertInvokeRequest(command, rawArgs) {
       assertId(args);
       if (Object.keys(args).some(k => !['id', 'action', 'expectedActive'].includes(k)) || !['start', 'stop'].includes(args.action)
         || typeof args.expectedActive !== 'boolean') throw new TypeError('Invalid board session action');
+      break;
+    case 'project_board_manage_session':
+      assertId(args);
+      if (Object.keys(args).some(k => k !== 'id' && k !== 'action') || !['properties', 'rename', 'delete'].includes(args.action))
+        throw new TypeError('Invalid board management request');
       break;
     case 'open_project_board':
     case 'project_board_snapshot':

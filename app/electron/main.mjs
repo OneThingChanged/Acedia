@@ -3313,7 +3313,8 @@ const projectBoardWindows = new ProjectBoardWindow({ BrowserWindow, screen, prel
 const boardSessionNavigation = new BoardSessionNavigation({ sessions: () => projectBoard.snapshot().sessions,
   owner: id => workspaceWindows.get(detachedAgents.get(id)), windows: () => workspaceWindows.values(),
   create: () => createAppWindow({ restoreWorkspace: false }), ready: win => runtimeByWebContents.get(win.webContents.id)?.ready,
-  send: (win, payload) => sendEvent(win, 'project-board:open-session', payload), focus: focusWorkspaceWindow, live: id => ptys.has(id) });
+  send: (win, payload) => sendEvent(win, 'action' in payload ? 'project-board:manage-session' : 'project-board:open-session', payload),
+  focus: focusWorkspaceWindow, live: id => ptys.has(id) });
 
 function createAppWindow({
   workspaceWindowId = randomUUID(),
@@ -5528,6 +5529,8 @@ async function invokeCommand(event, command, rawArgs) {
       return projectBoard.preferences(args.preferences);
     case 'project_board_session_action':
       return new BoardSessionActions({ active: id => ptys.has(id), start: body => sessionStart.handle(body), stop: (operation, body) => sessionRegistry.handle(operation, body) }).handle(args);
+    case 'project_board_manage_session':
+      await warmProjectBoard(); return boardSessionNavigation.manage(args);
     case 'project_board_open_session': {
       await warmProjectBoard();
       const opened = boardSessionNavigation.open(args);

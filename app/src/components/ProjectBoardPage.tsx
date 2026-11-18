@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
+import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardProjectHeight, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
 import { workBoardConnections } from '../lib/workBoardConnections';
 import { boardProjectPositions, boardSessionOrder, canReorderBoardSession, placeBoardProject, reorderBoardSession, type BoardProjectPositions } from '../lib/boardPlacement';
 import { ProviderLogo } from './ProviderLogo';
@@ -14,7 +14,7 @@ import { boardOfficeData } from '../lib/boardOffice';
 import { SessionLifecycleButton } from './SessionLifecycleButton';
 import { BoardRequestDetail } from './BoardRequestDetail';
 import { latestIncoming, sessionTableMatches, transferTitle } from '../lib/sessionTable';
-import type { BoardViewMode } from '../lib/workBoard';
+import type { BoardSessionManagement, BoardViewMode } from '../lib/workBoard';
 
 const labels: Record<BoardState, [string, string]> = {
   idle: ['대기', 'Idle'], planned: ['배정 대기', 'Planned'], working: ['작업 중', 'Working'], waiting: ['내 답변 필요', 'Needs your answer'],
@@ -47,6 +47,8 @@ function itemTime(value: number) {
   return Number.isFinite(date.getTime()) ? { dateTime: date.toISOString(), label: date.toLocaleTimeString() } : { dateTime: undefined, label: '—' };
 }
 type ProjectDrag = { id: string; pointerId: number; clientX: number; clientY: number; x: number; y: number; zoom: number; point: { x: number; y: number }; moved: boolean };
+type BoardBounds = { x: number; y: number; width: number; height: number };
+const FOLD_CLICK_DELAY_MS = 500;
 
 export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardSnapshot } = {}) {
   const { text } = useAppLanguage();
@@ -80,6 +82,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const projectBodies = useRef(new Map<string, HTMLDivElement>()), resetView = useRef(false);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const projectDrag = useRef<ProjectDrag | null>(null), sessionDrag = useRef<string | null>(null), suppressProjectClick = useRef<string | null>(null), placementSave = useRef(0);
+  const foldClicks = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const menuPanel = useRef<HTMLDivElement>(null), menuTrigger = useRef<HTMLButtonElement | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -127,6 +131,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     const timer = setTimeout(() => { void invoke('project_board_preferences', { preferences }).catch(reason => setError(String(reason))); }, 500);
     return () => clearTimeout(timer);
   }, [viewMode, view, collapsed, projectId, collapsedProjects, motion, !!data?.items]);
+  useEffect(() => {
+    const clicks = foldClicks.current;
+    return () => { for (const timer of clicks.values()) clearTimeout(timer); clicks.clear(); };
+  }, [viewMode]);
+  useEffect(() => { menuPanel.current?.querySelector('button')?.focus({ preventScroll: true }); }, [menu]);
   const allItems = useMemo(() => data ? boardItems(data) : [], [data]);
   const itemsBySession = useMemo(() => {
     const map = new Map<string, BoardItem[]>(); for (const item of allItems) map.set(item.sessionId, [...(map.get(item.sessionId) || []), item]); return map;
@@ -137,8 +146,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const projectSessions = useMemo(() => data?.sessions.filter(s => !projectId || s.projectId === projectId) || [], [data, projectId]);
   const counts = useMemo(() => boardCounts(projectSessions, allItems), [projectSessions, allItems]);
   const overview = view.zoom < .62;
-  const compactKey = activeOnly || !showSleeping || !showStopped || overview || collapsed.size || collapsedProjects.size
-    ? JSON.stringify([activeOnly, showSleeping, showStopped, overview, [...collapsed].sort(), [...collapsedProjects].sort()]) : '';
+  const compactKey = activeOnly || !showSleeping || !showStopped ? JSON.stringify([activeOnly, showSleeping, showStopped]) : '';
   const placementPositions = useMemo(() => compactKey ? compactPlacement.key === compactKey ? compactPlacement.positions : {} : projectPositions, [compactKey, compactPlacement, projectPositions]);
   const displayedPositions = useMemo(() => projectPreview ? { ...placementPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : placementPositions, [placementPositions, projectPreview]);
   const effectiveOrder = useMemo(() => boardWorkingOrder(data?.sessions || [], sessionOrder), [data?.sessions, sessionOrder]);
@@ -252,6 +260,42 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       while (s?.parentId && !seen.has(s.id)) { seen.add(s.id); next.delete(s.parentId); s = sessionsById.get(s.parentId); } return next; });
     setPendingFocus(id);
   };
+  const cancelFold = (key: string) => {
+    clearTimeout(foldClicks.current.get(key));
+    foldClicks.current.delete(key);
+  };
+  const foldOnClick = (key: string, detail: number, toggle: () => void) => {
+    cancelFold(key);
+    if (detail === 0) toggle();
+    if (detail === 1) foldClicks.current.set(key, setTimeout(() => {
+      foldClicks.current.delete(key);
+      toggle();
+    }, FOLD_CLICK_DELAY_MS));
+  };
+  const zoomTo = (key: string, target: BoardBounds, minimum: number) => {
+    cancelFold(key);
+    const rect = viewport.current?.getBoundingClientRect();
+    if (!rect) return;
+    const fitWidth = (rect.width - 48) / target.width;
+    setView(current => {
+      const zoom = Math.min(2, Math.max(.65, current.zoom, Math.min(minimum, fitWidth)));
+      return { zoom, x: (rect.width - target.width * zoom) / 2 - target.x * zoom,
+        y: Math.max(24, (rect.height - target.height * zoom) / 2) - target.y * zoom };
+    });
+  };
+  const showSessionMenu = (id: string, x: number, y: number, trigger?: HTMLButtonElement | null) => {
+    menuTrigger.current = trigger ?? null;
+    setMenu({ id, x: Math.max(8, Math.min(x, window.innerWidth - 248)), y: Math.max(8, Math.min(y, window.innerHeight - 304)),
+      results: (itemsBySession.get(id) || []).filter(i => i.kind === 'result').map(({ id, fingerprint }) => ({ id, fingerprint })) });
+  };
+  const closeSessionMenu = () => {
+    setMenu(null);
+    menuTrigger.current?.focus({ preventScroll: true });
+  };
+  const manageSession = (request: BoardSessionManagement) => {
+    setMenu(null);
+    void invoke('project_board_manage_session', request).catch(reason => setError(String(reason)));
+  };
   const fit = () => {
     const rect = viewport.current?.getBoundingClientRect();
     if (rect && layout?.groups.length) {
@@ -283,6 +327,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     e.stopPropagation();
     const dx = e.clientX - anchor.clientX, dy = e.clientY - anchor.clientY;
     if (!anchor.moved && Math.hypot(dx, dy) < 6) return;
+    if (!anchor.moved) cancelFold(`project:${anchor.id}`);
     e.preventDefault(); anchor.moved = true;
     anchor.point = { x: Math.max(-1_000_000, Math.min(1_000_000, anchor.x + dx / anchor.zoom)), y: Math.max(-1_000_000, Math.min(1_000_000, anchor.y + dy / anchor.zoom)) };
     setProjectPreview({ id: anchor.id, ...anchor.point });
@@ -320,7 +365,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const actionLabel = (item: BoardItem) => item.kind === 'question' ? text('답변하기', 'Answer') : item.kind === 'error' ? text('원인 보기', 'View cause') : text('결과 보기', 'View result');
   const motionSwitch = <button className="wb-motion" role="switch" aria-checked={motion && !reducedMotion} disabled={reducedMotion} title={reducedMotion ? text('시스템의 모션 줄이기 설정 적용 중', 'System reduced-motion setting is active') : ''} onClick={() => setMotion(v => !v)}>{text('모션', 'Motion')} <span className="wb-switch-track"/></button>;
   return <main className="work-board-page" data-motion={motion && !reducedMotion && connected ? 'on' : 'off'} data-density={view.zoom < .62 ? 'overview' : 'detail'} onKeyDown={e => { if (e.key === 'Escape') {
-    if (menu) { e.stopPropagation(); setMenu(null); }
+    if (menu) { e.stopPropagation(); closeSessionMenu(); }
     else if (projectDrag.current) { e.stopPropagation(); cancelProjectDrag(); }
     else if (selected || selectedReference) { e.stopPropagation(); back(); }
   } }} onPointerDown={e => { if (menu && !(e.target as Element).closest('.wb-context-menu')) setMenu(null); }}>
@@ -375,15 +420,16 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             const members = data.sessions.filter(s => s.projectId === g.id), c = boardCounts(members, allItems), folded = collapsedProjects.has(g.id);
             const rows = nodes.filter(n => n.session.projectId === g.id);
             return <section className={`wb-project ${folded ? 'collapsed' : ''} ${projectPreview?.id === g.id ? 'dragging' : ''}`} key={g.id} data-project-id={g.id} style={{ left: g.x, top: g.y, width: g.width, height: folded ? BOARD_CARD.header : g.height }}>
-              <button className="wb-project-header" aria-expanded={!folded} title={text('드래그하여 이동 · 클릭하여 접기·펼치기', 'Drag to move · click to collapse or expand')}
+              <button className="wb-project-header" aria-expanded={!folded} title={text('드래그: 이동 · 클릭: 접기·펼치기 · 더블클릭: 확대', 'Drag to move · click to fold · double-click to zoom')}
                 onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); suppressProjectClick.current = null;
                   projectDrag.current = { id: g.id, pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY, x: g.x, y: g.y, zoom: view.zoom, point: { x: g.x, y: g.y }, moved: false };
                   e.currentTarget.setPointerCapture(e.pointerId); }}
                 onPointerMove={moveProject} onPointerUp={endProjectDrag} onPointerCancel={cancelProjectDrag}
                 onLostPointerCapture={() => { if (projectDrag.current?.id === g.id) cancelProjectDrag(); }}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') suppressProjectClick.current = null; }}
-                onClick={() => { if (suppressProjectClick.current === g.id) { suppressProjectClick.current = null; return; }
-                  resetView.current = true; setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; }); }}>
+                onClick={e => { if (suppressProjectClick.current === g.id) { suppressProjectClick.current = null; return; }
+                  foldOnClick(`project:${g.id}`, e.detail, () => setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; })); }}
+                onDoubleClick={() => zoomTo(`project:${g.id}`, { ...g, height: folded ? BOARD_CARD.header : boardProjectHeight(g.rows) }, 1.25)}>
                 <span className="wb-project-name"><BoardIcon name="folder"/><strong title={g.name}>{g.name}</strong><BoardIcon name="chevron"/></span>
                 <span className="wb-project-counts"><span>{members.length} {text('세션', 'sessions')}</span>{c.working > 0 && <span data-state="working">{text('작업 중', 'Working')} {c.working}</span>}{c.background > 0 && <span data-state="background">{text('백그라운드', 'Background')} {c.background}</span>}{c.questions > 0 && <span data-state="waiting">{text('질문', 'Questions')} {c.questions}</span>}{c.errors > 0 && <span data-state="failed">{text('오류', 'Errors')} {c.errors}</span>}{c.results > 0 && <span data-state="review">{text('결과', 'Results')} {c.results}</span>}</span>
               </button>
@@ -395,8 +441,10 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                   <svg className="wb-edges wb-session-edges" width={g.width} height={g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} data-delegated={delegationEdges.has(id) || undefined} d={route.path}/>)}</svg>
                   {rows.map(n => {
                     const session = n.session, results = itemsBySession.get(session.id)?.filter(i => i.kind === 'result').length || 0, displayState = boardDisplayState(session, results);
+                    const sessionFolded = collapsed.has(session.id), key = `session:${session.id}`;
+                    const zoomToSession = () => zoomTo(key, { ...n, y: n.y - (projectBodies.current.get(g.id)?.scrollTop ?? groupScroll[g.id] ?? 0) }, 1.5);
                     return <div key={session.id} data-session-id={session.id} className={`wb-node ${session.runtime !== 'running' || ['idle', 'responded', 'paused', 'interrupted'].includes(displayState) ? 'inactive' : ''} ${displayState === 'background' ? 'has-background-work' : ''} ${selected?.sessionId === session.id ? 'selected' : ''} ${highlighted.has(session.id) ? '' : 'dimmed'} ${sessionDragging === session.id ? 'dragging-session' : ''}`} data-state={displayState} data-drop={sessionDrop?.id === session.id ? sessionDrop.after ? 'after' : 'before' : undefined} style={{ left: n.x - g.x, top: n.y - g.y - BOARD_CARD.header, width: n.width, height: n.height }}
-                      onContextMenu={e => { e.preventDefault(); setMenu({ id: session.id, x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), results: (itemsBySession.get(session.id) || []).filter(i => i.kind === 'result').map(i => ({ id: i.id, fingerprint: i.fingerprint })) }); }}
+                      onContextMenu={e => { e.preventDefault(); showSessionMenu(session.id, e.clientX, e.clientY, e.currentTarget?.querySelector<HTMLButtonElement>('.wb-node-menu')); }}
                       onDragOver={e => { if (!sessionDrag.current || !canReorderBoardSession(data.sessions, sessionDrag.current, session.id)) return;
                         e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
                         const rect = e.currentTarget.getBoundingClientRect(); setSessionDrop({ id: session.id, after: e.clientY > rect.top + rect.height / 2 }); }}
@@ -413,11 +461,20 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                   if (target) moveSessionOrder(session.id, target.id, e.key === 'ArrowDown'); }}
                 onPointerDown={e => { if (e.button !== 1) e.stopPropagation(); }} onDragStart={e => { e.stopPropagation(); sessionDrag.current = session.id; setSessionDragging(session.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/x-acedia-board-session', session.id); }}
                 onDragEnd={() => { sessionDrag.current = null; setSessionDragging(null); setSessionDrop(null); }}>⠿</button>
-              <button className="wb-node-open" aria-pressed={selected?.sessionId === session.id} onClick={e => choose(session.id, undefined, e.currentTarget)} onDoubleClick={() => { void open(session.id); }}>
+              <button className="wb-node-open" aria-expanded={n.children ? !sessionFolded : undefined}
+                title={n.children ? text('클릭: 자식 세션 접기·펼치기 · 더블클릭: 확대', 'Click to fold child sessions · double-click to zoom') : text('더블클릭: 세션 확대', 'Double-click to zoom')}
+                onClick={e => {
+                  if (n.children) foldOnClick(key, e.detail, () => setCollapsed(current => { const next = new Set(current); if (!next.delete(session.id)) next.add(session.id); return next; }));
+                  else if (e.detail === 0) zoomToSession();
+                }} onDoubleClick={zoomToSession}>
                 <StateIcon state={displayState}/><span className="wb-node-copy"><span className="wb-node-top"><span className="wb-node-title"><ProviderLogo toolId={session.provider}/><strong title={session.name}>{session.name}</strong></span><span className="wb-status-badge" data-state={displayState} title={text(...labels[displayState])}>{text(...labels[displayState])}</span></span><small title={step(session)}>{step(session)}{session.runtime === 'sleeping' && ' · Sleeping'}{session.state === 'working' && elapsed(session.startedAt, sampledAt) && ` · ${elapsed(session.startedAt, sampledAt)}`}</small>
                   {results > 0 && <span className="wb-node-extra"><span className="wb-result-badge">{text('미확인 결과', 'Results')} {results}</span></span>}</span>
                 {(transfersBySession.get(session.id) || []).slice(-1).map(t => <span key={t.id} className="wb-transfer-badge" data-status={t.status} title={`${t.from === session.id ? '→' : '←'} ${sessionsById.get(t.from === session.id ? t.to : t.from)?.name} · ${text(...boardTransferLabel(t))}${t.reason ? ` · ${t.reason}` : ''}`}>{t.from === session.id ? '→' : '←'} {text(...boardTransferLabel(t))}</span>)}
-              </button>{n.children > 0 && <button className="wb-collapse" aria-expanded={!collapsed.has(session.id)} aria-label={text('자식 세션 접기·펼치기', 'Collapse or expand child sessions')} onClick={() => { resetView.current = true; setCollapsed(current => { const next = new Set(current); if (!next.delete(session.id)) next.add(session.id); return next; }); }}>{collapsed.has(session.id) ? '+' : '−'} {n.children}</button>}
+                {n.children > 0 && <span className="wb-collapse" aria-hidden="true">{sessionFolded ? '+' : '−'} {n.children}</span>}
+              </button>
+              <button className="wb-node-menu" aria-haspopup="menu" aria-expanded={menu?.id === session.id}
+                aria-label={`${session.name} · ${text('세션 메뉴', 'Session menu')}`} title={text('세션 메뉴', 'Session menu')}
+                onClick={e => { const rect = e.currentTarget.getBoundingClientRect(); showSessionMenu(session.id, rect.left, rect.bottom, e.currentTarget); }}>⋯</button>
                     </div>;
                   })}
                 </div>
@@ -442,7 +499,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             })}
           </svg>
         </div>}
-      </div><div className="wb-controls" hidden={viewMode !== 'board'}><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { cancelProjectDrag(); setCollapsed(new Set()); setCollapsedProjects(new Set()); resetView.current = true; }}>{text('모두 펼치기', 'Expand all')}</button>
+      </div><div className="wb-controls" hidden={viewMode !== 'board'}><div className="wb-zoom"><button aria-label={text('축소', 'Zoom out')} onClick={() => setView(v => ({ ...v, zoom: Math.max(.2, v.zoom - .1) }))}>−</button><span>{Math.round(view.zoom * 100)}%</span><button aria-label={text('확대', 'Zoom in')} onClick={() => setView(v => ({ ...v, zoom: Math.min(2, v.zoom + .1) }))}>＋</button><button onClick={fit}>{text('전체 보기', 'Fit board')}</button><button onClick={() => { cancelProjectDrag(); for (const key of foldClicks.current.keys()) cancelFold(key); setCollapsed(new Set()); setCollapsedProjects(new Set()); }}>{text('모두 펼치기', 'Expand all')}</button>
         <button disabled={!Object.keys(placementPositions).length && !sessionOrder.length} onClick={() => { cancelProjectDrag(); if (compactKey) setCompactPlacement({ key: compactKey, positions: {} }); else setProjectPositions({}); setSessionOrder([]); savePlacement({ projectPositions: compactKey ? projectPositions : {}, sessionOrder: [] }); resetView.current = true; }}>{text('배치 초기화', 'Reset layout')}</button></div>
         <button className="wb-align" disabled={!data?.sessions.length} title={text('한 번 정렬합니다. 답변 필요·실행·하위 작업 대기 순으로 부모 트리를 유지해 정렬하고 이후 수동 배치를 보존합니다.', 'Arrange once by attention, execution and background wait, preserving parent trees. Later manual placement is retained.')}
           onClick={() => { if (!data) return; cancelProjectDrag(); const order = boardPriorityOrder(data.sessions, allItems, sessionOrder);
@@ -476,10 +533,16 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
           const s = sessionsById.get(item.sessionId)!, time = itemTime(item.createdAt); return <article key={item.id} className="wb-inbox-item" data-kind={item.kind}><div className="wb-inbox-item-top"><StateIcon state={item.kind}/><strong>{s.name}</strong><span data-state={item.kind}>{text(...kinds[item.kind])}</span></div><p>{item.summary || text(...kinds[item.kind])}</p><time dateTime={time.dateTime}>{time.label}</time><div className="wb-inbox-item-bottom"><small>{data?.projects.find(p => p.id === s.projectId)?.name}</small><button data-item-id={item.id} onClick={e => choose(s.id, item.id, e.currentTarget)}>{actionLabel(item)} ›</button></div></article>;
         })}{inbox.length > visibleCount && <button onClick={() => setVisibleCount(n => n + 50)}>{text('더 보기', 'Show more')} · {inbox.length - visibleCount}</button>}{!inbox.length && <div className="wb-inbox-empty"><span>✓</span><p>{query ? text('검색과 일치하는 항목이 없습니다.', 'No matching items.') : text('확인할 새 항목이 없습니다.', 'Nothing needs your attention.')}</p></div>}</div><p className="wb-inbox-help">{text('결과나 대화를 열면 기존 결과를 확인 처리합니다. 이후 새 결과와 질문은 유지합니다.', 'Opening a result or conversation marks captured results read; later results and questions remain.')}</p></>}
     </aside></div>
-    {menu && <div className="wb-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: Math.max(0, menu.x), top: Math.max(0, menu.y) }}>
+    {menu && sessionsById.has(menu.id) && <div ref={menuPanel} className="wb-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: menu.x, top: menu.y }}>
+      <strong>{sessionsById.get(menu.id)?.name}</strong>
+      <button role="menuitem" onClick={() => { setMenu(null); choose(menu.id, undefined, menuTrigger.current ?? undefined); }}>{text('세션 세부정보', 'Session details')}</button>
+      <button role="menuitem" onClick={() => { setMenu(null); void open(menu.id); }}>{text('세션 대화 열기', 'Open conversation')}</button>
       <SessionLifecycleButton key={menu.id} id={menu.id} active={sessionsById.get(menu.id)?.runtime === 'running'} onSuccess={() => { setMenu(null); void refreshRef.current(); }} onError={setError}/>
-      <strong>{sessionsById.get(menu.id)?.name}</strong><button role="menuitem" disabled={busy || !!data?.storageError || !menu.results.length} onClick={() => { void reviewSession(menu.id, menu.results); }}>{text('현재 결과 확인완료', 'Mark current results read')} · {menu.results.length}</button>
-      <button role="menuitem" onClick={() => { const id = menu.id; setMenu(null); void open(id); }}>{text('세션 대화 열기', 'Open conversation')}</button><button role="menuitem" onClick={() => setMenu(null)}>{text('닫기', 'Close')}</button></div>}
+      <button role="menuitem" onClick={() => manageSession({ id: menu.id, action: 'properties' })}>{text('세션 속성', 'Session properties')}</button>
+      <button role="menuitem" onClick={() => manageSession({ id: menu.id, action: 'rename' })}>{text('이름 변경', 'Rename')}</button>
+      <button role="menuitem" disabled={busy || !!data?.storageError || !menu.results.length} onClick={() => { void reviewSession(menu.id, menu.results); }}>{text('현재 결과 확인완료', 'Mark current results read')} · {menu.results.length}</button>
+      <button role="menuitem" className="wb-delete-session" onClick={() => manageSession({ id: menu.id, action: 'delete' })}>{text('세션 삭제…', 'Delete session…')}</button>
+      <button role="menuitem" onClick={closeSessionMenu}>{text('닫기', 'Close')}</button></div>}
     <footer className="wb-footer" hidden={viewMode === 'office'}><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('보라색: 읽기 참조 · 밝기 강조: 하달 진행 중', 'Purple: observed reads · glow: outstanding delegation')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
   </main>;
 }

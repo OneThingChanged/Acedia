@@ -32,6 +32,8 @@ it('routes explicit context actions through acknowledged start/stop and rejects 
   await actions.handle({ id: 'child', action: 'stop', expectedActive: true });
   expect(stop).toHaveBeenCalledExactlyOnceWith('stop', { sessionId: 'child' });
   expect(() => assertBoardAccess({ project_board_window: true }, 'project_board_session_action')).not.toThrow();
+    expect(() => assertBoardAccess({ project_board_window: true }, 'project_board_manage_session')).not.toThrow();
+    expect(() => assertBoardAccess({}, 'project_board_manage_session')).toThrow();
   expect(() => assertBoardAccess({ project_board_window: true }, 'spawn_agent')).toThrow();
 });
 describe('Board-only window lifecycle without GUI', () => {
@@ -130,6 +132,13 @@ describe('Navigation from a board without restarting sessions', () => {
     const f = navigation(false); f.value.open({ id: 'existing' }); expect(f.send).not.toHaveBeenCalled();
     f.value.loaded(2); expect(f.send).toHaveBeenCalledOnce(); f.value.loaded(2); expect(f.send).toHaveBeenCalledOnce();
     f.value.open({ id: 'existing' }); f.value.closed(2); f.value.loaded(2); expect(f.send).toHaveBeenCalledOnce();
+  });
+  it('queues a request to display management for the owning workspace without lifecycle metadata', () => {
+    const f = navigation(false), live = vi.fn(); f.value.live = live;
+    expect(f.value.manage({ id: 'existing', action: 'delete' })).toEqual({ opened: true, windowId: 2 });
+    expect(f.send).not.toHaveBeenCalled(); expect(live).not.toHaveBeenCalled();
+    f.value.loaded(2); expect(f.send).toHaveBeenCalledExactlyOnceWith(f.windows[1], { id: 'existing', action: 'delete' });
+    expect(() => f.value.manage({ id: 'missing', action: 'delete' })).toThrow(); expect(f.focus).toHaveBeenCalledOnce();
   });
   it('creates only a blank workspace when all workspaces are closed', () => {
     const f = navigation(false); f.value.owner = () => null; f.value.windows = () => [];

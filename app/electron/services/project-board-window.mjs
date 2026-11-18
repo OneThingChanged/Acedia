@@ -1,4 +1,4 @@
-export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session', 'project_board_session_action']);
+export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session', 'project_board_session_action', 'project_board_manage_session']);
 export function assertBoardAccess(runtime, command) {
   if (runtime?.project_board_window && !BOARD_COMMANDS.includes(command)) throw new Error('보드 전용 창에서는 작업 실행 명령을 사용할 수 없습니다.');
   if ((BOARD_COMMANDS.includes(command) || command === 'open_project_board') && !runtime?.project_board_window && !runtime?.workspace_window) throw new Error('Acedia 작업창에서 보드를 사용하세요.');
@@ -53,11 +53,16 @@ export class BoardSessionNavigation {
     Object.assign(this, { sessions, owner, windows, create, ready, send, focus, live }); this.pending = new Map();
   }
   open({ id, compose = false }) {
-    if (!this.sessions().some(s => s.id === id)) throw new Error('세션을 찾을 수 없습니다.');
-    let win = this.owner(id);
+    return this.#show({ id, live: this.live(id), compose });
+  }
+  manage({ id, action }) {
+    return this.#show({ id, action });
+  }
+  #show(payload) {
+    if (!this.sessions().some(s => s.id === payload.id)) throw new Error('세션을 찾을 수 없습니다.');
+    let win = this.owner(payload.id);
     if (!win || win.isDestroyed()) win = [...this.windows()].find(w => !w.isDestroyed());
     if (!win) win = this.create();
-    const payload = { id, live: this.live(id), compose };
     if (this.ready(win)) this.send(win, payload); else this.pending.set(win.webContents.id, { win, payload });
     this.focus(win); return { opened: true, windowId: win.webContents.id };
   }

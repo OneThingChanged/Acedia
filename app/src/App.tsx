@@ -17,7 +17,7 @@ import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocati
 import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
-import { boardViewedAgent } from './lib/workBoard';
+import { boardViewedAgent, type BoardSessionManagement } from './lib/workBoard';
 import { remoteAgentStatus, remoteAgentView } from './lib/remoteSessionProjection';
 import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
 import { loadRightPanelView, LS_RIGHT_PANEL_VIEW } from './lib/pixelOffice';
@@ -664,6 +664,7 @@ function App() {
   const [rightPanelView, setRightPanelView] = useState(loadRightPanelView);
   const [organizationOffice, setOrganizationOffice] = useState(false);
   const [boardNavigation, setBoardNavigation] = useState<{ id: string; live: boolean; compose: boolean; serial: number } | null>(null);
+  const [boardManagement, setBoardManagement] = useState<BoardSessionManagement | null>(null);
   const boardNavigationSerial = useRef(0);
   useEffect(() => { try { localStorage.setItem(LS_RIGHT_PANEL_VIEW, rightPanelView); } catch { /* optional preference */ } }, [rightPanelView]);
   const [standaloneNoteId, setStandaloneNoteId] = useState<string | null>(null);
@@ -2451,6 +2452,22 @@ function App() {
       applyGroupOp(state => groupOps.selectAgent(state, navigation.id, agent?.projectId));
     }).catch(reason => pushToast(navigation.id, 'Project Board', String(reason)));
   }, [boardNavigation, runtimeFlags, agents, activateAgentProject, applyGroupOp, pushToast]);
+
+  useEffect(() => {
+    let stopped = false;
+    const subscription = listen<BoardSessionManagement>('project-board:manage-session', ({ payload }) => {
+      if (!stopped) setBoardManagement(payload);
+    });
+    return () => { stopped = true; void subscription.then(remove => remove()).catch(() => {}); };
+  }, []);
+  useEffect(() => {
+    if (!boardManagement || !runtimeFlags || !agents.some(agent => agent.id === boardManagement.id)) return;
+    const { id, action } = boardManagement;
+    setBoardManagement(null);
+    if (action === 'delete') removeAgent(id);
+    else if (action === 'rename') setRenameSessionId(id);
+    else if (action === 'properties') setPropertiesAgentId(id);
+  }, [boardManagement, runtimeFlags, agents, removeAgent]);
 
   const selectScreen = useCallback(
     async (groupId: string, agentId: string) => {

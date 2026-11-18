@@ -85,13 +85,13 @@ describe('Work board node projection', () => {
     expect(positions).toEqual({ p: { x: -410, y: 800 } });
     expect(data).toEqual(before);
   });
-  it('uses header heights for folded projects and zoom overview instead of retaining expanded gaps', () => {
+  it('renders smaller cards for folding and zoom overview without moving project anchors', () => {
     const projects = [{ id: 'p', name: 'Parent', folder: 'G:/root' }, { id: 'q', name: 'Child', folder: 'G:/root/q' }];
     const data = { ...snapshot, projects, sessions: [...Array.from({ length: 24 }, (_, i) => session(`p${i}`, null)), { ...session('q1', null), projectId: 'q' }] };
     const full = boardLayout(data, {}), folded = boardLayout(data, { collapsedProjects: new Set(['p']) }), overview = boardLayout(data, { overview: true });
     expect(folded.groups[0]).toMatchObject({ height: BOARD_CARD.header, bodyHeight: 0, rows: 24 });
-    expect(folded.groups[1].y).toBe(folded.groups[0].y + BOARD_CARD.header + 64);
-    expect(folded.height).toBeLessThan(full.height); expect(overview.height).toBeLessThan(folded.height);
+    const anchors = (layout: typeof full) => layout.groups.map(({ id, x, y }) => ({ id, x, y }));
+    expect(anchors(folded)).toEqual(anchors(full)); expect(anchors(overview)).toEqual(anchors(full));
     expect(overview.groups.every(g => g.height === BOARD_CARD.header && g.bodyHeight === 0)).toBe(true);
     expect(overview.projectEdges).toEqual(full.projectEdges);
     expect(boardLayout(data, {}).groups).toEqual(full.groups);

@@ -41,6 +41,10 @@ describe("Electron IPC contract", () => {
     expect(contract.assertInvokeRequest('project_board_session_action', { id: 'a', action: 'stop', expectedActive: true }).action).toBe('stop');
     for (const args of [{ id: 'a', action: 'kill', expectedActive: true }, { id: 'a', action: 'start' }, { id: 'a', action: 'start', expectedActive: false, command: 'echo hi' }])
       expect(() => contract.assertInvokeRequest('project_board_session_action', args)).toThrow();
+    for (const action of ['properties', 'rename', 'delete'])
+      expect(contract.assertInvokeRequest('project_board_manage_session', { id: 'a', action })).toEqual({ id: 'a', action });
+    for (const args of [{ id: 'a', action: 'stop' }, { id: 'a', action: 'delete', confirmed: true }, { id: '', action: 'delete' }])
+      expect(() => contract.assertInvokeRequest('project_board_manage_session', args)).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results: [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64) }] })).toBeTruthy();
     for (const results of [null, [{ id: 'a'.repeat(64) }], [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64), execute: true }], Array(1501).fill({})]) expect(() => contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results })).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64) })).toBeTruthy();

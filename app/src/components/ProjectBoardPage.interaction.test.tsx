@@ -167,16 +167,80 @@ it('restores and saves the Office tab from the host and follows fresh polling an
   stop();
 });
 
-it('opens a conversation with only the result IDs captured at double-click, preserving later arrivals', async () => {
+it('opens a conversation with only the result IDs captured when explicitly opened, preserving later arrivals', async () => {
   const data = fixture(); let tree = render(data);
   hooks.invoke.mockImplementationOnce(async (command, args) => {
     expect(command).toBe('project_board_open_session');
     expect(args).toEqual({ id: 'a', compose: false, reviewResults: data.items!.filter(i => i.sessionId === 'a').map(i => ({ id: i.id, fingerprint: i.fingerprint })) });
     return { snapshot: { ...data, items: [{ ...data.items![0], id: '9'.repeat(64), summary: '새 결과' }, data.items![2]] } };
   });
-  elements(tree).find(e => e.props['data-session-id'] === 'a')!.props.children.find((e: ReactElement<Props>) => e?.props?.className === 'wb-node-open').props.onDoubleClick();
+  elements(tree).find(e => e.props['data-session-id'] === 'a')!.props.onContextMenu({ preventDefault: vi.fn(), clientX: 500, clientY: 500 });
+  elements(render(data)).find(e => e.props.role === 'menuitem' && content(e) === '세션 대화 열기')!.props.onClick();
   await Promise.resolve(); tree = render(data);
   expect(content(tree)).toContain('새 결과'); expect(elements(tree).filter(e => e.props['data-item-id'])).toHaveLength(2);
+});
+
+it.each([false, true])('folds only the clicked card while retaining the viewport and %s compact placement', compact => {
+  vi.useFakeTimers();
+  const data = fixture();
+  data.preferences = { viewMode: 'board', zoom: .9, x: 45, y: -80, showSleeping: !compact, showStopped: true,
+    projectPositions: { p: { x: 120, y: 110 }, p2: { x: 680, y: 220 } } };
+  let tree = render(data);
+  const canvas = elements(tree).find(e => e.props.className === 'wb-canvas')!;
+  canvas.props.ref.current = { getBoundingClientRect: () => ({ width: 1000, height: 720 }) };
+  if (compact) {
+    header(tree).props.onPointerDown(pointer(200, 180));
+    header(tree).props.onPointerUp(pointer(120, 460));
+    tree = render(data);
+  }
+  const world = (t: ReactNode) => elements(t).find(e => e.props.className === 'wb-world')!.props.style.transform;
+  const session = (t: ReactNode, id: string) => elements(t).find(e => e.props['data-session-id'] === id);
+  const position = (id: string) => ({ left: project(tree, id).props.style.left, top: project(tree, id).props.style.top });
+  const start = [position('p'), position('p2'), world(tree)];
+  const expectStableView = () => {
+    tree = render(data); for (const effect of hooks.effects) { if (effect.deps?.[1] === 'board') effect.run(); }
+    tree = render(data);
+    expect([position('p'), position('p2'), world(tree)]).toEqual(start);
+  };
+  elements(session(tree, 'a')).find(e => e.props.className === 'wb-node-open')!.props.onClick({ detail: 1 });
+  vi.runOnlyPendingTimers(); expectStableView();
+  expect(session(tree, 'a')).toBeDefined(); expect(session(tree, 'b')).toBeUndefined(); expect(session(tree, 'c')).toBeDefined();
+  header(tree, 'p2').props.onClick({ detail: 1 });
+  vi.runOnlyPendingTimers(); expectStableView();
+  expect(header(tree, 'p2').props['aria-expanded']).toBe(false);
+  elements(tree).find(e => e.type === 'button' && content(e) === '모두 펼치기')!.props.onClick();
+  expectStableView();
+  expect(session(tree, 'b')).toBeDefined(); expect(session(tree, 'c')).toBeDefined();
+});
+
+it.each(['project', 'parent session', 'leaf session'] as const)('zooms to the %s on double-click without folding or opening a conversation', target => {
+  vi.useFakeTimers();
+  const data = fixture();
+  data.preferences = { viewMode: 'board', zoom: target === 'project' ? .5 : .8, showSleeping: true, showStopped: true,
+    projectPositions: { p: { x: 100, y: 80 } } };
+  let tree = render(data);
+  elements(tree).find(e => e.props.className === 'wb-canvas')!.props.ref.current = { getBoundingClientRect: () => ({ width: 1000, height: 720 }) };
+  const control = (t: ReactNode) => target === 'project' ? header(t) : elements(elements(t).find(e => e.props['data-session-id'] === (target === 'parent session' ? 'a' : 'b'))).find(e => e.props.className === 'wb-node-open')!;
+  const expanded = control(tree).props['aria-expanded'];
+  control(tree).props.onClick({ detail: 1 }); control(tree).props.onClick({ detail: 2 }); control(tree).props.onDoubleClick();
+  vi.runOnlyPendingTimers(); tree = render(data);
+  expect(control(tree).props['aria-expanded']).toBe(expanded);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: 100, top: 80 });
+  const world = elements(tree).find(e => e.props.className === 'wb-world')!.props.style.transform;
+  expect(world).toContain(target === 'project' ? 'scale(1.25)' : 'scale(1.5)');
+  expect(world).toContain(target === 'project' ? 'translate(175px, 83.75px)' : target === 'parent session' ? 'translate(111.5px, 39px)' : 'translate(101px, -99px)');
+  expect(hooks.invoke).not.toHaveBeenCalled();
+});
+
+it.each([['세션 속성', 'properties'], ['이름 변경', 'rename'], ['세션 삭제…', 'delete']])('routes %s to the workspace without opening the session or editing its catalog from the board', (label, action) => {
+  const data = fixture(); let tree = render(data);
+  const node = elements(tree).find(e => e.props['data-session-id'] === 'b');
+  elements(node).find(e => e.props.className === 'wb-node-menu')!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 1275, bottom: 890 }) } });
+  tree = render(data);
+  expect(elements(tree).find(e => e.props.role === 'menu')!.props.style).toEqual({ left: 1032, top: 596 });
+  expect(hooks.invoke).not.toHaveBeenCalled();
+  elements(tree).find(e => e.props.role === 'menuitem' && content(e) === label)!.props.onClick();
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_manage_session', { id: 'b', action });
 });
 
 it('reviews captured session results from the context menu without acknowledging a later response or a question', async () => {
@@ -258,6 +322,7 @@ it('locates a hidden stopped result temporarily, then hides it again without cha
 });
 
 it('drags a project in world coordinates, saves on release and suppresses the following fold click', async () => {
+  vi.useFakeTimers();
   const data = fixture(); data.references = [{ id: 'read', from: 'c', to: 'b', active: true, kind: 'message', source: 'inbox', startedAt: 0, endedAt: null }];
   data.preferences.showSleeping = data.preferences.showStopped = true;
   hooks.invoke.mockResolvedValue({});
@@ -271,13 +336,14 @@ it('drags a project in world coordinates, saves on release and suppresses the fo
   expect(hooks.invoke).not.toHaveBeenCalled();
   header(tree).props.onPointerUp(pointer(80, 460));
   expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_preferences', { preferences: { projectPositions: { p: { x: start.left - 150, y: start.top + 350 } }, sessionOrder: [], showSleeping: true, showStopped: true, activeOnly: false } });
-  tree = render(data); header(tree).props.onClick(); tree = render(data);
+  tree = render(data); header(tree).props.onClick({ detail: 1 }); tree = render(data);
   expect(header(tree).props['aria-expanded']).toBe(true);
   expect(elements(tree).find(e => e.props.className === 'wb-ref-line')!.props.d).not.toBe(edge);
   await Promise.resolve(); tree = render(data);
   expect(content(elements(tree).find(e => e.props.role === 'status')!)).toBe('이 컴퓨터에 배치 저장');
   // A later ordinary click still folds the project.
-  header(tree).props.onPointerDown(pointer(80, 460)); header(tree).props.onPointerUp(pointer(82, 462)); header(tree).props.onClick();
+  header(tree).props.onPointerDown(pointer(80, 460)); header(tree).props.onPointerUp(pointer(82, 462)); header(tree).props.onClick({ detail: 1 });
+  vi.runOnlyPendingTimers();
   expect(header(render(data)).props['aria-expanded']).toBe(false);
 });
 
@@ -288,7 +354,7 @@ it.each(['cancel', 'escape'] as const)('cancels a project preview with %s withou
   if (action === 'cancel') header(tree).props.onPointerCancel();
   else tree.props.onKeyDown({ key: 'Escape', stopPropagation: vi.fn() });
   tree = render(data); expect(project(tree, 'p').props.style).toEqual(start);
-  header(tree).props.onClick(); expect(header(render(data)).props['aria-expanded']).toBe(true);
+  header(tree).props.onClick({ detail: 0 }); expect(header(render(data)).props['aria-expanded']).toBe(true);
   expect(hooks.invoke).not.toHaveBeenCalled();
 });
 
@@ -411,15 +477,15 @@ it('opens the selected question in its session composer without deciding or revi
   expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_open_session', { id: 'c', compose: true });
 });
 
-it('repacks projects when folding while preserving totals, hierarchy and result filtering', () => {
+it('keeps related projects in place when folding while preserving totals, hierarchy and result filtering', () => {
   const data = fixture(); data.projects[1].hierarchy = { parentId: 'p' }; let tree = render(data);
   const previousTop = project(tree, 'p2').props.style.top;
   const other = elements(tree).find(e => e.props.className?.includes('wb-node ') && content(e).includes('Session c'))!;
   const position = other.props.style;
   const summary = content(elements(tree).find(e => e.props.className === 'wb-summary')!);
-  elements(tree).find(e => e.props.className === 'wb-project-header')!.props.onClick();
+  header(tree).props.onClick({ detail: 0 });
   tree = render(data);
-  expect(project(tree, 'p2').props.style.top).toBeLessThan(previousTop);
+  expect(project(tree, 'p2').props.style.top).toBe(previousTop);
   expect(elements(tree).filter(e => e.props.className?.includes('wb-node '))).toHaveLength(1);
   expect(elements(tree).find(e => e.props.className?.includes('wb-node ') && content(e).includes('Session c'))!.props.style).toEqual(position);
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);
