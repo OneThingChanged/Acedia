@@ -1096,7 +1096,7 @@ export function ChatView({
       )}
       {prompt && (
         <div className={`chat-prompt ${prompt.kind}${startupPrompt ? " chat-prompt-startup" : ""}${prompt.answerStyle === 'codex-approval' ? ' chat-prompt-command' : ''}`} role="status" aria-live="polite">
-          <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : prompt.kind === 'permission' ? text('승인 필요', 'Approval needed') : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
+          <strong className="chat-prompt-heading">{startupPrompt?.startupKind === "cli-update" ? text("Codex CLI 업데이트 확인", "Codex CLI update available") : startupPrompt?.startupKind === "folder-trust" ? text("프로젝트 폴더 신뢰 확인", "Trust this project folder") : startupPrompt?.startupKind === "hook-review" ? text("시작 훅 확인", "Review startup hooks") : prompt.kind === "authentication" ? text("Claude 로그인 필요", "Claude sign-in required") : prompt.kind === 'permission' ? text('승인 필요', 'Approval needed') : nativeQuestion?.async ? text("작업 중 질문 · 답변을 선택해 주세요", "Question while working · choose your answer") : text("답변 대기 중", "Answer needed")}</strong>
           {['codex-form','claude-form'].includes(prompt.answerStyle) && prompt.questions ? <QuestionForm key={promptSig} questions={prompt.questions}
             disabled={!nativeQuestion || respondingPromptSig === promptSig || answeredPromptSig === promptSig || !!promptError} onSubmit={answers => { void respondQuestions(answers); }}/>
           : <div className="chat-prompt-text">
@@ -1108,6 +1108,7 @@ export function ChatView({
           </div>}
           <div className="chat-prompt-hint">{prompt.kind === "authentication"
             ? text("이 세션의 터미널에서 /login을 실행하고 브라우저에서 로그인해 주세요. 로그인 후 요청을 다시 보내세요.", "Run /login in this session's terminal and sign in through the browser. Then resend your request.")
+            : startupPrompt?.startupKind === "cli-update" ? text("터미널에서 업데이트하거나 Esc를 눌러 이번 안내를 넘기세요.", "Open the terminal to update or press Esc to continue with the installed version.")
             : answeredPromptSig === promptSig
             ? text("답변을 보냈습니다. 계속 대기하면 터미널에서 확인해 주세요.", "Answer sent. If waiting continues, check the terminal.")
             : (startupPrompt || prompt.answerStyle === 'codex-approval') && prompt.options.length ? text("내용을 확인한 뒤 아래에서 선택해 주세요. 선택한 답변만 터미널에 전달합니다.", "Review the details and choose below. Your selected answer will be sent to the terminal.")

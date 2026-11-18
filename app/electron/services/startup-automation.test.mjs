@@ -7,6 +7,8 @@ import { CodexScrollbackFilter } from './terminal-stream.mjs';
 import { readTerminalStartupScreen } from '../shared/terminal-startup-prompt.mjs';
 import { TaskOrchestration } from './task-orchestration.mjs';
 import { WorkspaceManagement } from './workspace-management.mjs';
+import { noteFirstMessageInput, firstMessageSession } from './session-first-message.mjs';
+import { SessionReadiness } from './session-readiness.mjs';
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true }); });
 function fixture() {
@@ -99,6 +101,52 @@ it('preserves a complete native dialog when full-width painting leaves wrapped r
   const f = fixture(), rows = f.screen().split('\n');
   const term = { rows: rows.length, buffer: { active: { baseY: 0, getLine: i => ({ isWrapped: i > 0, translateToString: () => rows[i] }) } } };
   expect(readTerminalStartupScreen(term)).toBe(f.screen());
+});
+
+const updateScreen = [
+  'Update available · 0.169.0 → 0.169.1',
+  '',
+  'Release notes: https://github.com/openai/codex/releases/latest',
+  '› 1. Update now (runs `winget upgrade OpenAI.Codex`)',
+  '  2. Skip',
+  '  3. Skip until next version',
+  '',
+  'enter continue · esc skip',
+].join('\r\n');
+
+it('reports the exact native update blocker, skips once in the background and verifies the first composer again', async () => {
+  const f = fixture(), filter = new CodexScrollbackFilter(30, 64);
+  try {
+    const entry = Object.assign(f.entry, { filter, startedAt: 1, subscribers: new Set() });
+    const paint = text => new Promise(resolve => filter.shadow.write('\x1b[2J\x1b[H' + text, resolve));
+    const readiness = new SessionReadiness({ context: () => ({ entry, conversationId: null }), read: async () => null,
+      freshRead: () => firstMessageSession({ entry, agent: { id: 'child' }, conversationId: null }), ready: () => true });
+    await paint(updateScreen.replace('winget upgrade OpenAI.Codex', 'winget upgrade ' + 'package-name-'.repeat(5)));
+    expect(await readiness.handle({ sessionId: 'child' })).toMatchObject({ phase: 'cli-update', reason: 'cli-update', ready: false });
+    expect(f.write).not.toHaveBeenCalled();
+    entry.subscribers.add(1);
+    expect(f.automation.check('child')).toBe(false);
+    entry.subscribers.clear();
+    f.write.mockImplementation((_id, key) => noteFirstMessageInput(entry, key));
+    expect(f.automation.check('child')).toBe(true);
+    expect(f.write).toHaveBeenCalledExactlyOnceWith('child', '\x1b');
+    expect(f.automation.check('child')).toBe(false);
+    expect(await readiness.handle({ sessionId: 'child' })).toMatchObject({ ready: false });
+    await paint('› \x1b[90mAsk Codex to do anything\x1b[0m\x1b[1;3H');
+    expect(await readiness.handle({ sessionId: 'child' })).toMatchObject({ ready: true, firstMessageReady: true });
+  } finally { filter.dispose(); }
+});
+
+it('leaves quoted, incomplete or user-interacted update screens alone', () => {
+  const f = fixture();
+  for (const screen of ['Assistant says:\n' + updateScreen, updateScreen.replace('  2. Skip\r\n', ''), updateScreen.replace('esc skip', 'esc quit')]) {
+    f.entry.filter.viewportText = () => screen;
+    expect(f.automation.check('child')).toBe(false);
+  }
+  f.entry.filter.viewportText = () => updateScreen;
+  noteFirstMessageInput(f.entry, 'draft');
+  expect(f.automation.check('child')).toBe(false);
+  expect(f.write).not.toHaveBeenCalled();
 });
 it('does not replay an uncertain key or race a changed native selection, permission or input', () => {
   const f = fixture(); f.write.mockImplementation(() => { throw Error('disconnected'); });

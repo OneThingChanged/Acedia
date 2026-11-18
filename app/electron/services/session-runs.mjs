@@ -9,7 +9,7 @@ const key = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(
 const ordered = value => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.keys(value).sort().map(k => [k, ordered(value[k])])) : value;
 const hash = value => createHash('sha256').update(JSON.stringify(ordered(value))).digest('hex');
-const preparing = new Set(['registered', 'starting', 'folder-trust', 'hook-review', 'question', 'working', 'blocked']);
+const preparing = new Set(['registered', 'starting', 'folder-trust', 'hook-review', 'cli-update', 'question', 'working', 'blocked']);
 
 // One durable request owns one child and one UTF-8 inbox notification. Neither
 // a lost creation acknowledgement nor an uncertain PTY submit is replayed.

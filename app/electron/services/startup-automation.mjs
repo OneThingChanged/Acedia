@@ -35,10 +35,12 @@ export class StartupAutomation {
     this.moved = new WeakMap();
     this.hookAttempted = new WeakSet();
     this.hookMoved = new WeakMap();
+    this.updateSkipped = new WeakSet();
   }
   check(id) {
     const entry = this.entry(id), prompt = startupPrompt(entry);
     if (prompt?.startupKind === 'hook-review') return this.checkHooks(id, entry, prompt);
+    if (prompt?.startupKind === 'cli-update') return this.skipUpdate(id, entry, prompt);
     if (!entry || this.attempted.has(entry) || this.blocked(id) || prompt?.startupKind !== 'folder-trust' || prompt.selectedIndex === undefined) return false;
     const inputAt = entry.lastInputAt;
     let root, folder, trustRoot;
@@ -69,6 +71,20 @@ export class StartupAutomation {
       this.write(id, '\r');
       entry.startupTrustConfirmation = { folder, trustRoot, at: Date.now() };
       this.publish({ id, ...entry.startupTrustConfirmation });
+      return true;
+    } catch { return false; }
+  }
+
+  skipUpdate(id, entry, prompt) {
+    if (this.updateSkipped.has(entry) || this.blocked(id) || entry.subscribers?.size || entry.firstMessageInput || entry.firstMessageSubmitted) return false;
+    const inputAt = entry.lastInputAt, current = this.entry(id);
+    const live = startupPrompt(current);
+    if (current !== entry || entry.lastInputAt !== inputAt || live?.startupKind !== 'cli-update' || live.text !== prompt.text) return false;
+    this.updateSkipped.add(entry);
+    try {
+      // The native Esc action postpones this prompt without installing anything.
+      this.write(id, '\x1b');
+      this.publish({ id, kind: 'cli-update-skipped' });
       return true;
     } catch { return false; }
   }

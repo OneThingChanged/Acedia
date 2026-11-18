@@ -10,7 +10,8 @@ export function noteFirstMessageInput(entry, data) {
   // path as keystrokes. Accept only complete reports, never pasted text or
   // arrow/Enter keys, so attaching a visible terminal cannot consume freshness.
   if (/^(?:\x1b\[(?:[IO]|\??\d+;\d+R|[?>]?\d+(?:;\d+)*c|\??\d+(?:;\d+)*u|\d+n|(?:4|8|9);\d+;\d+t|\?\d+;[0-4]\$y)|\x1b\](?:10|11|12);rgb:[\da-f/]+(?:\x07|\x1b\\))+$/.test(data)) return;
-  if (startupPrompt(entry) && /^(?:\r|\n|[1-3]|\x1b(?:\[[AB]|O[AB]))+$/.test(data)) return;
+  const startup = startupPrompt(entry);
+  if (startup && (/^(?:\r|\n|[1-3]|\x1b(?:\[[AB]|O[AB]))+$/.test(data) || startup.startupKind === 'cli-update' && data === '\x1b')) return;
   entry.firstMessageInput = true;
 }
 

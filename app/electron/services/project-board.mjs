@@ -234,14 +234,8 @@ export class ProjectBoard {
     for (const [id, result] of Object.entries(this.data.results)) if (result.lastCompletedAt || result.event === 'done') completedAt.set(id, result.lastCompletedAt || result.at);
     for (const item of Object.values(this.data.inbox)) if (item.scope === 'response') completedAt.set(item.sessionId, Math.max(completedAt.get(item.sessionId) || 0, item.createdAt));
     const delegated = delegatedWaitProjection({ sessions, transfers, runs: this.runs() || [], completedAt, hook: this.hook, waitingSince: this.waitingSince });
-    const delegations = this.delegations().filter(t => byId.has(t.from) && byId.has(t.to));
-    for (const job of delegations) {
-      const owner = byId.get(job.from);
-      if (owner?.runtime !== 'running' || !['idle', 'review', 'responded', 'completed', 'background', 'waiting_external'].includes(owner.state)) continue;
-      const childIds = [...new Set([...(delegated.get(owner.id)?.childIds || []), job.to])].sort();
-      delegated.set(owner.id, { childIds, count: childIds.length, observedAt: owner.lastActivityAt || 0 });
-    }
     for (const session of sessions) if (delegated.has(session.id)) session.delegatedWait = delegated.get(session.id);
+    const delegations = this.delegations().filter(t => byId.has(t.from) && byId.has(t.to));
     const references = [...this.references.values()].filter(r => byId.has(r.from) && byId.has(r.to)).map(({ readers, ...r }) => ({ ...r, active: readers > 0 }));
     const value = { sessions, projects: (source.projects || []).map(p => ({ id: p.id, name: short(p.name, 200), folder: short(p.folder || p.remoteFolder, 4096),
       ...(p.sshHostId ? { sshHostId: short(p.sshHostId, 256), remoteFolder: short(p.remoteFolder, 4096) } : {}),

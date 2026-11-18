@@ -441,7 +441,8 @@ export class TaskOrchestration {
         await new Promise(resolve => setTimeout(resolve, 150)); continue;
       }
       if (current?.startup) {
-        const reason = current.startup.startupKind === 'folder-trust' ? '폴더 신뢰 확인 대기 · 프로젝트 자동 확인 설정 또는 하위 대화에서 승인' : '시작 훅 검토 대기 · 하위 대화에서 선택';
+        const reason = current.startup.startupKind === 'folder-trust' ? '폴더 신뢰 확인 대기 · 프로젝트 자동 확인 설정 또는 하위 대화에서 승인'
+          : current.startup.startupKind === 'cli-update' ? 'Codex CLI 업데이트 확인 · 하위 터미널에서 선택' : '시작 훅 검토 대기 · 하위 대화에서 선택';
         if (task.state !== 'waiting_approval' || task.reason !== reason) { task.state = 'waiting_approval'; task.reason = reason; this.touch(run); }
         deadline = this.now() + 30000;
         await new Promise(resolve => setTimeout(resolve, 150));

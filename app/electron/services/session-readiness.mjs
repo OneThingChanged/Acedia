@@ -70,7 +70,7 @@ export class SessionReadiness {
       if (expectedEntry !== context?.entry || (expectedConversationId && expectedConversationId !== context?.conversationId)) {
         throw fail('준비를 기다리는 동안 실행 세션 또는 대화가 변경되었습니다.', 409);
       }
-      if (status.ready || !this.canWait(sessionId) || !['starting', 'folder-trust'].includes(status.phase) || this.now() >= deadline) return status;
+      if (status.ready || !this.canWait(sessionId) || !['starting', 'folder-trust', 'cli-update'].includes(status.phase) || this.now() >= deadline) return status;
       await this.wait(Math.min(100, Math.max(0, deadline - this.now())));
     }
   }

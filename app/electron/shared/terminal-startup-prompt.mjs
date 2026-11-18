@@ -40,6 +40,13 @@ export function parseTerminalStartupPrompt(screen, provider) {
   const lines = screen.trim().split(/\r?\n/), header = lines[0]?.trim();
   const startupKind = header === 'Folder access' ? 'folder-trust' : header === 'Hooks need review' ? 'hook-review' : null;
   const footer = lines.at(-1)?.trim() || '';
+  if (/^Update available\s*[·•]\s*\d+\.\d+\.\d+[\w.-]*\s*→\s*\d+\.\d+\.\d+[\w.-]*$/.test(header)
+    && /^enter\s+continue\s*[·•]\s*esc\s+skip$/i.test(footer)) {
+    const menu = lines.slice(1, -1).map(line => line.trim()).join(' ').trim();
+    if (/^Release notes: https:\/\/github\.com\/openai\/codex\/releases\/latest\s+[›❯>]?\s*1\. Update now \(runs `[^`]+`\)\s+[›❯>]?\s*2\. Skip\s+[›❯>]?\s*3\. Skip until next version$/.test(menu)) {
+      return { startupKind: 'cli-update', kind: 'permission', answerStyle: 'terminal', text: header, options: [] };
+    }
+  }
   if (!startupKind || !/^enter\s+(?:continue|confirm)\s*[·•]\s*esc\s+(?:quit|back|skip)$/i.test(footer)) return null;
   if (startupKind === 'folder-trust' && !screen.includes('Trust this folder?')) return null;
   if (startupKind === 'hook-review' && !screen.includes('Hooks can run outside the sandbox after you trust them.')) return null;

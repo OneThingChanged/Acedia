@@ -2,7 +2,7 @@ import type { ChatPrompt } from './chat-prompt.mjs';
 import type { Terminal } from '@xterm/xterm';
 export function readTerminalStartupScreen(term: Pick<Terminal, 'buffer' | 'rows'>): string;
 export type TerminalStartupPrompt = ChatPrompt & {
-  startupKind: 'folder-trust' | 'hook-review';
+  startupKind: 'folder-trust' | 'hook-review' | 'cli-update';
   selectedIndex?: number;
   confirmIndex?: number;
   folder?: string;

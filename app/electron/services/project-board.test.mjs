@@ -20,18 +20,31 @@ function fixture() {
   return { board: new ProjectBoard(options), source, live, hooks, runs, options, time: value => { now = value; } };
 }
 describe('Independent project board', () => {
-  it('keeps an idle leader waiting through queued work and result collection without overriding foreground work/questions', () => {
+  it('shows delegated waiting only during confirmed child work while retaining outstanding handoffs and results', () => {
     const f = fixture();
-    let pending = [{ id: 'job', from: 'a', to: 'b' }];
+    const pending = [{ id: 'job', from: 'a', to: 'b' }];
+    const transfer = { id: 'job', from: 'a', to: 'b', status: 'queued', savedAt: 1200, isMessage: true };
     f.board.delegations = () => pending;
+    f.board.transfers = () => [transfer];
     f.board.observe({ id: 'a', event: 'done', received_at: 1900, assistant_message: '하달했습니다' });
-    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toMatchObject({ count: 1, childIds: ['b'] });
     expect(f.board.snapshot().delegations).toEqual(pending);
-    f.board.observe({ id: 'a', event: 'working', received_at: 2000 });
-    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toBeUndefined();
-    f.board.observe({ id: 'a', event: 'waiting', interactive_question: '확인?', received_at: 2100 });
-    expect(f.board.snapshot().sessions.find(s => s.id === 'a').delegatedWait).toBeUndefined();
-    pending = []; expect(f.board.snapshot().delegations).toEqual([]);
+    expect(f.board.delegatedWaitSnapshot().sessions).toEqual({});
+
+    f.live.add('b');
+    f.board.observe({ id: 'b', event: 'working', received_at: 2000 });
+    expect(f.board.delegatedWaitSnapshot().sessions).toEqual({});
+    Object.assign(transfer, { status: 'started', startedAt: 1500, readAt: 1600 });
+    expect(f.board.delegatedWaitSnapshot().sessions.a).toMatchObject({ count: 1, childIds: ['b'] });
+
+    f.board.observe({ id: 'b', event: 'done', received_at: 2100, assistant_message: '결과입니다' });
+    const completed = f.board.snapshot();
+    expect(completed.sessions.find(s => s.id === 'a').delegatedWait).toBeUndefined();
+    expect(completed.delegations).toEqual(pending);
+    expect(completed.items).toContainEqual(expect.objectContaining({ sessionId: 'b', kind: 'result', summary: '결과입니다' }));
+
+    f.live.delete('b');
+    f.board.observe({ id: 'b', event: 'cancelled', received_at: 2200 });
+    expect(f.board.delegatedWaitSnapshot().sessions).toEqual({});
   });
   it('projects delegated waiting without consuming a result or read receipt, and retires old work across restarts', () => {
     const f = fixture(); f.live.add('b');

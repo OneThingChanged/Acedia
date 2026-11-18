@@ -1532,7 +1532,7 @@ const startupAutomation = new StartupAutomation({
   verifyHooks: entry => hookService.verifyStartupHooks(entry),
   blocked: id => forceClosing || questionResponder.isBusy(id) || capacityRetry.isActive(id),
   write: (id, key) => terminalSessions.write(id, key),
-  publish: payload => { console.info('[electron] startup trust confirmed', payload.id, payload.kind || 'folder-trust'); sendEventToAll('chat:changed', { agentId: payload.id }); },
+  publish: payload => { console.info('[electron] startup automation', payload.id, payload.kind || 'folder-trust'); sendEventToAll('chat:changed', { agentId: payload.id }); },
 });
 async function readTaskSession(id) {
   const entry = ptys.get(id), startup = startupPrompt(entry);
