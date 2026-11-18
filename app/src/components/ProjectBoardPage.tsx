@@ -166,7 +166,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       }
     }
   }, [data?.sessions, layout, nodes, groupById, viewMode, overview]);
-  const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, revealedSession, activeOnly), [data?.sessions, showSleeping, showStopped, revealedSession, activeOnly]);
+  const temporarySession = viewMode === 'office' ? null : revealedSession;
+  const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, temporarySession, activeOnly), [data?.sessions, showSleeping, showStopped, temporarySession, activeOnly]);
   const displayedReferences = useMemo(() => data?.references?.filter(r => visibleSessionIds.has(r.from) && visibleSessionIds.has(r.to)) || [], [data?.references, visibleSessionIds]);
   const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
     [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, view.zoom < .62]);
@@ -317,6 +318,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     : boardDisplayState(s, itemsBySession.get(s.id)?.filter(i => i.kind === 'result').length || 0) === 'responded' ? text('응답 확인 완료 · 새 지시 대기', 'Response read · awaiting a new instruction') : s.state === 'background' ? text(...backgroundWaitingLabels(s.backgroundCount || undefined))
     : s.reason || s.step || s.task?.title || (s.state === 'idle' || s.state === 'planned' ? text('할당된 작업 없음', 'No assigned work') : text(...labels[s.state]));
   const actionLabel = (item: BoardItem) => item.kind === 'question' ? text('답변하기', 'Answer') : item.kind === 'error' ? text('원인 보기', 'View cause') : text('결과 보기', 'View result');
+  const motionSwitch = <button className="wb-motion" role="switch" aria-checked={motion && !reducedMotion} disabled={reducedMotion} title={reducedMotion ? text('시스템의 모션 줄이기 설정 적용 중', 'System reduced-motion setting is active') : ''} onClick={() => setMotion(v => !v)}>{text('모션', 'Motion')} <span className="wb-switch-track"/></button>;
   return <main className="work-board-page" data-motion={motion && !reducedMotion && connected ? 'on' : 'off'} data-density={view.zoom < .62 ? 'overview' : 'detail'} onKeyDown={e => { if (e.key === 'Escape') {
     if (menu) { e.stopPropagation(); setMenu(null); }
     else if (projectDrag.current) { e.stopPropagation(); cancelProjectDrag(); }
@@ -328,7 +330,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       </nav>
       <label className="wb-project-picker" hidden={viewMode === 'office'}><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <input type="search" hidden={viewMode === 'office'} value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
-      <div className="wb-visibility" hidden={viewMode === 'office'} role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
+      <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
         <button role="switch" aria-checked={activeOnly} aria-label={text('활성 세션만 표시', 'Show active sessions only')} title={text('실행 중인 세션만 표시합니다. Sleeping을 켜면 활성 부모의 sleeping 자식도 표시합니다.', 'Show running sessions. Sleeping also shows sleeping descendants of active parents.')}
           onClick={() => { const next = !activeOnly; cancelProjectDrag(); setActiveOnly(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, activeOnly: next }); }}>{text('Active만', 'Active only')} <span className="wb-switch-track"/></button>
         <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. Active만 보기에서는 활성 부모 아래의 자식만 표시합니다.', 'Show sleeping sessions. In Active only, include only descendants of active parents.')}
@@ -336,10 +338,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         <button role="switch" aria-checked={showStopped} aria-label={text('대기·정지 세션 표시', 'Show idle and stopped sessions')} title={text('Idle·일시정지·중단·종료 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide idle, paused, interrupted and stopped sessions. Parents of visible children stay.')}
           onClick={() => { const next = !showStopped; cancelProjectDrag(); setShowStopped(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>
       </div>
+      {viewMode === 'office' && motionSwitch}
       <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button></header>
 
     {(placementError || error || data?.storageError) && <div role="alert" className="wb-error">{placementError || error || data?.storageError}</div>}
-    {viewMode === 'office' && <div className="wb-office">{office ? <PixelOffice agents={office.agents} projects={office.projects} activeProjectId={projectId || null}
+    {viewMode === 'office' && <div className="wb-office">{office ? <PixelOffice agents={office.agents} projects={office.projects} activeProjectId={projectId || null} visibleSessionIds={visibleSessionIds} motion={motion && connected}
       onOpenSession={id => { void open(id); }} onBack={() => setViewMode('board')}/>
       : <p className="wb-empty" role="status">{text('사무실을 불러오는 중…', 'Loading office…')}</p>}</div>}
     {viewMode !== 'office' && revealedSession && <div className="wb-revealed">{sessionsById.get(revealedSession)?.name} · {text('보드에서 찾기로 임시 표시 중', 'Temporarily shown by Locate on board')}<button onClick={() => setRevealedSession(null)}>{text('다시 숨기기', 'Hide again')}</button></div>}
@@ -447,7 +450,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             else { const automatic = boardLayout(data, { collapsed, sessionOrder: order }), positions = Object.fromEntries(automatic.groups.map(g => [g.id, { x: g.x, y: g.y }])); setProjectPositions(positions); savePlacement({ projectPositions: positions, sessionOrder: order }); }
             setSessionOrder(order); resetView.current = true; }}>{text('업무순 정렬', 'Align by work')}</button>
         <span className="wb-placement-status" role="status" data-status={placementStatus}>{placementStatus === 'saving' ? text('배치 저장 중…', 'Saving layout…') : placementStatus === 'failed' ? text('배치 저장 실패', 'Layout save failed') : compactKey ? text('보이는 항목 기준 자동 정렬', 'Auto-arranged for visible items') : text('이 컴퓨터에 배치 저장', 'Layout saved on this computer')}{placementStatus === 'failed' && <button onClick={() => savePlacement({ projectPositions, sessionOrder })}>{text('다시 저장', 'Retry save')}</button>}</span>
-        <button className="wb-motion" role="switch" aria-checked={motion && !reducedMotion} disabled={reducedMotion} title={reducedMotion ? text('시스템의 모션 줄이기 설정 적용 중', 'System reduced-motion setting is active') : ''} onClick={() => setMotion(v => !v)}>{text('모션', 'Motion')} <span className="wb-switch-track"/></button></div>
+        {viewMode === 'board' && motionSwitch}</div>
       <div className="wb-device-strip"><span>{text('컴퓨터 사용', 'Computer activity')}</span>{!data?.devices.length ? <small>{text('현재 수신된 사용 신호 없음', 'No current activity signals')}</small> : data.devices.map((device, i) => <button key={`${device.sessionId}:${i}`} onClick={() => choose(device.sessionId)}>{device.kind === 'desktop' ? '🖱' : '🌐'} {sessionsById.get(device.sessionId)?.name} · {device.tool}{device.state === 'unconfirmed' ? ` · ${text('종료 신호 확인 필요', 'Awaiting end signal')}` : ''}</button>)}</div>
     </section>
     <aside className="wb-inspector" ref={inspector} aria-label={text('내 확인', 'Your attention')}>

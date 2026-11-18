@@ -161,7 +161,7 @@ void (async () => {
         signal: AbortSignal.timeout(800),
       });
       const html = response.ok ? await response.text() : "";
-      if (html.includes('class="app-shell"') && html.includes("/pwa/app.js")) {
+      if (html.includes('class="app-shell"') && html.includes("/pwa/startup.js")) {
         dashboardReady = true;
         finishWhenReady();
         return;

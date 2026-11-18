@@ -106,13 +106,34 @@ it('opens Pixel Office from the overview tabs and returns to the saved board wit
   expect(office.props.agents[1]).toMatchObject({ deferredStart: true, resumeEligible: true });
   expect(office.props.onSelect).toBeUndefined();
   expect(elements(tree).find(e => e.props.className === 'wb-body')!.props.hidden).toBe(true);
-  expect(elements(tree).find(e => e.props.className === 'wb-visibility')!.props.hidden).toBe(true);
+  expect(elements(tree).find(e => e.props.className === 'wb-visibility')!.props.hidden).toBeUndefined();
+  expect(office.props.visibleSessionIds).toEqual(new Set(['a', 'b', 'c']));
   expect(elements(tree).some(e => e.type === SessionTableView)).toBe(false);
   expect(hooks.invoke).not.toHaveBeenCalled();
   office.props.onBack(); tree = render(data);
   expect(elements(tree).some(e => e.type === PixelOffice)).toBe(false);
   expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
   expect(data).toEqual(before);
+});
+
+it('uses the same Sleeping, Idle / stopped, Active and Motion switches in Pixel Office', () => {
+  const data = fixture(); data.preferences = { viewMode: 'office', showStopped: true };
+  data.sessions[1].runtime = 'sleeping';
+  data.sessions.push({ ...data.sessions[1], id: 'stopped', runtime: 'stopped' }, { ...data.sessions[1], id: 'unrelated', parentId: null });
+  const office = () => elements(render(data)).find(e => e.type === PixelOffice)!.props;
+  const toggle = (label: string) => elements(render(data)).find(e => e.props.role === 'switch' && e.props['aria-label'] === label)!.props.onClick();
+  expect(office().visibleSessionIds).toEqual(new Set(['a', 'c', 'stopped']));
+  toggle('Sleeping 세션 표시');
+  expect(office().visibleSessionIds).toEqual(new Set(['a', 'b', 'c', 'stopped', 'unrelated']));
+  toggle('활성 세션만 표시');
+  expect(office().visibleSessionIds).toEqual(new Set(['a', 'b', 'c']));
+  toggle('활성 세션만 표시');
+  toggle('대기·정지 세션 표시');
+  expect(office().visibleSessionIds).toEqual(new Set(['a', 'b', 'c', 'unrelated']));
+  expect(hooks.invoke).toHaveBeenCalledWith('project_board_preferences', { preferences: expect.objectContaining({ showSleeping: true, showStopped: false, activeOnly: false }) });
+  expect(office().motion).toBe(true);
+  elements(render(data)).find(e => e.props.className === 'wb-motion')!.props.onClick();
+  expect(office().motion).toBe(false);
 });
 
 it('uses explicit conversation navigation for Office actors, with captured result identity and no launch command', async () => {

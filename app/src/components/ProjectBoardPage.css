@@ -19,7 +19,7 @@
 .wb-header input { width: min(260px, 24vw); background: #101823; font-size: 12px; padding: 10px 12px; }
 .wb-project-picker select { max-width: 210px; background: #101823; font-size: 12px; }
 .wb-refresh { font-size: 12px!important; background: transparent!important; }
-.wb-visibility { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
+.wb-visibility { display: flex; flex-wrap: wrap; max-width: 100%; gap: 6px; margin-left: auto; }
 .work-board-page .wb-visibility button { display: inline-flex; align-items: center; gap: 8px; padding: 7px 9px; font-size: 11px; }
 .wb-visibility button[aria-checked=true] { border-color: #79609f; background: #30253f; }
 .wb-revealed { display: flex; gap: 10px; align-items: center; padding: 4px 30px; color: var(--wb-muted); font-size: 11px; }

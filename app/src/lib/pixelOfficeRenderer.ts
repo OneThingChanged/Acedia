@@ -1,3 +1,4 @@
+import type { Agent } from '../types';
 import { OFFICE_COLORS, OFFICE_ROLE_COLORS, officeAvatar, officeState, type OfficeSeat, type OfficeScene, type OfficeViewport } from './pixelOffice';
 
 // Pixel Agents assets, pinned and licensed in public/pixel-agents/NOTICE.txt.
@@ -26,11 +27,14 @@ function sprite(ctx: CanvasRenderingContext2D, images: OfficeImages, key: string
   const image = images.get(key);
   if (image) ctx.drawImage(image, Math.round(x), Math.round(y), image.width * scale, image.height * scale);
 }
-export function officeBackground(scene: OfficeScene, images: OfficeImages, view: OfficeViewport): HTMLCanvasElement {
+function paintOfficeBackground(canvas: HTMLCanvasElement, scene: OfficeScene, images: OfficeImages, view: OfficeViewport) {
   // Allocate only viewport pixels, even for thousands of desks. Never create a
   // canvas as large as the office world or resize a layout from a canvas size.
-  const canvas = document.createElement('canvas'); canvas.width = view.width; canvas.height = view.height;
-  const ctx = canvas.getContext('2d')!; ctx.imageSmoothingEnabled = false;
+  if (canvas.width !== view.width) canvas.width = view.width;
+  if (canvas.height !== view.height) canvas.height = view.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#111f26'; ctx.fillRect(0, 0, view.width, view.height);
   ctx.translate(view.x, view.y); ctx.scale(view.zoom, view.zoom);
   const { width, height, seats } = scene;
@@ -62,9 +66,9 @@ export function officeBackground(scene: OfficeScene, images: OfficeImages, view:
   }
   // Organization links represent real parentId, not creation provenance.
   const byId = new Map(seats.map(seat => [seat.agent.id, seat]));
+  const visibleSeats = seats.filter(seat => officeSeatVisible(seat, view));
   ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
-  for (const seat of seats) {
-    if (!officeSeatVisible(seat, view)) continue;
+  for (const seat of visibleSeats) {
     if (seat.role === 'lead' || seat.role === 'manager') {
       ctx.globalAlpha = 1;
       ctx.fillStyle = OFFICE_ROLE_COLORS[seat.role] + '33'; ctx.fillRect(seat.x + 5, seat.y + 13, 114, 90);
@@ -77,24 +81,22 @@ export function officeBackground(scene: OfficeScene, images: OfficeImages, view:
     ctx.lineTo(seat.x + 62, seat.y - 9); ctx.lineTo(seat.x + 62, seat.y + 42); ctx.stroke();
   }
   ctx.setLineDash([]); ctx.globalAlpha = 1;
-  for (const seat of seats) {
-    if (!officeSeatVisible(seat, view)) continue;
+  for (const seat of visibleSeats) {
     ctx.fillStyle = '#0003'; ctx.fillRect(seat.x + 13, seat.y + 80, 99, 14);
     sprite(ctx, images, 'chair', seat.x + 46, seat.y + 68);
     sprite(ctx, images, 'desk', seat.x + 14, seat.y + 18);
   }
-  return canvas;
 }
 
 export function officeSeatVisible(seat: OfficeSeat, view: OfficeViewport) {
   return seat.x + 124 >= -view.x / view.zoom && seat.x <= (view.width - view.x) / view.zoom && seat.y + 154 >= -view.y / view.zoom && seat.y <= (view.height - view.y) / view.zoom;
 }
-export function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvasElement, images: OfficeImages, seats: OfficeSeat[], elapsed: number, reducedMotion: boolean, view: OfficeViewport, now = Date.now()) {
-  ctx.imageSmoothingEnabled = false; ctx.clearRect(0, 0, background.width, background.height); ctx.drawImage(background, 0, 0);
+function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvasElement, images: OfficeImages, seats: OfficeSeat[], agents: ReadonlyMap<string, Agent>, elapsed: number, reducedMotion: boolean, view: OfficeViewport, now = Date.now()) {
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(background, 0, 0);
   ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.zoom, view.zoom);
   for (const seat of seats) {
     if (!officeSeatVisible(seat, view)) continue;
-    const state = officeState(seat.agent, now), avatar = officeAvatar(seat.agent.id);
+    const state = officeState(agents.get(seat.agent.id) || seat.agent, now), avatar = officeAvatar(seat.agent.id);
     const inactive = ['sleeping', 'stopped', 'disconnected'].includes(state);
     const frame = reducedMotion ? 0 : Math.floor(elapsed / 400 + avatar);
     sprite(ctx, images, inactive ? 'pc0' : `pc${frame % 3 + 1}`, seat.x + 46, seat.y - 2);
@@ -122,4 +124,25 @@ export function drawOffice(ctx: CanvasRenderingContext2D, background: HTMLCanvas
     }
   }
   ctx.restore();
+}
+
+export function createOfficeRenderer(target: HTMLCanvasElement, images: OfficeImages) {
+  const ctx = target.getContext('2d');
+  if (!ctx) return null;
+  const background = document.createElement('canvas');
+  let paintedScene: OfficeScene | undefined, paintedView: OfficeViewport | undefined;
+  return (scene: OfficeScene, view: OfficeViewport, agents: ReadonlyMap<string, Agent>, elapsed: number, reducedMotion: boolean, scale: number) => {
+    if (scene !== paintedScene || view !== paintedView) {
+      paintOfficeBackground(background, scene, images, view);
+      paintedScene = scene;
+      paintedView = view;
+    }
+    const width = Math.round(view.width * scale), height = Math.round(view.height * scale);
+    // Assigning either dimension clears the visible backing store, including
+    // same-size assignments. Keep it intact during pans, zoom and animation.
+    if (target.width !== width) target.width = width;
+    if (target.height !== height) target.height = height;
+    ctx.setTransform(width / view.width, 0, 0, height / view.height, 0, 0);
+    drawOffice(ctx, background, images, scene.seats, agents, elapsed, reducedMotion, view);
+  };
 }

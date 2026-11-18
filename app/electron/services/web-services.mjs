@@ -182,6 +182,7 @@ const REMOTE_PWA_ASSETS = new Map([
   ["/pwa/styles.css", { file: "styles.css", type: "text/css; charset=utf-8", cache: "no-cache" }],
   ["/pwa/terminal-touch.js", { file: "terminal-touch.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/app.js", { file: "app.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
+  ["/pwa/startup.js", { file: "startup.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/login.js", { file: "login.js", type: "text/javascript; charset=utf-8", cache: "no-cache" }],
   ["/pwa/xterm.js", { file: "vendor/xterm.js", type: "text/javascript; charset=utf-8", cache: "public, max-age=86400" }],
   ["/pwa/xterm.css", { file: "vendor/xterm.css", type: "text/css; charset=utf-8", cache: "public, max-age=86400" }],

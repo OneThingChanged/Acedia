@@ -1,6 +1,6 @@
 const BASE_PATH = new URL(self.registration.scope).pathname;
 const CACHE_PREFIX = `acedia-remote:${BASE_PATH}:`;
-const CACHE_NAME = CACHE_PREFIX + 'multiagent-remote-v118';
+const CACHE_NAME = CACHE_PREFIX + 'multiagent-remote-v119';
 const scopePath = path => BASE_PATH + path.replace(/^\//, '');
 const STATIC_ASSETS = [
   '/pwa/base-path.js',
@@ -13,8 +13,11 @@ const STATIC_ASSETS = [
   "/pwa/workspace-ui.js",
   "/",
   "/pwa/styles.css",
+  "/pwa/startup.js",
   "/pwa/terminal-touch.js",
   "/pwa/app.js",
+  "/pwa/task-flow.js",
+  "/pwa/task-flow.css",
   "/pwa/hosting.js",
   "/pwa/session-model.js",
   "/pwa/account-pool.js",
@@ -77,35 +80,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // App shell (our own code) changes on every release — go network-first so a
-  // new build lands immediately instead of being pinned to a stale cache.
-  // Vendor/static assets (xterm, icons) stay cache-first for speed.
-  const isAppShell =
-    ['/pwa/base-path.js', "/pwa/workspace-shell.css", "/pwa/workspace-shell.js", "/pwa/markdown-blocks.js"].includes(pathname) ||
-    pathname === "/pwa/chat-files.js" ||
-    pathname === "/pwa/model-editor.js" ||
-    pathname === "/pwa/workspace-ui.js" ||
-     pathname === "/pwa/session-model.js" ||
-    pathname === "/pwa/hosting.js" ||
-    pathname === "/pwa/account-pool.js" ||
-    pathname === "/pwa/usage-sessions.js" ||
-    pathname === "/pwa/session-state.js" ||
-    pathname === "/pwa/session-tree.js" ||
-    pathname === "/pwa/app.js" ||
-    pathname === "/pwa/dom.js" ||
-    pathname === "/pwa/i18n.js" ||
-    pathname === "/pwa/translations.js" ||
-    pathname === "/pwa/chat-markup.js" ||
-    pathname === "/pwa/image-zoom.js" ||
-    pathname === "/pwa/chat-render.js" ||
-    pathname === "/pwa/chat-history.js" ||
-    pathname === "/pwa/chat-pagination.js" ||
-     pathname === "/pwa/chat-prompt.js" ||
-     pathname === "/pwa/question-form.js" ||
-    pathname === "/pwa/requests.js" ||
-    pathname === "/pwa/attachments.js" ||
-    pathname === "/pwa/styles.css" ||
-    pathname === "/pwa/terminal-touch.js";
+  // Fetch the entire application module graph fresh. Only the vendor terminal
+  // and static images use cached responses first.
+  const isAppShell = /^\/pwa\/[^/]+\.(?:js|css)$/.test(pathname)
+    && pathname !== '/pwa/xterm.js' && pathname !== '/pwa/xterm.css';
+  const cached = () => caches.open(CACHE_NAME).then(cache => cache.match(request));
   if (isAppShell) {
     event.respondWith(
       fetch(request)
@@ -113,20 +92,20 @@ self.addEventListener("fetch", (event) => {
           if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(cached)
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
+    cached().then((stored) => {
       const fresh = fetch(request)
         .then((response) => {
           if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
           return response;
         })
-        .catch(() => cached);
-      return cached || fresh;
+        .catch(() => stored);
+      return stored || fresh;
     })
   );
 });

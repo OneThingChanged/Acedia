@@ -469,12 +469,12 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v118');
+    expect(workerBody).toContain('multiagent-remote-v119');
     expect(pageBody).toContain('id="childSessionVisibility"');
     for (const status of ['idle', 'stopped', 'sleeping']) expect(pageBody).toContain(`data-child-visibility="${status}"`);
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
     expect(workerBody).toContain('/pwa/usage-sessions.js');
-    expect(pageBody).toContain('type="module" src="/pwa/app.js"');
+    expect(pageBody).toContain('type="module" src="/pwa/startup.js"');
     for (const name of ["workspace-shell.js", "markdown-blocks.js", "dom.js", "i18n.js", "translations.js", "chat-markup.js", "chat-render.js", "chat-history.js", "chat-prompt.js", "requests.js", "attachments.js", "session-model.js", "session-state.js", "session-tree.js", "chat-requests.js", "queue-delivery.js", "codex-quota.js"]) {
       const module = await fetch(`${status.url}/pwa/${name}`);
       expect(module.status).toBe(200);

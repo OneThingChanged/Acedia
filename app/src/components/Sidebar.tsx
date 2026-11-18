@@ -15,6 +15,7 @@ import "./Sidebar.css";
 import './BackgroundWork.css';
 import { useTaskSessionNavigation } from '../hooks/useTaskSessionNavigation';
 import { useDelegatedWait } from '../hooks/useDelegatedWait';
+import { useSessionAccountLabel } from '../hooks/useSessionAccountLabel';
 
 type SidebarProps = SidebarProjectTreeProps & {
   collapsed?: boolean;
@@ -114,6 +115,13 @@ function WorkspaceSidebar(props: SidebarProps) {
   const taskSessions = useTaskSessionNavigation(navigable, !collapsed);
   const delegatedWait = useDelegatedWait(navigable, !collapsed);
   const agentById = useMemo(() => new Map(agents.map(agent => [agent.id, agent])), [agents]);
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
+  const inspectedSessionId = hoveredSessionId ?? focusedSessionId;
+  const inspectedSession = inspectedSessionId && !collapsed ? agentById.get(inspectedSessionId) : undefined;
+  const inspectedProject = inspectedSession && projects.find(project => project.id === inspectedSession.projectId);
+  const accountLabel = useSessionAccountLabel(inspectedSession?.aiToolId === 'codex' && !inspectedSession.sidebarArchived
+    && !inspectedSession.sshHostId && !inspectedProject?.sshHostId ? inspectedSession : undefined);
   const activeFamilyPath = useMemo(() => {
     const path: string[] = [], seen = new Set<string>();
     let current = activeAgentId ? agentById.get(activeAgentId) : undefined;
@@ -242,16 +250,36 @@ function WorkspaceSidebar(props: SidebarProps) {
       : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
       : background ? waitingLabel
       : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : agent.status;
+    const accountDetails = agent.id === inspectedSessionId && accountLabel
+      ? `${text('Codex 계정', 'Codex account')}: ${accountLabel}` : undefined;
+    const titleWithAccount = (title: string) => accountDetails ? `${title}\n${accountDetails}` : title;
     return <li key={agent.id} data-sidebar-agent-id={agent.id} data-background-wait={background || undefined} data-delegated-wait={delegatedCount || undefined} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}${background ? ' has-background-work' : ''}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
       aria-label={background || unread ? [agent.name, background ? statusTitle : '', unread ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
-      title={`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder}\n${statusTitle}`}
+      aria-description={accountDetails}
+      title={titleWithAccount(`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder}\n${statusTitle}`)}
+      onPointerEnter={() => setHoveredSessionId(agent.id)}
+      onPointerLeave={() => setHoveredSessionId(current => current === agent.id ? null : current)}
+      onFocus={event => { if (event.target === event.currentTarget) setFocusedSessionId(agent.id); }}
+      onBlur={event => { if (event.target === event.currentTarget) setFocusedSessionId(current => current === agent.id ? null : current); }}
       onPointerDown={event => startPointer(agent, event, fromSearch)}
       onKeyDown={event => { if (event.target !== event.currentTarget || detached || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectAgent(agent.id, fromSearch); } }}
       onContextMenu={event => { if (detached) return; event.preventDefault(); pointerCleanupRef.current?.(); props.onContextMenu(agent.id, event.clientX, event.clientY); }}>
-      <span className={`status status-${sleeping ? "sleeping" : background ? 'background' : agent.status}`} role="img" aria-label={statusTitle} title={statusTitle} />
+      <span className={`status status-${sleeping ? "sleeping" : background ? 'background' : agent.status}`} role="img" aria-label={statusTitle} title={titleWithAccount(statusTitle)} />
       <ProviderLogo toolId={agent.aiToolId} />
-      <div className="sidebar-session-copy"><span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>{background && <span className="sidebar-background-label">{waitingLabel}</span>}{!nested && <span className="sidebar-session-meta"><span title={workingFolder}>{fromSearch ? highlight(locationLabel) : locationLabel}</span>{project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}{!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}</span>}{parent && <span className="sidebar-session-task-meta" title={`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`}><span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>{task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}</span>}</div>
+      <div className="sidebar-session-copy">
+        <span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>
+        {background && <span className="sidebar-background-label">{waitingLabel}</span>}
+        {!nested && <span className="sidebar-session-meta">
+          <span title={titleWithAccount(workingFolder)}>{fromSearch ? highlight(locationLabel) : locationLabel}</span>
+          {project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}
+          {!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}
+        </span>}
+        {parent && <span className="sidebar-session-task-meta" title={titleWithAccount(`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`)}>
+          <span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>
+          {task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}
+        </span>}
+      </div>
       {familyToggle}
       <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}

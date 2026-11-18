@@ -70,7 +70,7 @@ export function officeRoles(agents: Agent[]): Map<string, OfficeRoleInfo> {
   }));
 }
 
-export function officeRooms(agents: Agent[], projects: Project[], options: { projectId?: string | null; activeOnly?: boolean; activeSessionsOnly?: boolean; query?: string } = {}) {
+export function officeRooms(agents: Agent[], projects: Project[], options: { projectId?: string | null; activeOnly?: boolean; activeSessionsOnly?: boolean; visibleSessionIds?: ReadonlySet<string>; query?: string } = {}) {
   const groups = new Map<string, { project: Project; projectIds: string[] }>();
   const projectGroup = new Map<string, string>();
   for (const project of projects) {
@@ -88,10 +88,11 @@ export function officeRooms(agents: Agent[], projects: Project[], options: { pro
     return !query || matchesSessionSearch(query, agent.name, agent.folder, agent.remoteFolder, project.name, project.folder);
   };
   // The dock follows the left Active predicate, adding only required ancestors.
-  // Board "Active teams" retains its existing whole-family projection.
-  const visible = catalog.filter(a => (!(options.activeOnly || options.activeSessionsOnly) || matchesSidebarFilter(a, 'active'))
+  // The overview supplies its shared visibility rules. Retain the full team
+  // when computing roles, even where the selected filter hides a direct report.
+  const visible = catalog.filter(a => (options.visibleSessionIds?.has(a.id) ?? (!(options.activeOnly || options.activeSessionsOnly) || matchesSidebarFilter(a, 'active')))
     && (!options.activeSessionsOnly || matchesQuery(a)));
-  const families = sidebarSessionFamilies(visible, catalog, { includeDescendants: !!options.activeOnly && !options.activeSessionsOnly });
+  const families = sidebarSessionFamilies(visible, catalog, { includeDescendants: !!options.activeOnly && !options.activeSessionsOnly && !options.visibleSessionIds });
   const ordered: Agent[] = [];
   const visit = (a: Agent) => { ordered.push(a); [...(families.children.get(a.id) || [])].sort(stableOrder).forEach(visit); };
   [...families.roots].sort(stableOrder).forEach(visit);

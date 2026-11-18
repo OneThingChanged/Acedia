@@ -20,6 +20,7 @@ function worker() {
 it('scopes assets and offline fallback while leaving other services caches and API requests untouched', async () => {
   const w = worker(); await w.dispatch('install');
   expect(w.stored.length).toBeGreaterThan(20); expect(w.stored.every(url => url.startsWith('/acedia/'))).toBe(true);
+  expect(w.stored).toEqual(expect.arrayContaining(['/acedia/pwa/startup.js', '/acedia/pwa/task-flow.js', '/acedia/pwa/task-flow.css']));
   await w.dispatch('activate'); expect(w.deleted).toEqual(['acedia-remote:/acedia/:multiagent-remote-v115']);
   for (const url of ['https://agent.example.com/other/', 'https://agent.example.com/acedia/api/state', 'https://agent.example.com/acedia/auth/github']) {
     expect(await w.dispatch('fetch', { request: { method: 'GET', url } })).toBeUndefined();

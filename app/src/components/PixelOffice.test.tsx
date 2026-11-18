@@ -48,6 +48,13 @@ it('renders duplicate project folders as one team and distinguishes same-name se
   expect(html).toContain('Manager #1'); expect(html).toContain('Manager #2');
   expect(agents.map(a => a.name)).toEqual(['Manager', 'Manager']);
 });
+it('applies overview visibility to seats without changing a parent’s role', () => {
+  const html = renderToStaticMarkup(<PixelOffice agents={[root, sleeping]} projects={projects} activeProjectId="p" visibleSessionIds={new Set([root.id])} onOpenSession={() => {}}/>);
+  expect(html).toContain('data-office-agent="root"');
+  expect(html).toContain('data-office-role="lead"');
+  expect(html).not.toContain('data-office-agent="sleep"');
+  expect(html).not.toContain('type="checkbox"');
+});
 it('keeps all employees in one continuous scene with fit, zoom and department navigation', () => {
   const agents = Array.from({ length: 70 }, (_, n) => ({ ...root, id: `session-${n}` }));
   const html = renderToStaticMarkup(<PixelOffice agents={agents} projects={projects} activeProjectId="p" onOpenSession={() => {}}/>);

@@ -39,8 +39,8 @@ describe('Remote mounted at a full public address', () => {
     const bare = await fetch(f.status.url + '?agent=one', { redirect: 'manual' });
     expect(bare.status).toBe(308); expect(bare.headers.get('location')).toBe('/acedia/?agent=one');
     const page = await fetch(f.status.url + '/', { headers: f.headers }); expect(page.status).toBe(200);
-    const html = await page.text(); expect(html).toContain('src="/acedia/pwa/app.js"'); expect(html).toContain('href="/acedia/manifest.webmanifest"');
-    for (const asset of ['pwa/app.js', 'pwa/base-path.js', 'pwa/requests.js', 'pwa/styles.css']) expect((await fetch(`${f.status.url}/${asset}`, { headers: f.headers })).status).toBe(200);
+    const html = await page.text(); expect(html).toContain('src="/acedia/pwa/startup.js"'); expect(html).toContain('href="/acedia/manifest.webmanifest"');
+    for (const asset of ['pwa/startup.js', 'pwa/app.js', 'pwa/base-path.js', 'pwa/requests.js', 'pwa/styles.css']) expect((await fetch(`${f.status.url}/${asset}`, { headers: f.headers })).status).toBe(200);
     const manifest = await (await fetch(f.status.url + '/manifest.webmanifest', { headers: f.headers })).json();
     expect(manifest).toMatchObject({ id: '/acedia/', scope: '/acedia/', start_url: '/acedia/?source=pwa' });
     expect(manifest.icons.every(i => i.src.startsWith('/acedia/'))).toBe(true);
