@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.26](release-1-8-2-26.md) - 세션 현황의 Pixel Office 탭, Dashboard MCP 제어와 개인 수정 허용 라이선스 1.1.
+
 * [Acedia 1.8.2.25](release-1-8-2-25.md) - 작업 중인 자식 우선 배치·하달 애니메이션·최종 리더 완료 알림, Claude 자동 활성화와 종료 후 복구 선택.
 
 * [Acedia 1.8.2.24](release-1-8-2-24.md) - 터미널의 줄바꿈 폴더·파일 경로 복원과 색상 변경에 의한 링크 잘림 수정.
@@ -24,7 +26,7 @@ configuration that supports it.
 * [Acedia 1.8.2.11](release-1-8-2-11.md) - Codex·Claude 자동 하위 실행, 영속 첫 지시 전달과 테스트 품질 보강.
 * [테스트 유효성 점검](test-quality-audit-2026-11-12.md) - 1,953개 실행 사례의 정적 조사, 대표 결함 탐지와 구조 검사 한계.
 * [Acedia 1.8.2.10](release-1-8-2-10.md) - 프로젝트 보드 확인 목록·개별 결과 보존, 연보라색 Claude 백그라운드 대기 표시와 개인용·조직 사전허가 라이선스.
-* [사용 조건과 라이선스 범위](licensing.md) - 개인 무료·기업 사전 허가, 재배포·수정 제한, 이전 MIT 및 제3자 권한.
+* [사용 조건과 라이선스 범위](licensing.md) - 개인 비상업적 사용과 개인 수정, 기업 사용·재배포 사전 허가, 이전 MIT 및 제3자 권리.
 
 * [Acedia 1.8.2.05](release-1-8-2-05.md) - 수동 Codex 계정 선택을 재시작에도 적용하고 취소 시 기존 세션 유지.
 

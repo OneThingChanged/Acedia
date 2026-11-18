@@ -1,5 +1,9 @@
 # OKF Update Log
 
+## 2026-11-18
+
+* **1.8.2.26 EXE release** restores the Pixel Office tab in Session overview, adds local Dashboard start and stop through MCP, and applies license 1.1 for private personal modification. The package and public update passed verification. [Release record](release-1-8-2-26.md)
+
 ## 2026-11-17
 
 * **1.8.2.25 EXE release**: Publish working-child board priority, delegation flow/context actions, final-leader completion notifications, ordinary Claude folder startup and opt-in previous-run session restoration. All 277 source files/2,258 tests, mobile 26 checks/typecheck, fixed-source packaging, actual ASAR contracts, packaged runtime regression and installer/public download verification passed. Product source 0961473; published 2026-11-17 09:47:17 KST, public verified 2026-11-17 09:48:39 KST. Existing signed APK 1.8.1.39 reused; user installation remains separate. See [release record](release-1-8-2-25.md).
