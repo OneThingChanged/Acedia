@@ -10,6 +10,8 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.27](release-1-8-2-27.md) - 부모의 자식 작업 대기 집계와 Codex CLI 업데이트 선택창에서의 입력 대기 수정.
+
 * [Acedia 1.8.2.26](release-1-8-2-26.md) - 세션 현황의 Pixel Office 탭, Dashboard MCP 제어와 개인 수정 허용 라이선스 1.1.
 
 * [Acedia 1.8.2.25](release-1-8-2-25.md) - 작업 중인 자식 우선 배치·하달 애니메이션·최종 리더 완료 알림, Claude 자동 활성화와 종료 후 복구 선택.
