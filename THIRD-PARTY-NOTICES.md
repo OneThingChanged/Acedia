@@ -1,7 +1,8 @@
 # Acedia license boundaries
 
 The root [LICENSE](LICENSE) governs Acedia material within OneThingChanged's
-licensing authority from **1.8.2.10**. It does not replace the licenses below.
+licensing authority when distributed under that license. Earlier releases
+retain their supplied terms. The licenses below govern the listed material.
 
 | Material | License/notice location |
 | --- | --- |

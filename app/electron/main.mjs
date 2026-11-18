@@ -1294,6 +1294,7 @@ const sessionRegistry = new SessionRegistry({
   },
 });
 const workspaceManagement = new WorkspaceManagement({
+  dashboard: action => monitorService.controlLocal(action),
   board: { snapshot: async revision => { await warmProjectBoard(); return projectBoard.snapshot(revision); },
     transferDetail: async id => { await warmProjectBoard(); return projectBoard.transferDetail(id); } },
   hostInfo: () => ({ version: productVersion }),

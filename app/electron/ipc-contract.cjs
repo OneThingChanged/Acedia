@@ -329,7 +329,7 @@ function assertInvokeRequest(command, rawArgs) {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
           || Object.keys(p).some(key => !['viewMode', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped', 'activeOnly'].includes(key))
-          || p.viewMode !== undefined && !['sessions', 'transfers', 'board'].includes(p.viewMode)
+          || p.viewMode !== undefined && !['sessions', 'transfers', 'board', 'office'].includes(p.viewMode)
           || ['showSleeping', 'showStopped', 'activeOnly'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
           || p.sessionOrder !== undefined && (!Array.isArray(p.sessionOrder) || p.sessionOrder.length > 2000 || p.sessionOrder.some(id => typeof id !== 'string' || !id || id.length > 256 || /[\x00-\x1f]/.test(id)))
           || p.projectPositions !== undefined && (!p.projectPositions || typeof p.projectPositions !== 'object' || Array.isArray(p.projectPositions)

@@ -12,6 +12,7 @@ import { SessionRelocation } from './session-relocation.mjs';
 import { SessionStart } from './session-start.mjs';
 import { SessionRegistry } from './session-registry.mjs';
 import { acediaCapabilities } from './acedia-capabilities.mjs';
+import { LocalDashboardService } from './web-services.mjs';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -262,4 +263,42 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   expect(f.service.readiness).toHaveBeenCalledWith({ sessionId: target.id, waitMs: 1000 });
   const statusEndpoint = `http://127.0.0.1:${hook.port}/integration/v1/workspace/session-status`;
   expect((await fetch(statusEndpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: target.id }) })).status).toBe(401);
+
+  const dashboard = new LocalDashboardService({ title: 'Fixture', baseDir: f.root, configName: 'dashboard.json', defaultPort: 0, allowLan: true });
+  cleanups.push(() => dashboard.stop());
+  dashboard.config.lanEnabled = true;
+  const originalConfig = { ...dashboard.config };
+  f.service.dashboard = action => dashboard.controlLocal(action);
+  const dashboardUrl = `http://127.0.0.1:${hook.port}/integration/v1/workspace/dashboard`;
+  const dashboardPost = (headers, body = { action: 'start' }) => fetch(dashboardUrl, { method: 'POST', headers, body: JSON.stringify(body) });
+  const dashboardCall = action => rpc('tools/call', { name: 'acedia_dashboard', arguments: { action } });
+  expect((await dashboardPost({ 'content-type': 'application/json' })).status).toBe(401);
+  expect((await dashboardPost({ ...headers, origin: 'https://unrelated.invalid' })).status).toBe(403);
+  expect((await dashboardPost({ ...headers, 'x-acedia-agent-id': 'inactive' })).status).toBe(409);
+  expect((await dashboardPost(headers)).status).toBe(403); // Live but not registered.
+  const caller = { id: 'caller', aiToolId: 'codex', sshHostId: 'ssh-host' };
+  f.catalog.agents.push(caller);
+  expect((await dashboardPost(headers)).status).toBe(403);
+  expect(f.service.capabilities('caller').features.dashboard).toMatchObject({ supported: true, available: false, reason: 'caller-not-local' });
+  delete caller.sshHostId;
+  expect(f.service.capabilities('caller').features.dashboard).toMatchObject({ supported: true, available: true });
+  expect((await dashboardPost(headers, { action: 'start', port: 8888 })).status).toBe(400);
+  const stopped = { running: false, url: null, port: null, lanActive: false };
+  expect((await dashboardCall('status')).structuredContent).toEqual(stopped);
+
+  const [started, duplicate] = await Promise.all([dashboardCall('start'), dashboardCall('start')]);
+  expect(duplicate.structuredContent).toEqual(started.structuredContent);
+  const running = started.structuredContent;
+  expect(running).toEqual({ running: true, url: `http://127.0.0.1:${running.port}`, port: expect.any(Number), lanActive: false });
+  expect(dashboard.server.address().address).toBe('127.0.0.1');
+  expect((await fetch(`${running.url}/api/state`)).status).toBe(200);
+  expect((await dashboardCall('stop')).structuredContent).toEqual(stopped);
+  await expect(fetch(`${running.url}/api/state`)).rejects.toThrow();
+  expect((await dashboardCall('stop')).structuredContent).toEqual(stopped);
+  expect(dashboard.config).toEqual(originalConfig);
+
+  await dashboard.start(); // The desktop path still honors the saved LAN mode.
+  expect((await dashboardCall('status')).structuredContent).toMatchObject({ running: true, lanActive: true });
+  for (const action of ['start', 'stop']) expect((await dashboardPost(headers, { action })).status).toBe(409);
+  expect(dashboard.server.listening).toBe(true);
 });

@@ -13,7 +13,7 @@ afterEach(() => { for (const root of roots.splice(0)) {
   if (path.dirname(root) !== path.resolve(os.tmpdir()) || !path.basename(root).startsWith('acedia-license-')) throw Error('Unexpected fixture path');
   fs.rmSync(root, { recursive: true });
 } });
-const heading = 'Acedia Personal Use and Organization Permission License 1.0\n';
+const heading = 'Acedia Personal Use and Organization Permission License 1.1\n';
 it('derives deterministic installer text without mutating the canonical license and escapes RTF controls/unicode', () => {
   const text = heading + 'Line {one}\\two\n한\n', root = fixture(text);
   const first = prepareLicenseArtifact({ root }), second = prepareLicenseArtifact({ root });
@@ -30,7 +30,12 @@ it('rejects an unexpected root license rather than shipping a misleading EULA', 
 });
 it('keeps historical MIT and separately licensed assets while marking only private application metadata proprietary', () => {
   const root = path.resolve(import.meta.dirname, '../..');
-  expect(fs.readFileSync(path.join(root, 'LICENSE'), 'utf8')).toContain('1.8.2.10 and later');
+  const terms = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8');
+  expect(terms).toContain(heading);
+  expect(terms).toContain('privately modify the supplied source code');
+  expect(terms.replace(/\s+/g, ' ')).toContain('original and modified copies, source code and builds, and public and private sharing');
+  expect(terms).toContain('Prior written permission from OneThingChanged is required');
+  expect(terms).toContain('including releases through 1.8.2.09');
   expect(fs.readFileSync(path.join(root, 'licenses/ACEDIA-LEGACY-MIT.txt'), 'utf8')).toContain('to use, copy, modify, merge, publish, distribute');
   expect(fs.readFileSync(path.join(root, 'mobile/LICENSE'), 'utf8')).toContain('650 Industries');
   expect(fs.readFileSync(path.join(root, 'app/public/pixel-agents/LICENSE.txt'), 'utf8')).toContain('Pablo De Lucca');

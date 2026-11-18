@@ -21,6 +21,9 @@ Read only the reference for the requested operation:
   [delegation](references/delegation.md).
 - Change a Codex routing account or return it to automatic assignment:
   [routing](references/routing.md).
+- Read or control the local Dashboard with `acedia_dashboard` (`status`,
+  `start`, `stop`) when the running host supports it. Start/stop only on user
+  authorization. Use the returned loopback URL for Dashboard API requests.
 
 Use `acedia_projects` for exact Acedia IDs, folders and providers. A native
 conversation ID is a separate identity. Do not substitute a similar title,

@@ -150,6 +150,6 @@ The canonical OKF v0.2 knowledge index is [`docs/index.md`](docs/index.md):
 
 ## License
 
-[Acedia Personal Use and Organization Permission License](LICENSE), effective from 1.8.2.10. Free for personal, non-commercial use. Business/organization use requires prior written permission. Redistribution, source reuse and feature modifications require permission, subject to existing MIT and third-party rights. See [usage conditions and license boundaries](docs/licensing.md).
+The [Acedia Personal Use and Organization Permission License 1.1](LICENSE) permits free personal, non-commercial use and private modification. Redistribution of original or modified copies and any organization or business use require prior written permission. Earlier MIT grants and third-party rights continue to apply. See [usage conditions and license boundaries](docs/licensing.md).
 
 Privacy information is available in [PRIVACY.md](PRIVACY.md).

@@ -699,6 +699,18 @@ export function SettingsModal({
     }, 2000);
     return () => clearInterval(timer);
   }, [tab]);
+  useEffect(() => {
+    if (tab !== 'dashboard' || monitorBusy) return;
+    let cancelled = false;
+    const refresh = () => {
+      void invoke<MonitorStatus>('monitor_server_status').then(status => {
+        if (!cancelled) setMonitor(status);
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = setInterval(refresh, 2000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [tab, monitorBusy]);
 
   const handleApprove = (login: string) => {
     if (IS_COMPANY_BUILD) return;

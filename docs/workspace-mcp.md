@@ -112,6 +112,7 @@ HTTP에서도 검증했다. 기존 설치본은 업데이트하고 CLI를 다시
 | 도구 | 기능 |
 | --- | --- |
 | `acedia_connection` | 읽기 전용 연결 진단. 실제 호스트 버전·호출 세션·지원 API·스킬 상태·bridge 도구 목록 차이 조회 |
+| `acedia_dashboard` | 로컬 Dashboard 상태 조회·시작·종료. `action: status/start/stop`, 등록된 활성 로컬 세션 전용. [Dashboard 제어 계약](local-dashboard.md#세션-mcp에서-로컬-dashboard-제어) |
 | `acedia_projects` | 프로젝트·세션 ID, 폴더, 터미널 실행 상태, 사용 가능한 AI 도구 조회 |
 | `acedia_project_create` | 기존 절대 경로 폴더를 등록하고 첫 세션 생성. 같은 폴더는 기존 프로젝트 반환 |
 | `acedia_session_create` | 부모·작업 폴더를 지정한 추가 세션 생성. `start: false`로 실행 없이 등록 가능 |

@@ -815,7 +815,7 @@ export class LocalDashboardService {
     this.allowLan = allowLan;
     this.lanAccess = lanAccess;
     this.lanActive = false;
-    this.lanChange = Promise.resolve();
+    this.lifecycle = Promise.resolve();
     this.config = { enabled: false, serverPort: defaultPort };
     this.loadConfig();
   }
@@ -868,6 +868,24 @@ export class LocalDashboardService {
     };
   }
 
+  #queueLifecycle(change) {
+    const result = this.lifecycle.then(change);
+    this.lifecycle = result.catch(() => {});
+    return result;
+  }
+
+  controlLocal(action) {
+    return this.#queueLifecycle(async () => {
+      if (action !== 'status' && this.lanActive) {
+        throw Object.assign(new Error('LAN 접속 중인 대시보드는 데스크톱 설정에서 관리하세요.'), { statusCode: 409 });
+      }
+      if (action === 'start') await this.#start(this.config.serverPort, { loopbackOnly: true });
+      if (action === 'stop') await this.#stop();
+      const { running, url, port, lan } = this.status();
+      return { running, url, port, lanActive: lan.running };
+    });
+  }
+
   setLanEnabled(enabled) {
     const change = async () => {
       if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
@@ -877,13 +895,11 @@ export class LocalDashboardService {
       this.config.lanEnabled = enabled === true;
       try { await this.setConfig(this.config); }
       catch (error) { this.config.lanEnabled = previous; throw error; }
-      await this.stop();
-      if (enabled || running) await this.start(port ?? this.config.serverPort);
+      await this.#stop();
+      if (enabled || running) await this.#start(port ?? this.config.serverPort);
       return this.status();
     };
-    const result = this.lanChange.then(change);
-    this.lanChange = result.catch(() => {});
-    return result;
+    return this.#queueLifecycle(change);
   }
 
   async resetLanCode() {
@@ -908,9 +924,7 @@ export class LocalDashboardService {
       this.lanAccess.revalidate(this.port, this.lanActive, next);
       return this.status();
     };
-    const result = this.lanChange.then(change);
-    this.lanChange = result.catch(() => {});
-    return result;
+    return this.#queueLifecycle(change);
   }
 
   async serveLanAccess(request, response, url) {
@@ -952,16 +966,21 @@ export class LocalDashboardService {
     return true;
   }
 
-  async start(desiredPort = this.config.serverPort) {
+  start(desiredPort = this.config.serverPort) {
+    return this.#queueLifecycle(() => this.#start(desiredPort));
+  }
+
+  async #start(desiredPort, { loopbackOnly = false } = {}) {
     if (this.server?.listening) return this.status();
-    this.lanActive = this.allowLan && this.config.lanEnabled === true;
-    if (this.lanActive && !this.savedLanCode) {
+    const lanActive = !loopbackOnly && this.allowLan && this.config.lanEnabled === true;
+    if (lanActive && !this.savedLanCode) {
       const next = String(crypto.randomInt(100_000_000)).padStart(8, "0");
       await fsPromises.mkdir(this.baseDir, { recursive: true });
       await fsPromises.writeFile(this.lanCodePath, next, { encoding: "utf8", mode: 0o600 });
       this.savedLanCode = next;
     }
-    this.lanAccess.reset(this.lanActive, this.savedLanCode);
+    this.lanActive = lanActive;
+    this.lanAccess.reset(lanActive, this.savedLanCode);
     const p = this.providers;
     this.server = http.createServer(async (request, response) => {
       try {
@@ -1154,11 +1173,15 @@ export class LocalDashboardService {
       }
     });
     try { this.port = await listen(this.server, desiredPort, this.lanActive ? "0.0.0.0" : "127.0.0.1"); }
-    catch (error) { await this.stop(); throw error; }
+    catch (error) { await this.#stop(); throw error; }
     return this.status();
   }
 
-  async stop() {
+  stop() {
+    return this.#queueLifecycle(() => this.#stop());
+  }
+
+  async #stop() {
     const server = this.server;
     this.server = null;
     this.port = null;

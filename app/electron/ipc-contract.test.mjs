@@ -16,6 +16,10 @@ describe("Electron IPC contract", () => {
     }
   });
   it('accepts bounded local board placement and rejects malformed coordinates or ordering', () => {
+    for (const viewMode of ['sessions', 'transfers', 'board', 'office'])
+      expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode } }).preferences.viewMode).toBe(viewMode);
+    for (const viewMode of ['unknown', '', null, 42])
+      expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode } })).toThrow();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: { p: { x: -30, y: 750 } }, sessionOrder: ['b', 'a'] } })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { projectPositions: {}, sessionOrder: [] } })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { showSleeping: true, showStopped: false } })).toBeTruthy();

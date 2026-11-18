@@ -3,10 +3,12 @@ type: Guide
 title: Pixel Office — 프로젝트 보드와 우측 사무실 보기
 description: Pixel Agents의 공개 픽셀 자산에 Acedia의 세션 상태와 부모·자식 관계를 연결한다.
 status: stable
-last_updated: 2026-10-29
+last_updated: 2026-11-17
 sources:
   - resource: ../app/src/components/PixelOffice.tsx
   - resource: ../app/src/components/PixelOffice.css
+  - resource: ../app/src/components/ProjectBoardPage.tsx
+  - resource: ../app/src/lib/boardOffice.ts
   - resource: ../app/src/lib/pixelOffice.ts
   - resource: ../app/src/lib/pixelOfficeRenderer.ts
   - resource: ../app/src/components/SessionOrganization.tsx
@@ -16,6 +18,20 @@ sources:
 ---
 
 # Pixel Office
+
+## 별도 세션 현황 창의 진입점 복구 (1.8.2.26)
+
+세션 현황을 별도 창으로 옮긴 뒤 Sessions/Handoffs/Board 탭에 Pixel Office 연결이
+빠져 있었다. 기존 우측 패널의 사무실과 이미지 자산은 그대로 남아 있었다.
+**세션 현황 → Pixel Office** 탭으로 같은 공유 사무실을 열며,
+마지막 표시 탭을 호스트에 저장해 다음 현황 창에서도 복원한다. 설치본 반영 여부는
+해당 변경이 포함된 EXE 릴리스 기록으로 확인한다.
+
+별도 창은 세션 표와 같은 호스트 상태 스냅샷으로 세션·프로젝트·부모 관계를 표시한다.
+캐릭터 선택은 정보만 보여주고 **대화 열기**는 기존 대화 이동 경로를 호출한다.
+사무실을 열거나 휴면 캐릭터를 선택한다고 CLI가 시작되지는 않는다. 상태 수신에 실패하면
+마지막 세션 목록을 연결 끊김으로 표시한다. 사무실 자체의 팀·검색·활성 팀 필터를 사용하며,
+다른 탭의 검색·필터·수동 보드 배치는 전환 전 값으로 유지한다.
 
 ## 우측 Active 세션 보기 (1.8.1.98)
 

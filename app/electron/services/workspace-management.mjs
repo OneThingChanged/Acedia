@@ -15,8 +15,8 @@ const folderKey = value => {
  * coordinator that owns the UI, after persistence and the first launch attempt.
  */
 export class WorkspaceManagement {
-  constructor({ catalog, create, isActive, board = null, deliveries = null, messages = null, sessionSettings = null, sessionRouting = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}), hostInfo = () => ({}), browserAvailable = () => false, skillStatus = () => null }) {
-    Object.assign(this, { catalog, create, isActive, board, deliveries, messages, sessionSettings, sessionRouting, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
+  constructor({ catalog, create, isActive, board = null, dashboard = null, deliveries = null, messages = null, sessionSettings = null, sessionRouting = null, sessionStart = null, readiness = null, relocation = null, registry = null, resolveLaunch = null, sessionState = () => ({}), hostInfo = () => ({}), browserAvailable = () => false, skillStatus = () => null }) {
+    Object.assign(this, { catalog, create, isActive, board, dashboard, deliveries, messages, sessionSettings, sessionRouting, sessionStart, readiness, relocation, registry, resolveLaunch, sessionState });
     this.queue = Promise.resolve(); this.results = new Map();
     Object.assign(this, { hostInfo, browserAvailable, skillStatus });
   }
@@ -24,7 +24,7 @@ export class WorkspaceManagement {
     if (typeof agentId !== 'string' || agentId.length > 256 || /[\x00-\x1f]/.test(agentId)) throw fail('올바른 호출 세션 ID가 필요합니다.');
     const agent = (this.catalog().agents || []).find(a => a.id === agentId);
     return acediaCapabilities({ services: { ...this, browser: this.browserAvailable() }, host: this.hostInfo(),
-      caller: { sessionId: agentId, registered: Boolean(agent), active: this.isActive(agentId), aiToolId: agent?.aiToolId },
+      caller: { sessionId: agentId, registered: Boolean(agent), active: this.isActive(agentId), local: agent && !agent.sshHostId, aiToolId: agent?.aiToolId },
       skills: agent ? this.skillStatus(agentId) : null });
   }
   snapshot() {
@@ -51,6 +51,14 @@ export class WorkspaceManagement {
     if (action === 'capabilities') return Promise.resolve().then(() => this.capabilities(agentId));
     if (!this.isActive(agentId)) return Promise.reject(fail('호출한 Acedia 세션이 실행 중이 아닙니다.', 409));
     if (action === 'list') return Promise.resolve(this.snapshot());
+    if (action === 'dashboard') {
+      if (!this.dashboard) return Promise.reject(fail('Local Dashboard unavailable', 503));
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1
+        || !['status', 'start', 'stop'].includes(body.action)) return Promise.reject(fail('Invalid local Dashboard action'));
+      const caller = (this.catalog().agents || []).find(agent => agent.id === agentId);
+      if (!caller || caller.sshHostId) return Promise.reject(fail('등록된 로컬 Acedia 세션이 필요합니다.', 403));
+      return this.dashboard(body.action);
+    }
     if (action === 'board') {
       if (!this.board) return Promise.reject(fail('Session overview unavailable', 503));
       if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !['revision', 'transferId'].includes(k))

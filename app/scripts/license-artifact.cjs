@@ -7,7 +7,7 @@ const { createHash } = require('node:crypto');
 function prepareLicenseArtifact({ root = path.resolve(__dirname, '../..'), output = path.join(root, '.build-tools/licenses') } = {}) {
   const license = path.join(root, 'LICENSE');
   const text = fs.readFileSync(license, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
-  if (!text.startsWith('Acedia Personal Use and Organization Permission License 1.0\n')) throw Error('Unexpected Acedia license');
+  if (!text.startsWith('Acedia Personal Use and Organization Permission License 1.1\n')) throw Error('Unexpected Acedia license');
   const sha256 = createHash('sha256').update(text).digest('hex');
   const escaped = text.replace(/[\\{}]/g, char => '\\' + char)
     .replace(/[\u0080-\uFFFF]/g, char => '\\u' + (char.charCodeAt(0) > 32767 ? char.charCodeAt(0) - 65536 : char.charCodeAt(0)) + '?')

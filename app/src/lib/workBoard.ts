@@ -20,7 +20,7 @@ export type BoardItem = { id: string; sessionId: string; kind: 'question' | 'err
 export type BoardReference = { id: string; from: string; to: string; kind: string; source: string; startedAt: number; endedAt: number | null; active: boolean };
 export type BoardTransfer = { id: string; from: string; to: string; status: string; reason: string; summary?: string; savedAt?: number | null; sentAt?: number | null; receivedAt?: number | null; readAt?: number | null; startedAt?: number | null; isMessage?: boolean };
 export type BoardTransferDetail = { id: string; from: string; to: string; message: string | null };
-export type BoardViewMode = 'sessions' | 'transfers' | 'board';
+export type BoardViewMode = 'sessions' | 'transfers' | 'board' | 'office';
 export type BoardSnapshot = {
   revision: string; sessions: BoardSession[]; projects: { id: string; name: string; folder: string; remoteFolder?: string; sshHostId?: string; hierarchy?: { parentId?: string } }[];
   devices: { sessionId: string; kind: string; tool: string; state: string; source: string; startedAt: number }[];

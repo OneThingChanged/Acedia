@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProjectBoardPage } from './ProjectBoardPage';
 import { SessionTableView } from './SessionTableView';
+import { PixelOffice } from './PixelOffice';
 import { BoardRequestDetail } from './BoardRequestDetail';
 import { SessionLifecycleButton } from './SessionLifecycleButton';
 import type { BoardSnapshot } from '../lib/workBoard';
@@ -92,6 +93,57 @@ it('defaults to the session table and pins the selected request across polling a
   tree = render(data); table = elements(tree).find(e => e.type === SessionTableView)!;
   expect(table.props.mode).toBe('transfers'); expect(table.props.selectedTransferId).toBe('first');
   expect(hooks.invoke).not.toHaveBeenCalled();
+});
+
+it('opens Pixel Office from the overview tabs and returns to the saved board without starting sessions', () => {
+  const data = fixture(); data.sessions[1].runtime = 'sleeping';
+  data.preferences = { viewMode: 'board', showSleeping: true, showStopped: true, projectPositions: { p: { x: -580, y: 760 } }, sessionOrder: ['b', 'a', 'c'] };
+  const before = structuredClone(data); let tree = render(data);
+  elements(tree).find(e => e.type === 'button' && content(e) === 'Pixel Office')!.props.onClick();
+  tree = render(data);
+  const office = elements(tree).find(e => e.type === PixelOffice)!;
+  expect(office.props.agents.map((a: { id: string }) => a.id)).toEqual(['a', 'b', 'c']);
+  expect(office.props.agents[1]).toMatchObject({ deferredStart: true, resumeEligible: true });
+  expect(office.props.onSelect).toBeUndefined();
+  expect(elements(tree).find(e => e.props.className === 'wb-body')!.props.hidden).toBe(true);
+  expect(elements(tree).find(e => e.props.className === 'wb-visibility')!.props.hidden).toBe(true);
+  expect(elements(tree).some(e => e.type === SessionTableView)).toBe(false);
+  expect(hooks.invoke).not.toHaveBeenCalled();
+  office.props.onBack(); tree = render(data);
+  expect(elements(tree).some(e => e.type === PixelOffice)).toBe(false);
+  expect(project(tree, 'p').props.style).toMatchObject({ left: -580, top: 760 });
+  expect(data).toEqual(before);
+});
+
+it('uses explicit conversation navigation for Office actors, with captured result identity and no launch command', async () => {
+  const data = fixture(); data.preferences.viewMode = 'office'; data.sessions[0].runtime = 'sleeping';
+  hooks.invoke.mockResolvedValue({ snapshot: data });
+  const office = elements(render(data)).find(e => e.type === PixelOffice)!;
+  expect(hooks.invoke).not.toHaveBeenCalled();
+  office.props.onOpenSession('a'); await Promise.resolve();
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_open_session', {
+    id: 'a', compose: false, reviewResults: data.items!.filter(i => i.sessionId === 'a').map(i => ({ id: i.id, fingerprint: i.fingerprint })),
+  });
+});
+
+it('restores and saves the Office tab from the host and follows fresh polling and disconnection', async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('window', { setInterval });
+  vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  const data = fixture(); data.preferences.viewMode = 'office';
+  hooks.invoke.mockImplementation(async (command, args) => command === 'project_board_snapshot' ? data : Object.assign(data.preferences, args.preferences));
+  render(data); const stop = hooks.effects[1].run() as () => void;
+  await Promise.resolve(); await Promise.resolve(); let tree = render(data);
+  expect(elements(tree).find(e => e.type === PixelOffice)).toBeTruthy();
+  const save = hooks.effects[2].run() as () => void; await vi.advanceTimersByTimeAsync(500); save();
+  expect(hooks.invoke).toHaveBeenCalledWith('project_board_preferences', { preferences: expect.objectContaining({ viewMode: 'office' }) });
+  hooks.invoke.mockResolvedValueOnce({ unchanged: true, sampledAt: 12_000_000 });
+  elements(tree).find(e => e.props.className === 'wb-refresh')!.props.onClick(); await Promise.resolve(); tree = render(data);
+  expect(elements(tree).find(e => e.type === PixelOffice)!.props.agents[0].activity.receivedAt).toBe(12_000_000);
+  hooks.invoke.mockRejectedValueOnce(new Error('Offline'));
+  elements(tree).find(e => e.props.className === 'wb-refresh')!.props.onClick(); await Promise.resolve(); tree = render(data);
+  expect(elements(tree).find(e => e.type === PixelOffice)!.props.agents.every((a: { runtimeStatus: string }) => a.runtimeStatus === 'unreachable')).toBe(true);
+  stop();
 });
 
 it('opens a conversation with only the result IDs captured at double-click, preserving later arrivals', async () => {

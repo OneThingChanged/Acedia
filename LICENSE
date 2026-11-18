@@ -1,5 +1,5 @@
-Acedia Personal Use and Organization Permission License 1.0
-Effective for Acedia releases 1.8.2.10 and later, from 2026-11-12.
+Acedia Personal Use and Organization Permission License 1.1
+Applies to Acedia versions distributed under this license.
 
 Copyright (c) 2026 OneThingChanged. All rights reserved.
 
@@ -11,34 +11,41 @@ documentation for which OneThingChanged controls the necessary rights (the
 constitutes acceptance. If you do not accept, do not install or use that version.
 This is a proprietary, limited-use license, not an open-source license.
 
-2. Free personal use
+2. Free personal use and private modification
 
-An individual may install and run an unmodified official release, free of charge,
-for that individual's own personal, non-commercial purposes. This permission is
-non-exclusive, non-transferable and does not grant ownership of the Software.
-Copies strictly necessary to download, install, run and keep one personal backup
-are allowed. This exception does not permit redistribution or source-code reuse.
+An individual may install and run the Software free of charge for that
+individual's own personal, non-commercial purposes. For the same purposes,
+the individual may privately modify the supplied source code and build, test
+and run the resulting version for their own use. This permission is
+non-exclusive and non-transferable. Keep all existing notices with the
+original and modified copies. Copies reasonably needed for these permitted
+activities and one personal backup are allowed. Distribution, sharing and
+use for an organization or business are subject to sections 3 and 4.
 
 3. Organization and business use requires permission
 
-Prior written permission from OneThingChanged is required for use by, for, or on
-behalf of a company, employer, business, public body, school or other organization,
-including internal work, evaluation, development, services and deployment. The
-same requirement applies to business or commercial use by an individual. A free
-download, personal account, individually owned computer or absence of a fee does
-not provide that permission. Any granted organization/business use is governed
-by its separate written terms. Permission requests may be directed privately to
-the verified OneThingChanged GitHub account; a request is not permission.
+Prior written permission from OneThingChanged is required before installing,
+running, modifying or otherwise using the Software by, for or on behalf of a
+company, employer, business, public body, school, nonprofit or other
+organization. This includes internal work, evaluation, development, services
+and deployment, whether paid or unpaid. The same requirement applies to
+business or commercial use by an individual, including work for a client or
+employer on a personal account or device. Separate written terms govern any
+permission granted. Direct permission requests privately to the verified
+OneThingChanged GitHub account and obtain written approval before use.
 
 4. Restrictions
 
 Except for section 2, separate written permission, section 7, or rights that
 applicable law does not allow this agreement to restrict, you may not:
 
-- Copy, publish, upload, mirror, redistribute, rent, sell, sublicense, or provide
-  the Software or its source code, in whole or substantial part, to others.
-- Modify the Software or its features, create derivative applications or builds,
-  extract or reuse its code/assets, rebrand it, or distribute modified versions.
+- Publish, upload, mirror, redistribute, rent, sell, sublicense or provide
+  copies of the Software to others. This restriction covers original and
+  modified copies, source code and builds, and public and private sharing,
+  whether or not a fee is charged.
+- Modify, build or create derivative versions of the Software outside the
+  permission in section 2. Extract or reuse its code or assets in another
+  product without separate permission.
 - Reverse engineer, decompile, disassemble, or circumvent license restrictions.
 - Remove or alter copyright, attribution, license or ownership notices.
 - Host the Software for others or offer it as a service without written permission.
@@ -64,6 +71,9 @@ terms disclosed with those updates; changes are not retroactive to an earlier
 version lawfully obtained under different terms.
 
 7. Earlier releases, third-party material and platform rights
+
+Earlier releases supplied under version 1.0 of this license remain subject to
+the terms supplied with those releases.
 
 This agreement does not revoke permissions already granted for earlier MIT-
 licensed Acedia material, including releases through 1.8.2.09. That historical

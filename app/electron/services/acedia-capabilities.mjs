@@ -6,6 +6,7 @@ const groups = {
   connection: { tools: ['acedia_connection'], services: [] },
   workspace: { tools: ['acedia_projects', 'acedia_project_create', 'acedia_session_create'], services: ['create'] },
   board: { tools: ['acedia_board'], services: ['board'] },
+  dashboard: { tools: ['acedia_dashboard'], services: ['dashboard'] },
   sessions: { tools: ['acedia_session_start'], services: ['sessionStart'] },
   readiness: { tools: ['acedia_session_status'], services: ['readiness'] },
   organization: { tools: ['acedia_session_stop', 'acedia_sessions_organize'], services: ['registry'] },
@@ -26,9 +27,11 @@ const groups = {
 export function acediaCapabilities({ services, host, caller, skills = null }) {
   const features = Object.fromEntries(Object.entries(groups).map(([name, group]) => {
     const supported = group.services.every(service => Boolean(services[service]));
-    const available = supported && (name === 'connection' || caller.active);
+    const availability = name === 'dashboard' && caller.active && !caller.local
+      ? caller.registered ? 'caller-not-local' : 'caller-unregistered' : null;
+    const available = supported && (name === 'connection' || caller.active && !availability);
     return [name, { supported, available, tools: [...group.tools],
-      reason: !supported ? 'service-unavailable' : !available ? caller.registered ? 'caller-inactive' : 'caller-unregistered' : null }];
+      reason: !supported ? 'service-unavailable' : availability || (!available ? caller.registered ? 'caller-inactive' : 'caller-unregistered' : null) }];
   }));
   return { ok: true, connected: true, schemaVersion: ACEDIA_CAPABILITIES_VERSION,
     status: caller.active ? 'ready' : caller.registered ? 'caller-inactive' : 'caller-unregistered',

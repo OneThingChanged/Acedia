@@ -32,6 +32,12 @@ const tools = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
+    name: 'acedia_dashboard',
+    description: 'Read status or start/stop the local Acedia Dashboard from a registered active local session. Start and stop require the user’s authorization. Start opens a loopback listener only and returns its actual URL. This does not open a window or change saved Dashboard settings. Manage an active LAN Dashboard in desktop settings.',
+    inputSchema: { type: 'object', properties: { action: { enum: ['status', 'start', 'stop'] } }, required: ['action'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'acedia_task_plan',
     description: 'When the user chooses Acedia task delegation, act as A: plan, assign, monitor and review; independent Codex or Claude sessions perform research, edits and checks. Each task may choose aiToolId; omitted inherits the parent provider. Supports both parent providers and all four parent/child combinations. Host selects provider-specific task models and resolves accounts before background launch. Exact registered folder Trust is automatic; hooks, login, questions and command approvals remain explicit. Use task_wait/get for original questions and exact turn/model evidence, review results, then finish only after all required tasks pass. Workers must not delegate again. Existing sessions are never assigned.',
     inputSchema: { type: 'object', properties: {
@@ -406,10 +412,11 @@ async function callTool(name, args) {
     if (!response.ok) throw new Error(result.error || `Acedia task request failed (${response.status})`);
     return result;
   }
-  if (['acedia_board', 'acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_routing', 'acedia_session_start', 'acedia_session_status', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'acedia_session_message_send', 'acedia_session_message_receive'].includes(name)) {
+  if (['acedia_dashboard', 'acedia_board', 'acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_routing', 'acedia_session_start', 'acedia_session_status', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'acedia_session_message_send', 'acedia_session_message_receive'].includes(name)) {
     if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
-    const endpoint = name === 'acedia_board' ? 'board' : name === 'acedia_session_run' ? 'run' : name === 'acedia_session_run_status' ? 'run-status' : name === 'acedia_session_message_send' ? 'messages/send' : name === 'acedia_session_message_receive' ? 'messages/receive' : name === 'acedia_sessions_organize' ? 'organize-sessions' : name === 'acedia_session_stop' ? 'stop' : name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_status' ? 'session-status' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_routing' ? 'session-routing' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
+    const endpoint = name === 'acedia_dashboard' ? 'dashboard'
+      : name === 'acedia_board' ? 'board' : name === 'acedia_session_run' ? 'run' : name === 'acedia_session_run_status' ? 'run-status' : name === 'acedia_session_message_send' ? 'messages/send' : name === 'acedia_session_message_receive' ? 'messages/receive' : name === 'acedia_sessions_organize' ? 'organize-sessions' : name === 'acedia_session_stop' ? 'stop' : name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_status' ? 'session-status' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_routing' ? 'session-routing' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
     const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
       method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),

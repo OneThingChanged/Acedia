@@ -9,6 +9,8 @@ import './ProjectBoardPage.css';
 import './BackgroundWork.css';
 import { backgroundWaitingLabels } from '../lib/agentActivity';
 import { SessionTableView } from './SessionTableView';
+import { PixelOffice } from './PixelOffice';
+import { boardOfficeData } from '../lib/boardOffice';
 import { SessionLifecycleButton } from './SessionLifecycleButton';
 import { BoardRequestDetail } from './BoardRequestDetail';
 import { latestIncoming, sessionTableMatches, transferTitle } from '../lib/sessionTable';
@@ -100,7 +102,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
           if (!initialized.current) {
             initialized.current = true;
             const p = result.preferences;
-            setViewMode(p.viewMode === 'board' || p.viewMode === 'transfers' ? p.viewMode : 'sessions');
+            setViewMode(p.viewMode === 'board' || p.viewMode === 'transfers' || p.viewMode === 'office' ? p.viewMode : 'sessions');
             resetView.current = p.layoutVersion !== BOARD_LAYOUT_VERSION;
             setView(resetView.current ? { zoom: .8, x: 24, y: 24 } : { zoom: p.zoom ?? .8, x: p.x ?? 24, y: p.y ?? 24 }); setCollapsed(new Set(p.collapsed || []));
             setCollapsedProjects(new Set(p.collapsedProjects || [])); setProject(p.projectId || ''); setMotion(p.motion ?? true);
@@ -130,6 +132,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     const map = new Map<string, BoardItem[]>(); for (const item of allItems) map.set(item.sessionId, [...(map.get(item.sessionId) || []), item]); return map;
   }, [allItems]);
   const sessionsById = useMemo(() => new Map(data?.sessions.map(s => [s.id, s])), [data]);
+  const office = useMemo(() => viewMode === 'office' && data ? boardOfficeData(data, sampledAt, connected) : null,
+    [viewMode, data, sampledAt, connected]);
   const projectSessions = useMemo(() => data?.sessions.filter(s => !projectId || s.projectId === projectId) || [], [data, projectId]);
   const counts = useMemo(() => boardCounts(projectSessions, allItems), [projectSessions, allItems]);
   const overview = view.zoom < .62;
@@ -320,11 +324,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   } }} onPointerDown={e => { if (menu && !(e.target as Element).closest('.wb-context-menu')) setMenu(null); }}>
     <header className="wb-header"><div className="wb-brand"><BoardIcon name="board"/><div><h1>{text('세션 현황', 'Session overview')}</h1><small>{text('세션의 현재 상태와 실제 업무 전달 기록.', 'Current session state and recorded handoffs.')}</small></div></div>
       <nav className="wb-view-tabs" aria-label={text('현황 표시 방식', 'Overview view')}>
-        {([['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['board', '보드', 'Board']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={viewMode === mode} onClick={() => setViewMode(mode)}>{text(ko, en)}</button>)}
+        {([['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['board', '보드', 'Board'], ['office', 'Pixel Office', 'Pixel Office']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={viewMode === mode} onClick={() => { setMenu(null); cancelProjectDrag(); setViewMode(mode); }}>{text(ko, en)}</button>)}
       </nav>
-      <label className="wb-project-picker"><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
-      <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
+      <label className="wb-project-picker" hidden={viewMode === 'office'}><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <input type="search" hidden={viewMode === 'office'} value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
+      <div className="wb-visibility" hidden={viewMode === 'office'} role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
         <button role="switch" aria-checked={activeOnly} aria-label={text('활성 세션만 표시', 'Show active sessions only')} title={text('실행 중인 세션만 표시합니다. Sleeping을 켜면 활성 부모의 sleeping 자식도 표시합니다.', 'Show running sessions. Sleeping also shows sleeping descendants of active parents.')}
           onClick={() => { const next = !activeOnly; cancelProjectDrag(); setActiveOnly(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, activeOnly: next }); }}>{text('Active만', 'Active only')} <span className="wb-switch-track"/></button>
         <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. Active만 보기에서는 활성 부모 아래의 자식만 표시합니다.', 'Show sleeping sessions. In Active only, include only descendants of active parents.')}
@@ -335,8 +339,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button></header>
 
     {(placementError || error || data?.storageError) && <div role="alert" className="wb-error">{placementError || error || data?.storageError}</div>}
-    {revealedSession && <div className="wb-revealed">{sessionsById.get(revealedSession)?.name} · {text('보드에서 찾기로 임시 표시 중', 'Temporarily shown by Locate on board')}<button onClick={() => setRevealedSession(null)}>{text('다시 숨기기', 'Hide again')}</button></div>}
-    <div className="wb-body"><section className="wb-canvas-wrap">    <nav className="wb-summary" aria-label={text('업무 요약', 'Work summary')}>
+    {viewMode === 'office' && <div className="wb-office">{office ? <PixelOffice agents={office.agents} projects={office.projects} activeProjectId={projectId || null}
+      onOpenSession={id => { void open(id); }} onBack={() => setViewMode('board')}/>
+      : <p className="wb-empty" role="status">{text('사무실을 불러오는 중…', 'Loading office…')}</p>}</div>}
+    {viewMode !== 'office' && revealedSession && <div className="wb-revealed">{sessionsById.get(revealedSession)?.name} · {text('보드에서 찾기로 임시 표시 중', 'Temporarily shown by Locate on board')}<button onClick={() => setRevealedSession(null)}>{text('다시 숨기기', 'Hide again')}</button></div>}
+    <div className="wb-body" hidden={viewMode === 'office'}><section className="wb-canvas-wrap">    <nav className="wb-summary" aria-label={text('업무 요약', 'Work summary')}>
       <span className={`wb-connection ${!connected ? 'warning' : ''}`}><i/>{!connected ? text('수신 실패 · 마지막 기록', 'Disconnected · last known data') : text('상태 수신', 'Receiving state')}</span>
       <button aria-pressed={!workingOnly && !backgroundOnly && kind === 'all'} onClick={() => { setWorkingOnly(false); setBackgroundOnly(false); setKind('all'); }}>{text('전체', 'All')} <b>{projectSessions.length}</b></button>
       <button aria-pressed={workingOnly} title={text('이 세션이 응답이나 명령을 직접 실행 중입니다.', 'This session is actively producing a response or running commands.')} onClick={() => { setWorkingOnly(v => !v); setBackgroundOnly(false); setKind('all'); }}><StateIcon state="working" active={connected && counts.working > 0}/>{text('작업 중', 'Working')} <b>{connected ? counts.working : '—'}</b></button>
@@ -347,12 +354,12 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <span className="wb-sampled" title={text('작업 진행 시각이 아닌 상태 수신 시각입니다.', 'State sampling time, not evidence of work progress.')}>{text('수신', 'Received')} {new Date(sampledAt).toLocaleTimeString()}</span>
       <details className="wb-state-help"><summary>{text('상태 안내', 'State guide')}</summary><p>{text('작업 중: 현재 대화가 직접 실행 중입니다. 하위 작업 대기: CLI가 내부 백그라운드 작업의 완료를 기다립니다. 미확인 결과: 새로 도착한 응답입니다. 대화나 결과를 열면 확인 처리하며, 새 응답과 질문은 따로 유지합니다.', 'Working: this conversation is executing. Background wait: its CLI is waiting for internal background work. Unread results: new responses; opening the result or conversation marks the captured results read, while new responses and questions remain.')}</p></details>
     </nav>
-      {viewMode !== 'board' && data && <SessionTableView data={data} mode={viewMode} projectId={projectId} query={query} visible={visibleSessionIds}
+      {(viewMode === 'sessions' || viewMode === 'transfers') && data && <SessionTableView data={data} mode={viewMode} projectId={projectId} query={query} visible={visibleSessionIds}
         filterSession={s => (!workingOnly || s.state === 'working') && (!backgroundOnly || s.state === 'background') && (kind === 'all' || !!itemsBySession.get(s.id)?.some(i => i.kind === kind))}
         selectedId={selected?.sessionId} selectedTransferId={selectedTransferId} step={step}
         state={s => { const current = boardDisplayState(s, itemsBySession.get(s.id)?.filter(i => i.kind === 'result').length || 0); return <span className="st-state" data-state={current}><StateIcon state={current} active={connected}/>{text(...labels[current])}</span>; }}
         onChoose={(id, trigger, transferId) => { choose(id, undefined, trigger); if (transferId) setSelectedTransferId(transferId); }} onOpen={id => { void open(id); }}/>}
-      {viewMode !== 'board' && !data && <p className="wb-empty" role="status">{text('세션 현황을 불러오는 중…', 'Loading sessions…')}</p>}
+      {(viewMode === 'sessions' || viewMode === 'transfers') && !data && <p className="wb-empty" role="status">{text('세션 현황을 불러오는 중…', 'Loading sessions…')}</p>}
       <div className="wb-canvas" hidden={viewMode !== 'board'} ref={viewport} tabIndex={0} aria-label={text('업무 노드 · 빈 공간 드래그로 이동', 'Work nodes · drag empty space to pan')}
         onPointerDown={e => { if (e.button !== 0 && e.button !== 1 || e.button === 0 && (e.target as Element).closest('button, select, input, summary, [role="button"], .wb-project-body')) return; if (e.button === 1) e.preventDefault(); drag.current = { x: e.clientX, y: e.clientY, left: view.x, top: view.y }; e.currentTarget.setPointerCapture(e.pointerId); }}
         onAuxClick={e => { if (e.button === 1) e.preventDefault(); }}
@@ -470,6 +477,6 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
       <SessionLifecycleButton key={menu.id} id={menu.id} active={sessionsById.get(menu.id)?.runtime === 'running'} onSuccess={() => { setMenu(null); void refreshRef.current(); }} onError={setError}/>
       <strong>{sessionsById.get(menu.id)?.name}</strong><button role="menuitem" disabled={busy || !!data?.storageError || !menu.results.length} onClick={() => { void reviewSession(menu.id, menu.results); }}>{text('현재 결과 확인완료', 'Mark current results read')} · {menu.results.length}</button>
       <button role="menuitem" onClick={() => { const id = menu.id; setMenu(null); void open(id); }}>{text('세션 대화 열기', 'Open conversation')}</button><button role="menuitem" onClick={() => setMenu(null)}>{text('닫기', 'Close')}</button></div>}
-    <footer className="wb-footer"><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('보라색: 읽기 참조 · 밝기 강조: 하달 진행 중', 'Purple: observed reads · glow: outstanding delegation')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
+    <footer className="wb-footer" hidden={viewMode === 'office'}><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('보라색: 읽기 참조 · 밝기 강조: 하달 진행 중', 'Purple: observed reads · glow: outstanding delegation')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
   </main>;
 }

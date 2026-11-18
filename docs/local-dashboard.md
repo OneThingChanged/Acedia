@@ -33,6 +33,15 @@ It binds to loopback by default and projects desktop-owned state into the shared
 web client. Standard and Store also offer explicit LAN access with a connection
 code; Company remains loopback-only.[^web-services][^lan-access]
 
+## 세션 MCP에서 로컬 Dashboard 제어
+
+지원하는 호스트에서는 등록된 활성 로컬 세션이 `acedia_dashboard`에 `action`으로
+`status`, `start`, `stop`을 보내 실행 상태와 실제 로컬 주소를 확인하거나 서버를 시작·종료한다.
+같은 계약은 기존 세션 인증을 사용하는 `POST /integration/v1/workspace/dashboard`에도 제공된다.
+`start`는 설정된 포트를 우선 사용하고 실제로 열린 포트를 반환한다. MCP로 시작한 서버는
+`127.0.0.1`에서만 수신하며 저장된 시작 옵션을 유지한다. LAN으로 실행 중인 서버는
+`status`에서 `lanActive: true`로 표시하고 시작·종료는 데스크톱 설정에서 관리한다.
+
 ## 같은 공유기의 다른 PC에서 접속
 
 [1.8.1.46](release-1-8-1-46.md)부터 **설정 → 대시보드 → LAN 접속 허용**을 켜면

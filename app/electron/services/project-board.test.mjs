@@ -76,14 +76,16 @@ describe('Independent project board', () => {
     expect(next.sessions[0].fingerprint).toBe(first.sessions[0].fingerprint);
     expect(JSON.stringify(next)).not.toContain('private-');
   });
-  it('persists the selected table mode and validates its IPC contract alongside local layout', async () => {
+  it('persists the selected table or Office mode and validates its IPC contract alongside local layout', async () => {
     const { createRequire } = await import('node:module');
     const contract = createRequire(import.meta.url)('../ipc-contract.cjs'), f = fixture();
     for (const layoutVersion of [2, 3]) expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { layoutVersion } }).preferences.layoutVersion).toBe(layoutVersion);
     expect(contract.assertInvokeRequest('project_board_delegated_wait', { revision: 'a'.repeat(64) })).toEqual({ revision: 'a'.repeat(64) });
     expect(() => contract.assertInvokeRequest('project_board_delegated_wait', { markRead: true })).toThrow();
-    f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'transfers', zoom: .8 } }).preferences);
-    expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ viewMode: 'transfers', zoom: .8 });
+    for (const viewMode of ['transfers', 'office']) {
+      f.board.preferences(contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode, zoom: .8 } }).preferences);
+      expect(new ProjectBoard(f.options).snapshot().preferences).toMatchObject({ viewMode, zoom: .8 });
+    }
     expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { viewMode: 'invalid' } })).toThrow();
     expect(() => contract.assertInvokeRequest('project_board_transfer_detail', { id: 'message', markRead: true })).toThrow();
     expect(() => contract.assertInvokeRequest('project_board_transfer_detail', { id: '' })).toThrow();
