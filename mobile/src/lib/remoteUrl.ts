@@ -54,6 +54,27 @@ export function remoteAppUrl(baseUrl: string) {
   return url.toString();
 }
 
+export async function checkRemoteConnection(input: string) {
+  const baseUrl = normalizeRemoteUrl(input);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(new URL("auth/mode", baseUrl).toString(), {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`서버 응답 오류 (${response.status})`);
+    return baseUrl;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function remoteAddressLabel(baseUrl: string) {
+  const { host, pathname } = new URL(baseUrl);
+  return host + pathname.replace(/\/$/, "");
+}
+
 export function isAllowedInAppNavigation(baseUrl: string, targetUrl: string) {
   try {
     const base = new URL(baseUrl);
@@ -62,6 +83,13 @@ export function isAllowedInAppNavigation(baseUrl: string, targetUrl: string) {
   } catch {
     return false;
   }
+}
+
+export function isAllowedExternalPreview(baseUrl: string, targetUrl: string) {
+  if (!isAllowedInAppNavigation(baseUrl, targetUrl)) return false;
+  const servicePath = new URL(baseUrl).pathname;
+  const targetPath = new URL(targetUrl).pathname.slice(servicePath.length);
+  return /^preview\/[A-Za-z0-9_-]{43}\//.test(targetPath);
 }
 
 export function mobileAuthCompleteUrl(baseUrl: string, ticket: string) {

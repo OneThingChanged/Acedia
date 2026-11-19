@@ -60,6 +60,67 @@ describe('Remote queue source without browser automation', () => {
     f.tick(); await f.drain(); expect(f.sent).toHaveLength(1);
   });
 });
+
+describe('Remote Claude delivery mode', () => {
+  function composer() {
+    const agent = { id: 'claude', aiToolId: 'claude', status: 'working' };
+    const queue = [{ text: '예약된 메시지' }], buttons = new Map();
+    const button = { setAttribute: vi.fn() }, clickHandlers = new Map(), inputHandlers = new Map();
+    buttons.set('composerDeliveryButton', { ...button, addEventListener: (name, handler) => clickHandlers.set(name, handler) });
+    const context = {
+      document: { getElementById: id => buttons.get(id) ?? { dataset: {}, querySelector: () => ({}), addEventListener: vi.fn() } },
+      ui: { messageInput: { value: '진행 중 추가 요청', addEventListener: (name, handler) => inputHandlers.set(name, handler) }, sendButton: {} },
+      selectedAgent: () => agent, statusOf: a => a?.status, sessionViewMode: 'chat', isChatOnly: () => false, t: value => value,
+      lastChatData: {}, deliveryModes: new Map(), agentBusy: a => a.status === 'working', agentInitializing: vi.fn(() => false),
+      blockingPrompt: vi.fn(() => false), agentReady: () => false, acknowledgeCompletion: vi.fn(),
+      currentAttachments: () => [], sendingAgents: new Set(), taskModes: new Set(), remoteAttachmentMessage: message => message,
+      composerRevisions: new Map(), pendingSubmissions: new Map(), uncertainSubmissions: new Set(), submissionId: () => 'submission',
+      conversationId: () => 'conversation', updateComposerSendState: vi.fn(), followAgentTerminal: vi.fn(), queueForAgent: () => queue,
+      QUEUE_COOLDOWN_MS: 1500, sessionLastSendAt: new Map(), sendInput: vi.fn(async () => true), clearAcceptedComposer: vi.fn(),
+      renderComposerQueue: vi.fn(), showToast: vi.fn(), acItems: [], acceptComposerAc: vi.fn(),
+    };
+    const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+    const sourceBetween = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+    vm.runInNewContext(sourceBetween('function supportsRemoteSteering(', 'function appendConversationTurn(')
+      + sourceBetween('ui.messageInput.addEventListener("keydown"', 'ui.copyOutputButton.addEventListener('), context);
+    return { agent, context, queue, delivery: buttons.get('composerDeliveryButton'), click: clickHandlers.get('click'), keydown: inputHandlers.get('keydown') };
+  }
+
+  it('exposes the mode button and Tab, sends an explicit follow-up ahead of completion reservations', async () => {
+    const f = composer();
+    f.context.updateWorking();
+    expect(f.delivery.hidden).toBe(false);
+    expect(f.delivery.textContent).toContain('완료 후 예약');
+    f.click(); expect(f.delivery.textContent).toContain('작업 중 추가');
+    const tab = { key: 'Tab', preventDefault: vi.fn() };
+    f.keydown(tab); expect(f.delivery.textContent).toContain('완료 후 예약');
+    await f.context.sendSelectedMessage();
+    expect(f.context.sendInput).not.toHaveBeenCalled();
+    expect(f.queue.map(item => item.text)).toEqual(['예약된 메시지', '진행 중 추가 요청']);
+    f.keydown(tab);
+    f.context.ui.messageInput.value = '끼어넣을 새 지시';
+    await f.context.sendSelectedMessage();
+    expect(tab.preventDefault).toHaveBeenCalledTimes(2);
+    expect(f.context.sendInput).toHaveBeenCalledExactlyOnceWith('claude', '끼어넣을 새 지시', { requestId: 'submission', sessionId: 'conversation', steering: true });
+    expect(f.queue).toHaveLength(2);
+  });
+
+  it.each(['blocking question', 'initialization', 'Claude command', 'SSH', 'other provider'])('retains completion delivery for %s', async state => {
+    const f = composer();
+    f.click();
+    if (state === 'blocking question') f.context.blockingPrompt.mockReturnValue(true);
+    if (state === 'initialization') f.context.agentInitializing.mockReturnValue(true);
+    if (state === 'Claude command') f.context.ui.messageInput.value = '/clear';
+    if (state === 'SSH') f.agent.sshHostId = 'remote';
+    if (state === 'other provider') f.agent.aiToolId = 'qwen';
+    f.context.updateWorking();
+    expect(f.delivery.hidden).toBe(['SSH', 'other provider'].includes(state));
+    await f.context.sendSelectedMessage();
+    expect(f.context.sendInput).not.toHaveBeenCalled();
+    expect(f.queue).toHaveLength(2);
+  });
+});
+
 describe('Read-only input readiness gate', () => {
   it('checks a fresh session before its first conversation ID exists', async () => {
     const inspect = vi.fn(async () => ({ supported: true, ready: true, conversationId: null }));

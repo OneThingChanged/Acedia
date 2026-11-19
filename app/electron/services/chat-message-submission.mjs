@@ -44,8 +44,10 @@ export function createChatMessageSubmitter({
     const current = await currentQuestion(id), pending = current?.question;
     if (!isCurrent() || (pending && !pending.async) || questionResponder.isBusy(id)) return false;
     const localCodex = !entry.ssh && entry.aiToolId === 'codex';
+    const steeringLocalClaude = steering === true && !entry.ssh && entry.aiToolId === 'claude';
     const resetting = localCodex && /^\/(?:clear|new)(?:\s|$)/.test(message.trim());
-    if (localCodex && ((!steering && !resetting && awaitingTurn(entry, current)) || !composerReady(entry, { allowWorking: steering === true && !resetting }))) {
+    if ((localCodex && !steering && !resetting && awaitingTurn(entry, current))
+      || ((localCodex || steeringLocalClaude) && !composerReady(entry, { allowWorking: steering === true && !resetting }))) {
       // Check the live composer before *any* paste, including explicit retries.
       // A previous timed-out request or terminal draft must not be concatenated.
       if (resetting) return false;

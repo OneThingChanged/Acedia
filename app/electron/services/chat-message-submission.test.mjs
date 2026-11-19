@@ -108,6 +108,26 @@ describe('host chat submission coordination', () => {
       expect(f.dependencies.composerReady).toHaveBeenLastCalledWith(f.entry, { allowWorking: steering });
     }
   });
+  it('steers only into an empty Claude composer and preserves a pending draft or question', async () => {
+    const f = fixture();
+    f.entry.aiToolId = 'claude';
+    f.dependencies.composerReady = vi.fn(() => f.state.ready);
+    const submit = createChatMessageSubmitter(f.dependencies);
+    const followup = { ...request, steering: true };
+    f.state.ready = false;
+    await expect(submit(followup)).rejects.toMatchObject({ outcome: 'not-sent', reason: 'composer-not-ready' });
+    expect(f.process.write).not.toHaveBeenCalled();
+    f.state.ready = true;
+    f.state.question = { async: false };
+    expect(await submit(followup)).toBe(false);
+    expect(f.process.write).not.toHaveBeenCalled();
+    f.state.question = null;
+    const sent = submit({ ...followup, message: '추가 지시\n두 번째 줄' });
+    await vi.advanceTimersByTimeAsync(PTY_SUBMIT_DELAY_MS);
+    expect(await sent).toBe(true);
+    expect(f.dependencies.composerReady).toHaveBeenLastCalledWith(f.entry, { allowWorking: true });
+    expect(f.process.write.mock.calls).toEqual([['\x1b[200~추가 지시\r두 번째 줄\x1b[201~'], ['\r']]);
+  });
   it.each([
     ['missing terminal', f => f.sessions.delete(id)],
     ['missing process', f => { f.entry.process = null; }],

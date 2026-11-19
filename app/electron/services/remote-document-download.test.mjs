@@ -52,6 +52,50 @@ async function fixture(channel = "remote", publicHostname = "") {
 }
 
 describe("Remote original document downloads", () => {
+  it("previews recent JSONL lines and streams the full original for the Remote owner on a mounted address", async () => {
+    const { project, outside, url, download, service } = await fixture("remote", "agent.example.com/acedia");
+    service.config.owner = "owner";
+    service.access.approved = ["guest"];
+    const directory = path.join(outside, ".codex", "sessions");
+    fs.mkdirSync(directory, { recursive: true });
+    const file = path.join(directory, "rollout-작업.JSONL");
+    const recent = '{"message":"최근 결과 <script>example()</script>"}\r\n{"message":"마지막 줄"}\r\n';
+    const source = Buffer.from(`{"older":"${"x".repeat(27 * 1024 * 1024)}"}\r\n${recent}`);
+    fs.writeFileSync(file, source);
+    fs.writeFileSync(path.join(project, "docs", "small.jsonl"), recent);
+    const headers = login => ({ "cf-connecting-ip": "203.0.113.5", ...(login ? { cookie: `${service.cookieName()}=${service.sign(login)}` } : {}) });
+    const read = (filename, login) => fetch(`${url}/api/docs/read?${new URLSearchParams({ projectId: "p1", path: filename })}`, { headers: headers(login) });
+
+    const preview = await read(file, "owner");
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get("cache-control")).toBe("no-store");
+    expect(await preview.json()).toMatchObject({ name: path.basename(file), kind: "text", truncated: true, content: recent, size: source.length });
+    const small = await read("docs/small.jsonl", "owner");
+    expect(await small.json()).toMatchObject({ truncated: false, content: recent });
+    expect((await read(file, null)).status).toBe(401);
+    expect((await read(file, "guest")).status).toBe(403);
+    expect((await read("docs/small.jsonl", "guest")).status).toBe(403);
+    for (const [login, kind] of [["owner", "text"], ["guest", null]]) {
+      const folder = await fetch(`${url}/api/files/folder?projectId=p1&path=docs`, { headers: headers(login) });
+      expect(folder.status).toBe(200);
+      expect((await folder.json()).entries.find(item => item.name === "small.jsonl")).toMatchObject({ kind });
+    }
+
+    const head = await download(file, { method: "HEAD", headers: headers("owner") });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe(String(source.length));
+    expect(await head.text()).toBe("");
+    const original = await download(file, { headers: headers("owner") });
+    expect(original.status).toBe(200);
+    expect(original.headers.get("content-disposition")).toBe(head.headers.get("content-disposition"));
+    expect(Buffer.from(await original.arrayBuffer()).equals(source)).toBe(true);
+    for (const method of ["GET", "HEAD"]) {
+      expect((await download(file, { method, headers: headers(null) })).status).toBe(401);
+      expect((await download(file, { method, headers: headers("guest") })).status).toBe(403);
+      expect((await download("docs/small.jsonl", { method, headers: headers("guest") })).status).toBe(403);
+    }
+  });
+
   it.each(['remote', 'local', 'mounted'])('streams Office/PDF and document attachments with original names and bytes on %s', async channel => {
     const { project, url, download } = await fixture(channel === 'local' ? 'local' : 'remote', channel === 'mounted' ? 'agent.example.com/dddd' : '');
     const extensions = ['PPTX', 'ppt', 'pps', 'ppsx', 'potx', 'docx', 'doc', 'dotx', 'xlsx', 'xls', 'xltx', 'pdf', 'odt', 'ods', 'odp', 'rtf', 'hwp', 'hwpx'];

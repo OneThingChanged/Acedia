@@ -1,11 +1,18 @@
 import { folderProjectParents } from './projectBoard';
-import type { BoardProjectPositions } from './boardPlacement';
+import { placeBoardProject, type BoardProjectPositions } from './boardPlacement';
+import type { BoardRect } from './boardEdgeRouting';
 
 export const BOARD_LAYOUT_VERSION = 3;
 export const BOARD_CARD = { width: 320, header: 84, row: 92, node: 86, visibleRows: 6, padding: 7 } as const;
-export function boardProjectHeight(rows: number) {
-  return BOARD_CARD.header + Math.min(BOARD_CARD.visibleRows, rows) * BOARD_CARD.row
-    + BOARD_CARD.padding * 2 + (rows > BOARD_CARD.visibleRows ? 28 : 0);
+const GRID_COLUMN_GAP = 24;
+function boardProjectGrid(count: number, columns = Math.max(1, Math.min(3, Math.ceil(count / BOARD_CARD.visibleRows)))) {
+  const rows = Math.ceil(count / columns);
+  const rowStep = BOARD_CARD.row + (columns > 1 ? 10 : 0);
+  const bodyHeight = Math.min(rows, BOARD_CARD.visibleRows) * rowStep + BOARD_CARD.padding * 2;
+  return { columns, rows, count, rowStep, bodyHeight,
+    width: columns * BOARD_CARD.width + (columns - 1) * GRID_COLUMN_GAP,
+    height: BOARD_CARD.header + bodyHeight + (rows > BOARD_CARD.visibleRows ? 28 : 0),
+    contentHeight: rows * rowStep + BOARD_CARD.padding * 2 };
 }
 export type BoardState = 'idle' | 'working' | 'background' | 'waiting' | 'waiting_external' | 'paused' | 'review' | 'responded' | 'completed' | 'interrupted' | 'failed' | 'unknown' | 'planned';
 export type BoardSession = {
@@ -114,19 +121,19 @@ export function boardVisibleSessionIds(sessions: BoardSession[], showSleeping: b
   return visible;
 }
 type BoardLayoutResult = {
-  groups: { id: string; name: string; x: number; y: number; width: number; height: number; rows: number; bodyHeight: number }[];
+  groups: ({ id: string; name: string; x: number; y: number; expandedHeight: number } & ReturnType<typeof boardProjectGrid>)[];
   nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[];
   edges: { from: string; to: string }[]; projectEdges: { from: string; to: string }[]; width: number; height: number;
 };
-export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, sessionOrder = [], showSleeping = true, showStopped = true, activeOnly = false, revealId }:
-  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean; revealId?: string | null }): BoardLayoutResult {
+export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, projectPreview, sessionOrder = [], showSleeping = true, showStopped = true, activeOnly = false, revealId }:
+  { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; projectPreview?: { id: string; x: number; y: number } | null; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean; revealId?: string | null }): BoardLayoutResult {
   if (activeOnly || !showSleeping || !showStopped) {
     const visible = boardVisibleSessionIds(data.sessions, showSleeping, showStopped, revealId, activeOnly);
     if (visible.size < data.sessions.length) {
       // Re-measure only the retained sessions and their project ancestors.
       // The renderer keeps saved full-board placement separate from this view.
       return boardLayout({ ...data, sessions: data.sessions.filter(s => visible.has(s.id)) },
-        { projectId, query, filter, collapsed, collapsedProjects, overview, sessionOrder, projectPositions });
+        { projectId, query, filter, collapsed, collapsedProjects, overview, sessionOrder, projectPositions, projectPreview });
     }
   }
   const byId = new Map(data.sessions.map(s => [s.id, s])), included = new Set<string>();
@@ -138,7 +145,7 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     const seen = new Set<string>();
     while (current && !seen.has(current.id)) { seen.add(current.id); included.add(current.id); current = byId.get(current.parentId || ''); }
   }
-  const groups: { id: string; name: string; x: number; y: number; width: number; height: number; rows: number; bodyHeight: number }[] = [];
+  const groups: BoardLayoutResult['groups'] = [];
   const nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[] = [];
   const edges: { from: string; to: string }[] = [];
   const parents = folderProjectParents(data.projects);
@@ -153,7 +160,7 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     if (!id) parents.set(project.id, parent.id);
   }
   const slots = new Map<string, { session: BoardSession; depth: number; hidden: boolean }[]>();
-  const expandedHeights = new Map<string, number>();
+  const expandedGrids = new Map<string, ReturnType<typeof boardProjectGrid>>();
   const rank = new Map(sessionOrder.map((id, index) => [id, index]));
   for (const project of data.projects) {
     // Allocate all slots first: status/search filters never rearrange the board.
@@ -170,17 +177,17 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     for (const root of members.filter(s => !ids.has(s.parentId || ''))) place(root, 0);
     for (const orphan of members) if (!visited.has(orphan.id)) place(orphan, 0);
     // Folding repacks rows within a card. Project anchors use the expanded heights.
-    expandedHeights.set(project.id, boardProjectHeight(ordered.length));
+    expandedGrids.set(project.id, boardProjectGrid(ordered.length));
     slots.set(project.id, ordered.filter(row => !row.hidden));
   }
   const visibleProjects = new Set(data.projects.filter(p => slots.get(p.id)!.length).map(p => p.id));
   for (const id of [...visibleProjects]) { let parent = parents.get(id); while (parent) { visibleProjects.add(parent); parent = parents.get(parent); } }
   const children = new Map(data.projects.map(p => [p.id, data.projects.filter(c => visibleProjects.has(c.id) && parents.get(c.id) === p.id)]));
-  const cardHeight = (id: string) => overview || collapsedProjects.has(id) ? BOARD_CARD.header : boardProjectHeight(slots.get(id)!.length);
   const measures = new Map<string, { width: number; height: number }>();
   const gapX = 48, gapY = 64;
   const measure = (id: string): { width: number; height: number } => {
-    const rows = children.get(id)!; let width = BOARD_CARD.width as number, height = expandedHeights.get(id)!;
+    const rows = children.get(id)!, grid = expandedGrids.get(id)!;
+    let { width, height } = grid;
     for (let i = 0; i < rows.length; i += 2) {
       const row = rows.slice(i, i + 2).map(p => measure(p.id));
       width = Math.max(width, row.reduce((sum, c) => sum + c.width, 0) + (row.length - 1) * gapX);
@@ -190,9 +197,9 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
   };
   const positions = new Map<string, { x: number; y: number }>();
   const placeProject = (id: string, x: number, y: number) => {
-    const block = measures.get(id)!, rows = children.get(id)!;
-    positions.set(id, { x: x + (block.width - BOARD_CARD.width) / 2, y });
-    let rowY = y + expandedHeights.get(id)! + gapY;
+    const block = measures.get(id)!, rows = children.get(id)!, grid = expandedGrids.get(id)!;
+    positions.set(id, { x: x + (block.width - grid.width) / 2, y });
+    let rowY = y + grid.height + gapY;
     for (let i = 0; i < rows.length; i += 2) {
       const row = rows.slice(i, i + 2), rowWidth = row.reduce((sum, c) => sum + measures.get(c.id)!.width, 0) + (row.length - 1) * gapX;
       let rowX = x + (block.width - rowWidth) / 2;
@@ -207,18 +214,35 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     placeProject(project.id, x, y); right = Math.max(right, x + block.width + 28);
     rowHeight = Math.max(rowHeight, block.height); x += block.width + gapX;
   }
+  if (Object.keys(projectPositions).length) {
+    const reserved: BoardRect[] = [];
+    const placed = (id: string) => Object.prototype.hasOwnProperty.call(projectPositions, id);
+    const ordered = [...positions.keys()].sort((a, b) => Number(placed(b)) - Number(placed(a)));
+    for (const id of ordered) {
+      const { width, height } = expandedGrids.get(id)!;
+      const origin = placed(id) ? projectPositions[id] : positions.get(id)!;
+      const rect = { ...origin, width, height };
+      const overlaps = reserved.some(p => rect.x < p.x + p.width && p.x < rect.x + width && rect.y < p.y + p.height && p.y < rect.y + height);
+      const point = overlaps ? placeBoardProject(rect, reserved) : origin;
+      positions.set(id, point);
+      reserved.push({ ...point, width, height });
+    }
+  }
   for (const project of data.projects) {
     if (!positions.has(project.id)) continue;
-    const position = Object.prototype.hasOwnProperty.call(projectPositions, project.id) ? projectPositions[project.id] : positions.get(project.id); if (!position) continue;
+    const position = projectPreview?.id === project.id ? projectPreview : positions.get(project.id)!;
     const { x, y } = position, ordered = slots.get(project.id)!;
     if (!projectId || projectId === project.id) {
-      groups.push({ id: project.id, name: project.name, x, y, width: BOARD_CARD.width, height: cardHeight(project.id), rows: ordered.length,
-        bodyHeight: overview || collapsedProjects.has(project.id) ? 0 : Math.min(ordered.length, BOARD_CARD.visibleRows) * BOARD_CARD.row + BOARD_CARD.padding * 2 });
+      const grid = boardProjectGrid(ordered.length, expandedGrids.get(project.id)!.columns);
+      const folded = overview || collapsedProjects.has(project.id);
+      groups.push({ id: project.id, name: project.name, x, y, ...grid, expandedHeight: grid.height,
+        height: folded ? BOARD_CARD.header : grid.height, bodyHeight: folded ? 0 : grid.bodyHeight });
       ordered.forEach(({ session, depth, hidden }, index) => {
         if (!included.has(session.id) || hidden) return;
         const indent = Math.min(depth, 4) * 14;
-        nodes.push({ session, x: x + BOARD_CARD.padding + indent, y: y + BOARD_CARD.header + BOARD_CARD.padding + index * BOARD_CARD.row,
-          width: BOARD_CARD.width - BOARD_CARD.padding * 2 - indent - (ordered.length > BOARD_CARD.visibleRows ? 14 : 2), height: BOARD_CARD.node,
+        const column = index % grid.columns, row = Math.floor(index / grid.columns);
+        nodes.push({ session, x: x + BOARD_CARD.padding + indent + column * (BOARD_CARD.width + GRID_COLUMN_GAP), y: y + BOARD_CARD.header + BOARD_CARD.padding + row * grid.rowStep,
+          width: BOARD_CARD.width - BOARD_CARD.padding * 2 - indent - (grid.rows > BOARD_CARD.visibleRows ? 14 : 2), height: BOARD_CARD.node,
           children: data.sessions.filter(s => s.parentId === session.id && s.projectId === session.projectId).length, depth });
       });
     }

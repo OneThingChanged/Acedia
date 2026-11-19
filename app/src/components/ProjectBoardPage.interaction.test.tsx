@@ -516,13 +516,13 @@ it('scrolls a dense project internally and locates an offscreen result without o
   elements(tree).find(e => e.props.className === 'wb-locate')!.props.onClick();
   tree = render(data);
   hooks.effects.find(e => e.deps?.[0] === 's35')!.run();
-  expect(dom.scrollTop).toBeGreaterThan(2500);
   const layout = boardLayout(data, {}), group = layout.groups[0], node = layout.nodes.find(n => n.session.id === 's35')!;
+  expect(dom.scrollTop).toBe(group.contentHeight - group.bodyHeight);
   expect(node.y - group.y - BOARD_CARD.header - dom.scrollTop).toBeGreaterThanOrEqual(0);
   expect(node.y - group.y - BOARD_CARD.header - dom.scrollTop + node.height).toBeLessThanOrEqual(group.bodyHeight);
   tree = render(data);
   const reference = elements(tree).find(e => e.props.className === 'wb-ref-line')!;
-  expect(reference.props.d).toContain(`M ${node.x} ${node.y - dom.scrollTop + node.height / 2}`);
+  expect(reference.props.d).toContain(`M ${group.x} ${node.y - dom.scrollTop + node.height / 2}`);
   expect(reference.props.d).toMatch(new RegExp(`${group.x} ${group.y + BOARD_CARD.header / 2}$`));
   expect(hooks.invoke.mock.calls.every(([command]) => command === 'project_board_ack')).toBe(true);
 });

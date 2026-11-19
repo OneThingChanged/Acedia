@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
+import { loadSidebarFilter, loadSidebarWidth, matchesSidebarFilter, recentSidebarSessions, recordSidebarSessionOpen, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth } from "./sidebarNavigation";
 import { loadStoredAgents, normalizeStoredGroups } from "./persistence";
 import type { Agent, Group, Project } from "../types";
 import { sidebarSessionFamilies, sidebarInactiveChildrenVisible, loadSidebarCollapsedFamilies, LS_SIDEBAR_COLLAPSED_FAMILIES } from './sidebarNavigation';
@@ -148,6 +148,28 @@ describe("sidebar navigation", () => {
     const input = [agent("created", { createdAt: 200 }), agent("visited", { lastOpenedAt: 300 }), agent("pinned", { sidebarPinned: true }), agent("busy", { activity: { receivedAt: 9999, stateStartedAt: 9999, workStatus: "working", source: "hook" } })];
     expect(recentSidebarSessions(input, projects, [], { projectId: null, filter: "all", query: "" }).map(a => a.id)).toEqual(["pinned", "visited", "created", "busy"]);
     expect(input.map(a => a.id)).toEqual(["created", "visited", "pinned", "busy"]);
+  });
+  it("keeps a session in place when revisited or first opened on its creation day", () => {
+    const morning = new Date(2026, 10, 19, 9).getTime(), noon = new Date(2026, 10, 19, 12).getTime();
+    const evening = new Date(2026, 10, 19, 18).getTime();
+    const sessions = [agent("visited", { lastOpenedAt: morning }), agent("created", { createdAt: morning }), agent("later", { lastOpenedAt: noon })];
+    const rows = (items: Agent[]) => recentSidebarSessions(items, projects, [], { projectId: null, filter: "all", query: "" }).map(item => item.id);
+    const opened = recordSidebarSessionOpen(recordSidebarSessionOpen(sessions, "visited", evening), "created", evening);
+    expect(opened).toBe(sessions);
+    expect(rows(opened)).toEqual(["later", "created", "visited"]);
+  });
+  it("moves a session to Today only on the first open after local midnight", () => {
+    const beforeMidnight = new Date(2026, 10, 19, 23, 59).getTime();
+    const today = new Date(2026, 10, 20, 0, 1).getTime(), later = new Date(2026, 10, 20, 9).getTime();
+    const sessions = [agent("older", { lastOpenedAt: beforeMidnight }), agent("already-today", { createdAt: today })];
+    expect(sidebarDateGroup(sessions[0], today)).toBe("yesterday");
+    const opened = recordSidebarSessionOpen(sessions, "older", today);
+    expect(opened[0].lastOpenedAt).toBe(today);
+    expect(sessions[0].lastOpenedAt).toBe(beforeMidnight);
+    expect(opened[1]).toBe(sessions[1]);
+    expect(sidebarDateGroup(opened[0], today)).toBe("today");
+    expect(recordSidebarSessionOpen(opened, "older", later)).toBe(opened);
+    expect(recordSidebarSessionOpen(opened, "missing", later)).toBe(opened);
   });
   it("intersects project scope, search and state while preserving archived data", () => {
     const archived = agent("archived", { sidebarArchived: true, status: "working" });

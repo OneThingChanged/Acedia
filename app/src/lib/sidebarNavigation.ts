@@ -122,6 +122,16 @@ export function sidebarSessionTime(agent: Agent): number {
   return typeof opened === "number" && Number.isFinite(opened) && opened > 0 ? opened : agent.createdAt;
 }
 
+export function recordSidebarSessionOpen(agents: Agent[], id: string, now: number): Agent[] {
+  const index = agents.findIndex(agent => agent.id === id);
+  if (index === -1) return agents;
+  const agent = agents[index];
+  if (new Date(sidebarSessionTime(agent)).toDateString() === new Date(now).toDateString()) return agents;
+  const next = agents.slice();
+  next[index] = { ...agent, lastOpenedAt: now };
+  return next;
+}
+
 function compareSidebarSessions(a: Agent, b: Agent, sortByName = false): number {
   return Number(!!b.sidebarPinned) - Number(!!a.sidebarPinned)
     || (sortByName ? a.name.localeCompare(b.name) : sidebarSessionTime(b) - sidebarSessionTime(a))

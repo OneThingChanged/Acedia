@@ -81,7 +81,7 @@ describe.each(['remote', 'dashboard'])('%s workspace API', kind => {
       submitPty: async (id, message, options) => { calls.push(['submit', id, message, options]); return true; },
       modelDefaults: { read: async provider => ({ ...defaults.get(provider), models }), save: async body => defaults.save(body.provider, body.settings, body.revision, models) },
     };
-    const stateProvider = () => ({ agents: [{ id: 'a' }], view: { agents: [{ id: 'b' }] } });
+    const stateProvider = () => ({ agents: [{ id: 'a', aiToolId: 'codex' }], view: { agents: [{ id: 'b' }, { id: 'claude', aiToolId: 'claude' }] } });
     const service = kind === 'remote'
       ? new RemoteDashboardService({ baseDir: root, stateProvider, ...providers })
       : new LocalDashboardService({ baseDir: root, configName: 'dashboard.json', title: 'Test', defaultPort: 0, stateProvider, providers });
@@ -107,7 +107,9 @@ describe.each(['remote', 'dashboard'])('%s workspace API', kind => {
     expect((await post('/api/session/submit', { id: 'a', message: 'follow up', steering: 'yes' })).status).toBe(400);
     expect((await post('/api/session/submit', { id: 'a', message: 'follow up', sessionId: 12 })).status).toBe(400);
     expect((await post('/api/session/submit', { id: 'a', message: 'follow up', steering: true, sessionId: 'thread-a' })).status).toBe(200);
-    expect(calls).toEqual([['images', 'a', 1], ['close', 'b'], ['submit', 'a', 'follow up', { steering: true, sessionId: 'thread-a' }]]);
+    expect((await post('/api/session/submit', { id: 'claude', message: 'Claude follow up', steering: true, sessionId: 'thread-claude' })).status).toBe(200);
+    expect(calls).toEqual([['images', 'a', 1], ['close', 'b'], ['submit', 'a', 'follow up', { steering: true, sessionId: 'thread-a' }],
+      ['submit', 'claude', 'Claude follow up', { steering: true, sessionId: 'thread-claude' }]]);
   });
 });
 it('requires Remote authentication before exposing images, defaults or close', async () => {

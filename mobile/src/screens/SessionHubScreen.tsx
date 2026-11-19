@@ -17,6 +17,7 @@ import {
 } from "../lib/sessionHubData";
 import { listMobileSessionSnapshots } from "../lib/sessionAccess";
 import type { RemoteProfile } from "../lib/profiles";
+import { remoteAddressLabel } from "../lib/remoteUrl";
 
 type Props = {
   profiles: RemoteProfile[];
@@ -126,7 +127,7 @@ export function SessionHubScreen({
                 <View style={[styles.serverDot, { backgroundColor: online ? "#55e4d4" : server.state === "login-required" ? "#f7c75b" : "#ff8589" }]} />
                 <View style={styles.serverCopy}>
                   <Text numberOfLines={1} style={styles.serverName}>{server.profile.name}</Text>
-                  <Text numberOfLines={1} style={styles.serverHost}>{new URL(server.profile.baseUrl).host}</Text>
+                  <Text numberOfLines={1} style={styles.serverHost}>{remoteAddressLabel(server.profile.baseUrl)}</Text>
                 </View>
                 <View style={styles.serverState}>
                   <Text style={[styles.serverStateText, !online && styles.serverStateWarning]}>

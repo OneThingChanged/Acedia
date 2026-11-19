@@ -16,8 +16,10 @@ import {
   type WebViewNavigation,
 } from "react-native-webview";
 import {
+  isAllowedExternalPreview,
   isAllowedInAppNavigation,
   mobileAuthCompleteUrl,
+  remoteAddressLabel,
   remoteAppUrl,
 } from "../lib/remoteUrl";
 import {
@@ -76,8 +78,7 @@ export function RemoteScreen({
   const [navigationUrl, setNavigationUrl] = useState(() => mobileAuthTarget
     ? mobileAuthCompleteUrl(baseUrl, mobileAuthTarget.ticket)
     : appUrl);
-  const hostname = useMemo(() => new URL(baseUrl).host, [baseUrl]);
-  const remoteOrigin = useMemo(() => new URL(baseUrl).origin, [baseUrl]);
+  const remoteAddress = remoteAddressLabel(baseUrl);
   const nativeSafeAreaScript = useMemo(() => `
     document.documentElement.style.setProperty(
       "--native-safe-area-bottom",
@@ -86,7 +87,7 @@ export function RemoteScreen({
     true;
   `, [safeAreaInsets.bottom]);
   const nativeBootstrap = useMemo(() => `
-    if (location.origin === ${JSON.stringify(remoteOrigin)}) {
+    if (location.href.startsWith(${JSON.stringify(baseUrl)})) {
       window.__MULTIAGENT_NATIVE_APP__ = true;
       window.__MULTIAGENT_NATIVE_EXTERNAL_PREVIEW__ = true;
       window.__MULTIAGENT_PROFILE_ID__ = ${JSON.stringify(profile.id)};
@@ -95,7 +96,7 @@ export function RemoteScreen({
       ${nativeSafeAreaScript}
     }
     true;
-  `, [active, nativeSafeAreaScript, profile.id, remoteOrigin]);
+  `, [active, baseUrl, nativeSafeAreaScript, profile.id]);
 
   const isRemotePage = (url: string) => {
     return isTrustedNativeBridgeUrl(baseUrl, url);
@@ -140,9 +141,9 @@ export function RemoteScreen({
   };
 
   useEffect(() => {
-    void foregroundMonitorStatus(profile.id, remoteOrigin).then((state) => deliverMonitorState(state));
-    void mobileSessionAccessStatus(profile.id, remoteOrigin).then(deliverSessionAccessState);
-  }, [profile.id]);
+    void foregroundMonitorStatus(profile.id, baseUrl).then((state) => deliverMonitorState(state));
+    void mobileSessionAccessStatus(profile.id, baseUrl).then(deliverSessionAccessState);
+  }, [baseUrl, profile.id]);
 
   // Android edge-to-edge layout can change its bottom inset when rotating or
   // when a tablet taskbar appears. Keep the already loaded Remote page in sync
@@ -173,7 +174,7 @@ export function RemoteScreen({
     const request = parseNativeBridgeRequest(event.nativeEvent.data);
     if (!request) return;
     if (request.type === "multiagent:start-native-monitor") {
-      void startForegroundMonitor(profile.id, profile.name, remoteOrigin, request.token, request.cursor)
+      void startForegroundMonitor(profile.id, profile.name, baseUrl, request.token, request.cursor)
         .then((state) => deliverMonitorState(state, true));
       return;
     }
@@ -181,28 +182,22 @@ export function RemoteScreen({
       void registerMobileSessionAccess(
         profile.id,
         profile.name,
-        remoteOrigin,
+        baseUrl,
         request.token,
       ).then(deliverSessionAccessState);
       return;
     }
     if (request.type === "multiagent:open-external-preview") {
-      try {
-        const target = new URL(request.url);
-        if (
-          isTrustedNativeBridgeUrl(baseUrl, target.href) &&
-          /^\/preview\/[A-Za-z0-9_-]{43}\//.test(target.pathname)
-        ) {
-          void Linking.openURL(target.href).catch(() => {});
-        }
-      } catch {}
+      if (isAllowedExternalPreview(baseUrl, request.url)) {
+        void Linking.openURL(request.url).catch(() => {});
+      }
       return;
     }
     if (request.type === "multiagent:route-state") {
       setRouteCanGoBack(request.canGoBack);
       return;
     }
-    void stopForegroundMonitor(profile.id, remoteOrigin, request.revoke)
+    void stopForegroundMonitor(profile.id, baseUrl, request.revoke)
       .then((state) => deliverMonitorState(state, true));
   };
 
@@ -239,7 +234,7 @@ export function RemoteScreen({
           >
             <View style={styles.liveDot} />
             <Text numberOfLines={1} style={styles.collapsedHost}>
-              {hostname}
+              {remoteAddress}
             </Text>
             <Text style={styles.expandGlyph}>⌄</Text>
           </Pressable>
@@ -260,7 +255,7 @@ export function RemoteScreen({
                 {profile.name}
               </Text>
               <Text numberOfLines={1} style={styles.hostName}>
-                {hostname}
+                {remoteAddress}
               </Text>
             </View>
             <Pressable

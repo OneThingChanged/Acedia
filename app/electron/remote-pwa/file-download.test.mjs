@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { expect, it, vi } from 'vitest';
-import { chatFileKind, cleanChatFilePath } from './chat-markup.js';
+import { chatFileKind, cleanChatFilePath, isAbsoluteChatFilePath } from './chat-markup.js';
 import { remotePath } from './base-path.js';
 
 const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
@@ -43,4 +43,33 @@ it('does not start a failed download and releases its lock for a same-file retry
   expect(scope.downloadingFiles.size).toBe(0);
   await scope.openChatFilePreview('worker', 'project', 'exports/result.pptx', 'text');
   expect(anchor.click).toHaveBeenCalledOnce(); expect(scope.downloadingFiles.size).toBe(0);
+});
+
+it('shows truncated JSONL as plain text and downloads from the original absolute path', async () => {
+  const { scope, anchor } = client();
+  const path = 'G:\\AI\\.codex\\sessions\\rollout.jsonl';
+  const content = '{"message":"<script>example()</script>"}';
+  const contents = [];
+  Object.assign(scope, {
+    filePreviewRequest: 0, isAbsoluteChatFilePath, text: value => value || '', resetFilePreviewContent: vi.fn(),
+    ui: {
+      filePreviewOverlay: { hidden: false }, filePreviewTitle: {}, filePreviewPath: {}, filePreviewKind: {},
+      filePreviewMessage: {}, filePreviewClose: { focus: vi.fn() },
+      filePreviewMarkdown: {
+        replaceChildren: (...nodes) => contents.splice(0, contents.length, ...nodes),
+        prepend: node => contents.unshift(node),
+      },
+    },
+  });
+  scope.document.documentElement = { classList: { add: vi.fn() } };
+  scope.document.createElement.mockImplementation(tag => tag === 'a' ? anchor : { tag, setAttribute: vi.fn() });
+  scope.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ path: 'rollout.jsonl', basePath: 'rollout.jsonl', kind: 'text', content, truncated: true }) });
+  await scope.openChatFilePreview('worker', 'project', path, chatFileKind(path));
+  expect(scope.fetch.mock.lastCall[0]).toMatch(/^\/dddd\/api\/docs\/read\?/);
+  expect(contents).toMatchObject([{ tag: 'p', textContent: '파일의 마지막 부분을 표시합니다. 전체 원본은 다운로드할 수 있습니다.' }, { tag: 'pre', textContent: content }]);
+  await scope.downloadRemoteFile(scope.filePreviewContext);
+  const url = new URL(anchor.href, 'https://agent.example.com');
+  expect(url.pathname).toBe('/dddd/api/docs/download');
+  expect(url.searchParams.get('path')).toBe(path);
+  expect(anchor.click).toHaveBeenCalledOnce();
 });

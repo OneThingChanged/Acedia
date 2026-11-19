@@ -47,6 +47,7 @@ const REMOTE_DOWNLOAD_ONLY_EXTENSIONS = new Set([
   '.ppt', '.pptx', '.pps', '.ppsx', '.potx', '.odt', '.ods', '.odp', '.rtf', '.hwp', '.hwpx',
 ]);
 const MAX_REMOTE_DOCUMENT_BYTES = 2 * 1024 * 1024;
+const MAX_REMOTE_JSONL_PREVIEW_BYTES = 512 * 1024;
 const MAX_REMOTE_HTML_PREVIEW_BYTES = 32 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const REMOTE_HTML_PREVIEW_TTL_MS = 15 * 60_000;
@@ -316,7 +317,38 @@ async function resolveRemoteProjectFile(snapshot, projectId, requestedPath, agen
   return { project, root, baseRoot, resolved, stats };
 }
 
-async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = null) {
+function isRemoteJsonLines(extension, ownerFileAccess) {
+  if (extension !== '.jsonl') return false;
+  if (!ownerFileAccess) throw new RemoteDocumentError(403, 'JSONL 로그는 Remote 소유자만 열거나 다운로드할 수 있습니다.');
+  return true;
+}
+
+async function readRemoteJsonLines(resolved) {
+  const file = await fsPromises.open(resolved, 'r');
+  try {
+    const { size } = await file.stat();
+    const buffer = Buffer.alloc(Math.min(size, MAX_REMOTE_JSONL_PREVIEW_BYTES));
+    const start = size - buffer.length;
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, start + length);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    const excerpt = buffer.subarray(0, length);
+    let offset = 0;
+    if (start > 0) {
+      const newline = excerpt.indexOf(0x0a);
+      if (newline !== -1 && newline + 1 < excerpt.length) offset = newline + 1;
+      else while (offset < excerpt.length && (excerpt[offset] & 0xc0) === 0x80) offset += 1;
+    }
+    return { content: excerpt.toString('utf8', offset), size, truncated: start > 0 };
+  } finally {
+    await file.close();
+  }
+}
+
+async function readRemoteDocument(snapshot, projectId, requestedPath, agentId, ownerFileAccess) {
   const { project, root, baseRoot, resolved, stats } = await resolveRemoteProjectFile(
     snapshot,
     projectId,
@@ -324,9 +356,10 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
     agentId,
   );
   const extension = path.extname(resolved).toLowerCase();
-  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_TEXT_FILE.test(resolved) ? "text" : null);
+  const jsonLines = isRemoteJsonLines(extension, ownerFileAccess);
+  const kind = REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (jsonLines || REMOTE_TEXT_FILE.test(resolved) ? "text" : null);
   if (!kind || kind === "video") throw new RemoteDocumentError(415, "Markdown, HTML, JSON 또는 코드·텍스트 파일만 열 수 있습니다.");
-  if (stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
+  if (!jsonLines && stats.size > MAX_REMOTE_DOCUMENT_BYTES) {
     throw new RemoteDocumentError(413, "2MB보다 큰 문서는 Remote에서 열 수 없습니다.");
   }
   return {
@@ -337,14 +370,14 @@ async function readRemoteDocument(snapshot, projectId, requestedPath, agentId = 
     kind,
     size: stats.size,
     modifiedAt: stats.mtime.toISOString(),
-    content: await fsPromises.readFile(resolved, "utf8"),
+    ...(jsonLines ? await readRemoteJsonLines(resolved) : { content: await fsPromises.readFile(resolved, "utf8") }),
   };
 }
 
-async function sendRemoteDocumentDownload(request, response, ...args) {
+async function sendRemoteDocumentDownload(request, response, ownerFileAccess, ...args) {
   const { resolved, stats } = await resolveRemoteProjectFile(...args);
   const extension = path.extname(resolved).toLowerCase();
-  if (!REMOTE_DOCUMENT_EXTENSIONS.has(extension) && !REMOTE_IMAGE_EXTENSIONS.has(extension) && !REMOTE_TEXT_FILE.test(resolved) && !REMOTE_ARCHIVE_EXTENSIONS.has(extension) && !REMOTE_DOWNLOAD_ONLY_EXTENSIONS.has(extension)) {
+  if (!isRemoteJsonLines(extension, ownerFileAccess) && !REMOTE_DOCUMENT_EXTENSIONS.has(extension) && !REMOTE_IMAGE_EXTENSIONS.has(extension) && !REMOTE_TEXT_FILE.test(resolved) && !REMOTE_ARCHIVE_EXTENSIONS.has(extension) && !REMOTE_DOWNLOAD_ONLY_EXTENSIONS.has(extension)) {
     throw new RemoteDocumentError(415, "지원하지 않는 다운로드 형식입니다.");
   }
   const name = path.basename(resolved);
@@ -360,7 +393,7 @@ async function sendRemoteDocumentDownload(request, response, ...args) {
     "x-content-type-options": "nosniff",
   });
   if (request.method === "HEAD" || !stats.size) response.end();
-  else await pipeline(fs.createReadStream(resolved), response);
+  else await pipeline(fs.createReadStream(resolved, { end: stats.size - 1 }), response);
 }
 
 async function sendRemoteImage(response, snapshot, projectId, requestedPath, agentId = null) {
@@ -772,7 +805,7 @@ function ownerFileSnapshot(state, projectId, requestedPath, ownerFileAccess) {
   return { ...state, projects, view: { ...state?.view, projects } };
 }
 
-async function listRemoteFolder(state, projectId, requestedPath, agentId) {
+async function listRemoteFolder(state, projectId, requestedPath, agentId, ownerFileAccess) {
   const raw = normalizeRemoteRequestedPath(requestedPath);
   if (!raw) throw new RemoteDocumentError(400, "올바른 폴더 경로가 필요합니다.");
   const absolute = path.isAbsolute(raw) || path.win32.isAbsolute(raw);
@@ -791,7 +824,8 @@ async function listRemoteFolder(state, projectId, requestedPath, agentId) {
     if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile()) || REMOTE_DOCUMENT_SKIPPED_DIRS.has(entry.name.toLowerCase())) continue;
     if (entries.length === MAX_REMOTE_DOCUMENT_FILES) { truncated = true; break; }
     const extension = path.extname(entry.name).toLowerCase();
-    const kind = entry.isDirectory() ? 'folder' : REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_IMAGE_EXTENSIONS.has(extension) ? 'image' : REMOTE_TEXT_FILE.test(entry.name) ? 'text' : REMOTE_ARCHIVE_EXTENSIONS.has(extension) ? 'archive' : REMOTE_DOWNLOAD_ONLY_EXTENSIONS.has(extension) ? 'download' : null);
+    const isText = REMOTE_TEXT_FILE.test(entry.name) || (ownerFileAccess && extension === '.jsonl');
+    const kind = entry.isDirectory() ? 'folder' : REMOTE_DOCUMENT_EXTENSIONS.get(extension) || (REMOTE_IMAGE_EXTENSIONS.has(extension) ? 'image' : isText ? 'text' : REMOTE_ARCHIVE_EXTENSIONS.has(extension) ? 'archive' : REMOTE_DOWNLOAD_ONLY_EXTENSIONS.has(extension) ? 'download' : null);
     entries.push({ name: entry.name, path: path.join(resolved, entry.name), kind });
   }
   entries.sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder') || a.name.localeCompare(b.name));
@@ -819,14 +853,14 @@ export async function serveRemoteDocumentApi(request, response, url, { snapshot,
     const args = [state, url.searchParams.get("projectId"), url.searchParams.get("path"), url.searchParams.get("agentId")];
     switch (url.pathname) {
       case "/api/docs": sendJson(response, 200, await listRemoteDocuments(state, args[1])); break;
-      case "/api/files/folder": sendJson(response, 200, await listRemoteFolder(...args), { "cache-control": "no-store" }); break;
+      case "/api/files/folder": sendJson(response, 200, await listRemoteFolder(...args, ownerFileAccess), { "cache-control": "no-store" }); break;
       case "/api/docs/path": {
         const file = await resolveListedRemoteDocument(state, args[1], args[2]);
         sendJson(response, 200, { path: file.path, relativePath: file.relativePath }, { "cache-control": "no-store" });
         break;
       }
-      case "/api/docs/read": sendJson(response, 200, await readRemoteDocument(...args)); break;
-      case "/api/docs/download": await sendRemoteDocumentDownload(request, response, ...args); break;
+      case "/api/docs/read": sendJson(response, 200, await readRemoteDocument(...args, ownerFileAccess), { "cache-control": "no-store" }); break;
+      case "/api/docs/download": await sendRemoteDocumentDownload(request, response, ownerFileAccess, ...args); break;
       case "/api/docs/preview": {
         const location = remotePath(await issueRemoteHtmlPreview(previews, ...args), request.acediaBasePath);
         if (url.searchParams.get("format") === "json") {

@@ -13,7 +13,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ConnectionScreen } from "./src/screens/ConnectionScreen";
 import { RemoteScreen } from "./src/screens/RemoteScreen";
 import { SessionHubScreen } from "./src/screens/SessionHubScreen";
-import { normalizeRemoteUrl } from "./src/lib/remoteUrl";
+import { checkRemoteConnection } from "./src/lib/remoteUrl";
 import {
   normalizeMobileAuthOpenUrl,
   normalizeNotificationOpenUrl,
@@ -126,20 +126,7 @@ export default function App() {
     setConnecting(true);
     setConnectionError("");
     try {
-      const normalized = normalizeRemoteUrl(value);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8_000);
-      try {
-        const response = await fetch(new URL("/auth/mode", normalized), {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`서버 응답 오류 (${response.status})`);
-        }
-      } finally {
-        clearTimeout(timer);
-      }
+      const normalized = await checkRemoteConnection(value);
       const nextProfiles = upsertRemoteProfile(profiles, createRemoteProfile(normalized, name));
       const profile = nextProfiles.find((item) => item.baseUrl === normalized)!;
       await persistProfiles(nextProfiles, profile.id);

@@ -5,7 +5,7 @@ import { restorePreviousSessions } from './lib/sessionRecovery';
 import { SessionNoteOverlay } from './components/SessionNotes';
 import { openSessionNotes, sessionNotes } from './lib/sessionNotes';
 import { viewedImagePaths } from './lib/viewedImagePath';
-import { LS_SIDEBAR_WIDTH, loadSidebarWidth, sidebarInactiveChildrenVisible } from "./lib/sidebarNavigation";
+import { LS_SIDEBAR_WIDTH, loadSidebarWidth, recordSidebarSessionOpen, sidebarInactiveChildrenVisible } from "./lib/sidebarNavigation";
 import { findSshHost } from "./lib/sshHosts";
 import { loadAgentDefaults } from "./lib/agentDefaults";
 import { newSessionDangerous } from "./lib/newSessionPreferences";
@@ -2240,11 +2240,12 @@ function App() {
     if (!agent) return null;
     setWorkspaceMode("sessions");
     setActiveProjectId(agent.projectId);
-    setAgents(previous => previous.map(candidate => candidate.id === agentId ? { ...candidate, lastOpenedAt: Date.now() } : candidate));
+    const now = Date.now();
+    setAgents(previous => recordSidebarSessionOpen(previous, agentId, now));
     setProjects((prev) =>
       prev.map((project) =>
         project.id === agent.projectId
-          ? { ...project, lastOpenedAt: Date.now() }
+          ? { ...project, lastOpenedAt: now }
           : project
       )
     );

@@ -1606,7 +1606,7 @@ const sessionProviders = {
     if (["starting", "recovering"].includes(asString(syncedAgent?.status).toLowerCase())) return false;
     const entry = ptys.get(agentId);
     if (!entry?.process || !value.trim() || value.length > 8 * 1024) return false;
-    if (options.steering && (entry.aiToolId !== 'codex' || entry.ssh)) return false;
+    if (options.steering && (entry.ssh || !['codex', 'claude'].includes(entry.aiToolId))) return false;
     return submitChatMessage({ id: agentId, message: value, sessionId: options.sessionId, steering: options.steering });
   },
   terminalSnapshot: (id, afterSequence) => terminalSessions.snapshotSince(id, afterSequence),

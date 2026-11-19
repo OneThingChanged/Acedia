@@ -29,6 +29,23 @@ function assertAvoids(path: string, rectangles: BoardRect[]) {
 
 const box = (x: number, y: number, width = 100, height = 100) => ({ x, y, width, height });
 describe('Obstacle-avoiding board connections', () => {
+  it('uses separate tracks when dashed references would share a long path', () => {
+    const obstacle = box(100, 0), a = { x: 0, y: 50 }, b = { x: 300, y: 50 };
+    const port = (point: BoardPoint) => ({ anchor: point, escape: point });
+    const routes = routeBoardEdges([
+      { id: 'first', from: port(a), to: port(b), separate: true },
+      { id: 'second', from: port(b), to: port(a), separate: true },
+    ], [obstacle]);
+    const middleTrack = (id: string) => {
+      const route = routes.get(id)!;
+      assertAvoids(route.path, [obstacle]);
+      return route.points.find((p, i, points) => i > 0 && p.y === points[i - 1].y
+        && Math.min(p.x, points[i - 1].x) <= obstacle.x && Math.max(p.x, points[i - 1].x) >= obstacle.x + obstacle.width)?.y;
+    };
+    const first = middleTrack('first'), second = middleTrack('second');
+    expect(first).toBeDefined(); expect(second).toBeDefined();
+    expect(Math.abs(first! - second!)).toBeGreaterThanOrEqual(8);
+  });
   it.each([false, true])('detours around a card with rounded corners in either direction (reverse=%s)', reverse => {
     const a = { x: 0, y: 60 }, b = { x: 400, y: 60 }, obstacle = box(130, 10, 140, 100);
     const [from, to] = reverse ? [b, a] : [a, b];
@@ -118,22 +135,22 @@ describe('Actual project board connection projection', () => {
     }
   });
   it('reselects sides after dragging and folding without changing hierarchy or stored placement', () => {
-    const data = twoProjects(12), positions = { Master: { x: 0, y: 0 }, Automation: { x: 600, y: 110 } };
+    const data = twoProjects(12), positions = { Master: { x: 0, y: 0 }, Automation: { x: 850, y: 110 } };
     const layout = boardLayout(data, { projectPositions: positions });
     for (const overview of [false, true]) for (const collapsed of [new Set<string>(), new Set(['Master', 'Automation'])]) {
       const connections = workBoardConnections(layout, data.sessions, [], collapsed, {}, overview);
       const obstacles = layout.groups.map(g => ({ ...g, height: overview || collapsed.has(g.id) ? BOARD_CARD.header : g.height }));
       const route = connections.routes.get('project:Master:Automation')!;
       assertAvoids(route.path, obstacles);
-      expect(route.points[0].x).toBe(BOARD_CARD.width);
-      expect(route.points[route.points.length - 1].x).toBe(600);
+      expect(route.points[0].x).toBe(layout.groups[0].width);
+      expect(route.points[route.points.length - 1].x).toBe(850);
     }
     const moved = boardLayout(data, { projectPositions: { ...positions, Automation: { x: 0, y: 900 } } });
     const route = workBoardConnections(moved, data.sessions, [], new Set(), {}, false).routes.get('project:Master:Automation')!;
     expect(route.points[0].y).toBe(layout.groups[0].height);
     expect(route.points[route.points.length - 1].y).toBe(900);
     expect(moved.projectEdges).toEqual(layout.projectEdges);
-    expect(positions.Automation).toEqual({ x: 600, y: 110 });
+    expect(positions.Automation).toEqual({ x: 850, y: 110 });
   });
   it('reroutes hierarchy and read edges around all cards after restoring dragged project positions', () => {
     const data = fixture(), layout = boardLayout(data, { projectPositions: { Master: { x: -420, y: 550 }, Unity: { x: 1120, y: -380 } } });
@@ -181,5 +198,15 @@ describe('Actual project board connection projection', () => {
     const local = layout.nodes.map(n => ({ ...n, x: n.x - g.x, y: n.y - g.y - BOARD_CARD.header }));
     expect(connections.internal.get(g.id)!.size).toBe(35);
     for (const edge of connections.internal.get(g.id)!.values()) assertAvoids(edge.path, local);
+  });
+  it('draws within a wide card for same-project reads and routes across projects outside other session nodes', () => {
+    const data = twoProjects(10);
+    const read = (id: string, from: string, to: string) => ({ id, from, to, active: true, kind: 'message', source: 'inbox', startedAt: 0, endedAt: null });
+    const references = [read('inner', 'source-1', 'source-4'), read('external', 'source-1', 'target')];
+    const layout = boardLayout(data, {});
+    const result = workBoardConnections(layout, data.sessions, references, new Set(), {}, false);
+    expect(result.readGroups.get('inner')).toBe('Master');
+    expect(result.readGroups.get('external')).toBeUndefined();
+    for (const { id } of references) assertAvoids(result.routes.get(`read:${id}`)!.path, layout.nodes);
   });
 });

@@ -2398,12 +2398,13 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
       ui.filePreviewTitle.textContent = result.name || ui.filePreviewTitle.textContent;
       ui.filePreviewPath.textContent = result.path || path;
       const resolvedProjectId = text(result.project?.id) || projectId;
+      const absolutePath = isAbsoluteChatFilePath(path) || path.startsWith("/");
       const context = {
         // Absolute paths are returned project-relative by the server. Resolve
         // their assets from that project root, not the originating session cwd.
-        agentId: resolvedProjectId === projectId && !isAbsoluteChatFilePath(path) ? agentId : "",
+        agentId: resolvedProjectId === projectId && !absolutePath ? agentId : "",
         projectId: resolvedProjectId,
-        path: isAbsoluteChatFilePath(path) ? path : (result.basePath || path),
+        path: absolutePath ? path : (result.basePath || path),
         displayPath: result.path || path,
         kind: result.kind || kind,
       };
@@ -2412,6 +2413,12 @@ async function openChatFilePreview(agentId, projectId, rawPath, kind) {
       if (kind === "text") {
         const pre = document.createElement("pre"); pre.textContent = result.content || "";
         ui.filePreviewMarkdown.replaceChildren(pre);
+        if (result.truncated) {
+          const notice = document.createElement("p");
+          notice.setAttribute("role", "status");
+          notice.textContent = t("파일의 마지막 부분을 표시합니다. 전체 원본은 다운로드할 수 있습니다.");
+          ui.filePreviewMarkdown.prepend(notice);
+        }
       } else ui.filePreviewMarkdown.innerHTML = documentMarkdownToHtml(result.content || "");
       ui.filePreviewMessage.hidden = true;
       ui.filePreviewMarkdown.hidden = false;
@@ -4217,6 +4224,9 @@ async function closeRemoteSession(id) {
     renderComposerQueue(); await fetchState(); showToast(t('세션을 닫았습니다.')); }
   catch (error) { showToast(error.message); }
 }
+function supportsRemoteSteering(agent) {
+  return !!agent && !agent.sshHostId && (agent.aiToolId === 'codex' || agent.aiToolId === 'claude');
+}
 function updateWorking() {
   const agent = selectedAgent(), bar = document.getElementById('chatWorking');
   const background = statusOf(agent) === 'background';
@@ -4226,13 +4236,14 @@ function updateWorking() {
   document.getElementById('chatWorkingTool').textContent = lastChatData?.activeTool || '';
   const mode = deliveryModes.get(agent?.id) || 'queued';
   const toggle = document.getElementById('composerDeliveryButton');
-  toggle.hidden = agent?.aiToolId !== 'codex' || !!agent?.sshHostId;
+  toggle.hidden = !supportsRemoteSteering(agent);
   toggle.textContent = isChatOnly() ? t(mode === 'steer' ? '작업 중 추가' : '완료 후 예약')
     : t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
   toggle.title = t(mode === 'steer' ? '작업 중 추가 입력 · Tab' : '완료 후 예약 · Tab');
   toggle.setAttribute('aria-label', toggle.title);
+  toggle.setAttribute('aria-pressed', String(mode === 'steer'));
 }
-function toggleDelivery() { const agent = selectedAgent(); if (agent?.aiToolId !== 'codex' || agent.sshHostId) return; deliveryModes.set(agent.id, deliveryModes.get(agent.id) === 'steer' ? 'queued' : 'steer'); updateWorking(); }
+function toggleDelivery() { const agent = selectedAgent(); if (!supportsRemoteSteering(agent)) return; deliveryModes.set(agent.id, deliveryModes.get(agent.id) === 'steer' ? 'queued' : 'steer'); updateWorking(); }
 document.getElementById('composerDeliveryButton').addEventListener('click', toggleDelivery);
 document.getElementById('chatWorkingStop').addEventListener('click', () => { void cancelSession(selectedAgent()?.id); });
 document.getElementById('chatWorkDetails').addEventListener('click', () => { const node = [...ui.chatView.querySelectorAll('.chat-work')].at(-1); if (node) { node.open = true; node.scrollIntoView({ block: 'nearest' }); } });
@@ -4277,7 +4288,9 @@ async function sendSelectedMessage() {
       return;
     }
     const cooled = Date.now() - (sessionLastSendAt.get(agent.id) || 0) >= QUEUE_COOLDOWN_MS;
-    const steering = deliveryModes.get(agent.id) === 'steer' && agent.aiToolId === 'codex' && agentBusy(agent) && (!promptFor(agent, lastChatData) || lastChatData?.pendingQuestion?.async);
+    const claudeCommand = agent.aiToolId === 'claude' && /^[!/]/.test(outgoing);
+    const steering = deliveryModes.get(agent.id) === 'steer' && supportsRemoteSteering(agent)
+      && !claudeCommand && agentBusy(agent) && !agentInitializing(agent) && !blockingPrompt(agent, lastChatData);
     if (steering || (agentReady(agent) && !agentBusy(agent) && queue.length === 0 && cooled)) {
       ui.sendButton.disabled = true;
       sessionLastSendAt.set(agent.id, Date.now());
@@ -6351,7 +6364,7 @@ ui.messageInput.addEventListener("input", () => {
 ui.messageInput.addEventListener("blur", () => setTimeout(() => { acItems = []; renderComposerAc(); }, 120));
 ui.messageInput.addEventListener("keydown", (event) => {
   if (event.isComposing || event.keyCode === 229) return;
-  if (event.key === 'Tab' && !event.shiftKey && !acItems.length && selectedAgent()?.aiToolId === 'codex') { event.preventDefault(); toggleDelivery(); return; }
+  if (event.key === 'Tab' && !event.shiftKey && !acItems.length && supportsRemoteSteering(selectedAgent())) { event.preventDefault(); toggleDelivery(); return; }
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey || event.shiftKey)) {
     event.preventDefault();
     const input = ui.messageInput;

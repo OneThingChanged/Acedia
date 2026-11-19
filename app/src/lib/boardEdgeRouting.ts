@@ -2,7 +2,7 @@ export type BoardPoint = { x: number; y: number };
 export type BoardRect = BoardPoint & { width: number; height: number };
 export type BoardPort = { anchor: BoardPoint; escape: BoardPoint };
 export type BoardEdgePorts = { from: BoardPort; to: BoardPort };
-export type BoardEdgeRequest = BoardEdgePorts & { id: string; alternatives?: BoardEdgePorts[] };
+export type BoardEdgeRequest = BoardEdgePorts & { id: string; alternatives?: BoardEdgePorts[]; separate?: boolean };
 export type BoardEdgePath = { points: BoardPoint[]; path: string };
 
 const same = (a: BoardPoint, b: BoardPoint) => a.x === b.x && a.y === b.y;
@@ -62,8 +62,11 @@ export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRe
   const result = new Map<string, BoardEdgePath>(); if (!requests.length) return result;
   const boxes = obstacles.map(r => ({ left: r.x - clearance, right: r.x + r.width + clearance, top: r.y - clearance, bottom: r.y + r.height + clearance }));
   const ends = requests.flatMap(r => [r, ...(r.alternatives || [])].flatMap(pair => [pair.from.escape, pair.to.escape]));
-  const xs = [...new Set([...ends.map(p => p.x), ...boxes.flatMap(r => [r.left, r.right])])].sort((a, b) => a - b);
-  const ys = [...new Set([...ends.map(p => p.y), ...boxes.flatMap(r => [r.top, r.bottom])])].sort((a, b) => a - b);
+  const keepTracks = requests.some(r => r.separate);
+  const spacing = clearance >= 12 ? 8 : 4;
+  const rails = (low: number, high: number) => keepTracks ? [low - spacing, low, high, high + spacing] : [low, high];
+  const xs = [...new Set([...ends.map(p => p.x), ...boxes.flatMap(r => rails(r.left, r.right))])].sort((a, b) => a - b);
+  const ys = [...new Set([...ends.map(p => p.y), ...boxes.flatMap(r => rails(r.top, r.bottom))])].sort((a, b) => a - b);
   const xIndex = new Map(xs.map((x, i) => [x, i])), yIndex = new Map(ys.map((y, i) => [y, i]));
   const point = (index: number) => ({ x: xs[Math.floor(index / ys.length)], y: ys[index % ys.length] });
   const inside = (p: BoardPoint) => boxes.some(r => p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom);
@@ -71,11 +74,27 @@ export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRe
     ? a.x > r.left && a.x < r.right && Math.max(a.y, b.y) > r.top && Math.min(a.y, b.y) < r.bottom
     : a.y > r.top && a.y < r.bottom && Math.max(a.x, b.x) > r.left && Math.min(a.x, b.x) < r.right);
   const segmentCache = new Map<number, boolean>();
-  const search = (from: BoardPoint, to: BoardPoint): BoardPoint[] | null => {
+  const occupied = new Map<number, [number, number][]>();
+  const track = (a: BoardPoint, b: BoardPoint): [number, number, number] => a.x === b.x
+    ? [2 * xIndex.get(a.x)!, Math.min(a.y, b.y), Math.max(a.y, b.y)]
+    : [2 * yIndex.get(a.y)! + 1, Math.min(a.x, b.x), Math.max(a.x, b.x)];
+  const length = (a: BoardPoint, b: BoardPoint, separate: boolean) => {
+    const total = distance(a, b);
+    if (!separate || !total) return total;
+    const [lane, lo, hi] = track(a, b);
+    let overlap = 0;
+    for (const [start, end] of occupied.get(lane) || []) {
+      if (start >= hi) break;
+      if (end > lo) overlap += Math.min(hi, end) - Math.max(lo, start);
+    }
+    return total + overlap * 4;
+  };
+  const search = (from: BoardPoint, to: BoardPoint, separate: boolean): BoardPoint[] | null => {
     if (inside(from) || inside(to)) return null;
     if (same(from, to)) return [from];
     for (const bend of [{ x: to.x, y: from.y }, { x: from.x, y: to.y }]) {
-      if (clear(from, bend) && clear(bend, to)) return simplify([from, bend, to]);
+      if (clear(from, bend) && clear(bend, to)
+        && length(from, bend, separate) + length(bend, to, separate) === distance(from, to)) return simplify([from, bend, to]);
     }
     const start = xIndex.get(from.x)! * ys.length + yIndex.get(from.y)!, goal = xIndex.get(to.x)! * ys.length + yIndex.get(to.y)!;
     const costs = new Map<number, number>([[start * 3, 0]]), previous = new Map<number, number>(), queue = new SearchQueue();
@@ -96,7 +115,7 @@ export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRe
         let passable = segmentCache.get(edge);
         if (passable === undefined) { passable = clear(a, b); segmentCache.set(edge, passable); }
         if (!passable) continue;
-        const cost = current.cost + distance(a, b) + (direction && direction !== nextDirection ? 12 : 0), key = next * 3 + nextDirection;
+        const cost = current.cost + length(a, b, separate) + (direction && direction !== nextDirection ? 12 : 0), key = next * 3 + nextDirection;
         if (cost >= (costs.get(key) ?? Infinity)) continue;
         costs.set(key, cost); previous.set(key, current.key); queue.push({ key, cost, score: cost + distance(b, to) });
       }
@@ -113,13 +132,29 @@ export function routeBoardEdges(requests: BoardEdgeRequest[], obstacles: BoardRe
       // Clear, facing ports usually produce a direct line. Other directions
       // cannot improve it, so do not run more searches during project dragging.
       if (best && lowerBound(pair) >= bestCost) break;
-      const middle = search(pair.from.escape, pair.to.escape); if (!middle) continue;
+      const middle = search(pair.from.escape, pair.to.escape, !!request.separate); if (!middle) continue;
       const points = simplify([pair.from.anchor, ...middle, pair.to.anchor]);
-      const cost = points.reduce((sum, point, index) => sum + (index ? distance(points[index - 1], point) : 0), 0)
+      const cost = points.reduce((sum, point, index) => sum + (index ? length(points[index - 1], point, !!request.separate) : 0), 0)
         + Math.max(0, points.length - 2) * 12;
       if (cost < bestCost) { best = points; bestCost = cost; }
     }
-    if (best) result.set(request.id, { points: best, path: boardEdgePath(best, Math.min(6, clearance / 2)) });
+    if (best) {
+      result.set(request.id, { points: best, path: boardEdgePath(best, Math.min(6, clearance / 2)) });
+      if (keepTracks) for (let i = 1; i < best.length; i++) {
+        const [lane, lo, hi] = track(best[i - 1], best[i]);
+        // A perpendicular lead can use an anchor coordinate omitted from the grid.
+        if (!Number.isFinite(lane)) continue;
+        const spans = occupied.get(lane) || [];
+        const first = spans.findIndex(([, end]) => end >= lo);
+        if (first === -1) spans.push([lo, hi]);
+        else {
+          let last = first, end = hi;
+          while (last < spans.length && spans[last][0] <= end) end = Math.max(end, spans[last++][1]);
+          spans.splice(first, last - first, [Math.min(lo, spans[first][0]), end]);
+        }
+        occupied.set(lane, spans);
+      }
+    }
   }
   return result;
 }

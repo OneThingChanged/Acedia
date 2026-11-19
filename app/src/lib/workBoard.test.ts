@@ -89,7 +89,7 @@ describe('Work board node projection', () => {
     const projects = [{ id: 'p', name: 'Parent', folder: 'G:/root' }, { id: 'q', name: 'Child', folder: 'G:/root/q' }];
     const data = { ...snapshot, projects, sessions: [...Array.from({ length: 24 }, (_, i) => session(`p${i}`, null)), { ...session('q1', null), projectId: 'q' }] };
     const full = boardLayout(data, {}), folded = boardLayout(data, { collapsedProjects: new Set(['p']) }), overview = boardLayout(data, { overview: true });
-    expect(folded.groups[0]).toMatchObject({ height: BOARD_CARD.header, bodyHeight: 0, rows: 24 });
+    expect(folded.groups[0]).toMatchObject({ height: BOARD_CARD.header, bodyHeight: 0, rows: 8, columns: 3, count: 24 });
     const anchors = (layout: typeof full) => layout.groups.map(({ id, x, y }) => ({ id, x, y }));
     expect(anchors(folded)).toEqual(anchors(full)); expect(anchors(overview)).toEqual(anchors(full));
     expect(overview.groups.every(g => g.height === BOARD_CARD.header && g.bodyHeight === 0)).toBe(true);
@@ -112,11 +112,31 @@ describe('Work board node projection', () => {
   it('bounds a 36-session project card without losing any sleeping child, result, or hierarchy', () => {
     const sessions = Array.from({ length: 36 }, (_, i) => ({ ...session(`s${i}`, i ? 's0' : null, i ? 'idle' : 'working'), runtime: i ? 'sleeping' : 'running' }));
     const layout = boardLayout({ ...snapshot, sessions }, {}), group = layout.groups[0];
-    expect(group.width).toBe(320); expect(group.height).toBeLessThan(700);
-    expect(group.rows).toBe(36); expect(group.bodyHeight).toBe(BOARD_CARD.visibleRows * BOARD_CARD.row + BOARD_CARD.padding * 2);
+    expect(group).toMatchObject({ columns: 3, rows: 12, count: 36 });
+    expect(group.width).toBeGreaterThan(BOARD_CARD.width * 3); expect(group.height).toBeLessThan(750);
+    expect(group.bodyHeight).toBe(BOARD_CARD.visibleRows * group.rowStep + BOARD_CARD.padding * 2);
     expect(layout.nodes).toHaveLength(36); expect(layout.edges).toHaveLength(35);
     expect(layout.nodes[layout.nodes.length - 1].y).toBeGreaterThan(group.y + group.height);
     expect(boardLayout({ ...snapshot, sessions: sessions.map(s => ({ ...s, state: 'failed' })) }, {}).groups).toEqual(layout.groups);
+  });
+  it('wraps ten sessions into five rows, preserving tree order and unrelated project placement when folded', () => {
+    const projects = [...snapshot.projects, { id: 'q', name: 'Other', folder: 'G:/root/q' }];
+    const sessions = [...Array.from({ length: 10 }, (_, i) => session(`s${i}`, i ? 's0' : null)), { ...session('q1', null), projectId: 'q' }];
+    const data = { ...snapshot, projects, sessions };
+    const full = boardLayout(data, {}), folded = boardLayout(data, { collapsed: new Set(['s0']) });
+    expect(full.groups[0]).toMatchObject({ columns: 2, rows: 5, count: 10 });
+    expect(full.nodes[1].x).toBeGreaterThan(full.nodes[0].x);
+    expect(full.nodes[1].y).toBe(full.nodes[0].y);
+    expect(full.nodes[2].y).toBeGreaterThan(full.nodes[0].y);
+    expect(full.edges).toEqual(sessions.slice(1, 10).map(s => ({ from: 's0', to: s.id })));
+    expect(folded.groups[1]).toEqual(full.groups[1]);
+    expect(folded.nodes.map(n => n.session.id)).toEqual(['s0', 'q1']);
+    const positions = { p: { x: 0, y: 0 }, q: { x: 380, y: 0 } };
+    const laidOut = boardLayout(data, { projectPositions: positions });
+    expect(laidOut.groups[0]).toMatchObject(positions.p);
+    const [a, b] = laidOut.groups;
+    expect(b.x >= a.width || b.x + b.width <= 0 || b.y >= a.height || b.y + b.height <= 0).toBe(true);
+    expect(positions.q).toEqual({ x: 380, y: 0 });
   });
   it('uses explicit project parents without connecting unrelated projects or separate SSH hosts', () => {
     const projects = [{ id: 'p', name: 'p', folder: 'G:/Root' },

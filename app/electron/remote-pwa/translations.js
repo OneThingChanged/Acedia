@@ -432,6 +432,7 @@ export const messages = [
   ["올바른 미리보기 주소를 받지 못했습니다.", "Could not obtain a valid preview link.", "无法获取有效的预览链接。", "無法取得有效的預覽連結。", "有効なプレビューリンクを取得できませんでした。", "No se pudo obtener un enlace de vista previa válido."],
   ["파일을 불러오는 중…","Loading file…"],
   ["파일을 열지 못했습니다: {0}","Could not open file: {0}"],
+  ["파일의 마지막 부분을 표시합니다. 전체 원본은 다운로드할 수 있습니다.", "Showing the end of the file. Download the full original to see all entries."],
   ["문서","Documents","文档","文件","ドキュメント","Documentos"],
   ["문서 작업", "Document actions"],
   ["다운로드", "Download", "下载", "下載", "ダウンロード", "Descargar"],

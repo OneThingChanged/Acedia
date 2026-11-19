@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { invoke } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardProjectHeight, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
+import { BOARD_CARD, BOARD_LAYOUT_VERSION, boardCounts, boardItems, boardLayout, boardDisplayState, boardPriorityOrder, boardWorkingOrder, boardTransferLabel, boardVisibleSessionIds, type BoardItem, type BoardSession, type BoardSnapshot, type BoardState } from '../lib/workBoard';
 import { workBoardConnections } from '../lib/workBoardConnections';
 import { boardProjectPositions, boardSessionOrder, canReorderBoardSession, placeBoardProject, reorderBoardSession, type BoardProjectPositions } from '../lib/boardPlacement';
 import { ProviderLogo } from './ProviderLogo';
@@ -148,11 +148,10 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const overview = view.zoom < .62;
   const compactKey = activeOnly || !showSleeping || !showStopped ? JSON.stringify([activeOnly, showSleeping, showStopped]) : '';
   const placementPositions = useMemo(() => compactKey ? compactPlacement.key === compactKey ? compactPlacement.positions : {} : projectPositions, [compactKey, compactPlacement, projectPositions]);
-  const displayedPositions = useMemo(() => projectPreview ? { ...placementPositions, [projectPreview.id]: { x: projectPreview.x, y: projectPreview.y } } : placementPositions, [placementPositions, projectPreview]);
   const effectiveOrder = useMemo(() => boardWorkingOrder(data?.sessions || [], sessionOrder), [data?.sessions, sessionOrder]);
   const delegationEdges = useMemo(() => new Set(data?.delegations?.map(d => `${d.from}:${d.to}`)), [data?.delegations]);
-  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: displayedPositions, sessionOrder: effectiveOrder, showSleeping, showStopped, activeOnly, revealId: revealedSession }) : null,
-    [data, viewMode, projectId, collapsed, collapsedProjects, overview, displayedPositions, effectiveOrder, showSleeping, showStopped, activeOnly, revealedSession]);
+  const layout = useMemo(() => data && viewMode === 'board' ? boardLayout(data, { projectId, collapsed, collapsedProjects, overview, projectPositions: placementPositions, projectPreview, sessionOrder: effectiveOrder, showSleeping, showStopped, activeOnly, revealId: revealedSession }) : null,
+    [data, viewMode, projectId, collapsed, collapsedProjects, overview, placementPositions, projectPreview, effectiveOrder, showSleeping, showStopped, activeOnly, revealedSession]);
   const nodes = useMemo(() => layout?.nodes.filter(n => !collapsedProjects.has(n.session.projectId)) || [], [layout, collapsedProjects]);
   const nodeById = useMemo(() => new Map(nodes.map(n => [n.session.id, n])), [nodes]);
   const groupById = useMemo(() => new Map(layout?.groups.map(g => [g.id, g])), [layout]);
@@ -179,6 +178,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const displayedReferences = useMemo(() => data?.references?.filter(r => visibleSessionIds.has(r.from) && visibleSessionIds.has(r.to)) || [], [data?.references, visibleSessionIds]);
   const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
     [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, view.zoom < .62]);
+  const referenceClips = new Map([...new Set(connections.readGroups.values())].map((id, index) => [id, `wb-read-clip-${index}`]));
   useEffect(() => {
     if (viewMode !== 'board' || !resetView.current || !layout?.groups.length) return;
     const rect = viewport.current?.getBoundingClientRect(); if (!rect) return;
@@ -210,7 +210,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     if (node && rect) {
       const group = groupById.get(node.session.projectId)!, body = projectBodies.current.get(group.id);
       const top = node.y - group.y - BOARD_CARD.header;
-      const scroll = Math.max(0, Math.min(group.rows * BOARD_CARD.row + BOARD_CARD.padding * 2 - group.bodyHeight, top - (group.bodyHeight - node.height) / 2));
+      const scroll = Math.max(0, Math.min(group.contentHeight - group.bodyHeight, top - (group.bodyHeight - node.height) / 2));
       if (body) body.scrollTop = scroll;
       setGroupScroll(current => ({ ...current, [group.id]: scroll }));
       setView(v => { const zoom = Math.max(.65, v.zoom); return { zoom, x: rect.width / 2 - (node.x + node.width / 2) * zoom, y: rect.height / 2 - (node.y - scroll + node.height / 2) * zoom }; }); setPendingFocus(null);
@@ -429,7 +429,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') suppressProjectClick.current = null; }}
                 onClick={e => { if (suppressProjectClick.current === g.id) { suppressProjectClick.current = null; return; }
                   foldOnClick(`project:${g.id}`, e.detail, () => setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; })); }}
-                onDoubleClick={() => zoomTo(`project:${g.id}`, { ...g, height: folded ? BOARD_CARD.header : boardProjectHeight(g.rows) }, 1.25)}>
+                onDoubleClick={() => zoomTo(`project:${g.id}`, { ...g, height: folded ? BOARD_CARD.header : g.expandedHeight }, 1.25)}>
                 <span className="wb-project-name"><BoardIcon name="folder"/><strong title={g.name}>{g.name}</strong><BoardIcon name="chevron"/></span>
                 <span className="wb-project-counts"><span>{members.length} {text('세션', 'sessions')}</span>{c.working > 0 && <span data-state="working">{text('작업 중', 'Working')} {c.working}</span>}{c.background > 0 && <span data-state="background">{text('백그라운드', 'Background')} {c.background}</span>}{c.questions > 0 && <span data-state="waiting">{text('질문', 'Questions')} {c.questions}</span>}{c.errors > 0 && <span data-state="failed">{text('오류', 'Errors')} {c.errors}</span>}{c.results > 0 && <span data-state="review">{text('결과', 'Results')} {c.results}</span>}</span>
               </button>
@@ -437,8 +437,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 style={{ top: BOARD_CARD.header, height: g.bodyHeight }} onScroll={e => { const top = e.currentTarget.scrollTop; setGroupScroll(current => ({ ...current, [g.id]: top })); }}
                 onWheel={e => { if (!e.ctrlKey && g.rows > BOARD_CARD.visibleRows) e.stopPropagation(); }}
                 aria-label={`${g.name} · ${text('세션 목록', 'Sessions')}`} tabIndex={g.rows > BOARD_CARD.visibleRows ? 0 : undefined}>
-                <div className="wb-project-content" style={{ height: g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2 }}>
-                  <svg className="wb-edges wb-session-edges" width={g.width} height={g.rows * BOARD_CARD.row + BOARD_CARD.padding * 2} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} data-delegated={delegationEdges.has(id) || undefined} d={route.path}/>)}</svg>
+                <div className="wb-project-content" style={{ height: g.contentHeight }}>
+                  <svg className="wb-edges wb-session-edges" width={g.width} height={g.contentHeight} aria-hidden="true">{[...(connections.internal.get(g.id) || [])].map(([id, route]) => <path key={id} data-delegated={delegationEdges.has(id) || undefined} d={route.path}/>)}</svg>
                   {rows.map(n => {
                     const session = n.session, results = itemsBySession.get(session.id)?.filter(i => i.kind === 'result').length || 0, displayState = boardDisplayState(session, results);
                     const sessionFolded = collapsed.has(session.id), key = `session:${session.id}`;
@@ -478,7 +478,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                     </div>;
                   })}
                 </div>
-              </div>{g.rows > BOARD_CARD.visibleRows && <div className="wb-project-scroll-hint">{text('카드 안에서 스크롤하여 전체 세션 보기', 'Scroll inside this card for all sessions')} · {g.rows}</div>}</>}
+              </div>{g.rows > BOARD_CARD.visibleRows && <div className="wb-project-scroll-hint">{text('카드 안에서 스크롤하여 전체 세션 보기', 'Scroll inside this card for all sessions')} · {g.count}</div>}</>}
             </section>;
           })}
           <svg className="wb-edges wb-project-edges" width={layout.width} height={layout.height} aria-hidden="true">{layout.projectEdges.map(edge => {
@@ -489,12 +489,16 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             return route ? <path key={`session:${edge.from}:${edge.to}`} data-delegated={delegationEdges.has(`${edge.from}:${edge.to}`) || undefined} data-edge-kind="session" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
           })}</svg>
           <svg className="wb-reference-edges" width={layout.width} height={layout.height} aria-label={text('세션 간 관측된 참조', 'Observed session references')}>
-            <defs><marker id="wb-reference-arrow" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10Z"/></marker></defs>
+            <defs><marker id="wb-reference-arrow" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8Z"/></marker>
+              {layout.groups.map(g => referenceClips.has(g.id) && <clipPath id={referenceClips.get(g.id)} key={g.id}><rect x={g.x} y={g.y + BOARD_CARD.header} width={g.width} height={g.bodyHeight}/></clipPath>)}
+            </defs>
             {data.references?.map(r => {
               const route = connections.routes.get(`read:${r.id}`); if (!route) return null;
               const description = `${sessionsById.get(r.from)?.name} → ${sessionsById.get(r.to)?.name} · ${text('수신함 기록 읽기', 'Message read')}`;
               const d = route.path;
-              return <g key={r.id} tabIndex={0} role="button" aria-label={description} data-active={r.active} className={selected && ![r.from, r.to].includes(selected.sessionId) ? 'dimmed' : ''}
+              const clip = referenceClips.get(connections.readGroups.get(r.id) || '');
+              return <g key={r.id} tabIndex={0} role="button" aria-label={description} data-active={r.active} data-selected={selectedReference === r.id} clipPath={clip ? `url(#${clip})` : undefined}
+                className={(selectedReference && selectedReference !== r.id) || (selected && ![r.from, r.to].includes(selected.sessionId)) ? 'dimmed' : ''}
                 onClick={e => { inboxScroll.current = inspector.current?.scrollTop || 0; returnFocus.current = e.currentTarget; setSelected(null); setSelectedReference(r.id); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inboxScroll.current = inspector.current?.scrollTop || 0; returnFocus.current = e.currentTarget; setSelected(null); setSelectedReference(r.id); } }}><title>{description}</title><path className="wb-ref-hit" d={d}/><path className="wb-ref-line" d={d} markerEnd="url(#wb-reference-arrow)"/></g>;
             })}
           </svg>

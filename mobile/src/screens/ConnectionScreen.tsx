@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { APP_VERSION } from "../lib/appVersion";
 import type { RemoteProfile } from "../lib/profiles";
+import { remoteAddressLabel } from "../lib/remoteUrl";
 
 type Props = {
   profiles: RemoteProfile[];
@@ -81,7 +82,7 @@ export function ConnectionScreen({
                     <View style={styles.profileDot} />
                     <View style={styles.profileCopy}>
                       <Text numberOfLines={1} style={styles.profileName}>{profile.name}</Text>
-                      <Text numberOfLines={1} style={styles.profileUrl}>{new URL(profile.baseUrl).host}</Text>
+                      <Text numberOfLines={1} style={styles.profileUrl}>{remoteAddressLabel(profile.baseUrl)}</Text>
                     </View>
                     {profile.id === selectedProfileId && <Text style={styles.recentBadge}>최근</Text>}
                     <Text style={styles.profileOpen}>열기</Text>
@@ -126,7 +127,7 @@ export function ConnectionScreen({
               autoCorrect={false}
               keyboardType="url"
               returnKeyType="go"
-              placeholder="https://agent.example.com"
+              placeholder="https://agent.example.com/acedia"
               placeholderTextColor="#557083"
               style={styles.input}
               onSubmitEditing={() => {

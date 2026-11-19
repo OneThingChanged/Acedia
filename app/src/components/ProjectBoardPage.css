@@ -78,7 +78,8 @@
 .wb-state-help { position: relative; font-size: 11px; color: var(--wb-muted); }
 .wb-state-help summary { cursor: pointer; }
 .wb-state-help p { position: absolute; right: 0; top: 15px; z-index: 20; width: 300px; padding: 12px; background: #172331; border: 1px solid #506077; border-radius: 8px; }
-.wb-transfer-badge { position: absolute; bottom: 3px; right: 5px; max-width: 65%; font-size: 9px; color: #aebcce; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #1c2735; border-radius: 3px; padding: 0 3px; }
+.wb-transfer-badge { position: absolute; bottom: 5px; right: 34px; max-width: calc(100% - 145px); font-size: 9px; color: #aebcce; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #1c2735; border-radius: 3px; padding: 0 3px; }
+.wb-node:has(.wb-collapse) .wb-transfer-badge { right: 71px; max-width: calc(100% - 182px); }
 .wb-transfer-badge[data-status=queued], .wb-transfers [data-status=queued] { color: #f3c278; }
 .wb-transfer-badge[data-status=notification-error], .wb-transfer-badge[data-status=failed], .wb-transfer-badge[data-status=unconfirmed], .wb-transfers [data-status=notification-error], .wb-transfers [data-status=failed], .wb-transfers [data-status=unconfirmed] { color: #f3949d; }
 .wb-transfers { margin-top: 16px; border-top: 1px solid #364b66; font-size: 12px; overflow-wrap: anywhere; }
@@ -131,10 +132,12 @@
 .wb-reference-edges g { pointer-events: stroke; cursor: pointer; opacity: .45; }
 .wb-reference-edges g[data-active=true] { opacity: 1; }
 .wb-reference-edges g.dimmed { opacity: .16; }
-.wb-ref-line { fill: none; stroke: #b197de; stroke-width: 2.4; stroke-dasharray: 5 7; pointer-events: none; animation: wb-flow 4s linear infinite; }
+.wb-ref-line { fill: none; stroke: #b197de; stroke-width: 2.2; stroke-dasharray: 5 7; pointer-events: none; }
 .wb-reference-edges marker { fill: var(--wb-purple); }
-.wb-ref-hit { fill: none; stroke: transparent; stroke-width: 16; }
+.wb-ref-hit { fill: none; stroke: transparent; stroke-width: 12; }
 .wb-reference-edges g[data-active=true] .wb-ref-line { stroke: var(--wb-purple); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 1 13; animation: wb-flow 1.8s linear infinite; filter: drop-shadow(0 0 3px #b99bff55); }
+.wb-reference-edges g:hover, .wb-reference-edges g:focus-visible, .wb-reference-edges g[data-selected=true] { opacity: 1; }
+.wb-reference-edges g[data-selected=true] .wb-ref-line { stroke: #decaff; stroke-width: 3.5; }
 .wb-controls { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 15px; border-top: 1px solid var(--wb-line); background: #121b28; flex-wrap: wrap; }
 .wb-zoom { display: flex; align-items: center; gap: 3px; font-size: 11px; }
 .wb-zoom button { padding: 3px 8px; font-size: 11px; border-radius: 5px; background: #1a2636; border-color: #374861; color: #bac9dc; }

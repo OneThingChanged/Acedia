@@ -9,6 +9,16 @@ const appScript = fs.readFileSync(fileURLToPath(new URL("./app.js", import.meta.
 describe("Remote chat file links", () => {
   const agent = { id: "agent-1", projectId: "project-1" };
 
+  it("recognizes JSONL log paths as text previews", () => {
+    const path = "G:/AI/.codex/sessions/rollout-example.JSONL";
+    for (const message of [path, `\`${path}\``, `[작업 로그](${path})`]) {
+      const html = links.inlineMd(message, agent);
+      expect(html).toContain(`data-chat-file-path="${path}"`);
+      expect(html).toContain('data-chat-file-kind="text"');
+    }
+    expect(links.inlineMd(`${path}.exe`, agent)).not.toContain("data-chat-file-path");
+  });
+
   it('recognizes binary document links as downloads, including recorded filename-only results', () => {
     for (const extension of ['PPTX', 'ppt', 'pps', 'ppsx', 'potx', 'doc', 'docx', 'dotx', 'xls', 'xlsx', 'xltx', 'pdf', 'odt', 'ods', 'odp', 'rtf', 'hwp', 'hwpx']) {
       const path = `D:/AI/AXWiki/outputs/weekly/report.${extension}`;

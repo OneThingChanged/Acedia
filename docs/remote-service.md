@@ -249,6 +249,20 @@ gain these changes without a new APK build. Browser/PWA access needs the updated
 desktop host. These changes are included in 1.8.2.20; publication and artifact
 verification are tracked in [the release record](release-1-8-2-20.md).
 
+The Android new-PC check also needs the service path. In APK 1.8.1.39, URL
+normalization discarded the path. The later Android source preserved the URL
+but still checked the root `/auth/mode` before saving a profile, which returned
+404 on path-only ingress. The corrected check requests `<base>/auth/mode` and
+saves the same checked base URL. Saved PC labels show the hostname and service
+path so that old root profiles can be distinguished from mounted ones. The
+check is covered for a root path, `/acedia`, and nested paths. This change
+requires a new APK to reach devices.
+
+The native foreground monitor and session list also receive the full profile
+URL, and the external HTML preview bridge recognizes token routes inside that
+profile's service path. This keeps each native request on the selected service
+when several services share a hostname.
+
 Validation: 264 app test files / 2,124 tests passed, including isolated mounted
 HTTP authentication, OAuth, SSE, asset, preview and tunnel-link checks. The
 production desktop build and mobile typecheck passed; all 26 mobile tests passed.
