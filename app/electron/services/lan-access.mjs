@@ -4,6 +4,8 @@ import { isIP } from "node:net";
 
 const COOKIE = "acedia_lan";
 const SESSION_MS = 7 * 24 * 60 * 60_000;
+export const isLanAccessKey = value => typeof value === "string" && value.length === 43 && !/[^A-Za-z0-9_-]/.test(value);
+export const createLanAccessKey = () => crypto.randomBytes(32).toString("base64url");
 const address = value => String(value || "").replace(/^::ffff:/i, "");
 const ipv4 = value => value.split(".").reduce((result, part) => (result << 8) | Number(part), 0) >>> 0;
 
@@ -71,23 +73,25 @@ export class LanAccess {
   constructor({ interfaces = () => lanInterfaces(), now = Date.now } = {}) {
     this.interfaces = interfaces;
     this.now = now;
-    this.code = null;
+    this.accessKey = null;
     this.sessions = new Map();
     this.attempts = new Map();
   }
 
-  reset(enabled, savedCode = null) {
+  reset(accessKey = null) {
     for (const entry of this.sessions.values()) for (const socket of entry.sockets) socket.destroy();
     this.sessions.clear();
     this.attempts.clear();
-    this.code = enabled ? savedCode || String(crypto.randomInt(100_000_000)).padStart(8, "0") : null;
+    this.accessKey = accessKey;
   }
 
   status(port, enabled, running) {
     return {
       enabled, running,
-      addresses: running ? this.interfaces().map(entry => ({ name: entry.name, url: `http://${entry.address}:${port}` })) : [],
-      code: running ? this.code : null,
+      addresses: running ? this.interfaces().map(entry => {
+        const url = `http://${entry.address}:${port}`;
+        return { name: entry.name, url, accessUrl: `${url}/lan-login#access=${this.accessKey}` };
+      }) : [],
       clients: this.clients(),
     };
   }
@@ -162,15 +166,15 @@ export class LanAccess {
     if (keys.some((key, i) => (this.attempts.get(key)?.count || 0) >= (i ? 30 : 5))) {
       return { status: 429, error: "Too many attempts. Try again in a minute." };
     }
-    const valid = typeof value === "string" && /^\d{8}$/.test(value) && this.code &&
-      crypto.timingSafeEqual(Buffer.from(value), Buffer.from(this.code));
+    const valid = isLanAccessKey(value) && this.accessKey &&
+      crypto.timingSafeEqual(Buffer.from(value), Buffer.from(this.accessKey));
     if (!valid) {
       for (const key of keys) {
         const bucket = this.attempts.get(key) || { count: 0, until: now + 60_000 };
         bucket.count++;
         this.attempts.set(key, bucket);
       }
-      return { status: 401, error: "Check the connection code in Acedia on the host PC." };
+      return { status: 401, error: "Copy a new access link from Acedia on the host PC." };
     }
     for (const [key, session] of this.sessions) if (session.expires <= now) this.revoke(key);
     if (this.sessions.size >= 128) this.revoke(this.sessions.keys().next().value);

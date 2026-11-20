@@ -1,7 +1,7 @@
 import { RemoteHosting } from './remote-hosting.mjs';
 import { assertTunnelConfigured, validGitHubOwner } from "../shared/tunnel-config.mjs";
 import { parseRemoteAddress, remotePath, remoteRequestPath } from '../shared/remote-address.mjs';
-import { LanAccess, dashboardSameOrigin, normalizeLanNetworks } from "./lan-access.mjs";
+import { LanAccess, createLanAccessKey, dashboardSameOrigin, isLanAccessKey, normalizeLanNetworks } from "./lan-access.mjs";
 import { RemoteSubmissions } from "./remote-submissions.mjs";
 import { MAX_REMOTE_ZIP_BYTES, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentIsText, remoteAttachmentSizeError } from "../shared/remote-attachments.mjs";
 import { sendJson } from "./remote-http.mjs";
@@ -797,11 +797,12 @@ export class LocalDashboardService {
     this.baseDir = baseDir;
     this.hosting = new RemoteHosting(baseDir);
     this.configPath = path.join(baseDir, configName);
-    this.lanCodePath = `${this.configPath}.lan-code`;
+    this.lanKeyPath = `${this.configPath}.lan-key`;
+    this.savedLanKey = null;
     try {
-      const saved = fs.readFileSync(this.lanCodePath, "utf8").trim();
-      this.savedLanCode = /^\d{8}$/.test(saved) ? saved : null;
-    } catch { this.savedLanCode = null; }
+      const saved = fs.readFileSync(this.lanKeyPath, "utf8").trim();
+      if (isLanAccessKey(saved)) this.savedLanKey = saved;
+    } catch {}
     this.submissions = new RemoteSubmissions(path.join(baseDir, `${configName}.submissions.json`));
     this.stateProvider = stateProvider;
     // When provided, the dashboard serves the full Remote PWA (chat/terminal/
@@ -903,14 +904,27 @@ export class LocalDashboardService {
     return this.#queueLifecycle(change);
   }
 
-  async resetLanCode() {
-    if (!this.allowLan || !this.lanActive) throw new Error("Start LAN access first.");
-    let next;
-    do { next = String(crypto.randomInt(100_000_000)).padStart(8, "0"); } while (next === this.savedLanCode);
-    await fsPromises.writeFile(this.lanCodePath, next, { encoding: "utf8", mode: 0o600 });
-    this.savedLanCode = next;
-    this.lanAccess.reset(true, next);
-    return this.status();
+  async #saveNewLanKey() {
+    const key = createLanAccessKey();
+    await fsPromises.mkdir(this.baseDir, { recursive: true });
+    const temporary = `${this.lanKeyPath}.${crypto.randomUUID()}.tmp`;
+    try {
+      await fsPromises.writeFile(temporary, key, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await fsPromises.rename(temporary, this.lanKeyPath);
+    } catch (error) {
+      await fsPromises.unlink(temporary).catch(() => {});
+      throw error;
+    }
+    this.savedLanKey = key;
+  }
+
+  resetLanLink() {
+    return this.#queueLifecycle(async () => {
+      if (!this.allowLan || !this.lanActive) throw new Error("Start LAN access first.");
+      await this.#saveNewLanKey();
+      this.lanAccess.reset(this.savedLanKey);
+      return this.status();
+    });
   }
 
   setLanNetworks(values) {
@@ -950,7 +964,7 @@ export class LocalDashboardService {
       let body;
       try { body = await readJson(request, 1024); }
       catch { sendJson(response, 400, { error: "invalid request" }); return true; }
-      const result = this.lanAccess.pair(request, body?.code);
+      const result = this.lanAccess.pair(request, body?.accessKey);
       sendJson(response, result.status, result.error ? { error: result.error } : { ok: true }, {
         ...(result.cookie ? { "set-cookie": result.cookie } : {}),
         ...(result.status === 429 ? { "retry-after": "60" } : {}),
@@ -963,7 +977,7 @@ export class LocalDashboardService {
     if (this.lanAccess.authenticated(request)) return false;
     if (request.method === "GET" && url.pathname === "/") {
       response.writeHead(302, { location: `/lan-login${url.search}`, "cache-control": "no-store" }).end();
-    } else sendJson(response, 401, { error: "LAN connection code required" });
+    } else sendJson(response, 401, { error: "LAN access link required" });
     return true;
   }
 
@@ -974,14 +988,9 @@ export class LocalDashboardService {
   async #start(desiredPort, { loopbackOnly = false } = {}) {
     if (this.server?.listening) return this.status();
     const lanActive = !loopbackOnly && this.allowLan && this.config.lanEnabled === true;
-    if (lanActive && !this.savedLanCode) {
-      const next = String(crypto.randomInt(100_000_000)).padStart(8, "0");
-      await fsPromises.mkdir(this.baseDir, { recursive: true });
-      await fsPromises.writeFile(this.lanCodePath, next, { encoding: "utf8", mode: 0o600 });
-      this.savedLanCode = next;
-    }
+    if (lanActive && !this.savedLanKey) await this.#saveNewLanKey();
     this.lanActive = lanActive;
-    this.lanAccess.reset(lanActive, this.savedLanCode);
+    this.lanAccess.reset(lanActive ? this.savedLanKey : null);
     const p = this.providers;
     this.server = http.createServer(async (request, response) => {
       try {
@@ -1187,7 +1196,7 @@ export class LocalDashboardService {
     this.server = null;
     this.port = null;
     this.lanActive = false;
-    this.lanAccess.reset(false);
+    this.lanAccess.reset();
     this.htmlPreviews.clear();
     this.hosting.tickets.clear();
     if (server) {

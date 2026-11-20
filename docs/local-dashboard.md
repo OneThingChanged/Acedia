@@ -1,7 +1,7 @@
 ---
 type: Operational Model
 title: Local Dashboard
-description: "Local monitoring and control, with optional code-paired access from the same LAN."
+description: "Local monitoring and control, with optional access links for the same LAN."
 tags:
   - dashboard
   - monitoring
@@ -23,7 +23,7 @@ sources:
     title: "Acknowledged session creation broker"
   - id: lan-access
     resource: ../app/electron/services/lan-access.mjs
-    title: "LAN interface validation and connection codes"
+    title: "LAN interface validation and access links"
 ---
 
 # Local Dashboard
@@ -31,7 +31,7 @@ sources:
 The production Dashboard is `LocalDashboardService` in the Electron process.
 It binds to loopback by default and projects desktop-owned state into the shared
 web client. Standard and Store also offer explicit LAN access with a connection
-code; Company remains loopback-only.[^web-services][^lan-access]
+link. Company remains loopback-only.[^web-services][^lan-access]
 
 ## 세션 MCP에서 로컬 Dashboard 제어
 
@@ -44,17 +44,17 @@ code; Company remains loopback-only.[^web-services][^lan-access]
 
 ## 같은 공유기의 다른 PC에서 접속
 
-[1.8.1.46](release-1-8-1-46.md)부터 **설정 → 대시보드 → LAN 접속 허용**을 켜면
-대시보드 서버를 시작하고 연결된 네트워크별 접속 주소와 **8자리 연결 코드**를 표시한다.
-다른 PC의 브라우저에서 **주소 복사**로 복사한 URL을 열고 코드를 입력한다.
+**설정 → 대시보드 → LAN 접속 허용**을 켜면 대시보드 서버를 시작하고
+네트워크별 주소와 **접속 링크 복사** 버튼을 표시한다. 다른 기기의 브라우저에서
+복사한 링크를 열면 번호 입력 없이 연결된다. 이미 연결된 브라우저에서는 일반 주소도 열린다.
 GitHub OAuth나 Cloudflare 터널 설정은 필요 없다. 호스트의 Acedia는 실행 중이어야 한다.
 
 * 주소는 실제 수신 포트를 사용한다. 기본 포트는 4421이며 사용 중이면 빈 포트를 선택한다.
 * 주소에 `?agent=…` 또는 `?screen=…`가 있으면 로그인 후 해당 화면으로 돌아간다.
 * Chat·터미널·세션 조작·문서·사용량은 기존 Dashboard와 같은 기능을 사용한다.
 * 설정은 저장된다. 앱 실행 시 서버를 켜려면 기존 **Start dashboard when Acedia starts**도 켠다.
-* **코드 갱신 및 연결 해제**는 새 코드를 만들고 기존 로그인과 실시간 스트림을 해제한다.
-  Acedia나 대시보드 서버를 재시작한 경우에도 같은 코드로 다시 연결할 수 있다. 쿠키의 최대 유효 기간은 7일이다.
+* **링크 갱신 및 연결 해제**는 이전 링크를 무효화하고 기존 로그인과 실시간 스트림을 해제한다.
+  서버를 같은 주소로 재시작하면 복사해 둔 링크로 다시 연결할 수 있다. 쿠키의 최대 유효 기간은 7일이다.
 * LAN 접속을 끄면 수신 주소를 loopback으로 되돌리고 연결을 해제한다.
   설정 변경은 대시보드 서버에 적용하며 실행 중인 CLI 세션을 종료하지 않는다.
 
@@ -66,30 +66,30 @@ GitHub OAuth나 Cloudflare 터널 설정은 필요 없다. 호스트의 Acedia�
 LAN 설정의 **추가 허용 네트워크 (IPv4 CIDR)**에 `172.28.37.0/24`처럼 사내 대역을
 한 줄에 하나씩 입력하고 **허용 네트워크 저장**을 누르면 다른 사내 서브넷에서도
 접속할 수 있다. 사설 IPv4 대역만 최대 32개까지 허용하며 비우면 같은 서브넷만 받는다.
-모든 추가 대역에서도 8자리 연결 코드 인증을 거친다. 추가·저장 시 코드와 기존 접속을
-유지하며, 목록에서 제외된 대역의 인증과 연결만 해제한다. 연결 코드는 별도 로컬 파일에
-저장하여 재실행해도 유지하고 **코드 갱신 및 연결 해제**를 눌렀을 때만 변경한다.
-대시보드 설정의 **대시보드 접속 IP**에는 코드로 인증한 직접 접속 IP와 마지막 요청
+추가 대역에서도 접속 링크로 인증한다. 추가·저장 시 링크와 기존 접속을
+유지하며, 목록에서 제외된 대역의 인증과 연결만 해제한다.
+대시보드 설정의 **대시보드 접속 IP**에는 인증한 직접 접속 IP와 마지막 요청
 시각을 표시한다. 소켓이 열린 접속과 마지막 요청 후 1분 이내의 최근 활동을 구분하며,
 미인증 시도나 Cloudflare Remote 접속자는 이 LAN 목록에 포함하지 않는다.
 네트워크 라우팅·방화벽은 해당 서버 주소의 직접 연결을
 허용해야 하며 Windows portproxy로 loopback에 전달되는 요청은 계속 차단한다.
 
 LAN 접속은 사설 IPv4 인터페이스의 같은 서브넷 또는 명시적으로 추가한 대역의 직접 연결만 받는다. 전달된 Host/IP
-헤더나 다른 호스트 이름으로 로컬 소유자 권한을 얻을 수 없다. 코드 확인 전에는 세션,
-파일, 실시간 출력, 계정 API에 접근할 수 없다. 코드는 데스크톱 IPC에서만 표시하며
-웹 상태·URL·일반 설정 파일에는 포함하지 않는다. 재사용 코드는 호스트의 별도 `.lan-code`
-파일에 보관한다. 로그인 실패는 IP별·전체 요청 수로 제한하고
+헤더나 다른 호스트 이름으로 로컬 소유자 권한을 얻을 수 없다. 링크 인증 전에는 세션,
+파일, 실시간 출력, 계정 API에 접근할 수 없다. 링크의 접속 키는 데스크톱 설정에서 복사할
+때 URL의 프래그먼트에만 포함된다. 브라우저는 이를 주소 표시줄에서 지우고 인증 API에
+전송한다. 접속 키는 호스트의 별도 `.lan-key` 파일에 보관하며 일반 설정이나 웹 상태에는
+포함하지 않는다. 접속 링크는 신뢰하는 기기에만 공유한다. 로그인 실패는 IP별·전체 요청 수로 제한하고
 변경 요청은 동일 출처 검사를 거친다.[^lan-access]
 
 LAN HTTP에서는 문서 경로·터미널 복사가 브라우저 선택 기반 복사로 동작한다.
 브라우저의 서비스 워커·Web Push·설치 기능에는 HTTPS가 필요하므로 기존 외부 Remote
 주소를 사용한다. 브라우저를 연 상태의 대시보드 사용은 LAN HTTP로 가능하다.
 
-검증: `lan-access.test.mjs`는 실제 사설 인터페이스를 통한 코드 인증, API 접근,
-설정 복원, 코드 갱신·로그아웃·비활성화와 출처·서브넷 검사를 확인한다.
+검증: `lan-access.test.mjs`는 실제 사설 인터페이스를 통한 링크 인증, API 접근,
+설정 복원, 링크 갱신·로그아웃·비활성화와 출처·서브넷 검사를 확인한다.
 `node app/scripts/electron-lan-dashboard-smoke.mjs`는 실제 preload와 IPC 검사를 통해
-설정 토글·주소 복사·연결 해제를 실행하고, 일반 LAN HTTP 브라우저에서 1024px/390px
+설정 토글·링크 복사·연결 해제를 실행하고, 일반 LAN HTTP 브라우저에서 1024px/390px
 로그인·Chat 전송·문서 열기·복사·로그아웃을 검증한다. 별도 PC의 방화벽 통과 여부는
 설치 후 해당 네트워크에서 확인한다.
 
@@ -173,7 +173,7 @@ for sizing, translation fallback and user-content preservation rules.[^remote-cl
 
 ## Boundary
 
-Local Dashboard access, including its optional LAN connection code, is distinct from external Remote access. External
+Local Dashboard access, including its optional LAN access link, is distinct from external Remote access. External
 authentication, account approval, Cloudflare tunnel assumptions, Android return
 tickets, and push/device monitoring belong to [Remote service](remote-service.md).
 
@@ -184,4 +184,4 @@ authenticated contract in [MiraControl integration](miracontrol-integration.md).
 [^web-tests]: Web-service contract tests
 [^remote-client]: Shared Dashboard and Remote client
 [^session-create-broker]: Acknowledged session creation broker
-[^lan-access]: LAN interface validation and connection codes
+[^lan-access]: LAN interface validation and access links

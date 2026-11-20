@@ -116,7 +116,7 @@ export const SETTINGS_CATALOG: readonly SettingDefinition[] = [
   entry("dashboard.autostart", "dashboard", "대시보드 자동 시작", "Start dashboard when Acedia starts", "nextApp", "autostart startup"),
   entry("remote.autostart", "remote", "앱 시작 시 Remote 자동 활성화", "Start Remote when Acedia starts", "nextApp", "리모트 자동 실행 autostart startup"),
   entry("remote.autostartTunnel", "remote", "저장된 외부 터널 자동 연결", "Connect the saved external tunnel automatically", "nextApp", "remote tunnel cloudflare 시작 자동"),
-  entry("dashboard.lan", "dashboard", "LAN 접속 허용", "Allow LAN access", "action", "로컬 네트워크 공유기 다른 컴퓨터 연결 코드 내부망 local network router connection code"),
+  entry("dashboard.lan", "dashboard", "LAN 접속 허용", "Allow LAN access", "action", "로컬 네트워크 공유기 다른 컴퓨터 접속 링크 내부망 local network router access link"),
   entry("dashboard.usage", "dashboard", "사용량 데이터", "Usage data", "action", "토큰 통계 재수집 rescan ingest tokens"),
   ...[
     ["server", "리모트 서버", "Remote server", "action", "PWA 모바일 시작 중지 mobile"],

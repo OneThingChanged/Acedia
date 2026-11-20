@@ -168,7 +168,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "monitor_config_get",
   "monitor_config_set",
   "monitor_server_status",
-  "monitor_lan_set", "monitor_lan_reset_code",
+  "monitor_lan_set", "monitor_lan_reset_link",
   "start_monitor_server",
   "stop_monitor_server",
   "ssh_password_set",

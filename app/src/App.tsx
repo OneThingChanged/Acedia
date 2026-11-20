@@ -3850,6 +3850,11 @@ function App() {
       if (cancelled) unlisten();
       else unlisteners.push(unlisten);
     };
+    const verifyRemoteRestart = async (requestId: string, id: string, kind: "activation" | "model") => {
+      if (!await invoke("session_restart_request_pending", { requestId, id, kind })) {
+        throw new Error(text("재시작 요청이 만료됐습니다. 세션 상태를 확인한 뒤 다시 시도하세요.", "The restart request expired. Check the session state and try again."));
+      }
+    };
 
     listen<{ requestId: string; id: string; restart?: boolean }>("remote:restart-session", (event) => {
       if (cancelled) return;
@@ -3873,10 +3878,8 @@ function App() {
         return;
       }
       if (payload.restart) {
-        void restartAgent(payload.id, spawnAgentInBackground, () => invoke("session_restart_request_pending", {
-          requestId: payload.requestId, id: payload.id, kind: "activation",
-        })).then(restarted => complete(restarted ? { ok: true }
-          : { ok: false, error: text("계정 선택을 취소했습니다. 기존 세션을 유지합니다.", "Account selection cancelled. The existing session is unchanged."), statusCode: 409 }))
+        void restartAgent(payload.id, spawnAgentInBackground, () => verifyRemoteRestart(payload.requestId, payload.id, "activation"))
+          .then(() => complete({ ok: true }))
           .catch(reason => complete({ ok: false, error: String(reason), statusCode: 409 }));
         return;
       }
@@ -4152,9 +4155,7 @@ function App() {
         await persistStorageSnapshot(true);
         if (!payload.restart) return complete({ ok: true });
         try {
-          if (!await chooseSessionAccountBeforeLaunch(agent.id, true)) return complete({ ok: false, statusCode: 409,
-            error: text("모델 설정은 저장했습니다. 계정 선택을 취소해 기존 세션을 유지합니다.", "Model settings saved. Account selection cancelled; the existing session is unchanged.") });
-          if (!await invoke("session_restart_request_pending", { requestId: payload.requestId, id: payload.id, kind: "model" })) return;
+          await verifyRemoteRestart(payload.requestId, payload.id, "model");
           const group = groupsRef.current.find(item => collectAgentIds(item.layout).has(agent.id));
           const restart = await invoke("restart_session_model", { id: agent.id, expectedSessionId: group?.sessionPins?.[agent.id] });
           clearAgentStartupReadyTimer(agent.id);
@@ -4191,7 +4192,6 @@ function App() {
     renameAgent,
     spawnAgentInBackground,
     restartAgent,
-    chooseSessionAccountBeforeLaunch,
     clearAgentStartupReadyTimer,
     text,
     workspace.groupsKey,

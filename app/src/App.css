@@ -7037,5 +7037,4 @@ body.app-tab-dragging, body.app-tab-dragging * {
 .question-submit { align-self: flex-start; flex: 0 0 auto; }
 .dashboard-lan-panel .app-remote-url-row { flex-wrap: wrap; }
 .dashboard-lan-address { display: grid; gap: 4px; margin-top: 12px; }
-.dashboard-lan-code { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
-.dashboard-lan-code strong { font-family: var(--font-mono, monospace); font-size: 20px; letter-spacing: 2px; color: var(--accent, #48d7d0); }
+.dashboard-lan-reset { margin-top: 16px; }

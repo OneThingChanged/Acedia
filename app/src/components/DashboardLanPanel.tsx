@@ -12,8 +12,7 @@ export type DashboardStatus = {
     available: boolean;
     enabled: boolean;
     running: boolean;
-    addresses: { name: string; url: string }[];
-    code: string | null;
+    addresses: { name: string; url: string; accessUrl: string }[];
     allowedNetworks?: string[];
     clients?: { ip: string; connectedAt: number; lastSeenAt: number; active: boolean }[];
   };
@@ -41,15 +40,15 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
     setBusy(true); setError(""); setCopied("");
     try {
       onChange(await (reset
-        ? invoke<DashboardStatus>("monitor_lan_reset_code")
+        ? invoke<DashboardStatus>("monitor_lan_reset_link")
         : invoke<DashboardStatus>("monitor_lan_set", { enabled: !lan?.enabled })));
     } catch (cause) {
       setError(String(cause instanceof Error ? cause.message : cause));
       try { onChange(await invoke<DashboardStatus>("monitor_server_status")); } catch {}
     } finally { setBusy(false); }
   };
-  const copy = async (value: string) => {
-    try { await writeClipboardText(value); setCopied(value); }
+  const copy = async (entry: { url: string; accessUrl: string }) => {
+    try { await writeClipboardText(entry.accessUrl); setCopied(entry.url); }
     catch { setError(text("복사하지 못했습니다.", "Could not copy.")); }
   };
 
@@ -73,7 +72,7 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           disabled={busy || !lan?.available} onChange={() => { void change(); }} />
         <span>{text("LAN 접속 허용", "Allow LAN access")}</span>
       </label>
-      <p className="app-update-message">{text("같은 서브넷 또는 아래에 추가한 사내 네트워크의 PC에서 주소를 열고 연결 코드를 입력하세요.", "Open the address from a PC on the same subnet or an added private network, then enter the connection code.")}</p>
+      <p className="app-update-message">{text("같은 서브넷이나 아래에 추가한 네트워크의 기기에서 복사한 접속 링크를 여세요.", "Open the copied access link on a device on the same subnet or an added network.")}</p>
       <label className="field">
         <span className="field-label">{text("추가 허용 네트워크 (IPv4 CIDR)", "Additional allowed networks (IPv4 CIDR)")}</span>
         <textarea aria-label={text("추가 허용 네트워크", "Additional allowed networks")} rows={3}
@@ -81,7 +80,7 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           placeholder="172.28.37.0/24" value={networks} disabled={busy || !lan?.available}
           onChange={event => setNetworks(event.target.value)} />
       </label>
-      <p className="app-update-message">{text("한 줄에 한 대역을 입력하세요. 추가해도 연결 코드와 기존 접속은 유지됩니다. 허용에서 제외된 접속만 해제됩니다.", "Enter one network per line. Adding networks preserves the code and existing clients. Only clients no longer allowed are disconnected.")}</p>
+      <p className="app-update-message">{text("한 줄에 한 대역을 입력하세요. 허용에서 제외된 접속만 해제됩니다.", "Enter one network per line. Only clients no longer allowed are disconnected.")}</p>
       <button type="button" className="btn-secondary app-update-btn" disabled={busy || !lan?.available}
         onClick={() => { void saveNetworks(); }}>{text("허용 네트워크 저장", "Save allowed networks")}</button>
       {busy && <p role="status" className="app-update-message">{text("적용 중…", "Applying…")}</p>}
@@ -90,27 +89,24 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           <span className="app-update-message">{entry.name}</span>
           <div className="app-remote-url-row">
             <code className="app-remote-url">{entry.url}</code>
-            <button type="button" className="btn-secondary app-update-btn" onClick={() => { void copy(entry.url); }}>
-              {copied === entry.url ? text("복사됨", "Copied") : text("주소 복사", "Copy address")}
+            <button type="button" className="btn-secondary app-update-btn" disabled={busy} onClick={() => { void copy(entry); }}>
+              {copied === entry.url ? text("복사됨", "Copied") : text("접속 링크 복사", "Copy access link")}
             </button>
           </div>
         </div>)}
         {!lan.addresses.length && <p className="app-update-message" role="status">{text("연결된 로컬 네트워크를 찾지 못했습니다. Wi-Fi 또는 유선 연결을 확인하세요.", "No local network found. Check your Wi-Fi or Ethernet connection.")}</p>}
-        <div className="dashboard-lan-code">
-          <span>{text("연결 코드", "Connection code")}</span>
-          <strong aria-label={text("연결 코드", "Connection code")}>{lan.code?.replace(/(\d{4})(\d{4})/, "$1 $2")}</strong>
+        <div className="dashboard-lan-reset">
           <button type="button" className="btn-secondary app-update-btn" disabled={busy} onClick={() => { void change(true); }}>
-            {text("코드 갱신 및 연결 해제", "Reset code and disconnect")}
+            {text("링크 갱신 및 연결 해제", "Reset link and disconnect")}
           </button>
         </div>
-        <p className="app-update-message">{text("연결 코드는 갱신 버튼을 누를 때만 바뀝니다. 재실행 후에는 같은 코드로 다시 연결하세요. LAN 접속을 끄면 연결된 PC의 접근이 해제됩니다.", "The code changes only when you reset it. Reconnect with the same code after restarting. Turning LAN access off disconnects connected PCs.")}</p>
         <div className="field-label">{text("대시보드 접속 IP", "Dashboard client IPs")} ({lan.clients?.length || 0})</div>
         {lan.clients?.length ? lan.clients.map(client => <div key={client.ip} className="dashboard-lan-client" style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
           <code>{client.ip}</code>
           <span className="app-update-message">{client.active ? text("접속 중", "Connected") : text("최근 활동", "Recent activity")}</span>
           <time className="app-update-message" dateTime={new Date(client.lastSeenAt).toISOString()}>{text("마지막 요청", "Last request")}: {new Date(client.lastSeenAt).toLocaleTimeString()}</time>
         </div>) : <p className="app-update-message">{text("접속 중인 인증된 PC가 없습니다.", "No authenticated clients connected.")}</p>}
-        <p className="app-update-message">{text("연결 코드로 인증한 직접 접속 IP를 표시합니다. 연결이 닫힌 IP는 마지막 요청 후 1분 동안 최근 활동으로 표시합니다.", "Shows direct client IPs authenticated with the code. Closed connections appear as recent activity for one minute after the last request.")}</p>
+        <p className="app-update-message">{text("접속이 끝난 IP는 마지막 요청 후 1분 동안 최근 활동으로 표시합니다.", "Disconnected clients appear as recent activity for one minute after the last request.")}</p>
         <p className="app-update-message">{text("연결되지 않으면 Windows 방화벽에서 Acedia의 개인 네트워크 접근을 허용하세요.", "If the connection fails, allow Acedia on private networks in Windows Firewall.")}</p>
       </>}
       {lan?.enabled && !status.running && <p className="app-update-message">{text("위의 Start를 눌러 대시보드를 시작하세요.", "Use Start above to start the dashboard.")}</p>}

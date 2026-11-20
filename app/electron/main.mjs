@@ -6529,13 +6529,15 @@ async function invokeCommand(event, command, rawArgs) {
       if (selectedAccountId(current) !== selectedAccountId(agent)
         || (live && selectedAccountId(live) !== selectedAccountId(current))) throw new Error("세션 계정이 바뀌었습니다. 다시 확인하세요.");
       const poolResumeOwnerId = agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
-      if (poolResumeOwnerId && !accountPool.eligible(accountPool.account(poolResumeOwnerId))) throw new Error("현재 분산 계정을 사용할 수 없습니다. 설정을 저장하고 계정 상태를 확인하세요.");
+      if ((live?.poolRouted && !poolResumeOwnerId) || (poolResumeOwnerId && (!accountPool.state.enabled || !accountPool.eligible(accountPool.account(poolResumeOwnerId))))) {
+        throw new Error("현재 분산 계정을 사용할 수 없습니다. 계정 상태를 확인한 뒤 다시 시도하세요.");
+      }
       await rememberSessionModel(id);
       if (ptys.get(id) !== live || !restartAllowed()) throw new Error("세션 상태가 바뀌었습니다. 작업이 끝난 뒤 다시 시도하세요.");
       const latest = sessionModels.agent(id);
       if ((agentSessionIds.get(id) || latest.lastSessionId || null) !== sessionId
         || latest.aiToolId !== current.aiToolId || selectedAccountId(latest) !== selectedAccountId(current)) throw new Error("현재 대화 또는 계정이 바뀌었습니다. 다시 확인하세요.");
-      if (poolResumeOwnerId && (!accountPool.eligible(accountPool.account(poolResumeOwnerId))
+      if (poolResumeOwnerId && (!accountPool.state.enabled || !accountPool.eligible(accountPool.account(poolResumeOwnerId))
         || accountPool.state.sessions[id]?.accountId !== poolResumeOwnerId)) throw new Error("분산 계정 상태가 바뀌었습니다. 다시 확인하세요.");
       terminalSessions.action(id, "restart");
       return { sessionId, poolResumeOwnerId };
@@ -6608,8 +6610,8 @@ async function invokeCommand(event, command, rawArgs) {
     case "monitor_lan_set":
       if (args.allowedNetworks !== undefined) return monitorService.setLanNetworks(args.allowedNetworks);
       return monitorService.setLanEnabled(args.enabled === true);
-    case "monitor_lan_reset_code":
-      return monitorService.resetLanCode();
+    case "monitor_lan_reset_link":
+      return monitorService.resetLanLink();
     case "start_monitor_server":
       return monitorService.start();
     case "stop_monitor_server":

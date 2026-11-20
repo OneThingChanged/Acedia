@@ -66,9 +66,30 @@ it('releases the restart lock after cancellation so a later deliberate restart c
   expect(await f.actions.restartAgent('session', f.spawn)).toBe(true);
   expect(f.spawn).toHaveBeenCalledOnce();
 });
-it('keeps the CLI running when an external restart request expired while choosing an account', async () => {
-  const f = fixture(async () => true), isCurrent = vi.fn(async () => false);
-  expect(await f.actions.restartAgent('session', f.spawn, isCurrent)).toBe(false);
-  expect(isCurrent).toHaveBeenCalledOnce(); expect(invoke).not.toHaveBeenCalled();
+it('restarts from Remote without opening the desktop picker and keeps the conversation and running account', async () => {
+  const choose = vi.fn(async () => false), f = fixture(choose);
+  const verify = vi.fn(async () => {});
+  expect(await f.actions.restartAgent('session', f.spawn, verify)).toBe(true);
+  expect(verify).toHaveBeenCalledOnce();
+  expect(choose).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledExactlyOnceWith('restart_session_model', { id: 'session', expectedSessionId: 'original-conversation', interrupt: true });
+  expect(f.agentsRef.current[0]).toMatchObject({ codexPoolAccountId: 'old', lastSessionId: 'original-conversation' });
+  expect(f.spawn).toHaveBeenCalledExactlyOnceWith('session', { recovering: true, resumeSessionId: 'original-conversation', poolResumeOwnerId: 'original-account' });
+});
+
+it('keeps the CLI running and reports the expired Remote request', async () => {
+  const choose = vi.fn(async () => true), f = fixture(choose);
+  const verify = vi.fn(async () => { throw new Error('The restart request expired.'); });
+  await expect(f.actions.restartAgent('session', f.spawn, verify)).rejects.toThrow('The restart request expired.');
+  expect(verify).toHaveBeenCalledOnce(); expect(invoke).not.toHaveBeenCalled();
+  expect(choose).not.toHaveBeenCalled();
+  expect(f.dispose).not.toHaveBeenCalled(); expect(f.spawn).not.toHaveBeenCalled();
+});
+
+it('reports an unavailable account before replacing the running Remote session', async () => {
+  const f = fixture(async () => true), original = f.agentsRef.current[0];
+  invoke.mockRejectedValueOnce(new Error('The current routed account is unavailable.'));
+  await expect(f.actions.restartAgent('session', f.spawn, async () => {})).rejects.toThrow('The current routed account is unavailable.');
+  expect(f.agentsRef.current[0]).toBe(original);
   expect(f.dispose).not.toHaveBeenCalled(); expect(f.spawn).not.toHaveBeenCalled();
 });

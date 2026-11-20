@@ -64,7 +64,7 @@ export function useSessionLifecycleActions({
   const [restartingAgentIds, setRestartingAgentIds] = useState<Set<string>>(new Set());
   const restartAgent = useCallback(async (agentId: string, spawn: (id: string, options: {
     recovering: boolean; resumeSessionId?: string; poolResumeOwnerId?: string;
-  }) => Promise<{ ok: boolean; error?: string }>, isCurrent?: () => Promise<boolean>) => {
+  }) => Promise<{ ok: boolean; error?: string }>, verifyRemoteRequest?: () => Promise<void>) => {
     const agent = agentsRef.current.find(candidate => candidate.id === agentId);
     if (!agent || detachedAgentIdsRef.current.has(agentId)) throw new Error("Session is unavailable or belongs to another window.");
     if (restartingRef.current.has(agentId) || ["starting", "recovering"].includes(agent.runtimeStatus || agent.status)) {
@@ -72,12 +72,11 @@ export function useSessionLifecycleActions({
     }
     restartingRef.current.add(agentId); setRestartingAgentIds(new Set(restartingRef.current));
     try {
-      // Ask before stopping the running CLI. Cancellation preserves its PTY,
-      // transcript, scrollback and pane; the chosen account is saved for spawn.
-      if (prepareRestart && !await prepareRestart(agentId)) return false;
-      if (isCurrent && !await isCurrent()) return false;
+      // Remote uses the existing launch settings and the owner returned by the host.
+      if (verifyRemoteRequest) await verifyRemoteRequest();
+      else if (prepareRestart && !await prepareRestart(agentId)) return false;
       if (!agentsRef.current.some(candidate => candidate.id === agentId) || detachedAgentIdsRef.current.has(agentId)) {
-        throw new Error("Session changed while choosing a restart account.");
+        throw new Error("Session changed while preparing to restart.");
       }
       let result: { sessionId: string | null; poolResumeOwnerId?: string } = { sessionId: null };
       if (isElectronRuntime() && !agent.sshHostId && ["codex", "claude"].includes(agent.aiToolId)) {

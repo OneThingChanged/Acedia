@@ -862,10 +862,12 @@ context menu, using the right-clicked row's ID without changing the selected
 conversation. The HTTP request includes `restart: true`; requests without that
 flag retain their existing activation behavior and leave an active CLI running.
 Explicit Restart stops and recreates the target through the desktop lifecycle,
-retaining its known conversation, model/effort/Fast and routed account. The host
-acknowledges only after a replacement runtime exists; an unchanged old runtime
-cannot establish success. Startup, duplicate and other-window ownership failures
-surface as errors. The browser holds queue draining during the request, retains
+retaining its known conversation, model/effort/Fast and assigned routed account.
+Remote and Dashboard restart requests proceed in the background with the existing
+account. An unavailable account blocks shutdown of the original CLI and returns
+the cause to the browser. An expired request is reported separately. The host
+acknowledges only after a replacement runtime exists. Startup, duplicate and
+other-window ownership failures surface as errors. The browser holds queue draining during the request, retains
 drafts and queue entries, and leaves failed/uncertain submissions paused for
 explicit retry. PC/mobile UI checks at 1024/390px verify the clicked target and
 selection preservation; both Remote and Dashboard HTTP tests distinguish Restart

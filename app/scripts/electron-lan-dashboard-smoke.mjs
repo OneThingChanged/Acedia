@@ -49,7 +49,7 @@ if (process.versions.electron) {
         const args = contract.assertInvokeRequest(command, rawArgs);
         if (command === "monitor_server_status") return service.status();
         if (command === "monitor_lan_set") return args.allowedNetworks !== undefined ? service.setLanNetworks(args.allowedNetworks) : service.setLanEnabled(args.enabled);
-        if (command === "monitor_lan_reset_code") return service.resetLanCode();
+        if (command === "monitor_lan_reset_link") return service.resetLanLink();
         if (command === "clipboard_write_text") { copied = args.text; return; }
         throw new Error("Unexpected fixture command");
       });
@@ -61,7 +61,7 @@ if (process.versions.electron) {
       await host.loadFile(path.join(directory, "index.html"));
       await waitFor(host, "document.querySelector('input[type=checkbox]')?.disabled === false");
       await host.webContents.executeJavaScript("document.querySelector('input[type=checkbox]').click()");
-      await waitFor(host, "!!document.querySelector('.dashboard-lan-code strong')?.textContent.trim()");
+      await waitFor(host, "!!document.querySelector('.dashboard-lan-reset button')");
       await host.webContents.executeJavaScript(`(() => {
         const field = document.querySelector('textarea');
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, '0.0.0.0/0');
@@ -83,41 +83,40 @@ if (process.versions.electron) {
       console.log("LAN_ALLOWED_NETWORK_EDITOR_OK");
       const status = service.status();
       assert(status.lan.addresses.length, "A private IPv4 interface is required for this smoke");
-      const base = status.lan.addresses[0].url;
+      const { url: base, accessUrl } = status.lan.addresses[0];
       await host.webContents.executeJavaScript("document.querySelector('.dashboard-lan-address button').click()");
       await new Promise(resolve => setTimeout(resolve, 100));
-      assert(copied === base, "Address copy did not use the bound LAN port");
+      assert(copied === accessUrl, "Access link copy did not include credentials for the bound LAN port");
       const output = path.resolve(root, "../output"); await fs.mkdir(output, { recursive: true });
       await new Promise(resolve => setTimeout(resolve, 300));
       await fs.writeFile(path.join(output, "lan-dashboard-settings.png"), (await host.webContents.capturePage()).toPNG());
 
-      const connect = async (win, code) => {
-        await win.webContents.executeJavaScript(`document.querySelector('#lanCode').value = ${JSON.stringify(code)}; document.querySelector('#lanForm').requestSubmit();`);
-      };
+      const sessionLink = new URL(copied);
+      sessionLink.searchParams.set("agent", "lan-agent");
       let last;
       for (const width of [1024, 390]) {
         const win = new BrowserWindow({ show: false, width, height: 850, webPreferences: { sandbox: true, contextIsolation: true, offscreen: true, backgroundThrottling: false, partition: `lan-${width}` } });
         windows.push(win); last = win;
         await win.loadURL(`${base}/?agent=lan-agent`);
-        await waitFor(win, "!!document.querySelector('#lanForm')");
+        await waitFor(win, "document.querySelector('#lanHelp')?.hidden === false");
+        assert(await win.webContents.executeJavaScript("!document.querySelector('input')"), "LAN still shows a login input");
         assert(await win.webContents.executeJavaScript("!window.isSecureContext"), "Smoke must exercise real plain LAN HTTP");
-        const wrong = status.lan.code === "00000000" ? "11111111" : "00000000";
-        await connect(win, wrong);
+        await win.loadURL(`${base}/lan-login#access=invalid`);
         await waitFor(win, "document.querySelector('#lanError')?.hidden === false");
         await fs.writeFile(path.join(output, `lan-login-${width}.png`), (await win.webContents.capturePage()).toPNG());
-        await connect(win, service.status().lan.code);
+        await win.loadURL(sessionLink.href);
         await waitFor(win, "document.querySelector('#detailName')?.textContent.includes('LAN fixture session')");
         if (width === 1024) {
-          const previousCode = service.status().lan.code;
           await service.setLanNetworks(["172.28.37.0/24", "10.22.0.0/16"]);
-          assert(service.status().lan.code === previousCode, "Adding a network changed the code");
+          assert(service.status().lan.addresses[0].accessUrl === accessUrl, "Adding a network changed the access link");
           assert(await win.webContents.executeJavaScript("fetch('/api/state').then(r => r.status === 200)"), "Adding a network disconnected an authenticated client");
           await waitFor(host, "!!document.querySelector('.dashboard-lan-client code')?.textContent");
           assert(service.status().lan.clients.some(client => client.ip), "Authenticated direct IP missing");
           await fs.writeFile(path.join(output, "lan-dashboard-clients.png"), (await host.webContents.capturePage()).toPNG());
-          console.log("LAN_CODE_CLIENT_PRESERVATION_AND_IP_UI_OK");
+          console.log("LAN_ACCESS_LINK_CLIENT_PRESERVATION_AND_IP_UI_OK");
         }
         assert(await win.webContents.executeJavaScript("location.search.includes('agent=lan-agent')"), "Login lost the selected session link");
+        assert(await win.webContents.executeJavaScript("!location.hash"), "The access key remained in the address bar");
         await win.webContents.executeJavaScript("document.querySelector('#sessionMode [data-mode=chat]').click()");
         await waitFor(win, "document.querySelector('#chatView')?.textContent.includes('LAN chat fixture')");
         await win.webContents.executeJavaScript(`(() => { const field = document.querySelector('#messageInput'); field.value = 'LAN message ${width}'; field.dispatchEvent(new Event('input', {bubbles:true})); field.closest('form').requestSubmit(); })()`);
@@ -135,16 +134,16 @@ if (process.versions.electron) {
         assert(await win.webContents.executeJavaScript("document.documentElement.scrollWidth <= innerWidth"), "LAN dashboard overflowed");
         await fs.writeFile(path.join(output, `lan-dashboard-${width}.png`), (await win.webContents.capturePage()).toPNG());
         await win.webContents.executeJavaScript("document.querySelector('#logoutButton').click()");
-        await waitFor(win, "!!document.querySelector('#lanForm')");
+        await waitFor(win, "document.querySelector('#lanHelp')?.hidden === false");
         assert(await win.webContents.executeJavaScript("fetch('/api/state').then(r => r.status === 401)"), "Logout kept access to sessions");
-        await connect(win, service.status().lan.code);
+        await win.loadURL(sessionLink.href);
         await waitFor(win, "!!document.querySelector('#detailName')");
         console.log(`LAN_LOGIN_CHAT_SEND_DOCUMENT_LOGOUT_OK ${width}px`);
       }
-      await host.webContents.executeJavaScript("document.querySelector('.dashboard-lan-code button').click()");
-      await waitFor(last, "!!document.querySelector('#lanForm')");
+      await host.webContents.executeJavaScript("document.querySelector('.dashboard-lan-reset button').click()");
+      await waitFor(last, "document.querySelector('#lanHelp')?.hidden === false");
       await host.webContents.executeJavaScript("document.querySelector('input[type=checkbox]').click()");
-      await waitFor(host, "document.querySelector('input[type=checkbox]').checked === false && !document.querySelector('.dashboard-lan-code')");
+      await waitFor(host, "document.querySelector('input[type=checkbox]').checked === false && !document.querySelector('.dashboard-lan-reset')");
       assert(service.server.address().address === "127.0.0.1", "Disabling LAN did not restore loopback binding");
       const saved = JSON.parse(await fs.readFile(path.join(directory, "monitor.json"), "utf8"));
       assert(saved.lanEnabled === false, "LAN disable was not persisted");
