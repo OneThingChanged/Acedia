@@ -1,17 +1,18 @@
 // Standalone, read-only fallback for a client whose cached MCP list is stale.
 // node:http talks directly to loopback; HTTP_PROXY is deliberately not used.
 import http from 'node:http';
+import { sessionEndpoint } from './runtime-endpoint.mjs';
 
 async function check() {
   if (process.argv.length !== 2) return { ok: false, reason: 'no-arguments-accepted' };
-  const [port, token, agent] = ['MULTIAGENT_PORT', 'MULTIAGENT_TOKEN', 'MULTIAGENT_AGENT_ID'].map(key => (process.env[key] || '').trim());
-  if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535 || !token || !agent) return {
-    ok: false, connected: false, reason: 'session-environment-missing', recovery: 'Start this CLI from Acedia. Do not copy another session identity or credentials.' };
+  const { port, token, agentId, reason } = await sessionEndpoint();
+  if (reason) return {
+    ok: false, connected: false, reason, recovery: 'Check this Acedia runtime. Launch the CLI from the active Acedia app if the app instance changed.' };
   let result;
   try {
     result = await new Promise((resolve, reject) => {
       const request = http.get({ hostname: '127.0.0.1', port: Number(port), path: '/integration/v1/workspace/capabilities',
-        headers: { authorization: 'Bearer ' + token, 'x-acedia-agent-id': agent } }, response => {
+        headers: { authorization: 'Bearer ' + token, 'x-acedia-agent-id': agentId } }, response => {
         if (response.statusCode !== 200) { response.resume(); resolve({ status: response.statusCode }); return; }
         const chunks = []; let bytes = 0;
         response.on('data', chunk => { bytes += chunk.length; if (bytes > 1024 * 1024) response.destroy(new Error('Response limit')); else chunks.push(chunk); });

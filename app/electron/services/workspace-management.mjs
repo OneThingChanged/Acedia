@@ -138,10 +138,17 @@ export class WorkspaceManagement {
     if (!this.snapshot().availableTools.some(t => t.id === aiToolId) || aiToolId === 'none') throw fail('사용 가능한 AI 도구를 선택하세요.', 409);
     // Retain an uncertain/failed acknowledgement too: retrying a timeout must
     // not silently create a second session. The list operation can reconcile it.
-    const promise = Promise.resolve().then(async () => this.create({ ...(reservedId ? { id: reservedId } : {}), projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, workspaceManaged: true, start: body.start !== false,
-      ...(this.resolveLaunch && ['codex', 'claude'].includes(aiToolId) ? await this.resolveLaunch({ ownerId: agentId, aiToolId, modelSettings: body.modelSettings, accountId: body.accountId, dangerous: body.dangerous }) : {}),
-      sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: !this.resolveLaunch && parent.aiToolId === aiToolId } : {}), ...(folder ? { inheritFolder: false, folderOverride: folder } : {}) },
-    }))
+    const promise = Promise.resolve().then(async () => {
+      let launch;
+      if (this.resolveLaunch && ['codex', 'claude'].includes(aiToolId)) {
+        try { launch = await this.resolveLaunch({ ownerId: agentId, aiToolId, modelSettings: body.modelSettings, accountId: body.accountId, dangerous: body.dangerous }); }
+        catch (error) { throw Object.assign(fail(String(error?.message || error), error?.statusCode || 500), { nothingCreated: true }); }
+      }
+      return this.create({ ...(reservedId ? { id: reservedId } : {}), projectId, ...(project ? { project } : {}), name: project ? 'Session 1' : name || 'New session', aiToolId, workspaceManaged: true, start: body.start !== false,
+        ...launch,
+        sessionHierarchy: { createdById: agentId, ...(parentId ? { parentId, inheritFolder: true, inheritInstructions: true, inheritModel: !this.resolveLaunch && parent.aiToolId === aiToolId } : {}), ...(folder ? { inheritFolder: false, folderOverride: folder } : {}) },
+      });
+    })
       .then(result => ({ created: true, projectId, sessionId: result.id, active: this.isActive(result.id), ...(result.startError ? { startError: result.startError } : {}) }));
     this.results.set(key, { signature, promise });
     if (this.results.size > 200) this.results.delete(this.results.keys().next().value);

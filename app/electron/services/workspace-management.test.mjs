@@ -128,7 +128,8 @@ it('exposes authenticated workspace tools over the real stdio MCP bridge, reject
   expect((await fetch(url, { headers: { ...headers, origin: 'https://unrelated.invalid' } })).status).toBe(403);
   expect((await fetch(url, { method: 'POST', headers, body: '[]' })).status).toBe(400);
   const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], { windowsHide: true, env: { ...process.env,
-    MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller' }, stdio: ['pipe', 'pipe', 'ignore'] });
+    MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller',
+    MULTIAGENT_RUNTIME_FILE: hook.infoPath, MULTIAGENT_RUNTIME_ID: hook.runtimeId }, stdio: ['pipe', 'pipe', 'ignore'] });
   cleanups.push(() => { child.stdin.end(); child.kill(); });
   let nextId = 0, buffer = ''; const pending = new Map();
   child.stdout.on('data', chunk => {

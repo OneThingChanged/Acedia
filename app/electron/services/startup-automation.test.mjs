@@ -194,6 +194,15 @@ it('leaves unknown hooks, count mismatches, partial dialogs, SSH, and selected S
     const f = hooksFixture(1); change(f); expect(f.automation.check('child')).toBe(false); expect(f.write).not.toHaveBeenCalled();
   }
 });
+it('requires the native pending count to match the dialog exactly', () => {
+  const f = hooksFixture(1);
+  Object.assign(f.proof, { exactPending: true, count: 7 });
+  expect(f.automation.check('child')).toBe(false);
+  expect(f.write).not.toHaveBeenCalled();
+  f.proof.count = 6;
+  expect(f.automation.check('child')).toBe(true);
+  expect(f.write).toHaveBeenCalledExactlyOnceWith('child', '\r');
+});
 it('does not confirm a changed proof or user input after moving, nor replay an uncertain write', () => {
   vi.useFakeTimers();
   try {

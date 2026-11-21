@@ -51,8 +51,9 @@ HTTP 계약은 `POST /integration/v1/workspace/run`과 `.../run-status`다.
 - 직접 세션을 만들거나 재시작할 때 사용하는 수동 계정 선택창 동작은 유지한다.
   API 하위 실행 경로는 실행 전에 선택을 확정한다.
 
-Claude 모델 목록은 설치된 CLI 도움말의 지원 형식이며 계정의 실제 이용권 보증이 아니다.
-실제 로그인 만료·이용권 오류는 원래 CLI/계정 설정에서 해결해야 한다.
+Claude의 `claude-fable-5-2` 같은 버전 지정 모델 ID는 설치된 CLI 도움말의 모델 별칭을
+기준으로 계열과 effort를 확인하고, 입력한 ID 그대로 CLI에 전달한다. 실제 로그인과
+모델 이용 가능 여부는 실행 시 CLI가 확인한다.
 
 ## Trust와 준비 상태
 
@@ -66,7 +67,9 @@ Claude의 `Accessing workspace` 화면은 기본 `No, exit`에서 한 번 이동
 실행 훅 신뢰, API 키 선택, 로그인, 사용자 질문, 명령 승인은 자동 결정하지 않는다.
 
 `phase`는 `creating`, `registered`, `starting`, `folder-trust`, `hook-review`,
-`question`, `working`, `blocked`, `sending`, `sent`, `started`, `reconcile-required`를 구분한다.
+`question`, `working`, `blocked`, `sending`, `sent`, `started`, `failed`, `reconcile-required`를 구분한다.
+생성 전 모델·계정 확인에 실패하면 `failed`, `nothingCreated: true`, `sessionId: null`을
+반환한다. 생성 결과가 불확실하면 예약된 ID로 `reconcile-required`를 반환한다.
 원래 질문은 부모의 상태 조회 또는 task 결과에 포함한다. 생성 확인이나 PTY 존재만으로
 입력 준비·작업 수락·완료를 판정하지 않는다.
 
@@ -80,6 +83,9 @@ Claude의 Ink 커서는 대기 중에도 하단 상태줄에 놓일 수 있으�
 Claude는 실제 user UUID와 그 attachment/assistant 부모 연결을 따라 확인된 모델 응답을
 요구한다. 따옴표로 인용된 도구 출력·assistant 본문·sidechain은 수신 증거가 아니다.
 Claude의 user 기록만 추가된 경우에는 착수로 판정하지 않는다.
+Claude가 네이티브 붙여넣기 태그로 사용자 입력을 감쌌다면 그 태그를 벗겨 내부 원문의
+해시를 확인한다. Codex 기록의 줄바꿈이 사라졌다면 발급한 수신함 안내 문구와 전체가
+일치하는 경우에만 줄바꿈을 복원해 해시를 확인한다.
 
 요청 키는 부모별 영속 기록이다. 같은 내용으로 다시 호출하면 같은 자식 ID를 반환하고,
 내용이 바뀌면 거절한다. 생성 확인을 잃거나 전송 결과가 불확실해도 재생성·재전송하지

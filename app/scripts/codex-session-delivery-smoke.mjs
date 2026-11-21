@@ -152,7 +152,8 @@ try {
     isActive: id => ['caller', 'target'].includes(id), deliveries: service, messages, sessionState: id => ({ conversationId: id === 'target' ? conversationId??null : null }) });
   hook = new HookService({ baseDir: path.join(root, 'hook'), workspaceProvider: request => workspace.handle(request) }); await hook.start();
   mcp = spawn(process.execPath, [path.resolve(import.meta.dirname, '../electron/services/browser-mcp-server.mjs')], { windowsHide: true,
-    env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller' }, stdio: ['pipe', 'pipe', 'ignore'] });
+    env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'caller',
+      MULTIAGENT_RUNTIME_FILE: hook.infoPath, MULTIAGENT_RUNTIME_ID: hook.runtimeId }, stdio: ['pipe', 'pipe', 'ignore'] });
   let nextId = 0, buffer = ''; const pending = new Map();
   mcp.stdout.on('data', chunk => { buffer += chunk; let newline;
     while ((newline = buffer.indexOf('\n')) >= 0) { const message = JSON.parse(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1); pending.get(message.id)?.(message.result); pending.delete(message.id); }

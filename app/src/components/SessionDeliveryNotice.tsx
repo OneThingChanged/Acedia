@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke, listen } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { deliveryStatusMessage, type SessionDelivery } from '../lib/sessionDelivery';
+import { deliveryStatusMessage, isDeliveryWarning, type SessionDelivery } from '../lib/sessionDelivery';
 import './SessionDeliveryNotice.css';
 
 export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
@@ -29,7 +29,7 @@ export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
   }, [agentId]);
   const record = records[0];
   if (!record || dismissed === record.deliveryId + ':' + record.status) return null;
-  const bad = ['failed', 'unconfirmed'].includes(record.status);
+  const bad = isDeliveryWarning(record);
   const stages = [
     ...(record.isMessage ? [{ ko: '저장됨', en: 'Saved', at: record.savedAt }] : []),
     { ko: '전송됨', en: 'Sent', at: record.sentAt },
@@ -37,7 +37,7 @@ export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
     ...(record.isMessage ? [{ ko: '원문 읽음', en: 'Text read', at: record.readAt }] : []),
     { ko: record.isMessage ? '응답 시작' : '작업 시작됨', en: record.isMessage ? 'Response started' : 'Task started', at: record.startedAt },
   ];
-  return <div className={`session-delivery-notice ${record.status}`} role={bad ? 'alert' : 'status'}>
+  return <div className={`session-delivery-notice ${!bad && record.isMessage && record.readAt ? 'read' : record.status}`} role={bad ? 'alert' : 'status'}>
     <div className='session-delivery-summary'>
       <strong>{record.sourceId === agentId
         ? text(`${record.targetName}에게 작업 전달`, `Task sent to ${record.targetName}`)

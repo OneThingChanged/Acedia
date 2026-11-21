@@ -221,9 +221,15 @@ export class AccountPoolSession extends EventEmitter {
       let message, payload = raw;
       try {
         message = JSON.parse(raw);
+        if (!this.startupHooksClosed && message.method === 'hooks/list' && message.id != null
+          && message.params?.threadId == null && Array.isArray(message.params?.cwds) && message.params.cwds.length === 1) {
+          this.startupHookList = { client, requestId: message.id, data: null };
+        }
         if (AUTH_MUTATIONS.has(message.method)) throw failure('이 세션의 계정은 Acedia 계정 관리에서 변경하세요.');
         if (THREAD_STARTS.has(message.method) || message.method === 'turn/start' || message.method === 'turn/steer') this.ensureAvailable();
         if (THREAD_STARTS.has(message.method)) {
+          this.startupHooksClosed = true;
+          this.startupHookList = null;
           if (message.id != null) {
             threadRequests.set(message.id, true);
             if (threadRequests.size > 64) threadRequests.delete(threadRequests.keys().next().value);
@@ -243,7 +249,10 @@ export class AccountPoolSession extends EventEmitter {
       }
     };
     client.on('message', relay);
-    client.on('close', () => { queue.length = 0; queuedBytes = 0; threadRequests.clear(); this.sockets.delete(client); upstream?.terminate(); });
+    client.on('close', () => {
+      queue.length = 0; queuedBytes = 0; threadRequests.clear(); this.sockets.delete(client); upstream?.terminate();
+      if (this.startupHookList?.client === client) this.startupHookList = null;
+    });
     try {
       upstream = await this.connect();
       if (client.readyState !== WebSocket.OPEN) { upstream.terminate(); return; }
@@ -253,6 +262,11 @@ export class AccountPoolSession extends EventEmitter {
         // Codex broadcasts this server request. Let only the host answer it;
         // the stock TUI cannot refresh externally owned ChatGPT credentials.
         if (message.method === REFRESH) return;
+        const hookList = this.startupHookList;
+        if (!message.method && message.id != null && hookList?.client === client && message.id === hookList.requestId) {
+          hookList.requestId = null;
+          hookList.data = message.result?.data ?? null;
+        }
         if (threadRequests.delete(message.id) && message.result?.thread?.id) {
           this.mainThreadId = message.result.thread.id;
           this.#settings({ threadId: this.mainThreadId, settings: { model: message.result.model,
@@ -279,6 +293,7 @@ export class AccountPoolSession extends EventEmitter {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.startupHookList = null;
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(failure('Codex 세션이 종료되었습니다.')); }
     this.pending.clear();
     for (const socket of this.sockets) socket.terminate(); this.sockets.clear();

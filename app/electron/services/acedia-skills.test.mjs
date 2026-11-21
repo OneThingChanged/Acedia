@@ -15,7 +15,7 @@ it('installs the same discoverable standalone skills and references into isolate
   for (const provider of ['codex', 'claude']) {
     const home = path.join(root, provider);
     expect(service.status(home).ready).toBe(false);
-    expect(await service.install(home)).toMatchObject({ ready: true, changed: true, bundleVersion: 1 });
+    expect(await service.install(home)).toMatchObject({ ready: true, changed: true, bundleVersion: 2 });
     expect(await service.install(home)).toMatchObject({ ready: true, changed: false });
     const status = service.status(home);
     expect(status.skills.map(skill => skill.name).sort()).toEqual(['acedia-browser', 'acedia-connection', 'acedia-page-capture', 'acedia-workspace']);

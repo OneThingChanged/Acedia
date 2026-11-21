@@ -145,7 +145,7 @@ export function buildMiraControlSnapshot({
       now
     );
     const providerSessionId =
-      text(sessionIdFor(agentId)) ||
+      text(sessionIdFor(agentId, agent)) ||
       text(hook?.session_id) ||
       text(agent?.lastSessionId) ||
       null;

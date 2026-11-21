@@ -94,7 +94,8 @@ export class StartupAutomation {
       || ![0, 1].includes(prompt.selectedIndex) || !Number.isSafeInteger(prompt.changedHookCount) || prompt.changedHookCount < 1) return false;
     try {
       const inputAt = entry.lastInputAt, proof = this.verifyHooks(entry);
-      if (!proof || prompt.changedHookCount > proof.count || canonical(proof.cwd) !== canonical(entry.cwd)) return false;
+      if (!proof || prompt.changedHookCount > proof.count || (proof.exactPending && prompt.changedHookCount !== proof.count)
+        || canonical(proof.cwd) !== canonical(entry.cwd)) return false;
       const fingerprint = proof.fingerprint, moved = this.hookMoved.get(entry);
       if (moved && (inputAt !== moved.inputAt || fingerprint !== moved.fingerprint || prompt.changedHookCount !== moved.count)) return false;
       const current = this.entry(id), live = startupPrompt(current), verified = this.verifyHooks(current);

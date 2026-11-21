@@ -25,7 +25,7 @@ function clientRpc(socket) {
   }) };
 }
 async function fixture(overrides = {}) {
-  const { threadStartResult, threadResumeResult, ...runtimeOverrides } = overrides;
+  const { threadStartResult, threadResumeResult, hooksListResult, ...runtimeOverrides } = overrides;
   const seen = [], replies = [], authenticated = [];
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await new Promise(resolve => backend.once('listening', resolve));
@@ -41,7 +41,8 @@ async function fixture(overrides = {}) {
       const result = message.method === 'account/read'
         ? { account: { type: 'chatgpt', planType: 'pro' }, requiresOpenaiAuth: true, workspaceRouting: { chatgptAccountId: auth.chatgptAccountId, backendOrigin: 'https://chatgpt.com' } }
         : message.method === 'thread/start' && threadStartResult ? threadStartResult
-        : message.method === 'thread/resume' && threadResumeResult ? threadResumeResult : { accepted: true };
+        : message.method === 'thread/resume' && threadResumeResult ? threadResumeResult
+        : message.method === 'hooks/list' && hooksListResult ? hooksListResult : { accepted: true };
       packet(socket, { id: message.id, result });
     });
   });
@@ -75,6 +76,19 @@ async function fixture(overrides = {}) {
 }
 
 describe('native routed Codex sessions', () => {
+  it('observes only the native TUI startup inventory and clears it when the thread starts', async () => {
+    const data = [{ cwd: 'project', hooks: [], warnings: [], errors: [] }];
+    const f = await fixture({ hooksListResult: { data } });
+    await f.rpc.call('hooks/list', { threadId: 'elsewhere' });
+    expect(f.runtime.startupHookList).toBeUndefined();
+    const response = await f.rpc.call('hooks/list', { cwds: ['project'] });
+    expect(response.result).toEqual({ data });
+    expect(f.runtime.startupHookList?.data).toEqual(data);
+    expect(f.runtime.startupHookList?.requestId).toBeNull();
+    await f.rpc.call('thread/resume', { threadId: 'saved' });
+    await f.rpc.call('hooks/list', { cwds: ['project'] });
+    expect(f.runtime.startupHookList).toBeNull();
+  });
   it.each([
     { stderr: 'Error: invalid transport\nin mcp_servers.multiagent_browser private-token', expected: 'MCP 설정' },
     { stderr: 'TOML duplicate key at private/config.toml', expected: 'TOML' },

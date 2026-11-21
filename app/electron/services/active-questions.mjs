@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { derivePendingQuestions, deriveTurnLifecycle } from './chat-transcript.mjs';
+import { derivePendingQuestions, deriveTurnLifecycle, deriveTurnLifecycleDetails } from './chat-transcript.mjs';
 import { isTranscriptInsideRoot } from './transcript-path.mjs';
 import { codexRetryTurn } from './codex-capacity-retry.mjs';
 import { deliveryEvidence, claudeDeliveryEvidence } from './session-delivery.mjs';
@@ -77,11 +77,18 @@ export class ActiveQuestions {
       const questions = derivePendingQuestions(text, tool, same && stat.size >= previous.size ? previous.questions : []);
       const question = questions.find(q => !q.async) || questions.find(q => q.async) || null;
       const hasTurnMarker = /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
-      const lifecycle = tool === 'codex' && !hasTurnMarker ? same ? previous.result.lifecycle : 'working' : deriveTurnLifecycle(text, tool);
+      const resumedHistory = resumed && (stat.mtimeMs < startedAt ||
+        tool === 'codex' && !hasTurnMarker && /"type"\s*:\s*"thread_settings_applied"/.test(text)
+          && deriveTurnLifecycleDetails(text, tool).lifecycleAt < startedAt);
+      // A pinned resume cannot continue a turn from a stopped Codex process.
+      // Keep historical questions and receipts, and retain the native composer gate.
+      const lifecycle = tool === 'codex' && resumedHistory ? 'idle'
+        : tool === 'codex' && !hasTurnMarker ? same && !previous.result.resumedHistory ? previous.result.lifecycle : 'working'
+        : deriveTurnLifecycle(text, tool);
       const delivery = ['codex', 'claude'].includes(tool) ? (tool === 'claude' ? claudeDeliveryEvidence : deliveryEvidence)(text, same && stat.size >= previous.size ? previous.delivery : undefined) : undefined;
       const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : delivery?.turn || null;
       const result = { question, lifecycle, sessionId, turn,
-        ...(resumed && stat.mtimeMs < startedAt ? { resumedHistory: true } : {}),
+        ...(resumedHistory ? { resumedHistory: true } : {}),
         ...(delivery ? { deliveries: delivery.receipts } : {}) };
       this.cache.set(id, { path: transcriptPath, startedAt, resumed, size: stat.size, mtime: stat.mtimeMs, questions, delivery, result });
       return result;

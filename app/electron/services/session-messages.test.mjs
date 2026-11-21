@@ -36,6 +36,32 @@ it('reports only inbox source IDs while reading and never treats outbox delivery
   expect(reads[1]).toEqual({ id: 'sender', targets: [] });
   expect(f.notify).not.toHaveBeenCalled();
 });
+it('dispatches past offline targets and clears older messages already read from the receiving inbox', async () => {
+  const f = fixture(), contexts = new Map();
+  let now = 1000, ready = false;
+  f.service.now = () => now;
+  f.service.receipt = async () => null;
+  f.service.prepare = async () => ({ ready, reason: 'turn-working' });
+  f.service.context = id => f.active.has(id) ? contexts.get(id) : null;
+  for (let i = 1; i <= 4; i++) {
+    const id = 'offline-' + i;
+    f.agents.push({ id, aiToolId: 'codex' }); f.active.add(id);
+  }
+  for (const agent of f.agents) contexts.set(agent.id, { entry: { aiToolId: agent.aiToolId }, conversationId: 'conversation' });
+  for (let i = 1; i <= 4; i++) {
+    await f.call('message-send', { sessionId: 'offline-' + i, message: text, requestKey: 'offline-' + i, waitMs: 0 });
+    f.active.delete('offline-' + i);
+  }
+  const previous = await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'old-read', waitMs: 0 });
+  await f.call('message-receive', { messageId: previous.messageId }, 'receiver');
+  const next = await f.call('message-send', { sessionId: 'receiver', message: 'New task', requestKey: 'new-task', waitMs: 0 });
+  expect(next.delivery.status).toBe('queued');
+  ready = true;
+  now = 2500; await f.service.poll();
+  now = 4100; await f.service.poll(); await f.service.poll();
+  expect(f.notify).toHaveBeenCalledExactlyOnceWith('sender', expect.objectContaining({ sessionId: 'receiver', message: expect.stringContaining(next.messageId) }));
+  expect(f.service.findRecord(previous.messageId).delivery).toMatchObject({ status: 'inbox', reason: 'already-read' });
+});
 it('waits for startup once, captures the first bound conversation and never replays the notification', async () => {
   const f = fixture(), entry = { aiToolId: 'codex' };
   let conversationId = null;
@@ -237,7 +263,9 @@ async function integration() {
   const headers = { authorization: 'Bearer ' + hook.token, 'x-acedia-agent-id': 'sender', 'content-type': 'application/json; charset=utf-8' };
   const base = `http://127.0.0.1:${hook.port}/integration/v1/workspace/messages`;
   const client = agentId => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], { windowsHide: true, env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: agentId }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], { windowsHide: true,
+      env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: agentId,
+        MULTIAGENT_RUNTIME_FILE: hook.infoPath, MULTIAGENT_RUNTIME_ID: hook.runtimeId }, stdio: ['pipe', 'pipe', 'ignore'] });
     cleanups.push(() => { child.stdin.end(); child.kill(); });
     child.stdout.setEncoding('utf8'); let buffer = '', next = 0; const pending = new Map();
     child.stdout.on('data', chunk => { buffer += chunk; let end; while ((end = buffer.indexOf('\n')) >= 0) { const row = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1); pending.get(row.id)?.(row.result); pending.delete(row.id); } });

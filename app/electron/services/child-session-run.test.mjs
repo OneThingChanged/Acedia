@@ -16,7 +16,9 @@ import { TrackedTerminalFilter } from './terminal-stream.mjs';
 const cleanup = [];
 afterEach(() => { for (const fn of cleanup.splice(0).reverse()) fn(); vi.useRealTimers(); });
 const settings = { codex: { model: 'sol', effort: 'high', serviceTier: 'fast' }, claude: { model: 'sonnet', effort: 'medium' } };
-const modelList = provider => [settings[provider]].map(s => ({ model: s.model, efforts: [{ effort: s.effort }] }));
+const fable = { model: 'claude-fable-5-2', effort: 'medium' };
+const modelList = provider => (provider === 'claude' ? [settings.claude, { ...fable, model: 'fable' }] : [settings.codex])
+  .map(s => ({ model: s.model, efforts: [{ effort: s.effort }] }));
 const temp = () => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'acedia-child-run-')); cleanup.push(() => fs.rmSync(root, { recursive: true })); return root; };
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 
@@ -28,11 +30,11 @@ function policyFixture(parentTool = 'codex', parentSettings = settings[parentToo
   return { policy: new ChildLaunchPolicy(options), options, change: value => { parent = { ...parent, ...value }; } };
 }
 
-for (const [ownerTool, childTool, serviceTier] of [
+for (const [ownerTool, childTool, serviceTier, model] of [
   ['codex', 'codex', 'fast'], ['codex', 'codex', 'priority'], ['codex', 'codex', null],
-  ['codex', 'claude'], ['claude', 'codex'], ['claude', 'claude'],
-]) it(`${ownerTool} → ${childTool}${ownerTool === childTool && childTool === 'codex' ? ` (${serviceTier})` : ''}: background creation, frozen settings, fresh no-transcript inbox delivery and actual start`, async () => {
-  const childSettings = ownerTool === 'codex' && childTool === 'codex' ? { ...settings.codex, serviceTier } : settings[childTool];
+  ['codex', 'claude'], ['claude', 'codex'], ['claude', 'claude'], ['claude', 'claude', undefined, fable],
+]) it(`${ownerTool} → ${childTool} (${model?.model ?? serviceTier ?? 'default'}): background creation, frozen settings, inbox delivery and actual start`, async () => {
+  const childSettings = model ?? (ownerTool === 'codex' && childTool === 'codex' ? { ...settings.codex, serviceTier } : settings[childTool]);
   const root = temp(), p = policyFixture(ownerTool, ownerTool === childTool ? childSettings : undefined), records = new Map(), contexts = new Map([['owner', { entry: { aiToolId: ownerTool }, name: 'Parent' }]]);
   const catalog = { projects: [{ id: 'project', folder: root }], agents: [{ id: 'owner', projectId: 'project', aiToolId: ownerTool }], availableTools: [{ id: 'codex' }, { id: 'claude' }] };
   const context = id => contexts.get(id), read = async id => records.get(id) || null;
@@ -46,7 +48,7 @@ for (const [ownerTool, childTool, serviceTier] of [
       { timestamp, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } },
     ] : [
       { timestamp, type: 'assistant', uuid: randomUUID(), parentUuid: 'attachment', message: { role: 'assistant', id: 'native-model-response' } },
-      { timestamp, type: 'user', uuid, message: { role: 'user', content: text } },
+      { timestamp, type: 'user', uuid, message: { role: 'user', content: model ? `<pasted_content id="055f">\n${text}\n</pasted_content id="055f">` : text } },
       { timestamp, type: 'attachment', uuid: 'attachment', parentUuid: uuid },
     ];
     const evidence = (childTool === 'codex' ? deliveryEvidence : claudeDeliveryEvidence)(rows.map(r => JSON.stringify(r)).join('\n'));
@@ -132,6 +134,10 @@ it('Claude receipt requires an actual assistant descendant, excludes tool prose 
   const encode = (...rows) => rows.map(r => JSON.stringify(r)).join('\n');
   const received = claudeDeliveryEvidence(encode(user));
   expect(received.receipts[0]).toMatchObject({ deliveryId: id }); expect(received.receipts[0]).not.toHaveProperty('startedAt');
+  const pasted = (text, endId = '055f') => encode({ ...user, message: { role: 'user', content: `<pasted_content id="055f">\n${text}\n</pasted_content id="${endId}">` } });
+  expect(claudeDeliveryEvidence(pasted(value)).receipts).toEqual(received.receipts);
+  expect(claudeDeliveryEvidence(pasted(value, '0550')).receipts[0].messageHash).not.toBe(received.receipts[0].messageHash);
+  expect(claudeDeliveryEvidence(pasted(value + ' changed')).receipts[0].messageHash).not.toBe(received.receipts[0].messageHash);
   const result = claudeDeliveryEvidence(encode(
     { type: 'assistant', uuid: 'a', timestamp, parentUuid: 'attachment', message: { role: 'assistant', id: 'response' } },
     { type: 'attachment', uuid: 'attachment', parentUuid: userId, timestamp },
@@ -189,6 +195,30 @@ it('validates inherited Claude full model IDs against their documented family an
   const f = policyFixture('claude'); f.change({ modelSettings: { model: 'claude-sonnet-5-5', effort: 'medium' } });
   expect(await f.policy.resolve({ ownerId: 'owner', aiToolId: 'claude' })).toMatchObject({ modelSettings: { model: 'claude-sonnet-5-5', effort: 'medium' } });
   const c = policyFixture('codex'); expect((await c.policy.resolve({ ownerId: 'owner', aiToolId: 'codex' })).codexPoolAccountId).toBeUndefined();
+});
+
+it('accepts an explicit Fable ID for create-only and reports a rejected model as a definite run failure', async () => {
+  const root = temp(), f = policyFixture();
+  const create = vi.fn(async payload => ({ id: payload.id || 'created' }));
+  const catalog = { projects: [{ id: 'p', folder: root }], agents: [{ id: 'owner', projectId: 'p', aiToolId: 'codex' }],
+    availableTools: [{ id: 'codex' }, { id: 'claude' }] };
+  const workspace = new WorkspaceManagement({ catalog: () => catalog, isActive: () => true, create, resolveLaunch: body => f.policy.resolve(body) });
+  const options = { file: path.join(root, 'runs.json'), create: (ownerId, body, id) => workspace.createItem('create-session', body, ownerId, id),
+    context: () => null, active: () => true, readiness: vi.fn(), messages: { handle: vi.fn() } };
+  const runs = new SessionRuns(options); cleanup.push(() => runs.close());
+  const child = { projectId: 'p', aiToolId: 'claude', modelSettings: fable };
+  await workspace.handle({ action: 'create-session', agentId: 'owner', body: { ...child, start: false, requestKey: 'only-register' } });
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ start: false, modelSettings: fable, claudeAccountId: 'claude-default' }));
+  create.mockClear();
+  const body = { ...child, modelSettings: { ...fable, effort: 'max' }, requestKey: 'rejected', waitMs: 500, message: 'Task' };
+  const failure = { phase: 'failed', sessionId: null, registered: false, nothingCreated: true, reason: expect.stringContaining('모델·effort') };
+  expect(await runs.handle({ action: 'run', agentId: 'owner', body })).toMatchObject(failure);
+  expect(create).not.toHaveBeenCalled();
+  expect(options.messages.handle).not.toHaveBeenCalled();
+  const restored = new SessionRuns(options); cleanup.push(() => restored.close());
+  expect(await restored.handle({ action: 'run-status', agentId: 'owner', body: { requestKey: body.requestKey } })).toMatchObject(failure);
+  await expect(f.policy.resolve({ ownerId: 'owner', aiToolId: 'claude', modelSettings: { model: 'claude-unlisted-5-2' } })).rejects.toMatchObject({ statusCode: 409 });
+  await expect(f.policy.resolve({ ownerId: 'owner', aiToolId: 'claude', modelSettings: { model: 'claude-fable-test' } })).rejects.toMatchObject({ statusCode: 409 });
 });
 it('uses the same remembered Dangerous selection as the creation UI and rejects conflicting advanced model flags', async () => {
   const values = { 'multiagent.agentDefaults.v1': JSON.stringify({ claude: { dangerousDefaultMode: 'remember', dangerous: false } }),

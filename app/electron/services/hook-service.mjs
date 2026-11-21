@@ -7,7 +7,7 @@ import { parse as parseToml } from "smol-toml";
 import { checkProjectPath, makeWritable, projectManagementPlan } from "./project-managed-files.mjs";
 import { AcediaSkills } from './acedia-skills.mjs';
 import { MIRACONTROL_API_VERSION } from "./miracontrol-integration.mjs";
-import { captureStartupHookProof } from './startup-hook-proof.mjs';
+import { captureStartupHookProof, verifyNativeStartupHooks } from './startup-hook-proof.mjs';
 
 const HOOK_MARKER = "multiagent";
 const CODEX_EVENTS = [
@@ -42,6 +42,8 @@ const BROWSER_MCP_ENV_VARS = [
   "MULTIAGENT_PORT",
   "MULTIAGENT_TOKEN",
   "MULTIAGENT_MCP_SCRIPT",
+  "MULTIAGENT_RUNTIME_FILE",
+  "MULTIAGENT_RUNTIME_ID",
 ];
 const MAX_INTEGRATION_BODY_BYTES = 16 * 1024;
 
@@ -547,6 +549,8 @@ export class HookService {
     this.server = null;
     this.port = 0;
     this.token = "";
+    this.runtimeId = crypto.randomUUID();
+    this.runtimeQueue = Promise.resolve();
     this.mergeQueue = Promise.resolve();
     this.recentEvents = [];
     this.lastRepairSummary = null;
@@ -554,16 +558,35 @@ export class HookService {
     this.skills = new AcediaSkills();
   }
 
-  async start() {
+  #queueRuntime(operation) {
+    const result = this.runtimeQueue.then(operation);
+    this.runtimeQueue = result.catch(() => {});
+    return result;
+  }
+
+  start() {
+    return this.#queueRuntime(() => this.#start());
+  }
+
+  async #start() {
     if (this.server?.listening) return { port: this.port, token: this.token };
     this.token = crypto.randomUUID();
-    this.server = http.createServer((request, response) => this.handleRequest(request, response));
-    await new Promise((resolve, reject) => {
-      this.server.once("error", reject);
-      this.server.listen(0, "127.0.0.1", resolve);
-    });
-    this.port = this.server.address().port;
-    await this.writeRuntimeFiles();
+    const server = http.createServer((request, response) => this.handleRequest(request, response));
+    this.server = server;
+    try {
+      await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", reject);
+          resolve();
+        });
+      });
+      this.port = server.address().port;
+      await this.writeRuntimeFiles();
+    } catch (error) {
+      await this.#stop();
+      throw error;
+    }
     return { port: this.port, token: this.token };
   }
 
@@ -575,6 +598,7 @@ export class HookService {
       port: this.port,
       token: this.token,
       pid: process.pid,
+      runtimeId: this.runtimeId,
       integrationApiVersion: MIRACONTROL_API_VERSION,
     }));
   }
@@ -834,16 +858,17 @@ export class HookService {
     }
   }
 
-  async refresh() {
-    let restarted = false;
-    if (!(await this.health())) {
-      await this.stop();
-      await this.start();
-      restarted = true;
-    } else {
-      await this.writeRuntimeFiles();
-    }
-    return restarted;
+  refresh() {
+    return this.#queueRuntime(async () => {
+      // A slow health response does not mean the owned listener has closed.
+      if (this.server?.listening) {
+        await this.writeRuntimeFiles();
+        return false;
+      }
+      await this.#stop();
+      await this.#start();
+      return true;
+    });
   }
 
   async setupProject(folder, aiToolId) {
@@ -881,8 +906,9 @@ export class HookService {
   verifyStartupHooks(entry) {
     const proof = entry?.startupHookProof;
     if (!proof || entry.ssh || entry.aiToolId !== 'codex') return null;
-    const current = this.captureStartupHooks({ cwd: entry.cwd, home: proof.home });
-    return current?.fingerprint === proof.fingerprint && current.cwd === proof.cwd ? current : null;
+    const current = this.captureStartupHooks({ cwd: entry.cwd, home: proof.home, nativeInventory: proof.nativeInventory });
+    if (!current || current.fingerprint !== proof.fingerprint || current.cwd !== proof.cwd) return null;
+    return proof.nativeInventory ? verifyNativeStartupHooks(entry.startupHookInventory?.(), current) : current;
   }
 
   async setupCodexHome(home) {
@@ -1045,7 +1071,11 @@ export class HookService {
     };
   }
 
-  async stop() {
+  stop() {
+    return this.#queueRuntime(() => this.#stop());
+  }
+
+  async #stop() {
     if (!this.server) return;
     const current = this.server;
     this.server = null;

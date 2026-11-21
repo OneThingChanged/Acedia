@@ -19,7 +19,7 @@ function fixture() {
   const ports = new Set();
   const processes = [];
   const hookService = {
-    port: 12345, token: "fixture-token",
+    port: 12345, token: "fixture-token", infoPath: path.join(os.tmpdir(), "fixture", "hook-info.json"), runtimeId: "fixture-runtime",
     setupProject: vi.fn(async () => {}),
     setupCodexHome: vi.fn(async () => {}),
     setupClaudeHome: vi.fn(async () => {}),
@@ -239,7 +239,8 @@ describe("terminal launch lifecycle", () => {
     expect(env.CODEX_HOME).toContain("account-a");
     expect(env.ACEDIA_ACCOUNT_POOL_KEY).toBe("lb-secret");
     expect(accountPoolLaunch).toHaveBeenCalledWith(f.args.id, routedAccountId, null, expect.objectContaining({
-      cwd: os.tmpdir(), env: expect.objectContaining({ MULTIAGENT_AGENT_ID: f.args.id, CODEX_HOME: env.CODEX_HOME }),
+      cwd: os.tmpdir(), env: expect.objectContaining({ MULTIAGENT_AGENT_ID: f.args.id, CODEX_HOME: env.CODEX_HOME,
+        MULTIAGENT_RUNTIME_FILE: f.dependencies.hookService.infoPath, MULTIAGENT_RUNTIME_ID: "fixture-runtime" }),
     }));
     await vi.advanceTimersByTimeAsync(600);
     expect(f.processes[0].write.mock.calls[0][0]).toBe("'codex' resume saved-id '-c' 'model_provider=\"acedia_pool\"' 'continue work'\r");
@@ -254,6 +255,9 @@ describe("terminal launch lifecycle", () => {
     expect(f.sessions.get(f.args.id).poolRouted).toBe(false);
     await launch({ ...f.args, id: "remote", ssh: { host: "example.test", user: "test" } });
     expect(accountPoolLaunch).not.toHaveBeenCalled();
+    expect(f.dependencies.spawnProcess.mock.calls[1][2].env).toMatchObject({
+      MULTIAGENT_RUNTIME_FILE: "", MULTIAGENT_RUNTIME_ID: "",
+    });
   });
   it("does not fall back to direct Codex when connection preparation fails", async () => {
     const f = fixture();
@@ -298,7 +302,8 @@ describe("terminal launch lifecycle", () => {
     expect(f.dependencies.spawnProcess.mock.calls[0][2]).toMatchObject({
       cwd: os.tmpdir(), cols: 120, rows: 30,
       env: { CODEX_HOME: accountEnv.CODEX_HOME, TERM: "xterm-256color", COLORTERM: "truecolor",
-        MULTIAGENT_AGENT_ID: "session-a", MULTIAGENT_TOKEN: "fixture-token", MULTIAGENT_MCP_SCRIPT: "/fixture/browser-mcp.mjs" },
+        MULTIAGENT_AGENT_ID: "session-a", MULTIAGENT_TOKEN: "fixture-token", MULTIAGENT_MCP_SCRIPT: "/fixture/browser-mcp.mjs",
+        MULTIAGENT_RUNTIME_FILE: f.dependencies.hookService.infoPath, MULTIAGENT_RUNTIME_ID: "fixture-runtime" },
     });
     expect(f.dependencies.spawnProcess.mock.calls[0][2].env.NO_COLOR).toBeUndefined();
     expect(accountEnv.NO_COLOR).toBe("1");

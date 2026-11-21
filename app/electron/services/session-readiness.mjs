@@ -55,7 +55,8 @@ export class SessionReadiness {
     // disable this path. Transcript questions/work and the live composer gate
     // remain authoritative even if no new SessionStart hook was emitted.
     const resumedSession = !!current?.sessionId && entry.resumeContext?.sessionId === current.sessionId && current.sessionId === target.conversationId;
-    if (current && target.conversationId && current.sessionId === target.conversationId && this.ready(target, { resumedSession })) {
+    const cancellation = current?.turn?.status === 'cancelled' ? { cancelledAt: current.turn.at } : {};
+    if (current && target.conversationId && current.sessionId === target.conversationId && this.ready(target, { resumedSession, ...cancellation })) {
       return result('ready', 'ready', { ready: true });
     }
     if (this.canWait(sessionId)) return result('starting', 'first-message-initializing');

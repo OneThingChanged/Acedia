@@ -1,12 +1,7 @@
 // Minimal stdio MCP bridge for the browser owned by Acedia. It deliberately
-// has no Electron dependency: the child inherits MULTIAGENT_PORT, token and
-// agent id from the PTY that launched Codex/Claude, then talks only to the
-// authenticated loopback integration API.
-
-const port = String(process.env.MULTIAGENT_PORT || "").trim();
-const token = String(process.env.MULTIAGENT_TOKEN || "").trim();
-const agentId = String(process.env.MULTIAGENT_AGENT_ID || "").trim();
-const baseUrl = port ? `http://127.0.0.1:${port}/integration/v1/browser/${encodeURIComponent(agentId)}` : "";
+// has no Electron dependency and talks only to the authenticated loopback API
+// for the agent and runtime that launched it.
+import { sessionEndpoint } from './acedia-skills/acedia-connection/scripts/runtime-endpoint.mjs';
 
 const targetSchema = {
   type: "object",
@@ -355,16 +350,32 @@ function errorResult(message) {
   };
 }
 
-async function callBrowser(action, body = {}, method = "POST") {
-  if (!baseUrl || !token || !agentId) {
-    throw new Error("Acedia browser bridge environment is missing");
+async function requireEndpoint() {
+  const endpoint = await sessionEndpoint();
+  if (endpoint.reason) throw new Error(`Acedia bridge unavailable (${endpoint.reason})`);
+  return endpoint;
+}
+
+async function sessionFetch(endpoint, route, options = {}) {
+  const send = ({ port, token }) => fetch(`http://127.0.0.1:${port}/integration/v1/${route}`, {
+    ...options, redirect: 'error', headers: { ...options.headers, authorization: `Bearer ${token}` },
+  });
+  try { return await send(endpoint); }
+  catch (error) {
+    // A refused connection never delivered the request. Other failures may
+    // follow an accepted write, so return them without replaying the action.
+    if (error.cause?.code !== 'ECONNREFUSED' || !process.env.MULTIAGENT_RUNTIME_FILE) throw error;
+    const next = await sessionEndpoint();
+    if (next.reason || (next.port === endpoint.port && next.token === endpoint.token)) throw error;
+    return send(next);
   }
-  const response = await fetch(`${baseUrl}/${action}`, {
+}
+
+async function callBrowser(action, body = {}, method = "POST") {
+  const endpoint = await requireEndpoint();
+  const response = await sessionFetch(endpoint, `browser/${encodeURIComponent(endpoint.agentId)}/${action}`, {
     method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(method === "POST" ? { "content-type": "application/json" } : {}),
-    },
+    ...(method === "POST" ? { headers: { "content-type": "application/json" } } : {}),
     ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(action === 'collect-page' ? 90_000 : 20_000),
   });
@@ -379,13 +390,14 @@ async function callTool(name, args) {
   const body = args && typeof args === "object" ? { ...args } : {};
   if (name === 'acedia_connection') {
     if (Array.isArray(args) || Object.keys(body).length) throw new Error('acedia_connection takes no arguments');
-    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535 || !token || !agentId) {
-      return { ok: false, connected: false, reason: 'session-environment-missing', recovery: 'Start the CLI from Acedia. Do not copy another session identity or credentials.' };
+    const endpoint = await sessionEndpoint();
+    if (endpoint.reason) {
+      return { ok: false, connected: false, reason: endpoint.reason, recovery: 'Check this Acedia runtime. Launch the CLI from the active Acedia app if the app instance changed.' };
     }
     let response;
     try {
-      response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/capabilities`, {
-        headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId }, redirect: 'error', signal: AbortSignal.timeout(5000),
+      response = await sessionFetch(endpoint, 'workspace/capabilities', {
+        headers: { 'x-acedia-agent-id': endpoint.agentId }, signal: AbortSignal.timeout(5000),
       });
     } catch { return { ok: false, connected: false, reason: 'host-unreachable', recovery: 'Check that Acedia is running and restart this CLI from Acedia if its runtime environment is stale.' }; }
     if (!response.ok) return { ok: false, connected: true, httpStatus: response.status,
@@ -401,11 +413,11 @@ async function callTool(name, args) {
       note: 'The model client may cache tool metadata separately. If a supported tool is not visible, reload its MCP connection or restart this CLI.' } };
   }
   if (name.startsWith('acedia_task_')) {
-    if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
+    const endpoint = await requireEndpoint();
     const action = name === 'acedia_task_control' ? body.action : name.slice('acedia_task_'.length);
     if (name === 'acedia_task_control') delete body.action;
-    const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/tasks`, {
-      method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
+    const response = await sessionFetch(endpoint, 'workspace/tasks', {
+      method: 'POST', headers: { 'x-acedia-agent-id': endpoint.agentId, 'content-type': 'application/json' },
       body: JSON.stringify({ action, body }), signal: AbortSignal.timeout(60_000),
     });
     const result = await response.json();
@@ -413,12 +425,12 @@ async function callTool(name, args) {
     return result;
   }
   if (['acedia_dashboard', 'acedia_board', 'acedia_projects', 'acedia_project_create', 'acedia_session_create', 'acedia_session_run', 'acedia_session_run_status', 'acedia_session_settings', 'acedia_session_routing', 'acedia_session_start', 'acedia_session_status', 'acedia_session_stop', 'acedia_sessions_organize', 'acedia_sessions_relocate', 'acedia_session_send', 'acedia_session_delivery', 'acedia_session_message_send', 'acedia_session_message_receive'].includes(name)) {
-    if (!baseUrl || !token || !agentId) throw new Error('Acedia workspace bridge environment is missing');
+    const connection = await requireEndpoint();
     const method = name === 'acedia_projects' ? 'GET' : 'POST';
     const endpoint = name === 'acedia_dashboard' ? 'dashboard'
       : name === 'acedia_board' ? 'board' : name === 'acedia_session_run' ? 'run' : name === 'acedia_session_run_status' ? 'run-status' : name === 'acedia_session_message_send' ? 'messages/send' : name === 'acedia_session_message_receive' ? 'messages/receive' : name === 'acedia_sessions_organize' ? 'organize-sessions' : name === 'acedia_session_stop' ? 'stop' : name === 'acedia_sessions_relocate' ? 'relocate-sessions' : name === 'acedia_session_status' ? 'session-status' : name === 'acedia_session_start' ? 'start' : name === 'acedia_session_settings' ? 'session-settings' : name === 'acedia_session_routing' ? 'session-routing' : name === 'acedia_session_create' ? 'sessions' : name === 'acedia_session_send' ? 'send' : name === 'acedia_session_delivery' ? 'delivery' : 'projects';
-    const response = await fetch(`http://127.0.0.1:${port}/integration/v1/workspace/${endpoint}`, {
-      method, headers: { authorization: `Bearer ${token}`, 'x-acedia-agent-id': agentId, 'content-type': 'application/json' },
+    const response = await sessionFetch(connection, `workspace/${endpoint}`, {
+      method, headers: { 'x-acedia-agent-id': connection.agentId, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000),
     });
     const result = await response.json();

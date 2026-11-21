@@ -120,7 +120,7 @@ sandbox = "elevated"
       'args = ["-e", "import(require(\'node:url\').pathToFileURL(process.env.MULTIAGENT_MCP_SCRIPT))"]',
     );
     expect(codex).toContain(
-      'env_vars = ["MULTIAGENT_AGENT_ID", "MULTIAGENT_PORT", "MULTIAGENT_TOKEN", "MULTIAGENT_MCP_SCRIPT"]',
+      'env_vars = ["MULTIAGENT_AGENT_ID", "MULTIAGENT_PORT", "MULTIAGENT_TOKEN", "MULTIAGENT_MCP_SCRIPT", "MULTIAGENT_RUNTIME_FILE", "MULTIAGENT_RUNTIME_ID"]',
     );
     expect(codex).toContain("enabled = false");
     expect(codex).not.toContain("browser-mcp-server.mjs");

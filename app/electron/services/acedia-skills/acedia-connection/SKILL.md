@@ -27,9 +27,10 @@ the same Node runtime used by the MCP bridge, resolving it relative to this skil
 node <this-skill-directory>/scripts/check.mjs
 ```
 
-The helper uses only this Acedia-launched session's inherited runtime identity.
-Missing environment means the CLI must be launched from Acedia. Authentication
-failure means the runtime may be stale. Do not print credentials, copy another
-session's identity, scan profiles for tokens or silently restart working sessions.
-Report what was verified and the specific reload/update needed. Diagnosis does
-not authorize a restart or other mutation.
+The helper uses this session's inherited runtime identity. A current bridge can
+follow listener changes while the same Acedia instance is running. If the
+descriptor is temporarily unavailable, retry the connection check. If the app
+instance changed or the CLI uses the legacy connection, report whether the CLI
+needs to reopen through Acedia. Do not print credentials, copy another session's
+identity, scan profiles for tokens or silently restart working sessions.
+Diagnosis does not authorize a restart or other mutation.

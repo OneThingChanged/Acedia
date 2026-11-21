@@ -135,7 +135,7 @@ import {
 } from "./lib/attention";
 import { useAttentionState } from "./hooks/useAttentionState";
 import { capacityRetryMessage, type CapacityRetryState } from "./lib/capacityRetry";
-import { deliveryStatusMessage, type SessionDelivery } from './lib/sessionDelivery';
+import { deliveryStatusMessage, isDeliveryWarning, type SessionDelivery } from './lib/sessionDelivery';
 import { useSessionLifecycleActions } from "./hooks/useSessionLifecycleActions";
 import { useNativeViewOcclusion } from "./hooks/useNativeViewOcclusion";
 import { canAutoFocusTerminal, scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
@@ -1772,13 +1772,14 @@ function App() {
         }
       }
 
-      setAgents((cur) =>
-        cur.map((a) =>
-          a.id === id && (a.status === "idle" || a.status === "starting")
-            ? applyAgentRuntimeStatus(a, "running")
-            : a
-        )
-      );
+      setAgents((current) => {
+        const index = current.findIndex(agent => agent.id === id);
+        const agent = current[index];
+        if (!agent || (agent.status !== "idle" && agent.status !== "starting")) return current;
+        const next = current.slice();
+        next[index] = applyAgentRuntimeStatus(agent, "running");
+        return next;
+      });
     }).then(track);
 
     listen<{ id: string }>("pty:exit", (e) => {
@@ -1858,9 +1859,13 @@ function App() {
     }).then(track);
 
     listen<SessionDelivery>('agent:session-delivery', e => {
-      if (cancelled || !['failed', 'unconfirmed'].includes(e.payload.status) || !ownedAgentIdsRef.current.has(e.payload.sourceId)) return;
-      const agent = agentsRef.current.find(item => item.id === e.payload.sourceId);
-      if (agent) void notifySession(agent, 'question', text(deliveryStatusMessage(e.payload, false), deliveryStatusMessage(e.payload, true)));
+      const delivery = e.payload;
+      if (cancelled || !isDeliveryWarning(delivery) || !ownedAgentIdsRef.current.has(delivery.sourceId)) return;
+      const agent = agentsRef.current.find(item => item.id === delivery.sourceId);
+      if (agent) void notifySession(agent, 'question', text(
+        `${delivery.targetName}에게 보낸 메시지 · ${deliveryStatusMessage(delivery, false)}`,
+        `Message to ${delivery.targetName} · ${deliveryStatusMessage(delivery, true)}`
+      ));
     }).then(track);
 
     listen<AgentHookEvent>(

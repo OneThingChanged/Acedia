@@ -72,6 +72,32 @@ it('drops the historical readiness allowance as soon as a new live turn is appen
   expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ phase: 'working', ready: false });
 });
 
+it('allows a pinned resume after an interrupted prior process whose transcript has no final marker', async () => {
+  const f = await fixture();
+  const row = JSON.stringify({ timestamp: new Date(f.old).toISOString(), type: 'event_msg', payload: { type: 'token_count' } }) + '\n';
+  await fs.writeFile(f.transcriptPath, row);
+  await fs.utimes(f.transcriptPath, f.old / 1000, f.old / 1000);
+  expect(await f.read('target')).toMatchObject({ resumedHistory: true, lifecycle: 'idle' });
+  expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ ready: true, firstMessageReady: false });
+  f.ready.mockReturnValue(false);
+  expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ ready: false, reason: 'composer-or-runtime-not-ready' });
+  await fs.appendFile(f.transcriptPath, row);
+  await fs.utimes(f.transcriptPath, Date.now() / 1000 + 1, Date.now() / 1000 + 1);
+  expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ ready: false, reason: 'turn-working' });
+});
+
+it('does not treat a resumed Codex settings update as a new turn', async () => {
+  const f = await fixture();
+  const record = (type, payload, at) => JSON.stringify({ type, timestamp: new Date(at).toISOString(), payload }) + '\n';
+  const call = { type: 'function_call', name: 'shell_command' };
+  await fs.writeFile(f.transcriptPath, record('response_item', call, f.old) +
+    record('event_msg', { type: 'thread_settings_applied' }, f.entry.startedAt + 1000));
+  await fs.utimes(f.transcriptPath, Date.now() / 1000 + 1, Date.now() / 1000 + 1);
+  expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ ready: true });
+  await fs.appendFile(f.transcriptPath, record('response_item', call, f.entry.startedAt + 2000));
+  expect(await f.readiness.handle({ sessionId: 'target' })).toMatchObject({ ready: false, reason: 'turn-working' });
+});
+
 it('accepts a resumed idle transcript touched at launch and keeps it usable after a draft is cleared', async () => {
   const f = await fixture();
   await fs.utimes(f.transcriptPath, Date.now() / 1000 + 1, Date.now() / 1000 + 1);

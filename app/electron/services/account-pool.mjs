@@ -550,6 +550,7 @@ export class AccountPool {
       }
       void this.refreshActiveQuotas();
       return { native: true, env: { ACEDIA_CODEX_REMOTE_TOKEN: runtime.publicToken },
+        startupHookInventory: () => runtime.startupHookList?.data,
         args: ['--remote', `ws://127.0.0.1:${this.server.address().port}`,
           '--remote-auth-token-env', 'ACEDIA_CODEX_REMOTE_TOKEN'], release: () => runtime.close() };
     } catch (error) { runtime.close(); throw error; }

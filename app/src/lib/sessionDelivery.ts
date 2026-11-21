@@ -16,6 +16,10 @@ export type SessionDelivery = {
   reason?: string;
 };
 
+export function isDeliveryWarning(record: SessionDelivery) {
+  return ['failed', 'unconfirmed'].includes(record.status) && !(record.isMessage && record.readAt);
+}
+
 export function deliveryStatusMessage(record: SessionDelivery, english: boolean) {
   const messages = {
     saved: ['메시지함에 저장됨', 'Saved in inbox'],
@@ -29,5 +33,8 @@ export function deliveryStatusMessage(record: SessionDelivery, english: boolean)
     unconfirmed: ['전송 여부 확인 필요 · 중복 실행 방지를 위해 자동 재전송하지 않습니다.', 'Delivery outcome uncertain · no automatic replay to prevent duplicate execution.'],
   };
   if (record.isMessage && record.status === 'started') return (record.readAt ? ['원문 읽음 · 응답 시작 확인', 'Original text read · response started'] : ['알림 처리 시작 · 원문 읽음은 아직 미확인', 'Notification turn started · original text not yet read'])[english ? 1 : 0];
+  if (record.isMessage && record.readAt) return (record.status === 'unconfirmed'
+    ? ['원문 읽음 · 자동 알림 확인은 미완료', 'Original text read · automatic notification unconfirmed']
+    : ['원문 읽음', 'Original text read'])[english ? 1 : 0];
   return messages[record.status][english ? 1 : 0];
 }

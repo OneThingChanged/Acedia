@@ -102,7 +102,9 @@ if (!process.versions.electron) {
     await runJS('document.querySelector(".sidebar-project-navigation [data-sidebar-agent-id=root] .sidebar-family-toggle").click()');
     await until(() => runJS('!!document.querySelector(".sidebar-project-navigation [data-sidebar-agent-id=background-fixture]")&&!!document.querySelector(".sidebar-recents [data-sidebar-agent-id=background-fixture]")'), 'shared project/recent family expansion');
     // A uses the shipped stdio MCP server; each worker is a distinct CLI process.
-    mcp = spawn(process.env.ACEDIA_TASK_FIXTURE_NODE, [path.join(appRoot, 'electron/services/browser-mcp-server.mjs')], { env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'root' }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    mcp = spawn(process.env.ACEDIA_TASK_FIXTURE_NODE, [path.join(appRoot, 'electron/services/browser-mcp-server.mjs')], {
+      env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'root',
+        MULTIAGENT_RUNTIME_FILE: hook.infoPath, MULTIAGENT_RUNTIME_ID: hook.runtimeId }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let next = 0; const pending = new Map();
     readline.createInterface({ input: mcp.stdout }).on('line', line => { const response = JSON.parse(line); pending.get(response.id)?.(response.result); pending.delete(response.id); });
     const rpc = (method, params) => new Promise((resolve, reject) => { const id = ++next, timeout = setTimeout(() => reject(Error('MCP timeout')), 15000); pending.set(id, result => { clearTimeout(timeout); resolve(result); }); mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });

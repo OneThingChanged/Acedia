@@ -25,7 +25,8 @@ it('exposes collection tools over real stdio MCP and authenticated HTTP with bou
   cleanups.push(() => new Promise(resolve => { hook.server.closeAllConnections(); hook.server.close(resolve); }));
   const child = spawn(process.execPath, [fileURLToPath(new URL('./browser-mcp-server.mjs', import.meta.url))], {
     windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'],
-    env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'page-agent' },
+    env: { ...process.env, MULTIAGENT_PORT: String(hook.port), MULTIAGENT_TOKEN: hook.token, MULTIAGENT_AGENT_ID: 'page-agent',
+      MULTIAGENT_RUNTIME_FILE: hook.infoPath, MULTIAGENT_RUNTIME_ID: hook.runtimeId },
   });
   cleanups.push(() => { child.stdin.end(); child.kill(); });
   let buffer = '', next = 0; const pending = new Map();

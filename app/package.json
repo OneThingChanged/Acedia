@@ -4,7 +4,7 @@
   "author": "Acedia",
   "private": true,
   "version": "1.8.2",
-  "multiAgentReleaseVersion": "1.8.2.31",
+  "multiAgentReleaseVersion": "1.8.2.32",
   "multiAgentVariant": "standard",
   "type": "module",
   "engines": {
@@ -154,7 +154,8 @@
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/node-pty/**",
-      "electron/services/browser-mcp-server.mjs"
+      "electron/services/browser-mcp-server.mjs",
+      "electron/services/acedia-skills/acedia-connection/scripts/runtime-endpoint.mjs"
     ],
     "files": [
       "!ref/**",
@@ -180,9 +181,9 @@
       ]
     },
     "nsis": {
-      "artifactName": "Acedia-Setup-1.8.2.31-${arch}.${ext}",
+      "artifactName": "Acedia-Setup-1.8.2.32-${arch}.${ext}",
       "shortcutName": "Acedia",
-      "uninstallDisplayName": "Acedia 1.8.2.31",
+      "uninstallDisplayName": "Acedia 1.8.2.32",
       "include": "electron/installer.nsh"
     },
     "publish": [

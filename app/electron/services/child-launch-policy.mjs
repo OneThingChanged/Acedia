@@ -31,9 +31,11 @@ export class ChildLaunchPolicy {
     try { sessionModelArgs(settings, prefs.launchOptions, aiToolId); } catch (error) { throw fail(error.message); }
     const pool = aiToolId === 'codex' ? same ? parent.codexPoolAccountId || undefined : prefs.codexPoolAccountId || undefined : undefined;
     const catalog = await this.models({ provider: aiToolId, accountId: selected, codexPoolAccountId: pool, ownerId });
-    const model = catalog.models.find(item => item.model === settings.model) || (same && aiToolId === 'claude'
-      && parent.modelSettings?.model === settings.model ? catalog.models.find(item => ['sonnet', 'opus', 'haiku'].includes(item.model)
-        && settings.model.startsWith('claude-' + item.model + '-')) : null);
+    // Claude CLI help lists family aliases. Validate versioned IDs against
+    // those families and pass the original model unchanged to the CLI.
+    const family = aiToolId === 'claude' ? /^claude-([a-z][a-z0-9-]*?)-\d+(?:-\d+)*$/.exec(settings.model)?.[1] : undefined;
+    const model = catalog.models.find(item => item.model === settings.model) ??
+      (family && catalog.models.find(item => item.model === family));
     if (!model || settings.effort && !model.efforts.some(item => item.effort === settings.effort)) throw fail('선택한 계정에서 하위 세션 모델·effort를 확인하지 못했습니다. 다른 모델로 자동 변경하지 않습니다.');
     if (identity(this.parent(ownerId)) !== expected) throw fail('계정·모델 확인 중 부모 세션이 변경되었습니다. 다시 조회하세요.');
     return { modelSettings: settings, dangerous: dangerous ?? (prefs.dangerousDefaultMode === 'on' ? true

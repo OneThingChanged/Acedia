@@ -9,6 +9,7 @@ const validId = value => typeof value === 'string' && value.length > 0 && value.
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const maxText = 64 * 1024, maxStore = 16 * 1024 * 1024;
 const pendingNotification = status => ['queued', 'notifying', 'sending', 'sent', 'received'].includes(status);
+const byAttemptTime = (a, b) => (a.delivery.nextAttemptAt || 0) - (b.delivery.nextAttemptAt || 0);
 const validRecord = r => r && /^[a-f0-9-]{36}$/.test(r.messageId)
   && validId(r.sourceId) && validId(r.targetId) && typeof r.requestKey === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(r.requestKey)
   && typeof r.message === 'string' && Buffer.byteLength(r.message, 'utf8') <= maxText && sha(r.message) === r.sha256
@@ -125,9 +126,9 @@ export class SessionMessages {
     this.records = records;
     this.persisted = new Map(records.map(r => [r.messageId, encoded.get(r.messageId)]));
   }
-  async view(record, { content = false, includeBase64 = false } = {}) {
+  async view(record, { content = false, includeBase64 = false, refreshReceipt = true } = {}) {
     const { message, signature, notificationKey, pinConversationId, pinStartedAt, pinProvider, ...value } = record;
-    if (record.notify && record.notificationKey) {
+    if (refreshReceipt && record.notify && record.notificationKey) {
       const current = await this.receipt(record.sourceId, notificationKey).catch(() => null);
       if (current && !(['queued', 'notifying'].includes(record.delivery?.status) && current.status === 'failed' && current.reason === 'not-sent')) value.delivery = current;
     }
@@ -251,10 +252,26 @@ export class SessionMessages {
     if (record.notificationAttempts >= 5) this.#state(record, { status: 'notification-error', reason: `retry-limit: ${reason}`, nothingSent: true });
     else this.#queue(record, reason);
   }
+  #settleReadQueue() {
+    const settled = this.records.filter(r => r.readAt && r.delivery?.status === 'queued' && !this.inflight.has(r.messageId));
+    if (!settled.length) return;
+    const previous = settled.map(r => r.delivery);
+    for (const r of settled) r.delivery = { status: 'inbox', reason: 'already-read' };
+    try { this.save(); }
+    catch (error) {
+      settled.forEach((r, index) => { r.delivery = previous[index]; });
+      throw error;
+    }
+    for (const r of settled) {
+      this.observe(r);
+      void this.view(r, { refreshReceipt: false }).then(value => this.publish(value)).catch(() => {});
+    }
+  }
   async poll() {
     if (this.closed || this.unavailable || this.polling) return;
     this.polling = true;
     try {
+      this.#settleReadQueue();
       const pending = this.records.filter(r => r.notify && ['sending', 'sent', 'received'].includes(r.delivery?.status) && !this.inflight.has(r.messageId));
       const uncertain = this.records.filter(r => r.notify && r.delivery?.status === 'unconfirmed' && !this.inflight.has(r.messageId));
       const cursor = (this.receiptCursor || 0) % Math.max(1, uncertain.length), count = Math.max(0, 8 - Math.min(8, pending.length));
@@ -265,11 +282,13 @@ export class SessionMessages {
         if (receipt && JSON.stringify(receipt) !== JSON.stringify(r.delivery)) this.#state(r, receipt);
       }
       const starting = this.records.filter(r => r.delivery?.status === 'queued' && r.activation?.status === 'pending'
-        && (r.delivery.nextAttemptAt || 0) <= this.now()).slice(0, 4);
+        && (r.delivery.nextAttemptAt || 0) <= this.now()).sort(byAttemptTime).slice(0, 4);
       await Promise.all(starting.map(r => this.dispatch(r, 0, true)));
       const first = new Map();
       for (const r of this.records) if (r.notify && pendingNotification(r.delivery?.status) && !first.has(r.targetId)) first.set(r.targetId, r);
-      const due = [...first.values()].filter(r => r.delivery.status === 'queued' && (r.delivery.nextAttemptAt || 0) <= this.now()).slice(0, 4);
+      // A retried head moves behind older due targets, while the earliest
+      // pending message for each target retains its place in that inbox.
+      const due = [...first.values()].filter(r => r.delivery.status === 'queued' && (r.delivery.nextAttemptAt || 0) <= this.now()).sort(byAttemptTime).slice(0, 4);
       await Promise.all(due.map(r => this.dispatch(r, 0)));
     } finally { this.polling = false; }
   }

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { deliveryComposerReady, deliveryEvidence, deliverySummary, SessionDeliveries } from './session-delivery.mjs';
+import { sessionMessageNotification } from './session-messages.mjs';
 import { CodexScrollbackFilter } from './terminal-stream.mjs';
 
 const cleanups = [];
@@ -67,6 +68,16 @@ it('reports actual sent, received and identified new-turn stages; keeps the orig
   expect(f.service.list('target')[0].deliveryId).toBe(f.service.list('caller')[0].deliveryId);
   const stored = JSON.parse(fs.readFileSync(f.options.file, 'utf8'))[0];
   expect(stored.summary).toBe('UI 초안 → 확인'); expect(stored.message).toBeUndefined();
+});
+it('passes a verified cancelled turn to the native readiness check before sending a new instruction', async () => {
+  const f = fixture();
+  f.options.read.mockResolvedValue({ sessionId: 'conversation', lifecycle: 'idle', turn: { id: 'cancelled', status: 'cancelled', at: 9900 } });
+  f.service.ready = vi.fn(() => false);
+  await expect(f.send()).rejects.toThrow('composer-or-runtime-not-ready');
+  expect(f.service.ready).toHaveBeenCalledWith(f.contexts.target, { freshSession: false, resumedSession: false, cancelledAt: 9900 });
+  expect(f.options.submit).not.toHaveBeenCalled();
+  f.service.ready.mockReturnValue(true);
+  expect((await f.send()).status).toBe('sent');
 });
 it('keeps mailbox reference envelopes ASCII even when sender/project labels are Korean', async () => {
   const f = fixture(); f.contexts.caller.name = '관리자'; f.contexts.caller.projectName = '한글 프로젝트';
@@ -147,6 +158,26 @@ it('leaves timeout as unconfirmed, never replays text, and accepts a later exact
   await f.send(); expect(f.options.submit).toHaveBeenCalledTimes(1);
   f.acknowledge(); expect(f.service.list('caller')[0].status).toBe('started');
 });
+it('does not re-arm a restored timeout or publish another warning when the target restarts', async () => {
+  const f = fixture(), delivery = await f.send();
+  f.advance(16000);
+  const restored = new SessionDeliveries(f.options);
+  const updates = f.updates.length;
+  await restored.reconcile('caller', f.body.requestKey);
+  f.contexts.target.entry = { ...f.contexts.target.entry };
+  restored.poll();
+  expect(f.updates).toHaveLength(updates);
+  expect(restored.list('caller')[0]).toMatchObject({ status: 'unconfirmed', reason: 'receipt-not-confirmed' });
+
+  const original = f.options.submit.mock.calls[0][2];
+  f.options.read.mockResolvedValue({ sessionId: 'conversation', deliveries: [{
+    deliveryId: delivery.deliveryId, messageHash: createHash('sha256').update(original.trim()).digest('hex'),
+    receivedAt: 10100, turnId: 'new-turn', startedAt: 10050,
+  }] });
+  await restored.reconcile('caller', f.body.requestKey);
+  expect(restored.list('caller')[0].status).toBe('started');
+  expect(f.options.submit).toHaveBeenCalledOnce();
+});
 it('does not count stale, quoted, mismatched or old-turn evidence as a started task', async () => {
   const f = fixture(); const r = await f.send();
   const matching = { deliveryId: r.deliveryId, messageHash: JSON.parse(fs.readFileSync(f.options.file))[0].messageHash, receivedAt: 10100, turnId: 'previous', startedAt: 9000 };
@@ -209,6 +240,17 @@ it('correlates only native user messages with task_started across bounded tail r
   const result = deliveryEvidence(row({ type: 'message', role: 'user', content: [{ type: 'input_text', text: value }] }), before);
   expect(result.receipts[0]).toMatchObject({ deliveryId: id, turnId: 'turn', receivedAt: 10000, startedAt: 10000 });
   expect(deliveryEvidence('malformed\n' + row({ type: 'message', role: 'user', content: {} }), result).receipts).toEqual(result.receipts);
+});
+it('restores only the exact mailbox notification when Codex removes its newlines', () => {
+  const id = '11111111-1111-4111-8111-111111111111', messageId = '22222222-2222-4222-8222-222222222222';
+  const value = `[Acedia handoff: ${id}]\nFrom: Acedia session\n\n${sessionMessageNotification(messageId)}`;
+  const flat = value.replaceAll('\n', '');
+  const at = new Date(10000).toISOString();
+  const observedHash = text => deliveryEvidence(JSON.stringify({ type: 'response_item', timestamp: at,
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })).receipts[0].messageHash;
+  expect(observedHash(flat)).toBe(observedHash(value));
+  expect(observedHash(flat + ' extra text')).not.toBe(observedHash(value));
+  expect(observedHash(flat.replace(messageId, id))).not.toBe(observedHash(value));
 });
 it('accepts an empty composer/gray placeholder and rejects existing drafts, queued input and running tools', async () => {
   const filter = new CodexScrollbackFilter(8, 80); cleanups.push(() => filter.dispose());

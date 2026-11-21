@@ -11,7 +11,7 @@ const canonical = value => {
 };
 // This is deliberately narrower than native Trust all: only the exact commands
 // installed by this host may be approved. Unknown hook sources stay interactive.
-export function captureStartupHookProof({ cwd, home, args = [], helperPath, helperScript, commands }) {
+export function captureStartupHookProof({ cwd, home, args = [], helperPath, helperScript, commands, nativeInventory = false }) {
   try {
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
@@ -20,7 +20,7 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
       if (override !== null && (!override || /^\s*["']?(?:hooks|plugins|profiles|profile)["']?\s*(?:[.=[]|$)/.test(override))) return null;
     }
     cwd = canonical(cwd); home = canonical(home || path.join(os.homedir(), '.codex'));
-    const files = new Map(), events = new Set(); let count = 0;
+    const files = new Map(), events = new Set(), managedSources = new Map(); let count = 0;
     const read = file => {
       if (files.has(file)) return files.get(file).text;
       let text = '';
@@ -31,7 +31,7 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
       files.set(file, { text, digest: hash(text) }); return text;
     };
-    const validate = hooks => {
+    const validate = (hooks, file) => {
       if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) throw Error('Unknown hooks');
       for (const [event, entries] of Object.entries(hooks)) {
         if (event === 'state') continue; // Native per-hash trust metadata.
@@ -43,6 +43,8 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
             || !Array.isArray(entry.hooks) || entry.hooks.length !== 1) throw Error('Unknown hook');
           const hook = entry.hooks[0];
           if (hook.type !== 'command' || hook.command !== expected || Object.keys(hook).some(k => !['type', 'command'].includes(k))) throw Error('Unknown command');
+          if (!managedSources.has(file)) managedSources.set(file, new Map());
+          managedSources.get(file).set(event[0].toLowerCase() + event.slice(1), expected);
           count++; events.add(event);
         }
       }
@@ -54,8 +56,11 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
       const walk = (value, top = false) => {
         if (!value || typeof value !== 'object') return;
         for (const [key, item] of Object.entries(value)) {
+          // A routed Codex TUI supplies the real pending inventory. Merely
+          // installing or enabling a plugin does not add a pending hook there.
+          if (key === 'plugins' && top && nativeInventory) continue;
           if (/^(?:plugins|hooks_dir|hook_dirs|hooks_files|profile|project_root_markers)$/.test(key) && item && (typeof item !== 'object' || Object.keys(item).length)) throw Error('Additional hook sources');
-          if (key === 'hooks') { if (!top) throw Error('Nested hooks'); validate(item); }
+          if (key === 'hooks') { if (!top) throw Error('Nested hooks'); validate(item, file); }
           else walk(item);
         }
       };
@@ -63,19 +68,22 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
       // Folder trust and native per-hash approval metadata are written during
       // startup. They must not invalidate an otherwise unchanged hook set.
       const { state: _state, ...hooks } = config.hooks || {};
-      files.get(file).digest = hash(JSON.stringify(hooks));
-      const json = read(path.join(directory, 'hooks.json'));
+      files.get(file).digest = hash(JSON.stringify([hooks, config.plugins ?? null]));
+      const hookFile = path.join(directory, 'hooks.json'), json = read(hookFile);
       if (json.trim()) {
         const value = JSON.parse(json);
         if (Object.keys(value).some(k => !['hooks', 'description'].includes(k))) throw Error('Unknown hook file');
-        validate(value.hooks);
+        validate(value.hooks, hookFile);
       }
     };
-    if (read(helperPath) !== helperScript) return null;
+    // The app's own runtime directory can be relocated with a Windows junction.
+    // Read the physical file so the proof detects either retargeting or edits.
+    const physicalHelper = path.join(canonical(path.dirname(helperPath)), path.basename(helperPath));
+    if (read(physicalHelper) !== helperScript) return null;
     // Plugin hooks may be loaded by a CLI default or another active config
     // layer. Until their resolved inventory is available, keep review manual.
     const plugins = path.join(home, 'plugins');
-    if (fs.existsSync(plugins) && fs.readdirSync(plugins).length) return null;
+    if (!nativeInventory && fs.existsSync(plugins) && fs.readdirSync(plugins).length) return null;
     layer(home);
     // Default project layers run from the repository root to cwd. Outside a
     // repository, cwd is the root; an isolated CODEX_HOME must not accidentally
@@ -91,6 +99,34 @@ export function captureStartupHookProof({ cwd, home, args = [], helperPath, help
     }
     if (process.platform !== 'win32') layer('/etc/codex');
     if (events.size !== Object.keys(commands).length || count < events.size) return null;
-    return { cwd, home, count, fingerprint: hash(JSON.stringify([...files].map(([file, value]) => [file, value.digest]))) };
+    return { cwd, home, count, nativeInventory, managedSources,
+      fingerprint: hash(JSON.stringify([...files].map(([file, value]) => [file, value.digest]))) };
+  } catch { return null; }
+}
+
+// Codex's startup Trust all operation uses this response's pending entries and
+// their exact hashes. Match the whole pending set against the verified files.
+export function verifyNativeStartupHooks(inventory, proof) {
+  try {
+    if (!Array.isArray(inventory) || inventory.length !== 1) return null;
+    const entry = inventory[0];
+    if (canonical(entry.cwd) !== proof.cwd || !Array.isArray(entry.errors) || entry.errors.length
+      || !Array.isArray(entry.warnings) || entry.warnings.length || !Array.isArray(entry.hooks)) return null;
+    const pending = new Map();
+    for (const hook of entry.hooks) {
+      if (['managed', 'trusted'].includes(hook.trustStatus)) continue;
+      if (!['untrusted', 'modified'].includes(hook.trustStatus)
+        || !['user', 'project'].includes(hook.source) || hook.isManaged !== false || hook.pluginId != null
+        || hook.environmentId != null || hook.handlerType !== 'command' || hook.async === true
+        || (hook.matcher != null && hook.matcher !== '')
+        || typeof hook.key !== 'string' || !hook.key || pending.has(hook.key)
+        || typeof hook.currentHash !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(hook.currentHash)) return null;
+      const expected = proof.managedSources.get(canonical(hook.sourcePath))?.get(hook.eventName);
+      if (!expected || hook.command !== expected) return null;
+      pending.set(hook.key, hook.currentHash);
+    }
+    if (!pending.size || pending.size > proof.count) return null;
+    return { ...proof, count: pending.size, exactPending: true,
+      fingerprint: hash(JSON.stringify([proof.fingerprint, [...pending]])) };
   } catch { return null; }
 }

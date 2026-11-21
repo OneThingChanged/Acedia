@@ -61,6 +61,7 @@ import { CloseCoordinator } from "./services/close-coordinator.mjs";
 import { HookService } from "./services/hook-service.mjs";
 import {
   buildMiraControlSnapshot,
+  deriveMiraControlState,
   mergeMiraControlAgents,
   prepareMiraControlInput,
 } from "./services/miracontrol-integration.mjs";
@@ -838,7 +839,6 @@ const hookService = new HookService({
 backgroundWorkMonitor = new BackgroundWorkMonitor({ entry: id => ptys.get(id),
   publish: payload => publishAgentHookEvent('agent:hook-event', payload) });
 
-let hookReady = null;
 let browserReady = null;
 let hookMaintenanceTimer = null;
 let hookMaintenancePromise = null;
@@ -861,19 +861,7 @@ async function ensureBrowserIntegrationReady() {
   }
   await browserReady;
 
-  if (!hookReady) {
-    const pendingHook = hookService.start();
-    hookReady = pendingHook;
-    pendingHook.catch(() => {
-      if (hookReady === pendingHook) hookReady = null;
-    });
-  }
-  await hookReady;
-  if (!(await hookService.health())) {
-    const pendingRefresh = hookService.refresh();
-    hookReady = pendingRefresh;
-    await pendingRefresh;
-  }
+  await hookService.start();
   if (!hookService.port || !hookService.token) {
     throw new Error("브라우저 MCP 연동 서버가 준비되지 않았습니다.");
   }
@@ -934,16 +922,20 @@ function liveOutputForAgents(agents, maxOutput = 80_000) {
   });
 }
 
-function miraControlCatalog() {
-  const state = monitorService?.state || {};
-  const runtimeAgents = [...ptys.values()].map((entry) => ({
+function miraControlRuntimeAgent(entry) {
+  return {
     id: entry.id,
     name: entry.name,
     aiToolId: entry.aiToolId,
     folder: entry.cwd,
     lastSessionId:
       agentSessionIds.get(entry.id) || monitorHooks.get(entry.id)?.session_id || null,
-  }));
+  };
+}
+
+function miraControlCatalog() {
+  const state = monitorService?.state || {};
+  const runtimeAgents = [...ptys.values()].map(miraControlRuntimeAgent);
   return {
     projects: Array.isArray(state.projects) ? state.projects : [],
     // PTY startup and renderer state persistence are asynchronous. A live
@@ -961,29 +953,35 @@ function miraControlProviderSessionId(agent) {
   );
 }
 
+function miraControlStartupState(entry) {
+  const prompt = startupPrompt(entry);
+  return prompt ? { state: 'WAIT', reason: prompt.startupKind } : null;
+}
+
 function miraControlSnapshot() {
   const catalog = miraControlCatalog();
   const snapshot = buildMiraControlSnapshot({
     ...catalog,
     isActive: (agentId) => ptys.has(agentId),
     hookFor: (agentId) => monitorHooks.get(agentId) ?? null,
-    sessionIdFor: (agentId) =>
-      miraControlProviderSessionId(
-        catalog.agents.find((agent) => agent.id === agentId) ?? { id: agentId }
-      ),
+    sessionIdFor: (_agentId, agent) => miraControlProviderSessionId(agent),
     appVersion: productVersion,
     variant: runtimeVariant.id,
   });
   for (const item of snapshot.sessions) {
-    const prompt = startupPrompt(ptys.get(item.agentId));
-    if (prompt) { item.state = 'WAIT'; item.reason = prompt.startupKind; }
+    const startup = miraControlStartupState(ptys.get(item.agentId));
+    if (startup) Object.assign(item, startup);
   }
   return snapshot;
 }
 
 function miraControlAgent(agentId) {
   const id = asString(agentId).trim();
-  const agent = miraControlCatalog().agents.find((candidate) => candidate.id === id);
+  if (!id) return null;
+  const candidates = monitorService?.state?.agents;
+  const saved = Array.isArray(candidates) ? candidates.find(candidate => asString(candidate?.id).trim() === id) : null;
+  const entry = ptys.get(id);
+  const [agent] = mergeMiraControlAgents(saved ? [saved] : [], entry ? [miraControlRuntimeAgent(entry)] : []);
   if (!agent || !["codex", "claude"].includes(agent.aiToolId)) return null;
   return agent;
 }
@@ -1095,16 +1093,24 @@ const remoteSessionCreateBroker = new RemoteSessionCreateBroker({
 function deliveryContext(id) {
   const agent = miraControlAgent(id);
   if (!agent) return null;
-  const state = miraControlSnapshot().sessions.find(s => s.agentId === id);
-  return { entry: ptys.get(id), conversationId: miraControlProviderSessionId(agent), name: monitorService?.state?.agents?.find(a => a.id === id)?.name || agent.name,
+  const entry = ptys.get(id);
+  const state = miraControlStartupState(entry) ?? deriveMiraControlState({ active: !!entry, status: agent.status, hook: monitorHooks.get(id) });
+  return { entry, conversationId: miraControlProviderSessionId(agent), name: agent.name,
     projectName: monitorService?.state?.projects?.find(p => p.id === agent.projectId)?.name,
-    state: state?.state, reason: state?.reason };
+    ...state };
 }
 const sessionDeliveries = new SessionDeliveries({
   freshRead: freshDeliverySession,
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
-  ready: (target, { freshSession = false, resumedSession = false } = {}) => !forceClosing && !questionResponder.isBusy(target.entry.id) && !capacityRetry.isActive(target.entry.id)
-    && (freshSession || resumedSession || ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason)) && deliveryComposerReady(target.entry),
+  ready: (target, { freshSession = false, resumedSession = false, cancelledAt } = {}) => {
+    const { entry } = target;
+    const hook = monitorHooks.get(entry.id);
+    const cancelled = entry.aiToolId === 'codex' && Number.isFinite(cancelledAt)
+      && cancelledAt >= Math.max(entry.startedAt || 0, entry.lastInputAt || 0, hook?.received_at || hook?.lastTs || 0);
+    const ready = ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason);
+    return !forceClosing && !questionResponder.isBusy(entry.id) && !capacityRetry.isActive(entry.id)
+      && (freshSession || resumedSession || cancelled || ready) && deliveryComposerReady(entry);
+  },
   submit: async (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
     const previous = entry.firstMessageSubmitted;
@@ -1114,7 +1120,14 @@ const sessionDeliveries = new SessionDeliveries({
     if (!submitted && ptys.get(id) === entry) entry.firstMessageSubmitted = previous;
     return submitted;
   },
-  publish: payload => { delegatedWork.transfer(payload); sendEventToAll('agent:session-delivery', payload); },
+  publish: payload => {
+    delegatedWork.transfer(payload);
+    // The mailbox publishes the same delivery with the durable body read
+    // receipt. Keep the terminal-only envelope from raising its own alert.
+    const mailbox = /^text_[0-9a-f]{32}$/i.test(payload.requestKey) && sessionMessages.records.some(record => record.notificationKey === payload.requestKey
+      && record.sourceId === payload.sourceId && record.targetId === payload.targetId);
+    if (!mailbox) sendEventToAll('agent:session-delivery', payload);
+  },
 });
 const sessionReadiness = new SessionReadiness({
   context: deliveryContext, read: currentQuestion, freshRead: freshDeliverySession,
@@ -3854,7 +3867,7 @@ const spawnPty = createTerminalLauncher({
   },
   hookService,
   ensureBrowserIntegrationReady,
-  waitForHooks: () => hookReady?.catch(() => {}),
+  waitForHooks: () => hookService.start().catch(() => {}),
   setupAntigravityUsage: () => {
     try { installAntigravityStatusline(); }
     catch { console.warn("[electron] Antigravity quota bridge could not be configured; CLI launch continues."); }

@@ -2,7 +2,7 @@
 type: Integration
 title: Acedia 내장 스킬과 연결 진단
 status: stable
-last_updated: 2026-11-14
+last_updated: 2026-11-20
 sources:
   - resource: ../app/electron/services/acedia-skills.mjs
   - resource: ../app/electron/services/acedia-capabilities.mjs
@@ -97,10 +97,22 @@ Python 설치는 필요하지 않다.
 node <acedia-connection 스킬 폴더>/scripts/check.mjs
 ```
 
-스크립트는 현재 세션이 상속받은 연결 정보만 사용해 loopback GET 한 번을 보낸다.
-Proxy·리다이렉트를 사용하지 않고 사용자 인수를 받지 않는다. 환경 누락, 호스트 연결
-실패, 인증 실패, 구형 호스트의 404와 응답 스키마 불일치를 구분한다. 오류 본문과 인증값을
-출력하지 않는다. 프로필의 다른 세션 인증값 탐색이나 자동 세션 재시작은 하지 않는다.
+스크립트는 현재 세션이 상속받은 실행 식별자로 연결 정보를 확인한 뒤 loopback GET을 보낸다.
+Proxy·리다이렉트를 사용하지 않고 사용자 인수를 받지 않는다. 환경 누락, 연결 파일을 읽지
+못한 경우, 실행 인스턴스 변경, 인증 실패와 응답 오류를 구분한다. 오류 본문과 인증값은
+출력하지 않는다.
+
+## 실행 중 MCP 연결 복구
+
+자동 점검은 HTTP 응답이 늦어도 앱이 소유한 수신 소켓이 열려 있으면 유지한다.
+소켓이 실제로 닫혀 다시 열리면 해당 앱이 새 loopback 포트와 인증 정보를 갱신한다.
+Codex와 Claude의 기존 MCP 프로세스는 다음 요청에서 같은 Acedia 실행의 연결 정보를 다시
+읽는다. 호출 세션 ID는 실행 때 상속한 값을 사용한다. 요청을 처리한 뒤 응답이 유실된 경우
+메시지 전송이나 세션 조작을 자동으로 반복하지 않는다.
+
+이 복구 경로는 패치가 적용된 Acedia에서 시작한 로컬 CLI에 적용된다. 패치 전 시작한 CLI는
+한 번 다시 열어야 한다. Acedia 앱을 새로 실행한 경우에는 새 앱에서 열거나 기존 복구 기능으로
+재개한 CLI가 새 실행에 연결된다.
 
 ## 검증
 

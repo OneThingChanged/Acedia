@@ -35,6 +35,7 @@ export class SessionRuns {
   update(r, phase, extra = {}) { Object.assign(r, { phase, updatedAt: this.now(), ...extra }); this.save(); }
   view(r) {
     const { signature, creation, message, ...view } = r;
+    if (view.nothingCreated) view.sessionId = null;
     return structuredClone(view);
   }
   async handle({ action, agentId, body }) {
@@ -88,7 +89,15 @@ export class SessionRuns {
         if (!entry) { this.update(r, 'blocked', { reason: 'CLI did not start' }); return; }
         this.identities.set(r.sessionId, entry);
         this.update(r, 'registered', { reason: 'waiting for native composer', deadline: this.now() + 120000 });
-      } catch (error) { if (!this.closed) this.update(r, 'reconcile-required', { reason: String(error.message).slice(0, 500) }); }
+      } catch (error) {
+        if (!this.closed) {
+          const nothingCreated = !r.registered && error?.nothingCreated === true;
+          this.update(r, nothingCreated ? 'failed' : 'reconcile-required', {
+            reason: String(error?.message || error).slice(0, 500),
+            ...(nothingCreated ? { registered: false, nothingCreated } : {}),
+          });
+        }
+      }
       finally { this.inflight.delete(r.sessionId); }
     })().catch(() => {});
   }

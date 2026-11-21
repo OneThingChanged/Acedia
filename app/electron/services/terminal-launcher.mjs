@@ -47,6 +47,17 @@ const asObject = (value) => value && typeof value === "object" ? value : {};
 const asPositiveInt = (value, fallback) =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 
+function hookEnvironment(hook, id, script, local) {
+  return {
+    MULTIAGENT_AGENT_ID: id,
+    MULTIAGENT_PORT: String(hook.port || ""),
+    MULTIAGENT_TOKEN: hook.token || "",
+    MULTIAGENT_MCP_SCRIPT: script,
+    MULTIAGENT_RUNTIME_FILE: local ? hook.infoPath || "" : "",
+    MULTIAGENT_RUNTIME_ID: local ? hook.runtimeId || "" : "",
+  };
+}
+
 /** Prepares a local or SSH launch and hands the live process to TerminalSessionService. */
 export function createTerminalLauncher({
   terminalSessions,
@@ -152,8 +163,7 @@ export function createTerminalLauncher({
       const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id,
         args.codexPoolAccountId || null, args.poolResumeOwnerId || null, {
           env: { ...guiTerminalEnvironment(launchEnvironment), TERM: "xterm-256color", COLORTERM: "truecolor",
-            MULTIAGENT_AGENT_ID: id, MULTIAGENT_PORT: String(hookService.port || ""),
-            MULTIAGENT_TOKEN: hookService.token || "", MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath },
+            ...hookEnvironment(hookService, id, browserMcpScriptPath, true) },
           cwd, cliExecutable: launchOptions?.executable,
           configArgs: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? []), ...modelArgs, ...referenceArgs],
           onThreadSettings: value => {
@@ -186,12 +196,14 @@ export function createTerminalLauncher({
         extraArgs: [...(nativeArgs ?? []), ...(poolLaunch?.args ?? []), ...(nativeArgs ? [] : [...modelArgs, ...referenceArgs]), ...instructionArgs, ...(initialPrompt ? [initialPrompt] : [])],
       });
       const ptyRows = asPositiveInt(args.rows, 30);
+      const startupHookInventory = poolLaunch?.startupHookInventory;
       const startupHookProof = !ssh && aiToolId === 'codex' ? hookService.captureStartupHooks?.({
         cwd, home: launchEnvironment.CODEX_HOME || path.join(os.homedir(), '.codex'),
         args: [...splitGeneratedCommand(asString(args.initCommand)).slice(1), ...(launchOptions?.args ?? [])],
+        nativeInventory: typeof startupHookInventory === 'function',
       }) : null;
       return {
-        ssh, executable, shellArgs, reversePort, cwd, accountId,
+        ssh, executable, shellArgs, reversePort, cwd, accountId, startupHookInventory,
         ptyCols, ptyRows, launchEnvironment, launchCommand, startupHookProof, poolRouted: Boolean(poolLaunch), release,
         nativeModel: () => nativeModel,
       };
@@ -224,7 +236,7 @@ export function createTerminalLauncher({
     if (cancelled()) return { reattached: false, cancelled: true };
     const {
       ssh, executable, shellArgs, reversePort, cwd, accountId,
-      ptyCols, ptyRows, launchEnvironment, launchCommand, startupHookProof, poolRouted, release, nativeModel,
+      ptyCols, ptyRows, launchEnvironment, launchCommand, startupHookProof, startupHookInventory, poolRouted, release, nativeModel,
     } = await prepareLaunch(args, id, aiToolId);
     if (cancelled()) {
       release();
@@ -247,11 +259,8 @@ export function createTerminalLauncher({
           ...guiTerminalEnvironment(launchEnvironment),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
-          MULTIAGENT_AGENT_ID: id,
           MULTIAGENT_AGY_LAUNCH_ID: agyLaunchId,
-          MULTIAGENT_PORT: String(hookService.port || ""),
-          MULTIAGENT_TOKEN: hookService.token || "",
-          MULTIAGENT_MCP_SCRIPT: browserMcpScriptPath,
+          ...hookEnvironment(hookService, id, browserMcpScriptPath, !ssh),
         },
         useConpty: true,
       });
@@ -275,6 +284,7 @@ export function createTerminalLauncher({
       resumeContext: args.resumeContext,
       initialPromptSubmitted: !!asString(args.initialPrompt).trim(),
       startupHookProof,
+      startupHookInventory,
       initTimer: null,
       aiToolId,
       cwd,

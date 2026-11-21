@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parseTerminalStartupPrompt } from '../shared/terminal-startup-prompt.mjs';
+import { sessionMessageNotification } from './session-messages.mjs';
 
 const hash = value => createHash('sha256').update(value.replace(/\r\n?/g, '\n').trim()).digest('hex');
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
@@ -12,6 +13,8 @@ const validRecord = r => r && /^[0-9a-f-]{36}$/.test(r.deliveryId || '') && type
   && (r.summary === undefined || typeof r.summary === 'string' && r.summary.length <= 200 && r.summary.isWellFormed())
   && ['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(r.status) && Number.isFinite(r.createdAt);
 const marker = /\[Acedia handoff: ([0-9a-f-]{36})\]/;
+const envelopeText = (id, from, body) => `[Acedia handoff: ${id}]\nFrom: ${from}\n\n${body}`;
+const flatMailbox = /^\[Acedia handoff: [0-9a-f-]{36}\]From: Acedia sessionAcedia session message ([0-9a-f-]{36})\./;
 const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
 export function deliverySummary(message) {
   const line = message.split(/\r?\n/).find(value => value.trim()) || '';
@@ -71,7 +74,13 @@ export function claudeDeliveryEvidence(text, previous = { turn: null, receipts: 
     parents.set(row.uuid, { id: row.uuid, at });
     if (!turn || at > turn.at) turn = { id: row.uuid, at };
     const id = value.match(marker)?.[1];
-    if (id && !receipts.has(id)) receipts.set(id, { deliveryId: id, receivedAt: at, messageHash: hash(value), userId: row.uuid });
+    if (id && !receipts.has(id)) {
+      // Claude wraps long terminal pastes in the user transcript. Remove an
+      // exact outer wrapper so the original envelope still has to match.
+      const pasted = /^<pasted_content id="([0-9a-f]{4})">\n([\s\S]*)\n<\/pasted_content id="\1">$/.exec(value.replace(/\r\n?/g, '\n').trim());
+      const envelope = pasted?.[2].startsWith(`[Acedia handoff: ${id}]`) ? pasted[2] : value;
+      receipts.set(id, { deliveryId: id, receivedAt: at, messageHash: hash(envelope), userId: row.uuid });
+    }
   }
   for (const row of rows) {
     if (row.type !== 'assistant' || row.message?.role !== 'assistant' || !row.message?.id) continue;
@@ -103,7 +112,12 @@ export function deliveryEvidence(text, previous = { turn: null, receipts: [] }) 
     const value = (Array.isArray(p.content) ? p.content : []).filter(c => ['input_text', 'text'].includes(c?.type)).map(c => c.text || '').join('\n');
     const id = value.match(marker)?.[1];
     if (!id) continue;
-    const receipt = { deliveryId: id, receivedAt: at, messageHash: hash(value) };
+    // Some Codex terminal submissions drop newlines. Rebuild only the
+    // fixed mailbox notification after matching its entire flattened text.
+    const messageId = flatMailbox.exec(value.trim())?.[1];
+    const mailbox = messageId && envelopeText(id, 'Acedia session', sessionMessageNotification(messageId));
+    const envelope = mailbox && mailbox.replaceAll('\n', '') === value.trim() ? mailbox : value;
+    const receipt = { deliveryId: id, receivedAt: at, messageHash: hash(envelope) };
     if (turn && turn.at <= at) Object.assign(receipt, { turnId: turn.id, startedAt: turn.at });
     const old = receipts.get(id);
     if (!old || old.receivedAt === at) receipts.set(id, { ...old, ...receipt });
@@ -121,7 +135,7 @@ export class SessionDeliveries {
       const records = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (!Array.isArray(records) || records.length > 1000 || records.some(r => !validRecord(r))) throw Error('Invalid delivery history');
       for (const record of records) {
-        if (watching(record)) Object.assign(record, { status: 'unconfirmed', reason: 'app-restarted' });
+        if (watching(record) && record.status !== 'unconfirmed') Object.assign(record, { status: 'unconfirmed', reason: 'app-restarted' });
         this.records.set(this.#key(record.sourceId, record.requestKey), record);
       }
     } catch (error) { if (error.code !== 'ENOENT') this.unavailable = true; }
@@ -175,8 +189,9 @@ export class SessionDeliveries {
     if (!target?.entry || record.conversationId && target.conversationId !== record.conversationId) return;
     const result = await this.read(record.targetId);
     if (this.context(record.targetId)?.entry !== target.entry) return;
-    this.live.set(record.deliveryId, { record, entry: target.entry });
-    this.observe(record.targetId, target.entry, result);
+    // Rechecking a saved receipt does not attach it to the new PTY's
+    // live timeout or report a later restart as another failed delivery.
+    this.#observeRecord(record, result);
   }
   async handle({ action, agentId, body, freshSession = false, asciiEnvelope = false, retryNotSent = false }) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('JSON object required', 400);
@@ -240,18 +255,19 @@ export class SessionDeliveries {
       // authoritative even when no conversation has been published yet.
       const firstTurn = !!fresh && fresh.sessionId === target.conversationId && !current?.turn;
       const resumedSession = !!current?.sessionId && entry.resumeContext?.sessionId === current.sessionId && current.sessionId === target.conversationId;
+      const cancellation = current?.turn?.status === 'cancelled' ? { cancelledAt: current.turn.at } : {};
       const blocked = !current ? 'transcript-unavailable'
         : current.sessionId !== target.conversationId ? 'conversation-changed'
         : unbound && !firstTurn ? 'first-message-not-ready'
         : current.question ? 'question-pending'
         : current.lifecycle === 'working' && !firstTurn ? 'turn-working'
-        : !this.ready(target, { freshSession: firstTurn, resumedSession }) ? 'composer-or-runtime-not-ready'
+        : !this.ready(target, { freshSession: firstTurn, resumedSession, ...cancellation }) ? 'composer-or-runtime-not-ready'
         : this.context(body.sessionId)?.entry !== entry ? 'session-changed'
         : entry.lastInputAt !== inputAt ? 'input-changed' : null;
       if (blocked) throw fail(`Receiving session is not ready (${blocked}); nothing sent`);
       const deliveryId = randomUUID();
       const from = asciiEnvelope ? 'Acedia session' : `${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}`;
-      const message = `[Acedia handoff: ${deliveryId}]\nFrom: ${from}\n\n${body.message}`;
+      const message = envelopeText(deliveryId, from, body.message);
       if (Buffer.byteLength(message, 'utf8') > 12288) throw fail('Delivery envelope too large', 400);
       const record = { deliveryId, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
         targetId: body.sessionId, targetName: target.name || body.sessionId, conversationId: target.conversationId ?? null,
@@ -279,20 +295,22 @@ export class SessionDeliveries {
   observe(id, entry, result) {
     if (!result) return;
     for (const { record, entry: expected } of this.live.values()) {
-      if (record.targetId !== id || expected !== entry || (!record.freshUnbound && result.sessionId !== record.conversationId) || !watching(record)) continue;
-      const receipt = result.deliveries?.find(r => r.deliveryId === record.deliveryId && r.messageHash === record.messageHash && r.receivedAt >= record.createdAt);
-      if (!receipt) continue;
-      if (record.freshUnbound) {
-        if (!result.sessionId || !receipt.turnId || receipt.startedAt < record.createdAt) continue;
-        // Bind a fresh CLI's first conversation only to this exact envelope
-        // hash and new turn; merely observing a session ID is insufficient.
-        record.conversationId = result.sessionId; record.freshUnbound = false;
-      }
-      if (!record.receivedAt) this.#update(record, 'received', { receivedAt: receipt.receivedAt, reason: undefined });
-      if (receipt.turnId && receipt.turnId !== record.previousTurnId && receipt.startedAt >= record.createdAt) {
-        this.#update(record, 'started', { startedAt: receipt.startedAt, turnId: receipt.turnId, reason: undefined });
-        this.live.delete(record.deliveryId);
-      }
+      if (record.targetId === id && expected === entry) this.#observeRecord(record, result);
+    }
+  }
+  #observeRecord(record, result) {
+    if (!result || !watching(record) || (!record.freshUnbound && result.sessionId !== record.conversationId)) return;
+    const receipt = result.deliveries?.find(r => r.deliveryId === record.deliveryId && r.messageHash === record.messageHash && r.receivedAt >= record.createdAt);
+    if (!receipt) return;
+    if (record.freshUnbound) {
+      if (!result.sessionId || !receipt.turnId || !(receipt.startedAt >= record.createdAt)) return;
+      // Bind the first conversation to the exact envelope and its new turn.
+      record.conversationId = result.sessionId; record.freshUnbound = false;
+    }
+    if (!record.receivedAt) this.#update(record, 'received', { receivedAt: receipt.receivedAt, reason: undefined });
+    if (receipt.turnId && receipt.turnId !== record.previousTurnId && receipt.startedAt >= record.createdAt) {
+      this.#update(record, 'started', { startedAt: receipt.startedAt, turnId: receipt.turnId, reason: undefined });
+      this.live.delete(record.deliveryId);
     }
   }
   poll() {
@@ -300,14 +318,15 @@ export class SessionDeliveries {
       if (!watching(record)) { this.live.delete(record.deliveryId); continue; }
       const target = this.context(record.targetId);
       if (target?.entry !== entry || (!record.freshUnbound && target?.conversationId !== record.conversationId)) {
-        this.#update(record, 'unconfirmed', { reason: 'session-changed' }); this.live.delete(record.deliveryId);
+        if (record.status !== 'unconfirmed') this.#update(record, 'unconfirmed', { reason: 'session-changed' });
+        this.live.delete(record.deliveryId);
       } else if (record.status !== 'unconfirmed' && this.now() - record.createdAt >= this.timeoutMs) {
         this.#update(record, 'unconfirmed', { reason: record.receivedAt ? 'start-not-confirmed' : 'receipt-not-confirmed' });
       }
     }
   }
   dispose() {
-    for (const { record } of this.live.values()) if (watching(record)) this.#update(record, 'unconfirmed', { reason: 'app-restarted' });
+    for (const { record } of this.live.values()) if (watching(record) && record.status !== 'unconfirmed') this.#update(record, 'unconfirmed', { reason: 'app-restarted' });
     this.live.clear();
   }
 }

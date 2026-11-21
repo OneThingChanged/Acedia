@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
-export const ACEDIA_SKILL_BUNDLE_VERSION = 1;
+export const ACEDIA_SKILL_BUNDLE_VERSION = 2;
 const files = {
   'acedia-browser': ['SKILL.md', 'scripts/browser.py'],
-  'acedia-connection': ['SKILL.md', 'scripts/check.mjs'],
+  'acedia-connection': ['SKILL.md', 'scripts/check.mjs', 'scripts/runtime-endpoint.mjs'],
   'acedia-workspace': ['SKILL.md', 'references/sessions.md', 'references/messages.md', 'references/delegation.md', 'references/routing.md'],
   'acedia-page-capture': ['SKILL.md'],
 };
