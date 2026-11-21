@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.32
-status: draft
+status: published
 last_updated: 2026-11-21
 ---
 
@@ -22,3 +22,15 @@ last_updated: 2026-11-21
 - Preserve versioned Claude Fable model IDs and effort for child sessions. Report pre-creation validation failures and delivery-start evidence accurately.
 - Refresh the Acedia MCP connection after a host restart. Verify Acedia-managed hooks against the native Codex review list at startup.
 - The Standard EXE bundles the existing signed Android APK 1.8.1.39.
+
+## 배포 및 검증
+
+- 2026-11-21 22:19:07 KST에 `9e716dd4d086790c6acf328aa0d4b919d8a81277`에서 빌드한 Windows Standard EXE를 게시했습니다. [GitHub 릴리스](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.32)
+- 데스크톱 테스트 2,329개와 제품 빌드를 통과했습니다. 패키지에서 취소 후 입력 준비, 오프라인 대상이 있는 전송 대기열, Fable 모델 상속, Codex·Claude 착수 기록, Dashboard와 앱 수명주기를 검증했습니다.
+- 1.8.2.30과 1.8.2.31에서 업데이트를 감지했습니다. 22:20:11 KST에 공개 자산을 내려받아 SHA-256과 NSIS CRC `64ce25a4`, 압축 데이터와 설치 전 시작을 검증했습니다. 설치 파일의 Authenticode 상태는 `NotSigned`입니다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.32-x64.exe` | 156422924 | `24c4b1e1d3538a4afe1a5b4fcdd596f68dea753c401b77b4ef3e10660fb827ca` |
+| `Acedia-Setup-1.8.2.32-x64.exe.blockmap` | 163852 | `6c842150dbcd71433bf7fff79d1801ec78e6caa25cca1ac92394d346fecb2802` |
+| `latest-exe.json` | 256 | `dd24a5ad37486e18d0430cabde216c23be7482f3a2c66941154ad048c8be7b5e` |

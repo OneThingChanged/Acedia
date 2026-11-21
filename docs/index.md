@@ -10,6 +10,7 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.32](release-1-8-2-32.md) - 취소 후 명령 전달, 대기열·알림 처리와 세션 갱신 개선.
 * [Acedia 1.8.2.31](release-1-8-2-31.md) - Remote 세션 재시작과 LAN 대시보드 접속 링크.
 * [Acedia 1.8.2.30](release-1-8-2-30.md) - 세션 그리드와 읽기 참조선, Claude 중간 입력, JSONL 미리보기와 원본 다운로드.
 * [Acedia 1.8.2.29](release-1-8-2-29.md) - 보드 접기·펼치기, 카드 확대, 세션 관리 메뉴.
