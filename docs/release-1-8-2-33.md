@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.33
-status: draft
+status: published
 last_updated: 2026-11-23
 ---
 
@@ -22,3 +22,15 @@ last_updated: 2026-11-23
 - Reviewing a result in the board clears its completion highlight in the sidebar. New results and questions retain their indicators.
 - Handoff notifications show the project and sender names, including Korean names. If the receiving conversation changes, the notice points to the stored original and repeated warnings for the same target are reduced.
 - The Windows Standard EXE bundles the existing signed Android APK 1.8.1.39.
+
+## 배포 및 검증
+
+- 2026-11-23 02:49:59 KST에 `83c21307649883a882ad2ecfdf3d4c0843962db9`에서 빌드한 Windows Standard EXE를 게시했습니다. [GitHub 릴리스](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.33)
+- 데스크톱 테스트 2,338개를 통과했습니다. 빌드된 패키지에서 보드 이동과 결과 확인, 한글 발신자 표시와 원문 조회, Dashboard·Remote API 및 앱 수명주기를 검증했습니다.
+- 1.8.2.31과 1.8.2.32에서 업데이트를 감지했습니다. 02:50:57 KST에 공개 자산의 SHA-256, NSIS CRC `46062b96`, 압축 데이터와 설치 프로그램 시작을 검증했습니다. 설치 파일의 Authenticode 상태는 `NotSigned`입니다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.33-x64.exe` | 156426520 | `94fca2f05844dbed95e516122885846929704954540426b0742abcf175f49c7a` |
+| `Acedia-Setup-1.8.2.33-x64.exe.blockmap` | 163479 | `761fe6177f275baa95d7db272e6dfac0d506db5097dd38e26b1e2f99ffff4ed6` |
+| `latest-exe.json` | 256 | `7d93b6e8c7f1addeed9e30292064c8e60fd4b68defe4bc186cc0e575fc451ed1` |
