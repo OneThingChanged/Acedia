@@ -13,7 +13,7 @@ type Props = {
   mode?: 'board' | 'sidebar'; selectedId?: string | null; onSelect?: (id: string) => void;
   visibleSessionIds?: ReadonlySet<string>; motion?: boolean;
   onOpenSession: (id: string) => void; onOpenNote?: (id: string) => void;
-  onBack?: () => void; onDock?: () => void; onExpand?: () => void; onClose?: () => void;
+  onBack?: () => void; backLabel?: string; onDock?: () => void; onExpand?: () => void; onClose?: () => void;
 };
 const labels: Record<OfficeState, [string, string]> = {
   working: ['작업 중', 'Working'], reading: ['읽는 중', 'Reading'], waiting: ['응답 대기', 'Needs you'], blocked: ['확인 필요', 'Blocked'],
@@ -164,7 +164,7 @@ function SharedOffice({ rooms, selectedId, onSelect, motion }: { rooms: OfficeRo
   </div>;
 }
 
-export function PixelOffice({ agents, projects, activeProjectId, mode = 'board', visibleSessionIds, motion = true, selectedId: selectedProp, onSelect, onOpenSession, onOpenNote, onBack, onDock, onExpand, onClose }: Props) {
+export function PixelOffice({ agents, projects, activeProjectId, mode = 'board', visibleSessionIds, motion = true, selectedId: selectedProp, onSelect, onOpenSession, onOpenNote, onBack, backLabel, onDock, onExpand, onClose }: Props) {
   const { text } = useAppLanguage();
   const [scope, setScope] = useState('all'), [query, setQuery] = useState(''), [activeOnly, setActiveOnly] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
@@ -187,7 +187,7 @@ export function PixelOffice({ agents, projects, activeProjectId, mode = 'board',
   const choose = (id: string) => { setSelection(id); setInspectorOpen(true); onSelect?.(id); };
   return <section className={`pixel-office po-${mode}${mode === 'board' ? ' terminal-area' : ''}`} aria-label="Pixel Office">
     <header className="po-header"><div><h2><PixelOfficeIcon/> Pixel Office</h2><p>{text('프로젝트 폴더별 팀 · 세션 직급', 'Folder teams · session roles')}</p></div><div className="po-header-actions">
-      {onBack && <button onClick={onBack}>{text('← Project Board', '← Project Board')}</button>}
+      {onBack && <button onClick={onBack}>← {backLabel ?? 'Project Board'}</button>}
       {onDock && <button onClick={onDock} title={text('우측 사이드바에서 보기', 'Show in right sidebar')}>{text('우측에 고정', 'Dock right')}</button>}
       {onExpand && <button onClick={onExpand} aria-label={text('Project Board에서 크게 보기', 'Expand in Project Board')}>⛶</button>}
       {onClose && <button onClick={onClose} aria-label={text('Office 닫기', 'Close Office')}>×</button>}

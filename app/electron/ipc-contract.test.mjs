@@ -32,6 +32,13 @@ describe("Electron IPC contract", () => {
   it('bounds board-only commands to metadata, exact result identity and navigation', () => {
     expect(contract.assertInvokeRequest('open_project_board', {})).toEqual({});
     expect(contract.assertInvokeRequest('project_board_open_session', { id: 'a', compose: true })).toEqual({ id: 'a', compose: true });
+    expect(contract.assertInvokeRequest('project_board_manage_project', { id: 'project', action: 'new-session' })).toEqual({ id: 'project', action: 'new-session' });
+    expect(contract.assertInvokeRequest('project_board_manage_project', { action: 'hierarchy' })).toEqual({ action: 'hierarchy' });
+    for (const args of [{ action: 'new-session' }, { id: 'project', action: 'delete' }, { id: 'project', action: 'hierarchy', settings: {} }]) {
+      expect(() => contract.assertInvokeRequest('project_board_manage_project', args)).toThrow();
+    }
+    expect(contract.assertInvokeRequest('project_board_preferences', { preferences: { edgeStyle: 'curved' } })).toBeTruthy();
+    expect(() => contract.assertInvokeRequest('project_board_preferences', { preferences: { edgeStyle: 'unknown' } })).toThrow();
     expect(contract.assertInvokeRequest('session_recovery', { action: 'offer' })).toEqual({ action: 'offer' });
     const checkpointId = '11111111-1111-4111-8111-111111111111';
     expect(contract.assertInvokeRequest('session_recovery', { action: 'decide', checkpointId, restore: false }).restore).toBe(false);

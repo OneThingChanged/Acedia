@@ -15,6 +15,7 @@
 }
 .new-session-header { flex: 0 0 auto; padding: 21px 26px 19px; border-bottom: 1px solid var(--app-border); }
 .new-session-header .modal-title { font-size: 21px; margin-bottom: 9px; }
+.new-session-location { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
 .new-session-modal .new-session-project {
   display: flex;
   flex-wrap: wrap;
@@ -25,6 +26,30 @@
   border: 0;
   background: transparent;
 }
+.new-session-modal button.new-session-project {
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.new-session-modal button.new-session-project:hover {
+  background: var(--app-bg-elevated);
+  border-color: var(--app-accent);
+}
+.new-session-folder-action { color: var(--app-accent); font-size: 11px; }
+.new-session-folder-reset {
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--app-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.new-session-folder-reset:hover { color: var(--app-accent); }
+.new-session-folder-error { margin: 8px 0 0; color: var(--app-danger); font-size: 12px; }
 .new-session-project .session-project-name { flex: 0 1 auto; }
 .new-session-project .session-project-folder { grid-column: auto; min-width: 0; max-width: 100%; margin: 0; overflow-wrap: anywhere; }
 .new-session-icon { width: 17px; height: 17px; flex-shrink: 0; color: var(--app-muted); }
@@ -33,6 +58,7 @@
 .new-session-basics { min-width: 0; }
 .new-session-section-heading { display: flex; align-items: center; gap: 8px; margin: 0 0 15px; font-size: 14px; font-weight: 600; color: var(--app-heading); }
 .new-session-modal .field { margin: 0; min-width: 0; gap: 6px; }
+.new-session-modal .new-session-remote-folder { margin-top: 10px; }
 .new-session-modal .field-label { font-size: 12px; }
 .new-session-modal .field input, .new-session-modal .field select { width: 100%; min-width: 0; height: 38px; padding: 0 10px; font-size: 13px; border-radius: 6px; }
 .new-session-modal :is(input, select, button, summary):focus-visible { outline: 2px solid var(--app-accent); outline-offset: 3px; }

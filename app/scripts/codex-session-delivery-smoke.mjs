@@ -121,12 +121,17 @@ try {
     await waitFor(async () => (await read())?.lifecycle === 'idle' && deliveryComposerReady(entry), 'resumed account-scoped transcript and empty composer');
     console.log('RESUMED_DELIVERY_READINESS', JSON.stringify({ composer: deliveryComposerReady(entry), transcript: await read() }));
   }
+  let submissions = 0;
   const options = { file: path.join(root, 'deliveries.json'), read,
     freshRead:()=>firstMessageSession({entry,agent:catalog().agents[1],conversationId:conversationId??null}),
-    context: id => id === 'caller' ? { entry: caller, name: 'ProjectWitch', projectName: 'Fixture' }
+    context: id => id === 'caller' ? { entry: caller, name: '한글 관리자', projectName: 'Fixture' }
       : id === 'target' ? { entry, name: 'UI', conversationId:conversationId??null } : null,
     ready: () => deliveryComposerReady(entry), publish: payload => updates.push(payload),
-    submit: (_id, _entry, message, isCurrent) => {entry.firstMessageSubmitted=true;return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode });} };
+    submit: (_id, _entry, message, isCurrent) => {
+      submissions++;
+      entry.firstMessageSubmitted = true;
+      return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode });
+    } };
   service = new SessionDeliveries(options);
   const readiness = new SessionReadiness({ context: options.context, read, freshRead: options.freshRead, ready: options.ready });
   let busy = false;
@@ -144,7 +149,7 @@ try {
       if(immediate) {assert.equal(status.firstMessageReady,true);console.log('SESSION_MESSAGE_WAITED_FOR_NATIVE_STARTUP_BEFORE_NOTIFY_OK');}
       return status;
     },
-    notify: (agentId, body) => service.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession:true }),
+    notify: (agentId, body) => service.handle({ action: 'send', agentId, body, mailboxNotification: true, freshSession:true }),
     receipt: (agentId, requestKey) => service.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }) };
   const messages = new SessionMessages(messageOptions);
   const workspace = new WorkspaceManagement({ catalog: () => ({ projects: [{ id: 'p', name: 'Fixture', folder: root }],
@@ -176,24 +181,23 @@ try {
     }
     assert.equal(stored.saved, true); assert.equal(stored.delivery.status, 'started'); assert.equal(stored.readAt, null);
     if(firstMessage){assert.ok(stored.delivery.conversationId);assert.ok(stored.delivery.turnId);console.log('SESSION_MESSAGE_NATIVE_FIRST_CONVERSATION_BOUND_TO_EXACT_NOTIFICATION_OK');}
-    await waitFor(async () => (await read())?.turn?.status === 'done', 'completed ASCII notification task');
+    await waitFor(async () => (await read())?.turn?.status === 'done', 'completed mailbox notification turn');
     const userRows = fs.readFileSync(transcript, 'utf8').split('\n').flatMap(line => { try { const r = JSON.parse(line); return r.type === 'response_item' && r.payload?.role === 'user' ? r.payload.content.map(c => c.text || '') : []; } catch { return []; } });
     const reference = userRows.find(value => value.includes(stored.messageId));
-    assert.ok(reference); assert.match(reference, /^[\x00-\x7f]+$/); assert.ok(!reference.includes(message));
+    assert.ok(reference); assert.ok(reference.includes(' From: Fixture / 한글 관리자 | Acedia session message ')); assert.ok(!reference.includes(message));
     const headers = { authorization: 'Bearer ' + hook.token, 'x-acedia-agent-id': 'target', 'content-type': 'application/json; charset=utf-8' };
     const response = await fetch(`http://127.0.0.1:${hook.port}/integration/v1/workspace/messages/receive`, { method: 'POST', headers, body: JSON.stringify({ messageId: stored.messageId, includeBase64: true }) });
     assert.equal(response.status, 200); const original = (await response.json()).messages[0];
     assert.equal(original.message, message); assert.equal(Buffer.from(original.messageBase64, 'base64').toString('utf8'), message); assert.ok(original.readAt);
-    const count = calls.length;
     const again = await rpc('tools/call', { name: 'acedia_session_message_send', arguments: body });
     assert.equal(again.structuredContent.messageId, stored.messageId); assert.ok(again.structuredContent.readAt);
     await new SessionMessages(messageOptions).handle({ action: 'message-send', agentId: 'caller', body });
-    await wait(500); assert.equal(calls.length, count, 'Message replay notified the CLI twice');
+    assert.equal(submissions, 1, 'Message replay submitted a second terminal notification');
     const reply = await fetch(`http://127.0.0.1:${hook.port}/integration/v1/workspace/messages/send`, { method: 'POST', headers, body: JSON.stringify({ sessionId: 'caller', message: '한글 답장도 정상입니다.', replyTo: stored.messageId, requestKey: 'reply-native', notify: false }) });
     assert.equal(reply.status, 200);
     const inbox = await rpc('tools/call', { name: 'acedia_session_message_receive', arguments: {} });
     assert.equal(inbox.structuredContent.messages[0].message, '한글 답장도 정상입니다.');
-    console.log('SESSION_MESSAGE_REAL_CODEX_ASCII_NOTIFICATION_UTF8_INBOX_READ_REPLY_AND_NO_REPLAY_OK');
+    console.log('SESSION_MESSAGE_REAL_CODEX_NAMED_NOTIFICATION_UTF8_INBOX_READ_REPLY_AND_NO_REPLAY_OK');
   } else {
   const message = '노드 선택 UI 초안: 인벤토리·캐릭터·지도 A02 → 확인! 🚀\n1~3개 후보, 준비 중/실패 상태를 HTML로 보여 주세요. 원래 작업 문맥을 유지해 주세요.';
   const body = { sessionId: 'target', expectedConversationId: conversationId, message, requestKey: 'node-ui-1', waitMs: 10000 };

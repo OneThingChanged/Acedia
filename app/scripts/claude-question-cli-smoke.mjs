@@ -88,7 +88,7 @@ async function exercise(root){
     if(handoff){
       await until(()=>deliveryComposerReady(launchEntry),'native empty Claude composer');
       const monitor=new ActiveQuestions(),parentEntry={};let sessionId,transcriptPath;
-      const context=id=>id==='parent'?{entry:parentEntry,name:'Parent'}:{entry:launchEntry,conversationId:sessionId||null,state:'WAIT',reason:'ready'};
+      const context=id=>id==='parent'?{entry:parentEntry,name:'한글 검증',projectName:'Fixture'}:{entry:launchEntry,conversationId:sessionId||null,state:'WAIT',reason:'ready'};
       const read=async()=>{
         if(!modelRequests)return null;
         const files=(await fs.readdir(config,{recursive:true})).filter(file=>/[0-9a-f-]{36}\.jsonl$/i.test(file)&&!file.includes('subagents'));
@@ -103,12 +103,13 @@ async function exercise(root){
       const ready=new SessionReadiness({context,read,freshRead,ready:deliveries.ready});
       const messages=new SessionMessages({file:path.join(root,'inbox.json'),sessionFor:id=>({id,aiToolId:'claude'}),context,
         prepare:(id,{waitMs,context:pinned})=>ready.waitForReady(id,waitMs,pinned),
-        notify:(agentId,body)=>deliveries.handle({action:'send',agentId,body,freshSession:true,asciiEnvelope:true}),
+        notify:(agentId,body)=>deliveries.handle({action:'send',agentId,body,freshSession:true,mailboxNotification:true}),
         receipt:(agentId,requestKey)=>deliveries.handle({action:'delivery',agentId,body:{requestKey,waitMs:0}})});
       const status=await ready.handle({sessionId:'fixture'});assert.equal(status.firstMessageReady,true);assert.equal(status.conversationId,null);
       const body={sessionId:'fixture',requestKey:'native-first',message:'한글 첫 지시 → 내용 보존\n격리 CLI 테스트',waitMs:0};
       const sent=await messages.handle({action:'message-send',agentId:'parent',body});
       await until(async()=>{const result=await read();deliveries.observe('fixture',launchEntry,result);return deliveries.list('parent')[0]?.status==='started';},'native Claude exact user/assistant receipt');
+      assert.ok((await fs.readFile(transcriptPath,'utf8')).includes(' From: Fixture / 한글 검증 | Acedia session message '));
       const inbox=await messages.handle({action:'message-receive',agentId:'fixture',body:{messageId:sent.messageId}});assert.equal(inbox.messages[0].message,body.message);
       await messages.handle({action:'message-send',agentId:'parent',body});assert.equal(submits,1);
       assert.ok(deliveries.list('parent')[0].turnId);assert.equal(deliveries.list('parent')[0].conversationId,sessionId);

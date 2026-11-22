@@ -17,11 +17,11 @@ import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocati
 import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
-import { boardViewedAgent, type BoardSessionManagement } from './lib/workBoard';
+import { boardViewedAgent, type BoardProjectManagement, type BoardSessionManagement } from './lib/workBoard';
 import { remoteAgentStatus, remoteAgentView } from './lib/remoteSessionProjection';
 import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
 import { loadRightPanelView, LS_RIGHT_PANEL_VIEW } from './lib/pixelOffice';
-import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, updateProjectHierarchy } from "./lib/projectHierarchy";
+import { normalizeBoardPosition, normalizeProjectHierarchy, removeProjectRelationships, resolveProjectSettings, updateProjectHierarchy } from "./lib/projectHierarchy";
 import { normalizeLaunchOptions } from "./lib/launchOptions";
 import { normalizeSessionModel, sessionModelArgs, type SessionModel } from "../electron/shared/session-model.mjs";
 import { switchProviderAccount } from "./lib/codexAccounts";
@@ -135,7 +135,7 @@ import {
 } from "./lib/attention";
 import { useAttentionState } from "./hooks/useAttentionState";
 import { capacityRetryMessage, type CapacityRetryState } from "./lib/capacityRetry";
-import { deliveryStatusMessage, isDeliveryWarning, type SessionDelivery } from './lib/sessionDelivery';
+import { deliveryStatusMessage, isDeliveryWarning, takeDeliveryWarning, type SessionDelivery } from './lib/sessionDelivery';
 import { useSessionLifecycleActions } from "./hooks/useSessionLifecycleActions";
 import { useNativeViewOcclusion } from "./hooks/useNativeViewOcclusion";
 import { canAutoFocusTerminal, scheduleActiveTerminalFocus } from "./lib/workspaceFocus";
@@ -665,6 +665,8 @@ function App() {
   const [organizationOffice, setOrganizationOffice] = useState(false);
   const [boardNavigation, setBoardNavigation] = useState<{ id: string; live: boolean; compose: boolean; serial: number } | null>(null);
   const [boardManagement, setBoardManagement] = useState<BoardSessionManagement | null>(null);
+  const [boardProjectManagement, setBoardProjectManagement] = useState<{ projectId: string | null; action: BoardProjectManagement['action'] } | null>(null);
+  const [hierarchyTarget, setHierarchyTarget] = useState<{ projectId?: string; sessionId?: string; serial: number } | null>(null);
   const boardNavigationSerial = useRef(0);
   useEffect(() => { try { localStorage.setItem(LS_RIGHT_PANEL_VIEW, rightPanelView); } catch { /* optional preference */ } }, [rightPanelView]);
   const [standaloneNoteId, setStandaloneNoteId] = useState<string | null>(null);
@@ -696,6 +698,7 @@ function App() {
     string | null
   >(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const recentDeliveryWarningTargets = useRef(new Map<string, number>());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [screenContextMenu, setScreenContextMenu] = useState<ScreenContextMenuState | null>(null);
   // Per-session preference: view a session as a chat transcript vs the terminal.
@@ -1710,10 +1713,11 @@ function App() {
     runtimeFlags,
   ]);
 
-  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "question" | "bell", message?: string) => {
+  const notifySession = useCallback(async (agent: Agent, kind: "completion" | "question" | "bell", message?: string, delivery?: SessionDelivery) => {
     if (isElectronRuntime() && !ownedAgentIdsRef.current.has(agent.id)) return;
     try {
       if (isElectronRuntime() && !await invoke<boolean>("notification_policy_check", { kind, id: agent.id })) return;
+      if (delivery && !takeDeliveryWarning(delivery, recentDeliveryWarningTargets.current)) return;
       const projectName = projectsRef.current.find(p => p.id === agent.projectId)?.name || "Unknown project";
       const body = message || (kind === "question" ? text("질문이 도착했습니다. 답변을 선택해 주세요.", "A question is waiting. Select your answer.") : kind === "bell" ? text("터미널에서 벨 알림을 보냈습니다.", "The terminal rang its bell.") : text("작업이 끝났어요", "Work completed"));
       const config = loadNotificationSound();
@@ -1865,7 +1869,7 @@ function App() {
       if (agent) void notifySession(agent, 'question', text(
         `${delivery.targetName}에게 보낸 메시지 · ${deliveryStatusMessage(delivery, false)}`,
         `Message to ${delivery.targetName} · ${deliveryStatusMessage(delivery, true)}`
-      ));
+      ), delivery);
     }).then(track);
 
     listen<AgentHookEvent>(
@@ -2459,6 +2463,13 @@ function App() {
     }).catch(reason => pushToast(navigation.id, 'Project Board', String(reason)));
   }, [boardNavigation, runtimeFlags, agents, activateAgentProject, applyGroupOp, pushToast]);
 
+  const showBoardHierarchy = useCallback((projectId?: string, sessionId?: string) => {
+    setHierarchyTarget(current => ({ projectId, sessionId, serial: (current?.serial ?? 0) + 1 }));
+    setOrganizationSelectedId(sessionId ?? null);
+    setOrganizationOffice(false);
+    setWorkspaceMode('organization');
+  }, []);
+
   useEffect(() => {
     let stopped = false;
     const subscription = listen<BoardSessionManagement>('project-board:manage-session', ({ payload }) => {
@@ -2467,13 +2478,16 @@ function App() {
     return () => { stopped = true; void subscription.then(remove => remove()).catch(() => {}); };
   }, []);
   useEffect(() => {
-    if (!boardManagement || !runtimeFlags || !agents.some(agent => agent.id === boardManagement.id)) return;
+    if (!boardManagement || !runtimeFlags) return;
+    const agent = agents.find(item => item.id === boardManagement.id);
+    if (!agent) return;
     const { id, action } = boardManagement;
     setBoardManagement(null);
     if (action === 'delete') removeAgent(id);
     else if (action === 'rename') setRenameSessionId(id);
     else if (action === 'properties') setPropertiesAgentId(id);
-  }, [boardManagement, runtimeFlags, agents, removeAgent]);
+    else if (action === 'hierarchy') showBoardHierarchy(agent.projectId, id);
+  }, [boardManagement, runtimeFlags, agents, removeAgent, showBoardHierarchy]);
 
   const selectScreen = useCallback(
     async (groupId: string, agentId: string) => {
@@ -3118,6 +3132,26 @@ function App() {
     },
     [dismissTransientMenus, selectProject]
   );
+
+  const openWorkBoard = useCallback(() => {
+    void invoke('open_project_board').catch(error => pushToast('', 'Project Board', String(error)));
+  }, [pushToast]);
+
+  useEffect(() => {
+    let stopped = false;
+    const subscription = listen<{ projectId: string | null; action: BoardProjectManagement['action'] }>('project-board:manage-project', ({ payload }) => {
+      if (!stopped) setBoardProjectManagement(payload);
+    });
+    return () => { stopped = true; void subscription.then(remove => remove()).catch(() => {}); };
+  }, []);
+  useEffect(() => {
+    if (!boardProjectManagement || !runtimeFlags) return;
+    const { projectId, action } = boardProjectManagement;
+    if (projectId && !projects.some(project => project.id === projectId)) return;
+    setBoardProjectManagement(null);
+    if (action === 'hierarchy') showBoardHierarchy(projectId ?? undefined);
+    else if (projectId) openNewSessionModal(projectId);
+  }, [boardProjectManagement, runtimeFlags, projects, showBoardHierarchy, openNewSessionModal]);
 
   const renameProject = useCallback((id: string, name: string) => {
     setProjects((prev) =>
@@ -4412,14 +4446,6 @@ function App() {
     [activeProjectId, projects]
   );
 
-  const projectAgents = useMemo(
-    () =>
-      activeProjectId
-        ? agents.filter((agent) => agent.projectId === activeProjectId)
-        : [],
-    [activeProjectId, agents]
-  );
-
   const activeGroup = useMemo(
     () =>
       activeGroupId
@@ -4590,7 +4616,7 @@ function App() {
         browserHubActive={workspaceMode === "browser-hub"}
         browserCount={browserCatalog.length}
         organizationActive={workspaceMode === "organization"}
-        onOpenOrganization={() => { void invoke('open_project_board').catch(error => pushToast('', 'Project Board', String(error))); }}
+        onOpenOrganization={openWorkBoard}
         onOpenBrowserHub={
           isElectronRuntime() ? () => setWorkspaceMode("browser-hub") : undefined
         }
@@ -4626,16 +4652,20 @@ function App() {
         />
       ) : workspaceMode === "organization" ? (
         <SessionOrganization
+          key={hierarchyTarget?.serial}
           agents={agents}
           projects={projects}
           activeProjectId={activeProjectId}
           selectedId={organizationSelectedId}
+          initialProjectId={hierarchyTarget?.projectId}
+          initialSessionId={hierarchyTarget?.sessionId}
           officeOpen={organizationOffice}
           onOfficeOpenChange={setOrganizationOffice}
           onDockOffice={() => { setRightPanelView('office'); setFilesOpen(true); setWorkspaceMode('sessions'); }}
           onOpenNote={setStandaloneNoteId}
           onSelect={setOrganizationSelectedId}
           onOpenSession={requestSelectAgent}
+          onWorkBoard={openWorkBoard}
           onOpenProperties={setPropertiesAgentId}
           onUpdateHierarchy={updateSessionHierarchy}
           onUpdateProjects={(changes) => {
@@ -4815,20 +4845,29 @@ function App() {
             />
           );
         })()}
-      {showModal && (
-        <NewAgentModal
-          project={activeProject}
-          defaultName={`Session ${projectAgents.length + 1}`}
+      {showModal && (() => {
+        const parent = newSessionParentId ? agents.find(agent => agent.id === newSessionParentId) : undefined;
+        const project = parent ? projects.find(item => item.id === parent.projectId) ?? null : activeProject;
+        const projectSettings = project ? resolveProjectSettings(project, projects) : undefined;
+        const parentSettings = parent ? resolveSessionSettings(parent, agents, projects) : undefined;
+        const remote = !!project?.sshHostId;
+        const sessionCount = project ? agents.filter(agent => agent.projectId === project.id).length : 0;
+        return <NewAgentModal
+          key={`${project?.id ?? ""}:${newSessionParentId ?? ""}`}
+          project={project}
+          defaultName={`Session ${sessionCount + 1}`}
           disabledTools={disabledTools}
-          parentAgent={newSessionParentId ? agents.find((agent) => agent.id === newSessionParentId) : undefined}
+          parentAgent={parent}
+          projectWorkingFolder={(remote ? projectSettings?.remoteFolder : projectSettings?.folder) ?? ""}
+          parentWorkingFolder={(remote ? parentSettings?.remoteFolder : parentSettings?.folder) ?? ""}
           onCancel={() => { setShowModal(false); setNewSessionParentId(null); }}
           onCreate={async (payload) => {
             setShowModal(false);
             const parent = newSessionParentId ? agentsRef.current.find((agent) => agent.id === newSessionParentId) : undefined;
-            if (newSessionParentId && !parent) { setNewSessionParentId(null); pushToast("", activeProject?.name || "", text("부모 세션이 삭제되어 자식을 만들 수 없습니다.", "The parent was deleted; the child could not be created.")); return false; }
+            if (newSessionParentId && !parent) { setNewSessionParentId(null); pushToast("", project?.name || "", text("부모 세션이 삭제되어 자식을 만들 수 없습니다.", "The parent was deleted; the child could not be created.")); return false; }
             setNewSessionParentId(null);
-            const result = await createAgent(payload, parent ? { projectId: parent.projectId } : {});
-            if (!result.created || !result.id) { if (result.error) pushToast("", activeProject?.name || "", result.error); return false; }
+            const result = await createAgent(payload, { projectId: parent?.projectId ?? project?.id });
+            if (!result.created || !result.id) { if (result.error) pushToast("", project?.name || "", result.error); return false; }
             if (parent) {
               setOrganizationSelectedId(result.id);
               const started = await spawnAgentInBackground(result.id);
@@ -4836,8 +4875,8 @@ function App() {
             }
             return true;
           }}
-        />
-      )}
+        />;
+      })()}
       {pendingSessionAccountLaunch && (
         <SessionLaunchAccountModal
           key={pendingSessionAccountLaunch.agentId}

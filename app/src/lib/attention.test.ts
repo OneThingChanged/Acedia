@@ -3,6 +3,7 @@ import {
   markAgentCompletionRead,
   markAgentAttentionRead,
   markAttentionRead,
+  markReviewedCompletionsRead,
   MAX_ATTENTION_ITEMS,
   removeSessionAttention,
   resolveAgentWorkAttention,
@@ -77,6 +78,22 @@ describe("attention items", () => {
         )
       )
     ).toEqual(["active-agent"]);
+  });
+
+  it("clears the exact board-reviewed completion while retaining newer results and questions", () => {
+    const older = item("1", "completed");
+    const newer = { ...item("2", "completed"), agentId: "agent", sessionKey: "new-session" };
+    const otherAgent = { ...item("3", "completed"), agentId: "other", createdAt: older.createdAt };
+    const question = { ...item("4", "question"), createdAt: older.createdAt };
+    const items = [older, newer, otherAgent, question];
+    const reviewed = [{ agentId: older.agentId, createdAt: older.createdAt }];
+    const next = markReviewedCompletionsRead(items, reviewed);
+    expect(next[0].read).toBe(true);
+    expect(next.slice(1)).toEqual(items.slice(1));
+    expect(unreadCompletedAgentIds(next)).toEqual(new Set(["agent", "other"]));
+    const cleared = markReviewedCompletionsRead(next, [{ agentId: newer.agentId, createdAt: newer.createdAt }]);
+    expect(unreadCompletedAgentIds(cleared)).toEqual(new Set(["other"]));
+    expect(markReviewedCompletionsRead(cleared, reviewed)).toBe(cleared);
   });
 
   it("acknowledges all attention for one agent without touching peers", () => {

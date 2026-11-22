@@ -15,6 +15,8 @@ export type AttentionItem = {
   read: boolean;
 };
 
+export type CompletionReview = Pick<AttentionItem, "agentId" | "createdAt">;
+
 export function upsertAttentionItem(
   items: AttentionItem[],
   item: AttentionItem
@@ -74,6 +76,13 @@ export function markAgentCompletionRead(
     return { ...item, read: true };
   });
   return changed ? next : items;
+}
+
+export function markReviewedCompletionsRead(items: AttentionItem[], reviews: readonly CompletionReview[]) {
+  const reviewed = new Set(reviews.map(({ agentId, createdAt }) => `${agentId}:${createdAt}`));
+  const ids = new Set(items.filter(item => item.kind === "completed" && !item.read
+    && reviewed.has(`${item.agentId}:${item.createdAt}`)).map(item => item.id));
+  return ids.size ? markAttentionRead(items, ids) : items;
 }
 
 export function markAgentAttentionRead(

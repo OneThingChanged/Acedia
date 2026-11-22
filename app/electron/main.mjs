@@ -693,6 +693,9 @@ const projectBoard = new ProjectBoard({ file: path.join(hookBaseDir, 'project-bo
   catalog: () => Array.isArray(monitorService.state?.agents) ? miraControlCatalog() : savedBoardCatalog,
   live: id => ptys.has(id), hook: id => monitorHooks.get(id), runs: () => taskOrchestration.data.runs,
   waitingSince: id => taskOrchestration.waitingSince(id),
+  onCompletionsReviewed: completions => {
+    for (const win of workspaceWindows.values()) sendEvent(win, 'project-board:completions-reviewed', completions);
+  },
   delegations: pendingDelegations,
   delegationError: () => delegatedWork.error ? '하달 상태 기록을 확인할 수 없어 완료 알림을 보류합니다. delegated-work.json을 확인하세요.' : null,
   transfers: () => [
@@ -1141,7 +1144,7 @@ const sessionMessages = new SessionMessages({
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
   prepare: (id, { waitMs, context }) => sessionReadiness.waitForReady(id, waitMs, context),
-  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true, freshSession: true, retryNotSent: true }),
+  notify: (agentId, body) => sessionDeliveries.handle({ action: 'send', agentId, body, mailboxNotification: true, freshSession: true, retryNotSent: true }),
   receipt: async (agentId, requestKey) => { await sessionDeliveries.reconcile(agentId, requestKey); return sessionDeliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }); },
   publish: value => sendEventToAll('agent:session-delivery', sessionMessages.notice(value)),
 });
@@ -3323,10 +3326,11 @@ const projectBoardWindows = new ProjectBoardWindow({ BrowserWindow, screen, prel
   save: patch => { try { projectBoard.preferences(patch); } catch { /* geometry must not interrupt work */ } },
   register: (win, webContentsId) => { runtimeByWebContents.set(webContentsId, { project_board_window: true }); installNavigationPolicy(win); },
   unregister: webContentsId => runtimeByWebContents.delete(webContentsId) });
-const boardSessionNavigation = new BoardSessionNavigation({ sessions: () => projectBoard.snapshot().sessions,
+const boardSessionNavigation = new BoardSessionNavigation({ sessions: () => projectBoard.snapshot().sessions, projects: () => projectBoard.catalog().projects || [],
   owner: id => workspaceWindows.get(detachedAgents.get(id)), windows: () => workspaceWindows.values(),
   create: () => createAppWindow({ restoreWorkspace: false }), ready: win => runtimeByWebContents.get(win.webContents.id)?.ready,
-  send: (win, payload) => sendEvent(win, 'action' in payload ? 'project-board:manage-session' : 'project-board:open-session', payload),
+  send: (win, payload) => sendEvent(win, 'projectId' in payload ? 'project-board:manage-project'
+    : 'action' in payload ? 'project-board:manage-session' : 'project-board:open-session', payload),
   focus: focusWorkspaceWindow, live: id => ptys.has(id) });
 
 function createAppWindow({
@@ -5377,6 +5381,8 @@ async function showOpenDialog(event, args) {
   const options = {
     properties,
     filters: Array.isArray(args.filters) ? args.filters : undefined,
+    defaultPath: typeof args.defaultPath === "string" && args.defaultPath.length <= 4096
+      && !/[\x00-\x1f]/.test(args.defaultPath) && path.isAbsolute(args.defaultPath) ? args.defaultPath : undefined,
   };
   const result = parent
     ? await dialog.showOpenDialog(parent, options)
@@ -5544,6 +5550,8 @@ async function invokeCommand(event, command, rawArgs) {
       return new BoardSessionActions({ active: id => ptys.has(id), start: body => sessionStart.handle(body), stop: (operation, body) => sessionRegistry.handle(operation, body) }).handle(args);
     case 'project_board_manage_session':
       await warmProjectBoard(); return boardSessionNavigation.manage(args);
+    case 'project_board_manage_project':
+      await warmProjectBoard(); return boardSessionNavigation.manageProject(args);
     case 'project_board_open_session': {
       await warmProjectBoard();
       const opened = boardSessionNavigation.open(args);
@@ -5591,6 +5599,11 @@ async function invokeCommand(event, command, rawArgs) {
     case "renderer_ready": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (runtime) runtime.ready = true;
+      const workspace = workspaceWindows.get(event.sender.id);
+      if (workspace) {
+        const completions = projectBoard.reviewedCompletions();
+        if (completions.length) sendEvent(workspace, 'project-board:completions-reviewed', completions);
+      }
       boardSessionNavigation.loaded(event.sender.id);
       if (closeSmoke) console.log("[electron-smoke] renderer ready for close test");
       if (closeSmoke && eventSenderWindow(event) === initialWindow && closeSmokeStartedAt === null) {

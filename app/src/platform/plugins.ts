@@ -30,6 +30,7 @@ export type DeveloperUpdateStatus = {
 export async function openDialog(options: {
   directory?: boolean;
   multiple?: boolean;
+  defaultPath?: string;
   filters?: Array<{ name: string; extensions: string[] }>;
 }): Promise<string | string[] | null> {
   const bridge = electronBridge();

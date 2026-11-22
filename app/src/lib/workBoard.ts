@@ -1,4 +1,4 @@
-import { folderProjectParents } from './projectBoard';
+import { folderProjectParents, layoutProjectParents, projectHierarchyEdges } from './projectBoard';
 import { placeBoardProject, type BoardProjectPositions } from './boardPlacement';
 import type { BoardRect } from './boardEdgeRouting';
 
@@ -32,14 +32,16 @@ export type BoardReference = { id: string; from: string; to: string; kind: strin
 export type BoardTransfer = { id: string; from: string; to: string; status: string; reason: string; summary?: string; savedAt?: number | null; sentAt?: number | null; receivedAt?: number | null; readAt?: number | null; startedAt?: number | null; isMessage?: boolean };
 export type BoardTransferDetail = { id: string; from: string; to: string; message: string | null };
 export type BoardViewMode = 'sessions' | 'transfers' | 'board' | 'office';
-export type BoardSessionManagement = { id: string; action: 'properties' | 'rename' | 'delete' };
+export type BoardEdgeStyle = 'orthogonal' | 'curved';
+export type BoardSessionManagement = { id: string; action: 'properties' | 'rename' | 'delete' | 'hierarchy' };
+export type BoardProjectManagement = { action: 'hierarchy'; id?: string } | { action: 'new-session'; id: string };
 export type BoardSnapshot = {
   revision: string; sessions: BoardSession[]; projects: { id: string; name: string; folder: string; remoteFolder?: string; sshHostId?: string; hierarchy?: { parentId?: string } }[];
   devices: { sessionId: string; kind: string; tool: string; state: string; source: string; startedAt: number }[];
   items?: BoardItem[]; references?: BoardReference[]; sampledAt?: number;
   transfers?: BoardTransfer[];
   delegations?: { id: string; from: string; to: string }[];
-  preferences: { viewMode?: BoardViewMode; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean };
+  preferences: { viewMode?: BoardViewMode; edgeStyle?: BoardEdgeStyle; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean };
   storageError: string | null;
 };
 export function boardItems(data: BoardSnapshot): BoardItem[] {
@@ -123,7 +125,7 @@ export function boardVisibleSessionIds(sessions: BoardSession[], showSleeping: b
 type BoardLayoutResult = {
   groups: ({ id: string; name: string; x: number; y: number; expandedHeight: number } & ReturnType<typeof boardProjectGrid>)[];
   nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[];
-  edges: { from: string; to: string }[]; projectEdges: { from: string; to: string }[]; width: number; height: number;
+  edges: { from: string; to: string }[]; projectEdges: ReturnType<typeof projectHierarchyEdges>; width: number; height: number;
 };
 export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', filter = 'all', collapsed = new Set<string>(), collapsedProjects = new Set<string>(), overview = false, projectPositions = {}, projectPreview, sessionOrder = [], showSleeping = true, showStopped = true, activeOnly = false, revealId }:
   { projectId?: string; query?: string; filter?: string; collapsed?: Set<string>; collapsedProjects?: Set<string>; overview?: boolean; projectPositions?: BoardProjectPositions; projectPreview?: { id: string; x: number; y: number } | null; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean; revealId?: string | null }): BoardLayoutResult {
@@ -148,16 +150,14 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
   const groups: BoardLayoutResult['groups'] = [];
   const nodes: { session: BoardSession; x: number; y: number; children: number; depth: number; width: number; height: number }[] = [];
   const edges: { from: string; to: string }[] = [];
-  const parents = folderProjectParents(data.projects);
-  // Registered relationships and folder containment are evidence of hierarchy.
-  // Unrelated projects must never be attached to an invented master project.
-  const projects = new Map(data.projects.map(p => [p.id, p]));
-  for (const project of data.projects) {
-    const parent = projects.get(project.hierarchy?.parentId || '');
-    if (parents.has(project.id) || !parent || (parent.sshHostId || '') !== (project.sshHostId || '')) continue;
-    const seen = new Set([project.id]); let id: string | undefined = parent.id;
-    while (id && !seen.has(id)) { seen.add(id); id = parents.get(id); }
-    if (!id) parents.set(project.id, parent.id);
+  const folderParents = folderProjectParents(data.projects);
+  const parents = layoutProjectParents(data.projects, folderParents);
+  const relationships = projectHierarchyEdges(data.projects, folderParents);
+  const parentsByChild = new Map<string, string[]>();
+  for (const { from, to } of relationships) {
+    const incoming = parentsByChild.get(to) || [];
+    incoming.push(from);
+    parentsByChild.set(to, incoming);
   }
   const slots = new Map<string, { session: BoardSession; depth: number; hidden: boolean }[]>();
   const expandedGrids = new Map<string, ReturnType<typeof boardProjectGrid>>();
@@ -181,7 +181,9 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
     slots.set(project.id, ordered.filter(row => !row.hidden));
   }
   const visibleProjects = new Set(data.projects.filter(p => slots.get(p.id)!.length).map(p => p.id));
-  for (const id of [...visibleProjects]) { let parent = parents.get(id); while (parent) { visibleProjects.add(parent); parent = parents.get(parent); } }
+  for (const id of visibleProjects) {
+    for (const parent of parentsByChild.get(id) || []) visibleProjects.add(parent);
+  }
   const children = new Map(data.projects.map(p => [p.id, data.projects.filter(c => visibleProjects.has(c.id) && parents.get(c.id) === p.id)]));
   const measures = new Map<string, { width: number; height: number }>();
   const gapX = 48, gapY = 64;
@@ -250,7 +252,7 @@ export function boardLayout(data: BoardSnapshot, { projectId = '', query = '', f
   const nodeIds = new Set(nodes.map(n => n.session.id));
   for (const node of nodes) if (node.session.parentId && nodeIds.has(node.session.parentId)) edges.push({ from: node.session.parentId, to: node.session.id });
   const groupIds = new Set(groups.map(g => g.id));
-  const projectEdges = [...parents].filter(([child, parent]) => groupIds.has(child) && groupIds.has(parent)).map(([to, from]) => ({ from, to }));
+  const projectEdges = relationships.filter(edge => groupIds.has(edge.from) && groupIds.has(edge.to));
   return { groups, nodes, edges, projectEdges, width: Math.max(right, ...groups.map(g => g.x + g.width + 28)), height: Math.max(y + rowHeight + 28, ...groups.map(g => g.y + g.height + 28)) };
 }
 export function boardViewedAgent<T extends { deferredStart?: boolean }>(agent: T, live: boolean): T {

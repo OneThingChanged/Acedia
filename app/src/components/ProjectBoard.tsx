@@ -4,7 +4,7 @@ import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { canParentProject, resolveProjectSettings, updateProjectHierarchy } from "../lib/projectHierarchy";
 import { isAgentRuntimeActive } from "../lib/agentActivity";
-import { boardProjects, folderProjectParents, layoutProjectBoard, PROJECT_CARD_WIDTH } from "../lib/projectBoard";
+import { boardProjects, folderProjectParents, layoutProjectBoard, projectHierarchyEdges, PROJECT_CARD_WIDTH } from "../lib/projectBoard";
 import "./ProjectBoard.css";
 
 export type ProjectBoardChange = { id: string; hierarchy?: ProjectHierarchy; boardPosition?: Project["boardPosition"] };
@@ -18,6 +18,9 @@ type Props = {
   onOpenSession: (id: string) => void;
   onTaskFlow?: () => void;
   onOffice?: () => void;
+  onWorkBoard?: () => void;
+  initialProjectId?: string;
+  initialSessionId?: string;
   renderSessionInspector: (id: string, close: () => void) => ReactNode;
 };
 type LinkKind = "parent" | "reference";
@@ -35,7 +38,8 @@ export function ProjectBoard(props: Props) {
   const viewRef = useRef(view); viewRef.current = view;
   const [bounds, setBounds] = useState({ width: 900, height: 600 });
   const [activeOnly, setActiveOnly] = useState(false), [query, setQuery] = useState("");
-  const [selectedProject, setSelectedProject] = useState(props.projects[0]?.id || ""), [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState(props.initialProjectId || props.projects[0]?.id || "");
+  const [selectedSession, setSelectedSession] = useState<string | null>(props.initialSessionId ?? null);
   const [edge, setEdge] = useState<Edge | null>(null), [link, setLink] = useState<Link | null>(null);
   const [message, setMessage] = useState(""), [patch, setPatch] = useState<ProjectHierarchy | null>(null);
   const [snap, setSnap] = useState(true), [inspector, setInspector] = useState(true);
@@ -57,11 +61,12 @@ export function ProjectBoard(props: Props) {
   const height = (id: string) => 144 + Math.min(members.get(id)?.length || 0, 6) * 45 + (visibleFolderParents.has(id) ? 24 : 0);
   const defaultPositions = useMemo(() => layoutProjectBoard(visibleProjects, visibleFolderParents, height), [visibleProjects, visibleFolderParents, members]);
   const positions = new Map(visibleProjects.map(p => [p.id, preview?.id === p.id ? preview : p.boardPosition || defaultPositions.get(p.id)!]));
-  const edges: Edge[] = visibleProjects.flatMap(p => [
-    ...(visibleFolderParents.has(p.id) ? [{ kind: "folder" as const, from: visibleFolderParents.get(p.id)!, to: p.id, owner: p.id }] : []),
-    ...(p.hierarchy?.parentId && visibleIds.has(p.hierarchy.parentId) && visibleFolderParents.get(p.id) !== p.hierarchy.parentId && canParentProject(props.projects, p.id, p.hierarchy.parentId) ? [{ kind: "parent" as const, from: p.hierarchy.parentId, to: p.id, owner: p.id }] : []),
-    ...(p.hierarchy?.references || []).filter(ref => visibleIds.has(ref.projectId)).map(ref => ({ kind: "reference" as const, from: p.id, to: ref.projectId, owner: p.id })),
-  ]);
+  const edges: Edge[] = [
+    ...projectHierarchyEdges(props.projects, visibleFolderParents).filter(edge => visibleIds.has(edge.from) && visibleIds.has(edge.to))
+      .map(edge => ({ ...edge, owner: edge.to })),
+    ...visibleProjects.flatMap(p => (p.hierarchy?.references || []).filter(ref => visibleIds.has(ref.projectId))
+      .map(ref => ({ kind: "reference" as const, from: p.id, to: ref.projectId, owner: p.id }))),
+  ];
   const extent = visibleProjects.length ? {
     x: Math.min(...[...positions.values()].map(p => p.x)) - 40,
     y: Math.min(...[...positions.values()].map(p => p.y)) - 40,
@@ -203,7 +208,9 @@ export function ProjectBoard(props: Props) {
     }
   }
   return <section ref={root} className={`terminal-area session-organization project-board${!inspector ? " org-inspector-collapsed" : " org-inspector-shown"}`} aria-label={text("프로젝트 관계 보드", "Project relationship board")}>
-    <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1>▥ {text("프로젝트 관계 보드", "Project relationship board")}</h1><p>{text("상위 폴더를 자동 연결하고, 설정 상속과 다른 폴더 참조를 관리합니다.", "See folder ancestry and manage shared settings and references.")}</p></div><div className="org-header-actions">{props.onOffice && <button className="org-office-button" onClick={props.onOffice}>Pixel Office</button>}{props.onTaskFlow && <button onClick={props.onTaskFlow}>작업 흐름</button>}<select aria-label={text("조직도 프로젝트", "Organization project")} value="all" onChange={e => props.onScope(e.target.value)}><option value="all">{text("전체 프로젝트", "All projects")}</option>{visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button className="btn-primary" disabled={!props.projects.length} onClick={() => openLink("parent")}>＋ {text("관계 연결", "Connect projects")}</button><button className="org-icon-button" aria-label={text("정보 패널 전환", "Toggle inspector")} onClick={() => setInspector(!inspector)}>▥</button></div></header>
+    <header className="org-header"><div><small>{text("프로젝트 / 세션 관리", "Projects / Session management")}</small><h1>▥ {text("프로젝트 관계 보드", "Project relationship board")}</h1><p>{text("상위 폴더를 자동 연결하고, 설정 상속과 다른 폴더 참조를 관리합니다.", "See folder ancestry and manage shared settings and references.")}</p></div><div className="org-header-actions">
+      {props.onWorkBoard && <button onClick={props.onWorkBoard}>{text("업무 보드", "Work board")}</button>}
+      {props.onOffice && <button className="org-office-button" onClick={props.onOffice}>Pixel Office</button>}{props.onTaskFlow && <button onClick={props.onTaskFlow}>작업 흐름</button>}<select aria-label={text("조직도 프로젝트", "Organization project")} value="all" onChange={e => props.onScope(e.target.value)}><option value="all">{text("전체 프로젝트", "All projects")}</option>{visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button className="btn-primary" disabled={!props.projects.length} onClick={() => openLink("parent")}>＋ {text("관계 연결", "Connect projects")}</button><button className="org-icon-button" aria-label={text("정보 패널 전환", "Toggle inspector")} onClick={() => setInspector(!inspector)}>▥</button></div></header>
     <div className="org-toolbar"><div className="org-view-switch"><button aria-pressed={!activeOnly} className={!activeOnly ? "active" : ""} onClick={() => setActiveOnly(false)}>{text("전체 세션", "All sessions")} <span>{props.agents.length}</span></button><button aria-pressed={activeOnly} className={activeOnly ? "active" : ""} onClick={() => setActiveOnly(true)}>{text("활성 세션", "Active sessions")} <span>{props.agents.filter(a => isAgentRuntimeActive(a) && !a.deferredStart).length}</span></button></div><div className="pb-history"><button aria-label={text("되돌리기", "Undo")} disabled={!past.length} onClick={() => history(false)}>↶</button><button aria-label={text("다시 실행", "Redo")} disabled={!future.length} onClick={() => history(true)}>↷</button><button className="pb-arrange" disabled={!visibleProjects.length} onClick={arrange}>{text("계층 정렬", "Arrange hierarchy")}</button><label><input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)}/>{text("격자 맞춤", "Snap")}</label></div><label className="org-search"><input aria-label={text("프로젝트·세션 찾기", "Find projects or sessions")} placeholder={text("프로젝트·세션 찾기", "Find projects or sessions")} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { const p = visibleProjects.find(matches); if (p) { choose(p.id); focus(p.id); } } }}/></label></div>
     <div className="org-body"><div className="org-map">
       <div className="pb-viewport" ref={viewport} tabIndex={0} aria-label={text("보드 · 빈 공간 드래그로 이동, 휠로 확대", "Board · drag empty space to pan, wheel to zoom")} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={() => { gesture.current = null; setPreview(null); setWire(null); }} style={{ backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px`, backgroundPosition: `${view.x}px ${view.y}px` }}>

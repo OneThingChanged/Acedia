@@ -79,11 +79,16 @@ it('passes a verified cancelled turn to the native readiness check before sendin
   f.service.ready.mockReturnValue(true);
   expect((await f.send()).status).toBe('sent');
 });
-it('keeps mailbox reference envelopes ASCII even when sender/project labels are Korean', async () => {
-  const f = fixture(); f.contexts.caller.name = '관리자'; f.contexts.caller.projectName = '한글 프로젝트';
-  const body = { ...f.body, message: 'Read acedia_session_message_receive for the original UTF-8 text.' };
-  await f.service.handle({ action: 'send', agentId: 'caller', body, asciiEnvelope: true });
-  expect(f.options.submit.mock.calls[0][2]).toMatch(/^[\x00-\x7f]+$/);
+it('uses the real project and sender in a one-line mailbox notification with a verifiable receipt', async () => {
+  const f = fixture(); f.contexts.caller.name = '관리자\n\t검증'; f.contexts.caller.projectName = '한글 프로젝트';
+  const body = { ...f.body, message: sessionMessageNotification('22222222-2222-4222-8222-222222222222') };
+  const result = await f.service.handle({ action: 'send', agentId: 'caller', body, mailboxNotification: true });
+  const wire = f.options.submit.mock.calls[0][2];
+  expect(wire).toBe(`[Acedia handoff: ${result.deliveryId}] From: 한글 프로젝트 / 관리자 검증 | ${body.message}`);
+  const evidence = deliveryEvidence(JSON.stringify({ type: 'response_item', timestamp: new Date(10100).toISOString(),
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: wire }] } }));
+  f.service.observe('target', f.contexts.target.entry, { sessionId: 'conversation', deliveries: evidence.receipts });
+  expect(f.service.list('target')[0]).toMatchObject({ status: 'received', notificationFrom: '한글 프로젝트 / 관리자 검증' });
 });
 
 it('retains a bounded Unicode summary through restart without storing the full direct-handoff body', async () => {

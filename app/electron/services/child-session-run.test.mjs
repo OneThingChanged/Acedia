@@ -60,7 +60,7 @@ for (const [ownerTool, childTool, serviceTier, model] of [
   const readiness = new SessionReadiness({ context, read, freshRead, ready: deliveries.ready });
   const messages = new SessionMessages({ file: path.join(root, 'messages.json'), sessionFor: id => catalog.agents.find(a => a.id === id), context,
     prepare: (id, { waitMs, context: pinned }) => readiness.waitForReady(id, waitMs, pinned),
-    notify: (agentId, body) => deliveries.handle({ action: 'send', agentId, body, freshSession: true, asciiEnvelope: true }),
+    notify: (agentId, body) => deliveries.handle({ action: 'send', agentId, body, freshSession: true, mailboxNotification: true }),
     receipt: (agentId, requestKey) => deliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }) });
   const create = vi.fn(async payload => {
     const filter = new TrackedTerminalFilter(15, 100); cleanup.push(() => filter.dispose());

@@ -7,6 +7,7 @@ import { useCreationDialog } from "../hooks/useCreationDialog";
 import { AI_TOOLS, toolForId } from "../types";
 import type { Agent, NewAgentPayload, Project } from "../types";
 import { folderTail } from "../lib/path";
+import { openDialog } from "../platform/plugins";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { newSessionDangerous, newSessionToolId, rememberNewSession } from "../lib/newSessionPreferences";
 import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
@@ -20,6 +21,8 @@ export function NewAgentModal({
   onCreate,
   disabledTools = [],
   parentAgent,
+  projectWorkingFolder,
+  parentWorkingFolder,
 }: {
   project: Project | null;
   defaultName: string;
@@ -27,12 +30,15 @@ export function NewAgentModal({
   onCreate: (payload: NewAgentPayload) => void | boolean | Promise<void | boolean>;
   disabledTools?: string[];
   parentAgent?: Agent;
+  projectWorkingFolder?: string;
+  parentWorkingFolder?: string;
 }) {
   useNativeViewOcclusion();
   const { text } = useAppLanguage();
   const id = useId();
   const { dialogRef, nameRef } = useCreationDialog(onCancel);
   const submitting = useRef(false);
+  const pickingFolder = useRef(false);
 
   // Only tools enabled in Settings → Agents ("none" always available).
   const visibleTools = AI_TOOLS.filter(
@@ -43,6 +49,9 @@ export function NewAgentModal({
     newSessionToolId(disabledTools, parentAgent?.aiToolId)
   );
   const [inheritFolder, setInheritFolder] = useState(true);
+  const [folderOverride, setFolderOverride] = useState<string>();
+  const [editingRemoteFolder, setEditingRemoteFolder] = useState(false);
+  const [folderError, setFolderError] = useState("");
   const instructionSupported = aiToolId === "codex" || (aiToolId === "claude" && !project?.sshHostId);
   const modelSupported = !project?.sshHostId && (aiToolId === "codex" || aiToolId === "claude") && parentAgent?.aiToolId === aiToolId;
   const [inheritInstructions, setInheritInstructions] = useState(true);
@@ -57,19 +66,51 @@ export function NewAgentModal({
   const [launchValid, setLaunchValid] = useState(true);
   const supportsDangerous = !!selectedTool.dangerousFlag;
 
-  const canSubmit = !!project && name.trim().length > 0 && (!!project.sshHostId || !selectedTool.command || launchValid);
+  const remote = !!project?.sshHostId;
+  const defaultFolder = projectWorkingFolder ?? (remote ? project?.remoteFolder : project?.folder) ?? "";
+  const inheritsFolder = !!parentAgent && inheritFolder;
+  const customFolder = inheritsFolder ? undefined : folderOverride?.trim();
+  const workingFolder = inheritsFolder
+    ? parentWorkingFolder ?? (remote ? parentAgent?.remoteFolder : parentAgent?.folder) ?? defaultFolder
+    : customFolder || defaultFolder;
+  const validFolder = customFolder === undefined || (!!customFolder && customFolder.length <= 4096 && !/[\x00-\x1f]/.test(customFolder));
+  const canSubmit = !!project && name.trim().length > 0 && validFolder && (remote || !selectedTool.command || launchValid);
+
+  const editWorkingFolder = async () => {
+    if (submitting.current || pickingFolder.current) return;
+    if (remote) {
+      setEditingRemoteFolder(open => !open);
+      return;
+    }
+    setFolderError("");
+    pickingFolder.current = true;
+    try {
+      const selected = await openDialog({ directory: true, multiple: false, defaultPath: workingFolder || undefined });
+      if (typeof selected === "string" && selected.trim()) {
+        setFolderOverride(selected);
+        setInheritFolder(false);
+      }
+    } catch {
+      setFolderError(text("폴더 선택 창을 열 수 없습니다.", "Could not open the folder picker."));
+    } finally {
+      pickingFolder.current = false;
+    }
+  };
 
   const submit = async () => {
-    if (!canSubmit || submitting.current) return;
+    if (!canSubmit || submitting.current || pickingFolder.current) return;
     submitting.current = true;
     try {
       const created = await onCreate({
         name: name.trim(),
-        sessionHierarchy: parentAgent ? {
-          parentId: parentAgent.id,
-          inheritFolder,
-          inheritInstructions: instructionSupported && inheritInstructions,
-          inheritModel: modelSupported && inheritModel,
+        sessionHierarchy: parentAgent || customFolder ? {
+          ...(parentAgent ? {
+            parentId: parentAgent.id,
+            inheritFolder,
+            inheritInstructions: instructionSupported && inheritInstructions,
+            inheritModel: modelSupported && inheritModel,
+          } : {}),
+          ...(customFolder ? { inheritFolder: false, folderOverride: customFolder } : {}),
         } : undefined,
         aiToolId,
         launchOptions: !project?.sshHostId && selectedTool.command ? launchOptions : undefined,
@@ -86,19 +127,37 @@ export function NewAgentModal({
     } finally { submitting.current = false; }
   };
 
+  const folderSummary = <>
+    <svg className="new-session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3z" /></svg>
+    <span className="session-project-label">{text("프로젝트", "Project")}</span>
+    <span className="session-project-name">{project?.name ?? text("선택한 프로젝트 없음", "No project selected")}</span>
+    {project && <span className="session-project-folder">{workingFolder ? folderTail(workingFolder) || workingFolder : text("기본 작업 폴더", "Default working folder")}</span>}
+  </>;
+
   return (
     <div className="modal-backdrop new-session-backdrop">
       <div ref={dialogRef} className="modal new-session-modal" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
         <header className="new-session-header">
           <h2 className="modal-title" id={`${id}-title`}>{parentAgent ? text("자식 세션 만들기", "Create child session") : text("새 세션", "New Session")}</h2>
-          <div className="session-project-summary new-session-project">
-            <svg className="new-session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3z" /></svg>
-            <span className="session-project-label">{text("프로젝트", "Project")}</span>
-            <span className="session-project-name">
-              {project ? project.name : text("선택한 프로젝트 없음", "No project selected")}
-            </span>
-            {project && <span className="session-project-folder" title={project.folder}>{folderTail(project.folder)}</span>}
-          </div>
+          {project ? <div className="new-session-location">
+            <button type="button" className="session-project-summary new-session-project"
+              title={workingFolder} aria-label={text("작업 폴더 변경", "Change working folder")}
+              aria-expanded={remote ? editingRemoteFolder : undefined} aria-controls={remote && editingRemoteFolder ? `${id}-remote-folder` : undefined}
+              onClick={() => void editWorkingFolder()}>
+              {folderSummary}
+              <span className="new-session-folder-action" aria-hidden="true">{text("변경", "Change")}</span>
+            </button>
+            {customFolder !== undefined && <button type="button" className="new-session-folder-reset" onClick={() => {
+              setFolderOverride(undefined);
+              setInheritFolder(true);
+            }}>{text("기본 폴더 사용", "Use default folder")}</button>}
+          </div> : <div className="session-project-summary new-session-project">{folderSummary}</div>}
+          {remote && editingRemoteFolder && <label className="field new-session-remote-folder" id={`${id}-remote-folder`}>
+            <span className="field-label">{text("원격 작업 폴더", "Remote working folder")}</span>
+            <input autoFocus value={inheritsFolder ? workingFolder : folderOverride ?? workingFolder} maxLength={4096} aria-invalid={!validFolder}
+              onChange={event => { setFolderOverride(event.target.value); setInheritFolder(false); }} />
+          </label>}
+          {folderError && <p className="new-session-folder-error" role="alert">{folderError}</p>}
         </header>
         <div className="new-session-body">
           {parentAgent && <section className="new-session-parent"><strong>{text("부모 세션", "Parent session")} · {parentAgent.name}</strong><p>{text("대화는 독립적으로 시작하며 선택한 설정만 이어받습니다.", "The conversation starts independently with the selected inherited settings.")}</p><div>

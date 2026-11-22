@@ -19,6 +19,7 @@ export type ElectronBridge = {
   showOpenDialog(options: {
     directory?: boolean;
     multiple?: boolean;
+    defaultPath?: string;
     filters?: Array<{ name: string; extensions: string[] }>;
   }): Promise<string | string[] | null>;
   window: {

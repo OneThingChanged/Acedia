@@ -11,7 +11,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "capacity_retry_get", "capacity_retry_cancel",
   "session_deliveries_get",
   "task_orchestration",
-  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session", "project_board_session_action", "project_board_manage_session",
+  "open_project_board", "project_board_snapshot", "project_board_delegated_wait", "project_board_transfer_detail", "project_board_ack", "project_board_ack_results", "project_board_preferences", "project_board_open_session", "project_board_session_action", "project_board_manage_session", "project_board_manage_project",
   "saved_commands_get", "saved_commands_set", "saved_command_resolve", "project_startup_claim",
   "runtime_flags", "session_recovery",
   "app_startup_get", "app_startup_set",
@@ -195,6 +195,8 @@ const INVOKE_COMMANDS = Object.freeze([
 const DELIVERED_EVENTS = Object.freeze([
   "project-board:open-session",
   "project-board:manage-session",
+  "project-board:manage-project",
+  "project-board:completions-reviewed",
   "accounts:changed",
   "usage:changed",
   "pty:data",
@@ -308,8 +310,13 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case 'project_board_manage_session':
       assertId(args);
-      if (Object.keys(args).some(k => k !== 'id' && k !== 'action') || !['properties', 'rename', 'delete'].includes(args.action))
+      if (Object.keys(args).some(k => k !== 'id' && k !== 'action') || !['properties', 'rename', 'delete', 'hierarchy'].includes(args.action))
         throw new TypeError('Invalid board management request');
+      break;
+    case 'project_board_manage_project':
+      if (Object.keys(args).some(key => key !== 'id' && key !== 'action') || !['new-session', 'hierarchy'].includes(args.action))
+        throw new TypeError('Invalid board project management request');
+      if (args.action === 'new-session' || args.id !== undefined) assertId(args);
       break;
     case 'open_project_board':
     case 'project_board_snapshot':
@@ -334,8 +341,9 @@ function assertInvokeRequest(command, rawArgs) {
     case 'project_board_preferences': {
       const p = args.preferences;
       if (Object.keys(args).some(key => key !== 'preferences') || !p || typeof p !== 'object' || Array.isArray(p)
-          || Object.keys(p).some(key => !['viewMode', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped', 'activeOnly'].includes(key))
+          || Object.keys(p).some(key => !['viewMode', 'edgeStyle', 'layoutVersion', 'zoom', 'x', 'y', 'collapsed', 'projectId', 'collapsedProjects', 'motion', 'projectPositions', 'sessionOrder', 'showSleeping', 'showStopped', 'activeOnly'].includes(key))
           || p.viewMode !== undefined && !['sessions', 'transfers', 'board', 'office'].includes(p.viewMode)
+          || p.edgeStyle !== undefined && !['orthogonal', 'curved'].includes(p.edgeStyle)
           || ['showSleeping', 'showStopped', 'activeOnly'].some(key => p[key] !== undefined && typeof p[key] !== 'boolean')
           || p.sessionOrder !== undefined && (!Array.isArray(p.sessionOrder) || p.sessionOrder.length > 2000 || p.sessionOrder.some(id => typeof id !== 'string' || !id || id.length > 256 || /[\x00-\x1f]/.test(id)))
           || p.projectPositions !== undefined && (!p.projectPositions || typeof p.projectPositions !== 'object' || Array.isArray(p.projectPositions)

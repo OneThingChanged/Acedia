@@ -18,4 +18,13 @@ describe("organization sessions", () => {
     expect(html).not.toContain("UI 구현");
     expect(html).not.toContain("HTML 초안");
   });
+  it("opens the requested session hierarchy directly, with navigation back to the work board", () => {
+    const catalog = [agent("Parent"), agent("Selected child", { sessionHierarchy: { parentId: "Parent" } })];
+    const html = renderToStaticMarkup(<SessionOrganization agents={catalog} projects={[{ id: "p", name: "Project", folder: "C:/project", createdAt: 1 }]}
+      activeProjectId={null} selectedId="Selected child" initialProjectId="p" initialSessionId="Selected child" onWorkBoard={() => {}}
+      onSelect={() => {}} onOpenSession={() => {}} onOpenProperties={() => {}} onCreateChild={() => {}} onUpdateHierarchy={() => {}} onUpdateProjects={() => {}}/>);
+    expect(html).toContain("업무 보드");
+    expect(html).toContain('aria-label="부모 세션"');
+    expect(html).toContain('<option value="Parent" selected="">');
+  });
 });

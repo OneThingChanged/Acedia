@@ -105,6 +105,7 @@ describe('Independent project board', () => {
   });
   it('reviews only captured results atomically and never acknowledges newer results, questions or other sessions', () => {
     const f = fixture(), captured = f.board.snapshot().items.filter(i => i.kind === 'result');
+    f.board.onCompletionsReviewed = vi.fn();
     f.board.observe({ id: 'a', event: 'working', received_at: 3000 });
     f.board.observe({ id: 'a', event: 'done', received_at: 4000, assistant_message: '새로 도착한 결과' });
     f.hooks.set('b', { event: 'waiting', received_at: 5000, interactive_question: '사용자 답변 필요' }); f.live.add('b');
@@ -112,7 +113,11 @@ describe('Independent project board', () => {
     const results = captured.map(i => ({ id: i.id, fingerprint: i.fingerprint }));
     expect(() => f.board.acknowledgeResults('a', [...results, { id: question.id, fingerprint: question.fingerprint }])).toThrow();
     expect(f.board.snapshot().items.some(i => i.id === captured[0].id)).toBe(true);
+    expect(f.board.onCompletionsReviewed).not.toHaveBeenCalled();
     f.board.acknowledgeResults('a', results);
+    const reviewed = [{ agentId: 'a', createdAt: captured[0].createdAt }];
+    expect(f.board.onCompletionsReviewed).toHaveBeenCalledExactlyOnceWith(reviewed);
+    expect(new ProjectBoard(f.options).reviewedCompletions()).toEqual(reviewed);
     const next = f.board.snapshot(); expect(next.items.some(i => i.id === captured[0].id)).toBe(false);
     expect(next.items.some(i => i.id === question.id)).toBe(true);
     expect(next.items.some(i => i.summary === '새로 도착한 결과')).toBe(true);
@@ -183,6 +188,12 @@ describe('Independent project board', () => {
     expect(new ProjectBoard(f.options).snapshot().items.filter(i => i.kind === 'result')).toHaveLength(2);
     f.board.observe({ id: 'a', event: 'working', received_at: 5000 });
     expect(new ProjectBoard(f.options).snapshot().sessions[0].startedAt).toBe(5000);
+    const response = f.board.snapshot().items.find(i => i.summary === '응답 내용');
+    f.board.onCompletionsReviewed = vi.fn();
+    f.board.acknowledge('a', response.fingerprint, response.id);
+    expect(f.board.onCompletionsReviewed).toHaveBeenCalledExactlyOnceWith([
+      { agentId: 'a', createdAt: 2000 }, { agentId: 'a', createdAt: 3000 },
+    ]);
   });
   it('does not discard unread results at the journal limit and prunes only explicitly reviewed history', () => {
     const f = fixture(); const inbox = {};

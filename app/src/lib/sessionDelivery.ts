@@ -20,6 +20,21 @@ export function isDeliveryWarning(record: SessionDelivery) {
   return ['failed', 'unconfirmed'].includes(record.status) && !(record.isMessage && record.readAt);
 }
 
+export function isMailboxConversationChanged(record: SessionDelivery) {
+  return record.isMessage === true && record.status === 'failed' && record.reason === 'session-or-conversation-changed';
+}
+
+export function takeDeliveryWarning(record: SessionDelivery, recentTargets: Map<string, number>, now = Date.now()) {
+  if (!isDeliveryWarning(record)) return false;
+  if (!isMailboxConversationChanged(record)) return true;
+  for (const [target, shownAt] of recentTargets) {
+    if (now - shownAt >= 60_000) recentTargets.delete(target);
+  }
+  if (recentTargets.has(record.targetId)) return false;
+  recentTargets.set(record.targetId, now);
+  return true;
+}
+
 export function deliveryStatusMessage(record: SessionDelivery, english: boolean) {
   const messages = {
     saved: ['메시지함에 저장됨', 'Saved in inbox'],
@@ -36,5 +51,8 @@ export function deliveryStatusMessage(record: SessionDelivery, english: boolean)
   if (record.isMessage && record.readAt) return (record.status === 'unconfirmed'
     ? ['원문 읽음 · 자동 알림 확인은 미완료', 'Original text read · automatic notification unconfirmed']
     : ['원문 읽음', 'Original text read'])[english ? 1 : 0];
+  if (isMailboxConversationChanged(record)) return english
+    ? 'The receiving conversation changed. The original is still in its inbox.'
+    : '받는 세션의 대화가 바뀌었습니다. 원문은 해당 세션의 수신함에 남아 있습니다.';
   return messages[record.status][english ? 1 : 0];
 }

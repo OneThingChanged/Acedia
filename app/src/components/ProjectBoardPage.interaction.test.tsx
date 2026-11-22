@@ -63,6 +63,36 @@ function project(tree: ReactNode, id: string) { return elements(tree).find(e => 
 function header(tree: ReactNode, id = 'p') { return elements(project(tree, id)).find(e => e.props.className === 'wb-project-header')!; }
 function pointer(x: number, y: number, extra = {}) { return { button: 0, pointerId: 4, clientX: x, clientY: y, stopPropagation: vi.fn(), preventDefault: vi.fn(), currentTarget: { setPointerCapture: vi.fn() }, ...extra }; }
 
+it('opens project creation and hierarchy actions from the exact project header without folding it', () => {
+  const data = fixture();
+  const trigger = () => header(render(data), 'p2');
+  const openMenu = () => trigger().props.onContextMenu(pointer(320, 200));
+  const action = (label: string) => elements(render(data)).find(e => e.props.role === 'menuitem' && content(e) === label)!;
+  openMenu();
+  expect(trigger().props['aria-expanded']).toBe(true);
+  action('새 세션 만들기').props.onClick();
+  expect(hooks.invoke).toHaveBeenLastCalledWith('project_board_manage_project', { id: 'p2', action: 'new-session' });
+  openMenu();
+  action('프로젝트 계층 편집').props.onClick();
+  expect(hooks.invoke).toHaveBeenLastCalledWith('project_board_manage_project', { id: 'p2', action: 'hierarchy' });
+  expect(trigger().props['aria-expanded']).toBe(true);
+});
+
+it('changes the connection style without changing project placement or leaving the work board', () => {
+  const data = fixture();
+  data.projects[1].hierarchy = { parentId: 'p' };
+  data.preferences = { viewMode: 'board', showStopped: true, showSleeping: true,
+    projectPositions: { p: { x: 20, y: 30 }, p2: { x: 420, y: 430 } } };
+  const path = (tree: ReactNode) => elements(tree).find(e => e.props['data-relation'] === 'parent' && e.props['data-edge-kind'] === 'project')!.props.d;
+  const initial = render(data);
+  const select = elements(initial).find(e => e.props['aria-label'] === '연결선 모양')!;
+  expect(select.props.value).toBe('orthogonal');
+  select.props.onChange({ target: { value: 'curved' } });
+  const curved = render(data);
+  expect(path(curved)).not.toBe(path(initial));
+  expect(project(curved, 'p2').props.style).toEqual(project(initial, 'p2').props.style);
+});
+
 it('shows lifecycle actions only on context request and lights only actual outstanding assignment edges', () => {
   const data = fixture(); data.delegations = [{ id: 'job', from: 'a', to: 'b' }];
   let tree = render(data);
@@ -232,12 +262,12 @@ it.each(['project', 'parent session', 'leaf session'] as const)('zooms to the %s
   expect(hooks.invoke).not.toHaveBeenCalled();
 });
 
-it.each([['세션 속성', 'properties'], ['이름 변경', 'rename'], ['세션 삭제…', 'delete']])('routes %s to the workspace without opening the session or editing its catalog from the board', (label, action) => {
+it.each([['세션 속성', 'properties'], ['세션 계층 편집', 'hierarchy'], ['이름 변경', 'rename'], ['세션 삭제…', 'delete']])('routes %s to the workspace without opening the session or editing its catalog from the board', (label, action) => {
   const data = fixture(); let tree = render(data);
   const node = elements(tree).find(e => e.props['data-session-id'] === 'b');
   elements(node).find(e => e.props.className === 'wb-node-menu')!.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 1275, bottom: 890 }) } });
   tree = render(data);
-  expect(elements(tree).find(e => e.props.role === 'menu')!.props.style).toEqual({ left: 1032, top: 596 });
+  expect(elements(tree).find(e => e.props.role === 'menu')!.props.style).toEqual({ left: 1032, top: 560 });
   expect(hooks.invoke).not.toHaveBeenCalled();
   elements(tree).find(e => e.props.role === 'menuitem' && content(e) === label)!.props.onClick();
   expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_manage_session', { id: 'b', action });

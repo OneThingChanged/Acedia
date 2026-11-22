@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "../platform/runtime";
 import type { Agent } from "../types";
 import {
   loadAttentionItems,
   markAgentAttentionRead,
   markAgentCompletionRead,
   markAttentionRead,
+  markReviewedCompletionsRead,
   removeSessionAttention,
   resolveAgentWorkAttention,
   saveAttentionItems,
   unreadCompletedAgentIds,
   upsertAttentionItem,
   type AttentionItem,
+  type CompletionReview,
 } from "../lib/attention";
 
 export type AttentionDraft = Omit<AttentionItem, "id" | "read">;
@@ -21,6 +24,17 @@ export function useAttentionState(agents: readonly Agent[]) {
   useEffect(() => {
     saveAttentionItems(items);
   }, [items]);
+
+  useEffect(() => {
+    let stopped = false;
+    const subscription = listen<CompletionReview[]>("project-board:completions-reviewed", ({ payload }) => {
+      if (!stopped) setItems(current => markReviewedCompletionsRead(current, payload));
+    });
+    return () => {
+      stopped = true;
+      void subscription.then(unlisten => unlisten(), () => {});
+    };
+  }, []);
 
   const push = useCallback((draft: AttentionDraft) => {
     setItems((current) => {

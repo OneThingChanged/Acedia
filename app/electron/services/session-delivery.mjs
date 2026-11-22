@@ -14,8 +14,21 @@ const validRecord = r => r && /^[0-9a-f-]{36}$/.test(r.deliveryId || '') && type
   && ['sending', 'sent', 'received', 'started', 'failed', 'unconfirmed'].includes(r.status) && Number.isFinite(r.createdAt);
 const marker = /\[Acedia handoff: ([0-9a-f-]{36})\]/;
 const envelopeText = (id, from, body) => `[Acedia handoff: ${id}]\nFrom: ${from}\n\n${body}`;
-const flatMailbox = /^\[Acedia handoff: [0-9a-f-]{36}\]From: Acedia sessionAcedia session message ([0-9a-f-]{36})\./;
+const flatMailbox = /^\[Acedia handoff: ([0-9a-f-]{36})\]From: Acedia sessionAcedia session message ([0-9a-f-]{36})\./;
 const label = value => String(value).replace(/[\x00-\x1f\x7f]/g, ' ');
+const notificationLabel = value => String(value).toWellFormed().replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069\s]+/gu, ' ').trim()
+  .slice(0, 200).toWellFormed();
+
+export function normalizeHandoffText(text) {
+  const value = text.replace(/\r\n?/g, '\n').trim();
+  const legacy = flatMailbox.exec(value);
+  if (!legacy) return value;
+  // Older Codex pastes could omit the line breaks. Restore only an exact
+  // legacy notification so arbitrary appended text never matches its receipt.
+  const [, id, messageId] = legacy;
+  const envelope = envelopeText(id, 'Acedia session', sessionMessageNotification(messageId));
+  return envelope.replaceAll('\n', '') === value ? envelope : value;
+}
 export function deliverySummary(message) {
   const line = message.split(/\r?\n/).find(value => value.trim()) || '';
   return line.trim().replace(/\s+/g, ' ').slice(0, 200).replace(/[\uD800-\uDBFF]$/, '');
@@ -112,12 +125,7 @@ export function deliveryEvidence(text, previous = { turn: null, receipts: [] }) 
     const value = (Array.isArray(p.content) ? p.content : []).filter(c => ['input_text', 'text'].includes(c?.type)).map(c => c.text || '').join('\n');
     const id = value.match(marker)?.[1];
     if (!id) continue;
-    // Some Codex terminal submissions drop newlines. Rebuild only the
-    // fixed mailbox notification after matching its entire flattened text.
-    const messageId = flatMailbox.exec(value.trim())?.[1];
-    const mailbox = messageId && envelopeText(id, 'Acedia session', sessionMessageNotification(messageId));
-    const envelope = mailbox && mailbox.replaceAll('\n', '') === value.trim() ? mailbox : value;
-    const receipt = { deliveryId: id, receivedAt: at, messageHash: hash(envelope) };
+    const receipt = { deliveryId: id, receivedAt: at, messageHash: hash(normalizeHandoffText(value)) };
     if (turn && turn.at <= at) Object.assign(receipt, { turnId: turn.id, startedAt: turn.at });
     const old = receipts.get(id);
     if (!old || old.receivedAt === at) receipts.set(id, { ...old, ...receipt });
@@ -193,13 +201,13 @@ export class SessionDeliveries {
     // live timeout or report a later restart as another failed delivery.
     this.#observeRecord(record, result);
   }
-  async handle({ action, agentId, body, freshSession = false, asciiEnvelope = false, retryNotSent = false }) {
+  async handle({ action, agentId, body, freshSession = false, mailboxNotification = false, retryNotSent = false }) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail('JSON object required', 400);
     const allowed = action === 'send' ? ['sessionId', 'expectedConversationId', 'message', 'requestKey', 'waitMs'] : ['requestKey', 'waitMs'];
     if (Object.keys(body).some(k => !allowed.includes(k)) || typeof body.requestKey !== 'string' || !keyPattern.test(body.requestKey)) throw fail('Invalid delivery options or requestKey', 400);
     const waitMs = body.waitMs ?? (action === 'send' ? 8000 : 0);
     if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 10000) throw fail('waitMs must be between 0 and 10000', 400);
-    if (action === 'send') await this.#send(agentId, body, freshSession, asciiEnvelope, retryNotSent);
+    if (action === 'send') await this.#send(agentId, body, freshSession, mailboxNotification, retryNotSent);
     const record = this.#record(this.#key(agentId, body.requestKey));
     if (!record) throw fail('Delivery not found for this calling session', 404);
     if (waitMs && ['sending', 'sent', 'received'].includes(record.status)) await new Promise(resolve => {
@@ -209,7 +217,7 @@ export class SessionDeliveries {
     });
     return this.#view(record);
   }
-  async #send(sourceId, body, freshSession, asciiEnvelope, retryNotSent) {
+  async #send(sourceId, body, freshSession, mailboxNotification, retryNotSent) {
     if (typeof body.sessionId !== 'string' || !body.sessionId || body.sessionId.length > 256
       || (!(freshSession && body.expectedConversationId == null) && (typeof body.expectedConversationId !== 'string' || !body.expectedConversationId || body.expectedConversationId.length > 256))
       || typeof body.message !== 'string' || !body.message.trim() || /[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/.test(body.message)
@@ -232,11 +240,11 @@ export class SessionDeliveries {
     if (this.unavailable) throw Object.assign(fail('Delivery history unavailable; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_UNAVAILABLE' });
     try { this.#compact(); } catch { this.unavailable = true; throw Object.assign(fail('Cannot archive delivery history; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_UNAVAILABLE' }); }
     if (this.records.size >= 1000) throw Object.assign(fail('Delivery history has 1000 unresolved entries; nothing sent', 503), { nothingSent: true, code: 'DELIVERY_HISTORY_FULL' });
-    const operation = this.#deliver(sourceId, body, key, signature, freshSession, asciiEnvelope);
+    const operation = this.#deliver(sourceId, body, key, signature, freshSession, mailboxNotification);
     this.inflight.set(key, { signature, operation });
     try { await operation; } finally { this.inflight.delete(key); }
   }
-  async #deliver(sourceId, body, key, signature, freshSession, asciiEnvelope) {
+  async #deliver(sourceId, body, key, signature, freshSession, mailboxNotification) {
     if (this.locks.has(body.sessionId)) throw Object.assign(fail('A delivery to this session is already being submitted'), { nothingSent: true });
     this.locks.add(body.sessionId); let inputAttempted = false;
     try {
@@ -266,12 +274,16 @@ export class SessionDeliveries {
         : entry.lastInputAt !== inputAt ? 'input-changed' : null;
       if (blocked) throw fail(`Receiving session is not ready (${blocked}); nothing sent`);
       const deliveryId = randomUUID();
-      const from = asciiEnvelope ? 'Acedia session' : `${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}`;
-      const message = envelopeText(deliveryId, from, body.message);
+      const notificationFrom = mailboxNotification
+        ? [notificationLabel(source.projectName || ''), notificationLabel(source.name || sourceId) || sourceId].filter(Boolean).join(' / ')
+        : '';
+      const message = mailboxNotification
+        ? `[Acedia handoff: ${deliveryId}] From: ${notificationFrom} | ${body.message}`
+        : envelopeText(deliveryId, `${label(source.projectName || 'Project')} / ${label(source.name || sourceId)}`, body.message);
       if (Buffer.byteLength(message, 'utf8') > 12288) throw fail('Delivery envelope too large', 400);
       const record = { deliveryId, requestKey: body.requestKey, sourceId, sourceName: source.name || sourceId,
         targetId: body.sessionId, targetName: target.name || body.sessionId, conversationId: target.conversationId ?? null,
-        ...(!asciiEnvelope ? { summary: deliverySummary(body.message) } : {}),
+        ...(mailboxNotification ? { notificationFrom } : { summary: deliverySummary(body.message) }),
         ...(unbound ? { freshUnbound: true } : {}),
         signature, messageHash: hash(message), previousTurnId: current.turn?.id || null,
         status: 'sending', createdAt: this.now(), updatedAt: this.now() };

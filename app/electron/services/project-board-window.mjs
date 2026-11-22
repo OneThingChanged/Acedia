@@ -1,4 +1,4 @@
-export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session', 'project_board_session_action', 'project_board_manage_session']);
+export const BOARD_COMMANDS = Object.freeze(['project_board_snapshot', 'project_board_transfer_detail', 'project_board_ack', 'project_board_ack_results', 'project_board_preferences', 'project_board_open_session', 'project_board_session_action', 'project_board_manage_session', 'project_board_manage_project']);
 export function assertBoardAccess(runtime, command) {
   if (runtime?.project_board_window && !BOARD_COMMANDS.includes(command)) throw new Error('보드 전용 창에서는 작업 실행 명령을 사용할 수 없습니다.');
   if ((BOARD_COMMANDS.includes(command) || command === 'open_project_board') && !runtime?.project_board_window && !runtime?.workspace_window) throw new Error('Acedia 작업창에서 보드를 사용하세요.');
@@ -49,18 +49,24 @@ export class ProjectBoardWindow {
 
 /** User navigation only. No launch, stop, restart or transcript operation. */
 export class BoardSessionNavigation {
-  constructor({ sessions, owner, windows, create, ready, send, focus, live }) {
-    Object.assign(this, { sessions, owner, windows, create, ready, send, focus, live }); this.pending = new Map();
+  constructor({ sessions, projects = () => [], owner, windows, create, ready, send, focus, live }) {
+    Object.assign(this, { sessions, projects, owner, windows, create, ready, send, focus, live }); this.pending = new Map();
   }
   open({ id, compose = false }) {
-    return this.#show({ id, live: this.live(id), compose });
+    return this.#showSession({ id, live: this.live(id), compose });
   }
   manage({ id, action }) {
-    return this.#show({ id, action });
+    return this.#showSession({ id, action });
   }
-  #show(payload) {
+  manageProject({ id, action }) {
+    if (id && !this.projects().some(project => project.id === id)) throw new Error('프로젝트를 찾을 수 없습니다.');
+    return this.#show({ projectId: id ?? null, action });
+  }
+  #showSession(payload) {
     if (!this.sessions().some(s => s.id === payload.id)) throw new Error('세션을 찾을 수 없습니다.');
-    let win = this.owner(payload.id);
+    return this.#show(payload, this.owner(payload.id));
+  }
+  #show(payload, win) {
     if (!win || win.isDestroyed()) win = [...this.windows()].find(w => !w.isDestroyed());
     if (!win) win = this.create();
     if (this.ready(win)) this.send(win, payload); else this.pending.set(win.webContents.id, { win, payload });

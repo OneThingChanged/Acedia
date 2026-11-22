@@ -79,7 +79,7 @@ describe('Work board node projection', () => {
     expect(hidden.groups.map(g => g.id)).toEqual(['p', 'q']);
     expect(hidden.groups.find(g => g.id === 'p')!.height).toBeLessThan(full.groups.find(g => g.id === 'p')!.height);
     expect(hidden.groups.find(g => g.id === 'q')!.y).toBeLessThan(full.groups.find(g => g.id === 'q')!.y);
-    expect(hidden.projectEdges).toEqual([{ from: 'p', to: 'q' }]);
+    expect(hidden.projectEdges).toEqual([{ kind: 'parent', from: 'p', to: 'q' }]);
     const positions = { p: { x: -410, y: 800 } }, moved = boardLayout(data, { showSleeping: false, showStopped: false, projectPositions: positions });
     expect(moved.groups.find(g => g.id === 'p')).toMatchObject({ x: -410, y: 800 });
     expect(positions).toEqual({ p: { x: -410, y: 800 } });
@@ -100,7 +100,7 @@ describe('Work board node projection', () => {
     const projects = ['master', 'automation', 'movie', 'max', 'unity'].map((id, i) => ({ id, name: id, folder: i ? `G:/Master/${id}` : 'G:/Master' }));
     const data = { ...snapshot, projects, sessions: projects.slice(1).map(p => ({ ...session(p.id, null), projectId: p.id })) };
     const layout = boardLayout(data, {}), [master, automation, movie, max, unity] = layout.groups;
-    expect(layout.projectEdges).toEqual(['automation', 'movie', 'max', 'unity'].map(to => ({ from: 'master', to })));
+    expect(layout.projectEdges).toEqual(['automation', 'movie', 'max', 'unity'].map(to => ({ kind: 'folder', from: 'master', to })));
     expect(master.y + master.height).toBeLessThan(automation.y);
     expect(automation.y).toBe(movie.y); expect(automation.x + automation.width).toBeLessThan(movie.x);
     expect(max.y).toBe(unity.y); expect(max.y).toBeGreaterThan(automation.y + automation.height);
@@ -144,10 +144,23 @@ describe('Work board node projection', () => {
       { id: 'unrelated', name: 'unrelated', folder: 'D:/Separate' },
       { id: 'ssh', name: 'ssh', folder: 'G:/Root/child', sshHostId: 'remote', remoteFolder: '/work' }];
     const data = { ...snapshot, projects, sessions: projects.map(p => ({ ...session(p.id, null), projectId: p.id })) };
-    expect(boardLayout(data, {}).projectEdges).toEqual([{ from: 'p', to: 'explicit' }]);
+    expect(boardLayout(data, {}).projectEdges).toEqual([{ kind: 'parent', from: 'p', to: 'explicit' }]);
     const all = boardLayout(data, {}), filtered = boardLayout(data, { projectId: 'explicit' });
     expect(filtered.groups[0]).toEqual(all.groups.find(g => g.id === 'explicit'));
     expect(boardLayout({ ...data, projects: projects.map(p => ({ ...p, hierarchy: { parentId: p.id === 'p' ? 'explicit' : 'p' } })) }, {}).groups).toHaveLength(4);
+  });
+  it('shows both an inferred folder and a different configured parent while keeping their empty ancestor cards', () => {
+    const projects = [{ id: 'master', name: 'Master', folder: 'G:/Team' },
+      { id: 'automation', name: 'Automation', folder: 'G:/Team/Automation' },
+      { id: 'etc', name: 'ETC', folder: 'G:/Team/ETC', hierarchy: { parentId: 'automation' } }];
+    const data = { ...snapshot, projects, sessions: [{ ...session('worker', null), projectId: 'etc', runtime: 'running' }] };
+    const layout = boardLayout(data, { activeOnly: true, showSleeping: false, showStopped: false });
+    expect(layout.groups.map(p => p.id)).toEqual(['master', 'automation', 'etc']);
+    expect(layout.projectEdges).toEqual([
+      { kind: 'folder', from: 'master', to: 'automation' },
+      { kind: 'folder', from: 'master', to: 'etc' },
+      { kind: 'parent', from: 'automation', to: 'etc' },
+    ]);
   });
   it('counts background sessions separately from foreground work and review items', () => {
     expect(boardCounts([session('a', null), session('b', null, 'background')], [])).toEqual({ working: 1, background: 1, questions: 0, errors: 0, results: 0, attention: 0 });

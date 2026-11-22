@@ -58,7 +58,7 @@ export function sessionMessageText(body) {
   return value;
 }
 
-/** Durable UTF-8 mailbox. Only an ASCII reference crosses the native terminal. */
+/** Durable UTF-8 mailbox. The terminal receives the sender and a reference to the stored body. */
 export class SessionMessages {
   constructor({ file, sessionFor, context, notify, start = null, prepare = null, receipt = async () => null, publish = () => {}, observe = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
     Object.assign(this, { file, sessionFor, context, notify, start, prepare, receipt, publish, observe, readActivity, now });

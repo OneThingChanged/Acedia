@@ -10,10 +10,16 @@ const attention = new Set(['waiting', 'review', 'completed', 'interrupted', 'fai
 const interrupted = new Set(['cancelled', 'canceled', 'interrupted', 'aborted']);
 const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, attempt?.id || null]);
 
+function completionReviews(items) {
+  return items.filter(item => item.scope === 'response').flatMap(item =>
+    [...new Set([item.createdAt, item.observedAt])].filter(Number.isFinite)
+      .map(createdAt => ({ agentId: item.sessionId, createdAt })));
+}
+
 /** Host-owned, bounded projection. No transcripts, tool arguments, credentials or PTY subscriptions. */
 export class ProjectBoard {
-  constructor({ file, catalog, live, hook, runs, waitingSince = () => 0, delegations = () => [], delegationError = () => null, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), now = Date.now }) {
-    Object.assign(this, { file, catalog, live, hook, runs, waitingSince, delegations, delegationError, transfers, transferContent, runtimeInfo, now });
+  constructor({ file, catalog, live, hook, runs, waitingSince = () => 0, delegations = () => [], delegationError = () => null, transfers = () => [], transferContent = () => null, runtimeInfo = () => ({}), onCompletionsReviewed = () => {}, now = Date.now }) {
+    Object.assign(this, { file, catalog, live, hook, runs, waitingSince, delegations, delegationError, transfers, transferContent, runtimeInfo, onCompletionsReviewed, now });
     this.data = { version: 2, acknowledged: {}, preferences: {}, results: {}, inbox: {} };
     this.observed = new Map();
     this.devices = new Map();
@@ -258,35 +264,48 @@ export class ProjectBoard {
     const message = transfer.isMessage ? this.transferContent(id) : null;
     return { id, from: transfer.from, to: transfer.to, message: typeof message === 'string' ? message.slice(0, 65536) : null };
   }
+  reviewedCompletions() {
+    return completionReviews(Object.values(this.data.inbox).filter(item => item.reviewedAt));
+  }
+  saveReview(items, acknowledged = this.data.acknowledged) {
+    const inbox = { ...this.data.inbox };
+    const reviewedAt = this.now();
+    for (const item of items) inbox[item.id] = { ...item, reviewedAt: item.reviewedAt || reviewedAt };
+    this.save({ ...this.data, acknowledged, inbox });
+    const completions = completionReviews(items);
+    if (completions.length) this.onCompletionsReviewed(completions);
+    return this.snapshot();
+  }
   acknowledge(id, fingerprint, itemId) {
     if (itemId) {
       const snapshot = this.snapshot(), item = snapshot.items.find(i => i.id === itemId && i.sessionId === id);
       if (!item || item.fingerprint !== fingerprint) throw Error('확인할 항목이 변경되었습니다. 다시 확인하세요.');
       if (item.kind === 'question') throw Error('질문은 해당 세션에서 답변해 주세요.');
-      if (item.kind === 'result') this.save({ ...this.data, inbox: { ...this.data.inbox, [item.id]: { ...this.data.inbox[item.id], reviewedAt: this.now() } } });
-      else this.save({ ...this.data, acknowledged: { ...this.data.acknowledged, [id]: fingerprint } });
-      return this.snapshot();
+      if (item.kind === 'result') {
+        const result = this.data.inbox[item.id];
+        if (!result) throw Error('확인할 결과를 저장하지 못했습니다. 다시 확인하세요.');
+        return this.saveReview([result]);
+      }
+      return this.saveReview([], { ...this.data.acknowledged, [id]: fingerprint });
     }
     const item = this.snapshot().sessions.find(s => s.id === id);
     if (!item || item.fingerprint !== fingerprint) throw Error('작업 상태가 변경되었습니다. 다시 확인하세요.');
     const acknowledged = { ...this.data.acknowledged, [id]: fingerprint };
     const ids = new Set(this.catalog().agents.map(a => a.id));
     for (const key of Object.keys(acknowledged)) if (!ids.has(key)) delete acknowledged[key];
-    const inbox = item.resultId && this.data.inbox[item.resultId] ? { ...this.data.inbox, [item.resultId]: { ...this.data.inbox[item.resultId], reviewedAt: this.now() } } : this.data.inbox;
-    this.save({ ...this.data, acknowledged, inbox });
-    return this.snapshot();
+    const result = this.data.inbox[item.resultId];
+    return this.saveReview(result ? [result] : [], acknowledged);
   }
   acknowledgeResults(id, results) {
     if (!Array.isArray(results) || results.length > 1500) throw Error('확인할 결과 목록을 확인하세요.');
-    this.snapshot();
-    const inbox = { ...this.data.inbox };
-    for (const result of results) {
-      const item = inbox[result.id];
+    const snapshot = this.snapshot();
+    if (!results.length) return snapshot;
+    const confirmed = results.map(result => {
+      const item = this.data.inbox[result.id];
       if (!item || item.kind !== 'result' || item.sessionId !== id || item.fingerprint !== result.fingerprint) throw Error('확인할 결과가 변경되었습니다. 다시 확인하세요.');
-      inbox[item.id] = { ...item, reviewedAt: item.reviewedAt || this.now() };
-    }
-    if (results.length) this.save({ ...this.data, inbox });
-    return this.snapshot();
+      return item;
+    });
+    return this.saveReview(confirmed);
   }
   folder(agent, source) {
     const visited = new Set(); let current = agent;

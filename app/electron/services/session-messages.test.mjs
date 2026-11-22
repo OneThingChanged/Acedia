@@ -94,7 +94,7 @@ it('queues initialization timeouts but refuses another runtime or conversation',
     await f.call('message-send', body); expect(f.notify).not.toHaveBeenCalled();
   }
 });
-it('keeps Unicode verbatim in durable storage and sends only an ASCII reference to the native terminal', async () => {
+it('keeps Unicode verbatim in durable storage and passes only the message reference to the notifier', async () => {
   const f = fixture(), result = await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'ko-1' });
   expect(result).toMatchObject({ saved: true, sha256: hash(text), bytes: Buffer.byteLength(text), readAt: null, delivery: { status: 'started' } });
   const [sourceId, notification] = f.notify.mock.calls[0];

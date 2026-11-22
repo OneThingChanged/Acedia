@@ -1,4 +1,4 @@
-import { BOARD_CARD, type boardLayout, type BoardReference, type BoardSession } from './workBoard';
+import { BOARD_CARD, type boardLayout, type BoardEdgeStyle, type BoardReference, type BoardSession } from './workBoard';
 import { boardEdgePath, routeBoardEdges, type BoardEdgePorts, type BoardEdgeRequest, type BoardPort, type BoardRect } from './boardEdgeRouting';
 
 const key = (from: string, to: string) => `${from}:${to}`;
@@ -23,7 +23,7 @@ function projectPorts(a: BoardRect, b: BoardRect, clearance = 12): BoardEdgePort
 }
 
 export function workBoardConnections(layout: ReturnType<typeof boardLayout> | null, sessions: BoardSession[], references: BoardReference[],
-  collapsed: Set<string>, scroll: Record<string, number>, overview: boolean) {
+  collapsed: Set<string>, scroll: Record<string, number>, overview: boolean, edgeStyle: BoardEdgeStyle = 'orthogonal') {
   const projects: BoardEdgeRequest[] = [], external: BoardEdgeRequest[] = [], reads: BoardEdgeRequest[] = [];
   const groups = new Map(layout?.groups.map(g => [g.id, { ...g, height: overview || collapsed.has(g.id) ? BOARD_CARD.header : g.height }]));
   const nodes = new Map(layout?.nodes.map(n => [n.session.id, n]));
@@ -59,7 +59,7 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
   for (const edge of layout?.projectEdges || []) {
     const a = groups.get(edge.from), b = groups.get(edge.to); if (!a || !b) continue;
     const [preferred, ...alternatives] = projectPorts(a, b);
-    projects.push({ id: `project:${key(edge.from, edge.to)}`, ...preferred, alternatives });
+    projects.push({ id: `project:${key(edge.from, edge.to)}`, ...preferred, alternatives, separate: edge.kind === 'parent' });
   }
   for (const edge of layout?.edges || []) {
     if (byId.get(edge.from)?.projectId === byId.get(edge.to)?.projectId) continue;
@@ -76,6 +76,12 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
     }
   }
   const routes = routeBoardEdges([...projects, ...external, ...reads], [...groups.values()]);
+  if (edgeStyle === 'curved') {
+    for (const { id } of [...projects, ...external]) {
+      const route = routes.get(id);
+      if (route) route.path = boardEdgePath(route.points, 42);
+    }
+  }
   const internal = new Map<string, ReturnType<typeof routeBoardEdges>>();
   for (const group of groups.values()) {
     if (overview || collapsed.has(group.id)) continue;
@@ -101,6 +107,9 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
       const points = route.points.map(({ x, y }) => ({ x: x + group.x, y: y + group.y + BOARD_CARD.header - (scroll[group.id] || 0) }));
       routes.set(id, { points, path: boardEdgePath(points, 1.5) });
       readGroups.set(read.id, group.id);
+    }
+    if (edgeStyle === 'curved') {
+      for (const route of localRoutes.values()) route.path = boardEdgePath(route.points, 10);
     }
     internal.set(group.id, localRoutes);
   }

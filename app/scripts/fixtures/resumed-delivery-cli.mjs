@@ -60,7 +60,7 @@ process.stdin.on('data', async chunk => {
   handling = true;
   try {
     if (draft) throw Error('Notification was written into a draft');
-    const messageId = notification[1], wire = `[Acedia handoff: ${delivery[1]}]\nFrom: Acedia session\n\n${notification[0]}`;
+    const messageId = notification[1], wire = input.slice(delivery.index).trimEnd();
     append('event_msg', { type: 'task_started', turn_id: 'resumed-fixture-turn' });
     append('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: wire }] });
     const response = await fetch(`http://127.0.0.1:${process.env.MULTIAGENT_PORT}/integration/v1/workspace/messages/receive`, { method: 'POST',

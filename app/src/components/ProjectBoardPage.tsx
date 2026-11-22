@@ -14,7 +14,7 @@ import { boardOfficeData } from '../lib/boardOffice';
 import { SessionLifecycleButton } from './SessionLifecycleButton';
 import { BoardRequestDetail } from './BoardRequestDetail';
 import { latestIncoming, sessionTableMatches, transferTitle } from '../lib/sessionTable';
-import type { BoardSessionManagement, BoardViewMode } from '../lib/workBoard';
+import type { BoardEdgeStyle, BoardProjectManagement, BoardSessionManagement, BoardViewMode } from '../lib/workBoard';
 
 const labels: Record<BoardState, [string, string]> = {
   idle: ['대기', 'Idle'], planned: ['배정 대기', 'Planned'], working: ['작업 중', 'Working'], waiting: ['내 답변 필요', 'Needs your answer'],
@@ -48,16 +48,18 @@ function itemTime(value: number) {
 }
 type ProjectDrag = { id: string; pointerId: number; clientX: number; clientY: number; x: number; y: number; zoom: number; point: { x: number; y: number }; moved: boolean };
 type BoardBounds = { x: number; y: number; width: number; height: number };
+type BoardMenu = { id: string; x: number; y: number } & ({ kind: 'project' } | { kind: 'session'; results: { id: string; fingerprint: string }[] });
 const FOLD_CLICK_DELAY_MS = 500;
 
 export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardSnapshot } = {}) {
   const { text } = useAppLanguage();
   const [data, setData] = useState<BoardSnapshot | null>(initialSnapshot || null), [error, setError] = useState('');
   const [viewMode, setViewMode] = useState<BoardViewMode>(initialSnapshot?.preferences.viewMode || 'sessions');
+  const [edgeStyle, setEdgeStyle] = useState<BoardEdgeStyle>(initialSnapshot?.preferences.edgeStyle === 'curved' ? 'curved' : 'orthogonal');
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ sessionId: string; itemId?: string } | null>(null);
   const [selectedResult, setSelectedResult] = useState<BoardItem | null>(null);
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number; results: { id: string; fingerprint: string }[] } | null>(null);
+  const [menu, setMenu] = useState<BoardMenu | null>(null);
   const [projectId, setProject] = useState(''), [query, setQuery] = useState('');
   const [kind, setKind] = useState<'all' | 'question' | 'error' | 'result'>('all');
   const [workingOnly, setWorkingOnly] = useState(false), [backgroundOnly, setBackgroundOnly] = useState(false);
@@ -107,6 +109,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             initialized.current = true;
             const p = result.preferences;
             setViewMode(p.viewMode === 'board' || p.viewMode === 'transfers' || p.viewMode === 'office' ? p.viewMode : 'sessions');
+            setEdgeStyle(p.edgeStyle === 'curved' ? 'curved' : 'orthogonal');
             resetView.current = p.layoutVersion !== BOARD_LAYOUT_VERSION;
             setView(resetView.current ? { zoom: .8, x: 24, y: 24 } : { zoom: p.zoom ?? .8, x: p.x ?? 24, y: p.y ?? 24 }); setCollapsed(new Set(p.collapsed || []));
             setCollapsedProjects(new Set(p.collapsedProjects || [])); setProject(p.projectId || ''); setMotion(p.motion ?? true);
@@ -126,11 +129,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   }, []);
   useEffect(() => {
     if (!initialized.current) return;
-    const preferences = { viewMode, layoutVersion: resetView.current ? 2 : BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
+    const preferences = { viewMode, edgeStyle, layoutVersion: resetView.current ? 2 : BOARD_LAYOUT_VERSION, ...view, collapsed: [...collapsed], projectId,
       ...(data?.items ? { collapsedProjects: [...collapsedProjects], motion } : {}) };
     const timer = setTimeout(() => { void invoke('project_board_preferences', { preferences }).catch(reason => setError(String(reason))); }, 500);
     return () => clearTimeout(timer);
-  }, [viewMode, view, collapsed, projectId, collapsedProjects, motion, !!data?.items]);
+  }, [viewMode, edgeStyle, view, collapsed, projectId, collapsedProjects, motion, !!data?.items]);
   useEffect(() => {
     const clicks = foldClicks.current;
     return () => { for (const timer of clicks.values()) clearTimeout(timer); clicks.clear(); };
@@ -176,8 +179,8 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   const temporarySession = viewMode === 'office' ? null : revealedSession;
   const visibleSessionIds = useMemo(() => boardVisibleSessionIds(data?.sessions || [], showSleeping, showStopped, temporarySession, activeOnly), [data?.sessions, showSleeping, showStopped, temporarySession, activeOnly]);
   const displayedReferences = useMemo(() => data?.references?.filter(r => visibleSessionIds.has(r.from) && visibleSessionIds.has(r.to)) || [], [data?.references, visibleSessionIds]);
-  const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, view.zoom < .62),
-    [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, view.zoom < .62]);
+  const connections = useMemo(() => workBoardConnections(layout, data?.sessions || [], displayedReferences, collapsedProjects, groupScroll, overview, edgeStyle),
+    [layout, data?.sessions, displayedReferences, collapsedProjects, groupScroll, overview, edgeStyle]);
   const referenceClips = new Map([...new Set(connections.readGroups.values())].map((id, index) => [id, `wb-read-clip-${index}`]));
   useEffect(() => {
     if (viewMode !== 'board' || !resetView.current || !layout?.groups.length) return;
@@ -285,16 +288,25 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
   };
   const showSessionMenu = (id: string, x: number, y: number, trigger?: HTMLButtonElement | null) => {
     menuTrigger.current = trigger ?? null;
-    setMenu({ id, x: Math.max(8, Math.min(x, window.innerWidth - 248)), y: Math.max(8, Math.min(y, window.innerHeight - 304)),
+    setMenu({ kind: 'session', id, x: Math.max(8, Math.min(x, window.innerWidth - 248)), y: Math.max(8, Math.min(y, window.innerHeight - 340)),
       results: (itemsBySession.get(id) || []).filter(i => i.kind === 'result').map(({ id, fingerprint }) => ({ id, fingerprint })) });
   };
-  const closeSessionMenu = () => {
+  const showProjectMenu = (id: string, x: number, y: number, trigger: HTMLButtonElement) => {
+    cancelFold(`project:${id}`);
+    menuTrigger.current = trigger;
+    setMenu({ kind: 'project', id, x: Math.max(8, Math.min(x, window.innerWidth - 248)), y: Math.max(8, Math.min(y, window.innerHeight - 130)) });
+  };
+  const closeMenu = () => {
     setMenu(null);
     menuTrigger.current?.focus({ preventScroll: true });
   };
   const manageSession = (request: BoardSessionManagement) => {
     setMenu(null);
     void invoke('project_board_manage_session', request).catch(reason => setError(String(reason)));
+  };
+  const manageProject = (request: BoardProjectManagement) => {
+    setMenu(null);
+    void invoke('project_board_manage_project', request).catch(reason => setError(String(reason)));
   };
   const fit = () => {
     const rect = viewport.current?.getBoundingClientRect();
@@ -364,14 +376,16 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
     : s.reason || s.step || s.task?.title || (s.state === 'idle' || s.state === 'planned' ? text('할당된 작업 없음', 'No assigned work') : text(...labels[s.state]));
   const actionLabel = (item: BoardItem) => item.kind === 'question' ? text('답변하기', 'Answer') : item.kind === 'error' ? text('원인 보기', 'View cause') : text('결과 보기', 'View result');
   const motionSwitch = <button className="wb-motion" role="switch" aria-checked={motion && !reducedMotion} disabled={reducedMotion} title={reducedMotion ? text('시스템의 모션 줄이기 설정 적용 중', 'System reduced-motion setting is active') : ''} onClick={() => setMotion(v => !v)}>{text('모션', 'Motion')} <span className="wb-switch-track"/></button>;
+  const menuProject = menu?.kind === 'project' ? data?.projects.find(project => project.id === menu.id) : undefined;
   return <main className="work-board-page" data-motion={motion && !reducedMotion && connected ? 'on' : 'off'} data-density={view.zoom < .62 ? 'overview' : 'detail'} onKeyDown={e => { if (e.key === 'Escape') {
-    if (menu) { e.stopPropagation(); closeSessionMenu(); }
+    if (menu) { e.stopPropagation(); closeMenu(); }
     else if (projectDrag.current) { e.stopPropagation(); cancelProjectDrag(); }
     else if (selected || selectedReference) { e.stopPropagation(); back(); }
   } }} onPointerDown={e => { if (menu && !(e.target as Element).closest('.wb-context-menu')) setMenu(null); }}>
     <header className="wb-header"><div className="wb-brand"><BoardIcon name="board"/><div><h1>{text('세션 현황', 'Session overview')}</h1><small>{text('세션의 현재 상태와 실제 업무 전달 기록.', 'Current session state and recorded handoffs.')}</small></div></div>
       <nav className="wb-view-tabs" aria-label={text('현황 표시 방식', 'Overview view')}>
-        {([['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['board', '보드', 'Board'], ['office', 'Pixel Office', 'Pixel Office']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={viewMode === mode} onClick={() => { setMenu(null); cancelProjectDrag(); setViewMode(mode); }}>{text(ko, en)}</button>)}
+        {([['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['board', '업무 보드', 'Work board'], ['office', 'Pixel Office', 'Pixel Office']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={viewMode === mode} onClick={() => { setMenu(null); cancelProjectDrag(); setViewMode(mode); }}>{text(ko, en)}</button>)}
+        <button onClick={() => manageProject({ action: 'hierarchy', ...(projectId ? { id: projectId } : {}) })}>{text('계층 보드', 'Hierarchy board')}</button>
       </nav>
       <label className="wb-project-picker" hidden={viewMode === 'office'}><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <input type="search" hidden={viewMode === 'office'} value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
@@ -388,7 +402,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
 
     {(placementError || error || data?.storageError) && <div role="alert" className="wb-error">{placementError || error || data?.storageError}</div>}
     {viewMode === 'office' && <div className="wb-office">{office ? <PixelOffice agents={office.agents} projects={office.projects} activeProjectId={projectId || null} visibleSessionIds={visibleSessionIds} motion={motion && connected}
-      onOpenSession={id => { void open(id); }} onBack={() => setViewMode('board')}/>
+      onOpenSession={id => { void open(id); }} onBack={() => setViewMode('board')} backLabel={text('업무 보드', 'Work board')}/>
       : <p className="wb-empty" role="status">{text('사무실을 불러오는 중…', 'Loading office…')}</p>}</div>}
     {viewMode !== 'office' && revealedSession && <div className="wb-revealed">{sessionsById.get(revealedSession)?.name} · {text('보드에서 찾기로 임시 표시 중', 'Temporarily shown by Locate on board')}<button onClick={() => setRevealedSession(null)}>{text('다시 숨기기', 'Hide again')}</button></div>}
     <div className="wb-body" hidden={viewMode === 'office'}><section className="wb-canvas-wrap">    <nav className="wb-summary" aria-label={text('업무 요약', 'Work summary')}>
@@ -414,19 +428,27 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
         onPointerMove={e => { const anchor = drag.current; if (!anchor) return; const x = anchor.left + e.clientX - anchor.x, y = anchor.top + e.clientY - anchor.y; setView(v => ({ ...v, x, y })); }}
         onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
         onWheel={e => { if (projectDrag.current) return; const r = e.currentTarget.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; setView(v => { const zoom = Math.max(.2, Math.min(2, v.zoom * (e.deltaY > 0 ? .9 : 1.1))); return { zoom, x: px - (px - v.x) * zoom / v.zoom, y: py - (py - v.y) * zoom / v.zoom }; }); }}>
-        <div className="wb-legend"><span className="hierarchy">{text('계층', 'Hierarchy')}</span><span className="reference">{text('관측된 읽기 참조', 'Observed message reads')}</span><small>{compactKey ? text('보이는 항목 자동 정렬 · 드래그 배치는 이 보기에서만 유지', 'Visible items auto-arranged · drag placement stays in this view') : text('제목을 끌어 배치 · 이 컴퓨터에 저장', 'Drag project headers to arrange · saved on this computer')}</small></div>
+        <div className="wb-legend"><span>{text('폴더·세션 계층', 'Folder / session hierarchy')}</span><span className="inheritance">{text('프로젝트 설정 상속', 'Project settings inheritance')}</span><span className="reference">{text('관측된 읽기 참조', 'Observed message reads')}</span><small>{compactKey ? text('보이는 항목 자동 정렬 · 드래그 배치는 이 보기에서만 유지', 'Visible items auto-arranged · drag placement stays in this view') : text('제목을 끌어 배치 · 이 컴퓨터에 저장', 'Drag project headers to arrange · saved on this computer')}</small></div>
         {!data ? <p className="wb-empty">{text('업무 현황을 불러오는 중…', 'Loading work status…')}</p> : !layout?.groups.length ? <p className="wb-empty">{text('표시할 세션이 없습니다.', 'No matching sessions.')}</p> : <div className="wb-world" style={{ width: layout.width, height: layout.height, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
           {layout.groups.map(g => {
             const members = data.sessions.filter(s => s.projectId === g.id), c = boardCounts(members, allItems), folded = collapsedProjects.has(g.id);
             const rows = nodes.filter(n => n.session.projectId === g.id);
             return <section className={`wb-project ${folded ? 'collapsed' : ''} ${projectPreview?.id === g.id ? 'dragging' : ''}`} key={g.id} data-project-id={g.id} style={{ left: g.x, top: g.y, width: g.width, height: folded ? BOARD_CARD.header : g.height }}>
-              <button className="wb-project-header" aria-expanded={!folded} title={text('드래그: 이동 · 클릭: 접기·펼치기 · 더블클릭: 확대', 'Drag to move · click to fold · double-click to zoom')}
+              <button className="wb-project-header" aria-expanded={!folded} title={text('드래그: 이동 · 클릭: 접기·펼치기 · 더블클릭: 확대 · 우클릭: 프로젝트 메뉴', 'Drag to move · click to fold · double-click to zoom · right-click for project menu')}
+                onContextMenu={e => { e.preventDefault(); showProjectMenu(g.id, e.clientX, e.clientY, e.currentTarget); }}
                 onPointerDown={e => { if (e.button !== 0) return; e.stopPropagation(); suppressProjectClick.current = null;
                   projectDrag.current = { id: g.id, pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY, x: g.x, y: g.y, zoom: view.zoom, point: { x: g.x, y: g.y }, moved: false };
                   e.currentTarget.setPointerCapture(e.pointerId); }}
                 onPointerMove={moveProject} onPointerUp={endProjectDrag} onPointerCancel={cancelProjectDrag}
                 onLostPointerCapture={() => { if (projectDrag.current?.id === g.id) cancelProjectDrag(); }}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') suppressProjectClick.current = null; }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') suppressProjectClick.current = null;
+                  if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    showProjectMenu(g.id, rect.left, rect.bottom, e.currentTarget);
+                  }
+                }}
                 onClick={e => { if (suppressProjectClick.current === g.id) { suppressProjectClick.current = null; return; }
                   foldOnClick(`project:${g.id}`, e.detail, () => setCollapsedProjects(current => { const next = new Set(current); if (!next.delete(g.id)) next.add(g.id); return next; })); }}
                 onDoubleClick={() => zoomTo(`project:${g.id}`, { ...g, height: folded ? BOARD_CARD.header : g.expandedHeight }, 1.25)}>
@@ -472,7 +494,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
                 {(transfersBySession.get(session.id) || []).slice(-1).map(t => <span key={t.id} className="wb-transfer-badge" data-status={t.status} title={`${t.from === session.id ? '→' : '←'} ${sessionsById.get(t.from === session.id ? t.to : t.from)?.name} · ${text(...boardTransferLabel(t))}${t.reason ? ` · ${t.reason}` : ''}`}>{t.from === session.id ? '→' : '←'} {text(...boardTransferLabel(t))}</span>)}
                 {n.children > 0 && <span className="wb-collapse" aria-hidden="true">{sessionFolded ? '+' : '−'} {n.children}</span>}
               </button>
-              <button className="wb-node-menu" aria-haspopup="menu" aria-expanded={menu?.id === session.id}
+              <button className="wb-node-menu" aria-haspopup="menu" aria-expanded={menu?.kind === 'session' && menu.id === session.id}
                 aria-label={`${session.name} · ${text('세션 메뉴', 'Session menu')}`} title={text('세션 메뉴', 'Session menu')}
                 onClick={e => { const rect = e.currentTarget.getBoundingClientRect(); showSessionMenu(session.id, rect.left, rect.bottom, e.currentTarget); }}>⋯</button>
                     </div>;
@@ -481,9 +503,11 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
               </div>{g.rows > BOARD_CARD.visibleRows && <div className="wb-project-scroll-hint">{text('카드 안에서 스크롤하여 전체 세션 보기', 'Scroll inside this card for all sessions')} · {g.count}</div>}</>}
             </section>;
           })}
-          <svg className="wb-edges wb-project-edges" width={layout.width} height={layout.height} aria-hidden="true">{layout.projectEdges.map(edge => {
+          <svg className="wb-edges wb-project-edges" width={layout.width} height={layout.height} aria-hidden="true">
+            <defs>{(['folder', 'parent'] as const).map(kind => <marker key={kind} id={`wb-${kind}-arrow`} className="wb-project-arrow" data-relation={kind} viewBox="0 0 8 8" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8Z"/></marker>)}</defs>
+            {layout.projectEdges.map(edge => {
             const route = connections.routes.get(`project:${edge.from}:${edge.to}`);
-            return route ? <path key={`${edge.from}:${edge.to}`} data-edge-kind="project" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
+            return route ? <path key={`${edge.from}:${edge.to}`} data-edge-kind="project" data-relation={edge.kind} data-from={edge.from} data-to={edge.to} d={route.path} markerEnd={`url(#wb-${edge.kind}-arrow)`}/> : null;
           })}{layout.edges.map(edge => {
             const route = connections.routes.get(`session:${edge.from}:${edge.to}`);
             return route ? <path key={`session:${edge.from}:${edge.to}`} data-delegated={delegationEdges.has(`${edge.from}:${edge.to}`) || undefined} data-edge-kind="session" data-from={edge.from} data-to={edge.to} d={route.path}/> : null;
@@ -511,7 +535,7 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
             else { const automatic = boardLayout(data, { collapsed, sessionOrder: order }), positions = Object.fromEntries(automatic.groups.map(g => [g.id, { x: g.x, y: g.y }])); setProjectPositions(positions); savePlacement({ projectPositions: positions, sessionOrder: order }); }
             setSessionOrder(order); resetView.current = true; }}>{text('업무순 정렬', 'Align by work')}</button>
         <span className="wb-placement-status" role="status" data-status={placementStatus}>{placementStatus === 'saving' ? text('배치 저장 중…', 'Saving layout…') : placementStatus === 'failed' ? text('배치 저장 실패', 'Layout save failed') : compactKey ? text('보이는 항목 기준 자동 정렬', 'Auto-arranged for visible items') : text('이 컴퓨터에 배치 저장', 'Layout saved on this computer')}{placementStatus === 'failed' && <button onClick={() => savePlacement({ projectPositions, sessionOrder })}>{text('다시 저장', 'Retry save')}</button>}</span>
-        {viewMode === 'board' && motionSwitch}</div>
+        {viewMode === 'board' && <><label className="wb-line-style">{text('연결선', 'Connections')} <select aria-label={text('연결선 모양', 'Connection style')} value={edgeStyle} onChange={e => setEdgeStyle(e.target.value === 'curved' ? 'curved' : 'orthogonal')}><option value="orthogonal">{text('직선', 'Straight')}</option><option value="curved">{text('곡선', 'Curved')}</option></select></label>{motionSwitch}</>}</div>
       <div className="wb-device-strip"><span>{text('컴퓨터 사용', 'Computer activity')}</span>{!data?.devices.length ? <small>{text('현재 수신된 사용 신호 없음', 'No current activity signals')}</small> : data.devices.map((device, i) => <button key={`${device.sessionId}:${i}`} onClick={() => choose(device.sessionId)}>{device.kind === 'desktop' ? '🖱' : '🌐'} {sessionsById.get(device.sessionId)?.name} · {device.tool}{device.state === 'unconfirmed' ? ` · ${text('종료 신호 확인 필요', 'Awaiting end signal')}` : ''}</button>)}</div>
     </section>
     <aside className="wb-inspector" ref={inspector} aria-label={text('내 확인', 'Your attention')}>
@@ -537,16 +561,22 @@ export function ProjectBoardPage({ initialSnapshot }: { initialSnapshot?: BoardS
           const s = sessionsById.get(item.sessionId)!, time = itemTime(item.createdAt); return <article key={item.id} className="wb-inbox-item" data-kind={item.kind}><div className="wb-inbox-item-top"><StateIcon state={item.kind}/><strong>{s.name}</strong><span data-state={item.kind}>{text(...kinds[item.kind])}</span></div><p>{item.summary || text(...kinds[item.kind])}</p><time dateTime={time.dateTime}>{time.label}</time><div className="wb-inbox-item-bottom"><small>{data?.projects.find(p => p.id === s.projectId)?.name}</small><button data-item-id={item.id} onClick={e => choose(s.id, item.id, e.currentTarget)}>{actionLabel(item)} ›</button></div></article>;
         })}{inbox.length > visibleCount && <button onClick={() => setVisibleCount(n => n + 50)}>{text('더 보기', 'Show more')} · {inbox.length - visibleCount}</button>}{!inbox.length && <div className="wb-inbox-empty"><span>✓</span><p>{query ? text('검색과 일치하는 항목이 없습니다.', 'No matching items.') : text('확인할 새 항목이 없습니다.', 'Nothing needs your attention.')}</p></div>}</div><p className="wb-inbox-help">{text('결과나 대화를 열면 기존 결과를 확인 처리합니다. 이후 새 결과와 질문은 유지합니다.', 'Opening a result or conversation marks captured results read; later results and questions remain.')}</p></>}
     </aside></div>
-    {menu && sessionsById.has(menu.id) && <div ref={menuPanel} className="wb-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: menu.x, top: menu.y }}>
+    {menu?.kind === 'project' && menuProject && <div ref={menuPanel} className="wb-context-menu" role="menu" aria-label={text('프로젝트 메뉴', 'Project menu')} style={{ left: menu.x, top: menu.y }}>
+      <strong>{menuProject.name}</strong>
+      <button role="menuitem" onClick={() => manageProject({ id: menu.id, action: 'new-session' })}>{text('새 세션 만들기', 'New session')}</button>
+      <button role="menuitem" onClick={() => manageProject({ id: menu.id, action: 'hierarchy' })}>{text('프로젝트 계층 편집', 'Edit project hierarchy')}</button>
+      <button role="menuitem" onClick={closeMenu}>{text('닫기', 'Close')}</button></div>}
+    {menu?.kind === 'session' && sessionsById.has(menu.id) && <div ref={menuPanel} className="wb-context-menu" role="menu" aria-label={text('세션 메뉴', 'Session menu')} style={{ left: menu.x, top: menu.y }}>
       <strong>{sessionsById.get(menu.id)?.name}</strong>
       <button role="menuitem" onClick={() => { setMenu(null); choose(menu.id, undefined, menuTrigger.current ?? undefined); }}>{text('세션 세부정보', 'Session details')}</button>
       <button role="menuitem" onClick={() => { setMenu(null); void open(menu.id); }}>{text('세션 대화 열기', 'Open conversation')}</button>
       <SessionLifecycleButton key={menu.id} id={menu.id} active={sessionsById.get(menu.id)?.runtime === 'running'} onSuccess={() => { setMenu(null); void refreshRef.current(); }} onError={setError}/>
       <button role="menuitem" onClick={() => manageSession({ id: menu.id, action: 'properties' })}>{text('세션 속성', 'Session properties')}</button>
+      <button role="menuitem" onClick={() => manageSession({ id: menu.id, action: 'hierarchy' })}>{text('세션 계층 편집', 'Edit session hierarchy')}</button>
       <button role="menuitem" onClick={() => manageSession({ id: menu.id, action: 'rename' })}>{text('이름 변경', 'Rename')}</button>
       <button role="menuitem" disabled={busy || !!data?.storageError || !menu.results.length} onClick={() => { void reviewSession(menu.id, menu.results); }}>{text('현재 결과 확인완료', 'Mark current results read')} · {menu.results.length}</button>
       <button role="menuitem" className="wb-delete-session" onClick={() => manageSession({ id: menu.id, action: 'delete' })}>{text('세션 삭제…', 'Delete session…')}</button>
-      <button role="menuitem" onClick={closeSessionMenu}>{text('닫기', 'Close')}</button></div>}
+      <button role="menuitem" onClick={closeMenu}>{text('닫기', 'Close')}</button></div>}
     <footer className="wb-footer" hidden={viewMode === 'office'}><span><StateIcon state="working" active={false}/>{text('작업 중에만 회전', 'Spin only during execution')}</span><span className="wb-ref-legend">{text('보라색: 읽기 참조 · 밝기 강조: 하달 진행 중', 'Purple: observed reads · glow: outstanding delegation')}</span><span>{text('이전 미확인 결과는 새 작업과 함께 유지', 'Earlier results remain during new work')}</span><small>{text('참조 관측: Acedia 메시지 수신함 · 일반 파일/외부 도구의 내부 참조는 알 수 없음', 'Read evidence: Acedia inbox; external/internal file references are not inferred')}</small></footer>
   </main>;
 }

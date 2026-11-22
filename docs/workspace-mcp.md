@@ -125,7 +125,7 @@ HTTP에서도 검증했다. 기존 설치본은 업데이트하고 CLI를 다시
 | `acedia_sessions_relocate` | 앱 실행 중 기존 OFFLINE 세션들의 소속 프로젝트·작업 폴더를 묶어 변경 |
 | `acedia_session_send` | 다른 실행 중인 로컬 Codex 세션에 승인된 작업 전달 및 수신·작업 시작 확인 |
 | `acedia_session_delivery` | 같은 호출 세션이 보낸 요청의 상태 조회. 입력·재전송 없음 |
-| `acedia_session_message_send` | UTF-8 원문을 전용 수신함에 저장하고 Codex에는 ASCII 알림만 전송. Base64·파일 입력과 답장 지원 |
+| `acedia_session_message_send` | UTF-8 원문을 전용 수신함에 저장하고 터미널에 발신 세션과 원문 조회 안내를 표시. Base64·파일 입력과 답장 지원 |
 | `acedia_session_message_receive` | 현재 세션의 수신함·발신함 조회와 원문 읽음 확인. 메시지 ID로 직접 읽기 가능 |
 | `acedia_task_plan` | A의 계획 검증·저장 후 전용 로컬 Codex 작업 세션 자동 배정 |
 | `acedia_task_list` / `acedia_task_get` | 실행 목록 페이지와 작업·시도·대화·턴·질문·검증 결과 조회 |
@@ -194,9 +194,9 @@ coordinator의 같은 새 세션 정책을 사용한다. Cline·Shell 등 미지
 ## 한글 원문 전송·수신 API (2026-10-27, 1.8.1.96)
 
 한글과 여러 줄의 지시는 `acedia_session_message_send`를 권장한다. 본문을 UTF-8로
-호스트의 `session-messages-v1.json`에 저장하고, 터미널에는 ASCII로 된 메시지 ID와
-수신 도구 호출 안내만 보낸다. 한글 세션명·프로젝트명도 이 터미널 알림에는 포함하지
-않는다. 받는 AI는 `acedia_session_message_receive`로 원문을 읽는다. 기존 실행 옵션,
+호스트의 `session-messages-v1.json`에 저장한다. 새 터미널 알림은 `From: 프로젝트 / 세션`,
+메시지 ID, 수신 도구 호출 안내를 한 줄에 표시한다. 한글 발신 이름을 지원하며 받는 AI는
+`acedia_session_message_receive`로 원문을 읽는다. 기존 실행 옵션,
 대화·모델·effort·Fast, 창 포커스와 입력 초안을 유지하며 자동 재시작하지 않는다.
 
 보내는 세션은 정확한 대상 ID와 중복 방지 키만 지정하면 된다. 실행 중인 로컬 Codex의
@@ -245,7 +245,7 @@ Base64도 함께 반환한다. 기본 조회 `{}`는 자신의 안 읽은 메시
 | 값 | 확인한 내용 |
 | --- | --- |
 | `saved: true` | UTF-8 원문을 디스크에 저장 |
-| `delivery.status: started` | ASCII 알림을 포함한 Codex의 새 턴 시작. 원문 읽음·작업 완료는 아님 |
+| `delivery.status: started` | 알림을 받은 CLI의 새 턴 시작. 원문 조회와 작업 완료는 별도로 확인 |
 | `delivery.status: inbox` | 알림 없이 수신함에 저장 |
 | `delivery.status: notification-error` / `unconfirmed` | 알림 처리 실패 또는 불확실. 원문은 보존하며 자동 재전송하지 않음 |
 | `readAt` | 받는 세션이 수신 도구로 원문을 읽고, 읽음 시간을 디스크에 저장 |

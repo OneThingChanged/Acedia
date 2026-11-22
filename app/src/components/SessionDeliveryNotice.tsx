@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke, listen } from '../platform/runtime';
 import { useAppLanguage } from '../lib/appLanguage';
-import { deliveryStatusMessage, isDeliveryWarning, type SessionDelivery } from '../lib/sessionDelivery';
+import { deliveryStatusMessage, isDeliveryWarning, isMailboxConversationChanged, type SessionDelivery } from '../lib/sessionDelivery';
 import './SessionDeliveryNotice.css';
 
 export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
@@ -42,7 +42,7 @@ export function SessionDeliveryNotice({ agentId }: { agentId: string }) {
       <strong>{record.sourceId === agentId
         ? text(`${record.targetName}에게 작업 전달`, `Task sent to ${record.targetName}`)
         : text(`${record.sourceName}에서 받은 작업`, `Task from ${record.sourceName}`)}</strong>
-      <span>{text(deliveryStatusMessage(record, false), deliveryStatusMessage(record, true))}{bad && record.reason ? ` · ${record.reason}` : ''}</span>
+      <span>{text(deliveryStatusMessage(record, false), deliveryStatusMessage(record, true))}{bad && record.reason && !isMailboxConversationChanged(record) ? ` · ${record.reason}` : ''}</span>
     </div>
     <ol aria-label={text('전달 진행 상태', 'Delivery progress')}>
       {stages.map(stage => <li key={stage.en} className={stage.at ? 'confirmed' : ''}>

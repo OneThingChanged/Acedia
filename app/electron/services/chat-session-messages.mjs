@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
+import { normalizeHandoffText } from './session-delivery.mjs';
 import { sessionMessageNotification } from './session-messages.mjs';
 
-const normalize = value => value.replace(/\r\n?/g, '\n').trim();
-const hash = value => createHash('sha256').update(normalize(value)).digest('hex');
+const hash = value => createHash('sha256').update(value).digest('hex');
 const envelope = /^\[Acedia handoff: ([0-9a-f-]{36})\]\nFrom: ([^\n]*)\n\n([\s\S]*)$/;
+const namedMailbox = /^\[Acedia handoff: ([0-9a-f-]{36})\] From: ([^\n]+) \| (Acedia session message [^\n]*)$/;
 const reference = /^Acedia session message ([0-9a-f-]{36})\./;
 
 /** Read-only presentation of a received envelope. Never call inbox.receive():
@@ -19,18 +20,21 @@ export function presentChatSessionMessages(result, { agentId, messages, deliveri
   let changed = false;
   const blocks = result.blocks.map(block => {
     if (block.role !== 'user' || block.kind !== 'text' || typeof block.text !== 'string') return block;
-    const match = normalize(block.text).match(envelope);
+    const text = normalizeHandoffText(block.text);
+    const named = namedMailbox.exec(text);
+    const match = named || envelope.exec(text);
     if (!match) return block;
     const [, deliveryId, from, body] = match;
     const id = body.match(reference)?.[1];
     let delivery = receipts.get(deliveryId);
-    if (delivery && delivery.messageHash !== hash(block.text)) return block;
+    if (delivery && delivery.messageHash !== hash(text)) return block;
     const stored = id && body === sessionMessageNotification(id) ? incoming.get(id) || (!messages?.unavailable && messages?.findRecord?.(id)) : null;
     const record = stored?.targetId === agentId ? stored : null;
     // Completed delivery receipts rotate out of the hot history. The inbox
     // still pins the exact notification/delivery and conversation; no archive
     // scan or provider transcript mutation is needed for old chat pages.
-    if (!delivery && from === 'Acedia session' && record?.notify && record.delivery?.deliveryId === deliveryId
+    if (!delivery && record?.notify && record.delivery?.deliveryId === deliveryId
+      && from === (named ? record.delivery.notificationFrom : 'Acedia session')
       && record.notificationKey === 'text_' + id.replace(/-/g, '') && body === sessionMessageNotification(id)) {
       delivery = { ...record, conversationId: record.pinConversationId, requestKey: record.notificationKey };
     }

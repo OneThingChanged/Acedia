@@ -4,7 +4,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
-import { SessionMessages } from './session-messages.mjs';
+import { SessionMessages, sessionMessageNotification } from './session-messages.mjs';
 import { SessionDeliveries } from './session-delivery.mjs';
 import { parseChatTranscript } from './chat-transcript.mjs';
 import { presentChatSessionMessages } from './chat-session-messages.mjs';
@@ -28,7 +28,7 @@ function fixture(provider = 'codex') {
   const deliveries = new SessionDeliveries(options);
   const mailOptions = { file: path.join(root, 'messages.json'), context: options.context,
     sessionFor: id => contexts[id] && { id, name: contexts[id].name, aiToolId: provider },
-    notify: (agentId, body) => deliveries.handle({ action: 'send', agentId, body, asciiEnvelope: true }), now: () => 10000 };
+    notify: (agentId, body) => deliveries.handle({ action: 'send', agentId, body, mailboxNotification: true }), now: () => 10000 };
   const messages = new SessionMessages(mailOptions);
   const page = (raw, role = 'user') => ({ blocks: [{ role, kind: 'text', text: raw, sequence: 12 }],
     sessionId: 'conversation', conversationId: 'stored-conversation', pageMode: 'older', hasOlder: true, lastSequence: 12 });
@@ -41,7 +41,8 @@ function fixture(provider = 'codex') {
 
 it.each(['codex', 'claude'])('restores an actual %s mailbox envelope without changing the wire, transcript, cursor or AI receipts', async provider => {
   const f = fixture(provider), raw = await f.send();
-  expect(raw).toMatch(/^[\x00-\x7f]+$/);
+  expect(raw).toContain(' From: ProjectWitch / 개발 관리자 | Acedia session message ');
+  expect(raw).not.toMatch(/[\r\n]/);
   const row = provider === 'codex'
     ? { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: raw }] } }
     : { type: 'user', message: { role: 'user', content: [{ type: 'text', text: raw }] } };
@@ -84,12 +85,26 @@ it('keeps plain handoffs readable when the older send API included the body dire
   expect(result.blocks[0].sessionMessage).toMatchObject({ message: legacy, sourceName: '개발 관리자', targetName: 'PW_검수' });
 });
 
+it('restores older mailbox notifications with or without the original line breaks', async () => {
+  const f = fixture();
+  await f.send();
+  const record = f.messages.records[0];
+  const raw = `[Acedia handoff: ${record.delivery.deliveryId}]\nFrom: Acedia session\n\n${sessionMessageNotification(record.messageId)}`;
+  delete record.delivery.notificationFrom;
+  f.deliveries.records.clear();
+  for (const text of [raw, raw.replaceAll('\n', '')]) {
+    expect(f.present(f.page(text)).blocks[0].sessionMessage).toMatchObject({ sourceName: '개발 관리자', message: original });
+  }
+});
+
 it('uses the exact inbox delivery binding after a completed receipt rotates out of hot history', async () => {
   const f = fixture(), raw = await f.send();
   f.deliveries.records.clear();
   expect(f.present(f.page(raw)).blocks[0].sessionMessage.message).toBe(original);
   const otherConversation = { ...f.page(raw), sessionId: 'other' };
   expect(f.present(otherConversation)).toBe(otherConversation);
+  const editedSender = f.page(raw.replace('개발 관리자', '다른 세션'));
+  expect(f.present(editedSender)).toBe(editedSender);
   f.messages.records[0].delivery.deliveryId = 'unrelated';
   const page = f.page(raw); expect(f.present(page)).toBe(page);
 });

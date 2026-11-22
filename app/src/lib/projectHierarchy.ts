@@ -30,7 +30,7 @@ export function normalizeBoardPosition(value: unknown): Project["boardPosition"]
   const p = value as Project["boardPosition"];
   return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: Math.max(-100000, Math.min(100000, p.x)), y: Math.max(-100000, Math.min(100000, p.y)) } : undefined;
 }
-export function canParentProject(projects: readonly Project[], childId: string, parentId?: string): boolean {
+export function canParentProject(projects: readonly Pick<Project, 'id' | 'sshHostId' | 'hierarchy'>[], childId: string, parentId?: string): boolean {
   const child = projects.find(p => p.id === childId);
   if (!child) return false;
   if (!parentId) return true;

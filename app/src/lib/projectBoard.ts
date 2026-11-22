@@ -1,5 +1,6 @@
 import type { Agent, Project } from "../types";
 import { isAgentRuntimeActive } from "./agentActivity";
+import { canParentProject } from "./projectHierarchy";
 
 export const PROJECT_CARD_WIDTH = 274;
 const GAP_X = 72, GAP_Y = 96, ROW_WIDTH = PROJECT_CARD_WIDTH * 3 + GAP_X * 2;
@@ -54,7 +55,19 @@ export function folderProjectParents(projects: readonly ProjectStructure[]): Map
   return parents;
 }
 
-export function layoutProjectBoard(projects: readonly Project[], folderParents: ReadonlyMap<string, string>, height: (id: string) => number): Map<string, { x: number; y: number }> {
+export function projectHierarchyEdges(projects: readonly ProjectStructure[], folderParents: ReadonlyMap<string, string>) {
+  const edges: { kind: 'folder' | 'parent'; from: string; to: string }[] = [];
+  for (const project of projects) {
+    const folder = folderParents.get(project.id), parent = project.hierarchy?.parentId;
+    if (folder) edges.push({ kind: 'folder', from: folder, to: project.id });
+    if (parent && parent !== folder && canParentProject(projects, project.id, parent)) {
+      edges.push({ kind: 'parent', from: parent, to: project.id });
+    }
+  }
+  return edges;
+}
+
+export function layoutProjectParents(projects: readonly ProjectStructure[], folderParents: ReadonlyMap<string, string>) {
   const byId = new Map(projects.map(p => [p.id, p]));
   const parents = new Map(folderParents);
   // Explicit settings relationships also get a hierarchy layout. Folder ancestry
@@ -66,6 +79,11 @@ export function layoutProjectBoard(projects: readonly Project[], folderParents: 
     while (id && !seen.has(id)) { seen.add(id); id = parents.get(id); }
     if (!id) parents.set(p.id, parent.id);
   }
+  return parents;
+}
+
+export function layoutProjectBoard(projects: readonly Project[], folderParents: ReadonlyMap<string, string>, height: (id: string) => number): Map<string, { x: number; y: number }> {
+  const parents = layoutProjectParents(projects, folderParents);
   const children = new Map(projects.map(p => [p.id, projects.filter(child => parents.get(child.id) === p.id)]));
   const widths = new Map<string, number>();
   function width(p: Project): number {

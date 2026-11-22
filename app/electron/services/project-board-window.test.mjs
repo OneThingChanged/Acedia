@@ -117,10 +117,22 @@ describe('Navigation from a board without restarting sessions', () => {
   function navigation(ready = true) {
     const windows = [{ webContents: { id: 1 }, isDestroyed: () => false }, { webContents: { id: 2 }, isDestroyed: () => false }];
     const create = vi.fn(() => windows[0]), send = vi.fn(), focus = vi.fn();
-    const value = new BoardSessionNavigation({ sessions: () => [{ id: 'existing' }], owner: () => windows[1], windows: () => windows,
+    const value = new BoardSessionNavigation({ sessions: () => [{ id: 'existing' }], projects: () => [{ id: 'project' }], owner: () => windows[1], windows: () => windows,
       create, ready: () => ready, send, focus, live: () => false });
     return { value, windows, create, send, focus };
   }
+  it('targets project forms and hierarchies without opening a session', () => {
+    const f = navigation(false);
+    expect(() => f.value.manageProject({ id: 'removed', action: 'new-session' })).toThrow('프로젝트');
+    expect(f.value.manageProject({ id: 'project', action: 'new-session' })).toEqual({ opened: true, windowId: 1 });
+    expect(f.send).not.toHaveBeenCalled();
+    f.value.loaded(1);
+    expect(f.send).toHaveBeenLastCalledWith(f.windows[0], { projectId: 'project', action: 'new-session' });
+    f.value.manageProject({ action: 'hierarchy' });
+    f.value.loaded(1);
+    expect(f.send).toHaveBeenLastCalledWith(f.windows[0], { projectId: null, action: 'hierarchy' });
+    expect(f.create).not.toHaveBeenCalled();
+  });
   it('reuses the actual owner and sends view-only metadata for an offline session', () => {
     const f = navigation(); expect(f.value.open({ id: 'existing', compose: true })).toEqual({ opened: true, windowId: 2 });
     expect(f.create).not.toHaveBeenCalled();
