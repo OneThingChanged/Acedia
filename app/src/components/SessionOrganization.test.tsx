@@ -27,4 +27,12 @@ describe("organization sessions", () => {
     expect(html).toContain('aria-label="부모 세션"');
     expect(html).toContain('<option value="Parent" selected="">');
   });
+  it("reuses the selected project editor without creating a second canvas", () => {
+    const html = renderToStaticMarkup(<SessionOrganization agents={[agent("Session")]} projects={[{ id: "p", name: "Project", folder: "C:/project", createdAt: 1 }]}
+      activeProjectId="p" selectedId={null} initialProjectId="p" inspectorOnly onCloseInspector={() => {}}
+      onSelect={() => {}} onOpenSession={() => {}} onOpenProperties={() => {}} onCreateChild={() => {}} onUpdateHierarchy={() => {}} onUpdateProjects={() => {}}/>);
+    expect(html).toContain('aria-label="부모 프로젝트"');
+    expect(html).toContain('aria-label="정보 닫기"');
+    expect(html).not.toContain('class="pb-viewport"');
+  });
 });

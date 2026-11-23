@@ -1,7 +1,7 @@
 :root {
   --safe-area-bottom: max(env(safe-area-inset-bottom, 0px), var(--native-safe-area-bottom, 0px));
   --visual-viewport-height: 100dvh;
-  --mobile-nav-reserve: calc(62px + var(--safe-area-bottom));
+  --mobile-nav-reserve: calc(45px + var(--safe-area-bottom));
   color-scheme: dark;
   --font-caption: 12px;
   --font-small: 14px;
@@ -1020,8 +1020,43 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
 .session-nav-button:hover { border-color: var(--line-strong); background: var(--panel-3); }
 .session-title { min-width: 0; flex: 1 1 auto; }
 .session-head-actions { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.session-tools { display: contents; }
-.session-tools-toggle { display: none; }
+.session-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  position: absolute;
+  z-index: 65;
+  top: calc(100% + 4px);
+  right: 8px;
+  width: min(320px, calc(100vw - 20px));
+  max-height: min(65dvh, calc(var(--visual-viewport-height) - 60px), 420px);
+  overflow-y: auto;
+  padding: 8px;
+  gap: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel-2);
+  box-shadow: var(--shadow);
+}
+.session-tools .small-button { width: 100%; flex-shrink: 0; text-align: left; padding: 8px 10px; white-space: normal; }
+.session-tools #sessionNotifications { justify-content: flex-start; }
+.session-tools #sessionNotifications::after {
+  content: attr(aria-label);
+  position: static;
+  margin-left: 8px;
+  padding: 0;
+  width: auto;
+  max-width: none;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+}
+.session-tools-toggle { width: 40px; padding-inline: 0; font-size: 21px; }
+.session-tool-context { padding: 2px 5px 7px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--font-small); overflow-wrap: anywhere; }
+.session-tool-context #detailMeta { margin: 0; }
+.session-tool-context details { margin-top: 8px; }
+.session-tool-context summary { padding: 6px 0; color: var(--text); cursor: pointer; }
+#promptText { margin: 4px 0 0; white-space: pre-wrap; }
 .status-chip { display: inline-flex; align-items: center; min-height: 23px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: var(--font-caption); font-weight: 800; }
 .status-chip.working { border-color: rgba(255, 201, 99, 0.3); color: var(--amber); background: rgba(255, 201, 99, 0.06); }
 .status-chip.recovering, .status-chip.starting { border-color: rgba(88, 166, 255, 0.3); color: #58a6ff; background: rgba(88, 166, 255, 0.06); }
@@ -1030,7 +1065,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
 .status-chip.sleeping { border-color: var(--line-strong); color: var(--blue); background: var(--panel-2); }
 .status-chip.offline { border-color: rgba(255, 125, 125, 0.3); color: var(--red); background: rgba(255, 125, 125, 0.06); }
 .session-title h2 { margin-top: 8px; }
-.question-panel, .context-panel, .output-panel, .composer { border: 1px solid var(--line); border-radius: 12px; background: rgba(10, 23, 34, 0.88); }
+.question-panel, .output-panel, .composer { border: 1px solid var(--line); border-radius: 12px; background: rgba(10, 23, 34, 0.88); }
 .question-panel { padding: 14px; border-color: rgba(91, 188, 255, 0.35); box-shadow: inset 3px 0 0 var(--blue); }
 .question-panel > div { display: grid; gap: 4px; }
 .question-panel strong { font-size: var(--font-small); }
@@ -1039,8 +1074,6 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
 .question-option { padding: 6px 9px; border: 1px solid rgba(91, 188, 255, 0.3); border-radius: 999px; color: #bfe6fb; background: rgba(91, 188, 255, 0.07); font-size: var(--font-caption); }
 .question-option:hover { border-color: rgba(91, 188, 255, 0.55); background: rgba(91, 188, 255, 0.13); }
 .answer-button { min-height: 31px; padding: 0 12px; font-size: var(--font-small); }
-.context-panel { padding: 13px; }
-.context-panel p { margin: 7px 0 0; color: #c3d2dc; font-size: var(--font-small); line-height: 1.5; }
 .output-panel { overflow: hidden; }
 .browser-panel {
   display: flex;
@@ -1119,8 +1152,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
 .browser-message { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: var(--muted); text-align: center; font-size: var(--font-small); pointer-events: none; }
 .browser-message[hidden] { display: none; }
 .app-shell[data-view="session"][data-session-mode="browser"] .session-offline,
-.app-shell[data-view="session"][data-session-mode="browser"] .question-panel,
-.app-shell[data-view="session"][data-session-mode="browser"] .context-panel { display: none !important; }
+.app-shell[data-view="session"][data-session-mode="browser"] .question-panel { display: none !important; }
 
 /* ---- Conversation (chat) view ---- */
 .session-mode { display: flex; gap: 3px; padding: 3px; background: #050d14; border: 1px solid var(--line); border-radius: 10px; }
@@ -1447,8 +1479,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
     padding: 4px;
     overflow: hidden;
   }
-  .app-shell[data-view="session"][data-session-mode="chat"] .question-panel,
-  .app-shell[data-view="session"][data-session-mode="chat"] .context-panel {
+  .app-shell[data-view="session"][data-session-mode="chat"] .question-panel {
     display: none !important;
   }
   .app-shell[data-view="session"] .chat-view {
@@ -1503,7 +1534,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
     left: 0;
     width: min(86vw, 330px);
     max-height: none;
-    padding: calc(68px + env(safe-area-inset-top)) 13px calc(75px + var(--safe-area-bottom));
+    padding: calc(58px + env(safe-area-inset-top)) 13px calc(8px + var(--mobile-nav-reserve));
     border-right: 1px solid var(--line-strong);
     transform: translateX(-105%);
     transition: transform 180ms ease;
@@ -1660,7 +1691,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
   }
   .app-shell[data-view="session"] .session-head {
     flex: 0 0 auto;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     min-height: 40px;
     margin: 0;
     padding: 5px 8px;
@@ -1668,13 +1699,11 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
     background: rgba(9, 21, 32, 0.96);
   }
   .app-shell[data-view="session"] .session-head-actions {
-    grid-column: 1 / -1;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .app-shell[data-view="session"] .session-title .status-chip { white-space: nowrap; }
   .app-shell[data-view="session"] .session-title {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    display: flex;
     align-items: center;
     gap: 2px 8px;
     min-width: 0;
@@ -1715,20 +1744,14 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
     font-size: var(--font-small);
   }
   .app-shell[data-view="session"] .session-offline,
-  .app-shell[data-view="session"] .question-panel,
-  .app-shell[data-view="session"] .context-panel {
+  .app-shell[data-view="session"] .question-panel {
     flex: 0 0 auto;
   }
   .app-shell[data-view="session"] .question-panel {
     max-height: 32dvh;
     overflow-y: auto;
   }
-  .app-shell[data-view="session"] .context-panel {
-    max-height: 72px;
-    overflow-y: auto;
-  }
-  .app-shell[data-view="session"][data-session-mode="chat"] .question-panel,
-  .app-shell[data-view="session"][data-session-mode="chat"] .context-panel {
+  .app-shell[data-view="session"][data-session-mode="chat"] .question-panel {
     display: none !important;
   }
   .app-shell[data-view="session"] .chat-view {
@@ -1749,8 +1772,7 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
   .app-shell[data-view="session"] .browser-panel { flex: 1 1 auto; min-height: 0; border-radius: 9px; }
   .app-shell[data-view="session"] .browser-panel[hidden] { display: none; }
   .app-shell[data-view="session"][data-session-mode="browser"] .session-offline,
-  .app-shell[data-view="session"][data-session-mode="browser"] .question-panel,
-  .app-shell[data-view="session"][data-session-mode="browser"] .context-panel { display: none !important; }
+  .app-shell[data-view="session"][data-session-mode="browser"] .question-panel { display: none !important; }
   .browser-toolbar { padding: 4px; gap: 3px; }
   .browser-tool-button { width: 32px; min-height: 32px; }
   .browser-toolbar select { height: 32px; font-size: var(--font-small); }
@@ -1810,23 +1832,21 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
   .mobile-nav {
     position: fixed;
     z-index: 60;
-    right: 8px;
-    bottom: calc(7px + var(--safe-area-bottom));
-    left: 8px;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    min-height: 52px;
-    padding: 5px;
-    border: 1px solid var(--line-strong);
-    border-radius: 14px;
+    padding: 0 4px var(--safe-area-bottom);
+    border-top: 1px solid var(--line-strong);
     background: rgba(7, 18, 28, 0.94);
     backdrop-filter: blur(18px);
-    box-shadow: var(--shadow);
   }
-  .mobile-nav button { position: relative; display: grid; min-width: 0; min-height: 42px; place-items: center; gap: 1px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: var(--font-caption); }
-  .mobile-nav button > span { font-size: 14px; }
+  .mobile-nav button { position: relative; display: flex; min-width: 0; min-height: 44px; justify-content: center; align-items: center; gap: 4px; padding: 0 2px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: var(--font-caption); }
+  .mobile-nav button > [aria-hidden] { font-size: 14px; }
+  .mobile-nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-nav button.active { color: var(--cyan); background: rgba(80, 223, 208, 0.07); }
-  .toast { right: 10px; bottom: calc(70px + var(--safe-area-bottom)); }
+  .toast { right: 10px; bottom: calc(8px + var(--mobile-nav-reserve)); }
 
   /* Android Chrome and embedded WebViews do not consistently resize dvh when
      the software keyboard opens. app.js mirrors visualViewport.height into the
@@ -2138,51 +2158,35 @@ html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-no
   .app-shell.touch-workspace[data-view="session"] .session-view { padding: 0; }
   .app-shell.touch-workspace[data-view="session"] .session-head {
     display: grid; align-items: center; flex: 0 0 auto; margin: 0;
-    min-height: 56px; border-bottom: 1px solid var(--line);
+    min-height: 49px; border-bottom: 1px solid var(--line);
     background: rgba(9, 21, 32, 0.96);
     position: relative;
     grid-template-columns: 44px minmax(0, 1fr) 44px;
-    gap: 4px 8px;
-    padding: 6px 10px;
+    gap: 6px;
+    padding: 2px 5px;
   }
   .app-shell.touch-workspace[data-view="session"] .session-nav-button { display: grid; width: 44px; min-height: 44px; }
-  .app-shell.touch-workspace[data-view="session"] .session-title { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .app-shell.touch-workspace[data-view="session"] .session-title h2 { grid-row: 1; margin: 0; font-size: 16px; }
-  .app-shell.touch-workspace[data-view="session"] .session-title p { display: none; }
-  .app-shell.touch-workspace[data-view="session"] .session-title .status-chip { grid-row: 2; justify-self: start; min-height: 18px; font-size: 12px; }
+  .app-shell.touch-workspace[data-view="session"] .session-title { display: flex; gap: 6px; }
+  .app-shell.touch-workspace[data-view="session"] .session-title h2 { font-size: 16px; }
+  .app-shell.touch-workspace[data-view="session"] .session-title .status-chip { min-height: 18px; font-size: 11px; }
   .app-shell.touch-workspace[data-view="session"] .session-head-actions { display: contents; }
   .app-shell.touch-workspace .session-mode { display: none; }
-  .app-shell.touch-workspace[data-session-mode="chat"] .question-panel,
-  .app-shell.touch-workspace[data-session-mode="chat"] .context-panel { display: none !important; }
-  .app-shell.touch-workspace .session-tools-toggle { display: block; grid-column: 3; grid-row: 1; min-height: 44px; font-size: 24px; padding: 0; }
-  .app-shell.touch-workspace .session-tools { display: none; }
-  .app-shell.touch-workspace .session-tools.open {
-    display: flex; flex-direction: column; align-items: stretch;
-    position: absolute; z-index: 65; top: 54px; right: 10px;
-    width: min(280px, calc(100vw - 32px)); max-height: min(65dvh, 420px);
-    overflow-y: auto; padding: 8px; gap: 4px;
-    border: 1px solid var(--line-strong); border-radius: 12px;
-    background: var(--panel-2); box-shadow: var(--shadow);
-  }
-  .app-shell.touch-workspace .session-tools .small-button { width: 100%; min-height: 44px; flex-shrink: 0; text-align: left; padding: 9px 12px; font-size: 14px; }
-  .app-shell.touch-workspace .session-tools #sessionNotifications { justify-content: flex-start; }
-  .app-shell.touch-workspace .session-tools #sessionNotifications::after {
-    content: attr(aria-label); position: static; margin-left: 8px; padding: 0;
-    width: auto; max-width: none; border: 0; background: transparent; font-size: 14px;
-  }
-  .app-shell.touch-workspace[data-view="session"] .session-content { padding: 6px; gap: 6px; }
-  .app-shell.touch-workspace[data-view="session"] .chat-view { padding: 10px 6px 16px; scrollbar-gutter: auto; }
+  .app-shell.touch-workspace[data-session-mode="chat"] .question-panel { display: none !important; }
+  .app-shell.touch-workspace .session-tools-toggle { grid-column: 3; grid-row: 1; width: 44px; min-height: 44px; }
+  .app-shell.touch-workspace .session-tools .small-button { min-height: 44px; font-size: 14px; }
+  .session-tools .composer-settings { flex-direction: column; align-items: stretch; }
+  .app-shell.touch-workspace[data-view="session"] .session-content { padding: 4px; gap: 4px; }
+  .app-shell.touch-workspace[data-view="session"] .chat-view { padding: 8px 6px; scrollbar-gutter: auto; }
   .app-shell.touch-workspace[data-view="session"] .chat-turn { width: 100%; max-width: 880px; margin-left: auto; margin-right: auto; }
   .app-shell.touch-workspace[data-view="session"] .chat-md { font-size: 16px; line-height: 1.75; }
   .app-shell.touch-workspace[data-view="session"] .chat-user { max-width: 92%; padding: 10px 12px; font-size: 16px; line-height: 1.65; }
-  .app-shell.touch-workspace[data-view="session"] .composer { width: 100%; max-width: 920px; align-self: center; padding: 8px; border-radius: 14px; }
-  .app-shell.touch-workspace[data-view="session"] .composer-main-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 52px; gap: 6px; align-items: center; }
-  .app-shell.touch-workspace[data-view="session"] .composer-input-column { display: contents; }
-  .app-shell.touch-workspace[data-view="session"] .composer .composer-input-column textarea { grid-column: 1 / -1; grid-row: 1; width: 100%; min-height: 44px; padding: 10px 11px; font-size: 16px; }
-  .app-shell.touch-workspace[data-view="session"] .composer-attach-button { grid-column: 1; grid-row: 2; width: 44px; }
-  .app-shell.touch-workspace[data-view="session"] .composer-settings { grid-column: 2; grid-row: 2; min-width: 0; gap: 5px; padding: 0; }
-  .app-shell.touch-workspace[data-view="session"] .composer-settings button { min-height: 44px; padding: 6px 8px; font-size: 12px; flex: 1 1 0; }
-  .app-shell.touch-workspace[data-view="session"] .send-button { grid-column: 3; grid-row: 2; min-width: 0; width: 52px; padding: 0 5px; }
+  .app-shell.touch-workspace[data-view="session"] .composer { width: 100%; max-width: 920px; align-self: center; padding: 0; }
+  .app-shell.touch-workspace[data-view="session"] .composer-main-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 4px; align-items: end; padding: 3px; }
+  .app-shell.touch-workspace[data-view="session"] .composer .composer-input-column textarea { display: block; width: 100%; min-height: 44px; max-height: min(180px, 32dvh); padding: 8px 5px; font-size: 16px; }
+  .app-shell.touch-workspace[data-view="session"] .composer-attach-button,
+  .app-shell.touch-workspace[data-view="session"] .send-button { height: 44px; min-height: 44px; }
+  .app-shell.touch-workspace[data-view="session"] .composer-attach-button { width: 44px; }
+  .app-shell.touch-workspace[data-view="session"] .send-button { min-width: 44px; padding-inline: 7px; }
   .app-shell.touch-workspace[data-view="session"] .chat-working-bar { min-height: 44px; gap: 6px; padding: 0 6px; margin: 0; }
   .app-shell.touch-workspace[data-view="session"] .chat-working-bar > strong { flex: 1; white-space: nowrap; }
   .app-shell.touch-workspace[data-view="session"] .chat-working-bar .small-button { min-height: 44px; padding: 4px 8px; font-size: 12px; }

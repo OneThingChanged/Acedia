@@ -34,7 +34,7 @@ function content(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   return isValidElement<Props>(node) ? Children.toArray(node.props.children).map(content).join('') : '';
 }
-function render(data: BoardSnapshot) { hooks.index = 0; hooks.refIndex = 0; hooks.effects = []; return ProjectBoardPage({ initialSnapshot: data }); }
+function render(data: BoardSnapshot, props?: Parameters<typeof ProjectBoardPage>[0]) { hooks.index = 0; hooks.refIndex = 0; hooks.effects = []; return ProjectBoardPage({ initialSnapshot: data, ...props }); }
 const resultId = 'a'.repeat(64), secondId = 'b'.repeat(64), questionId = 'c'.repeat(64);
 function fixture(): BoardSnapshot {
   return { revision: 'r', sampledAt: 5000, storageError: null, preferences: { viewMode: 'board' }, devices: [], references: [],
@@ -90,7 +90,41 @@ it('changes the connection style without changing project placement or leaving t
   select.props.onChange({ target: { value: 'curved' } });
   const curved = render(data);
   expect(path(curved)).not.toBe(path(initial));
+  expect(path(curved)).toContain(' C ');
   expect(project(curved, 'p2').props.style).toEqual(project(initial, 'p2').props.style);
+});
+
+it('edits the selected hierarchy in the work board and switches display modes without opening a new window', () => {
+  const data = fixture();
+  const renderHierarchy = vi.fn((_, close) => <button onClick={close}>닫기</button>);
+  const renderRelations = vi.fn(() => <div>관계 캔버스</div>);
+  const projectReferences = [{ from: 'p2', to: 'p' }];
+  const view = () => render(data, { renderHierarchy, renderRelations, projectReferences });
+  const click = (tree: ReactNode, label: string) => elements(tree).find(e => e.type === 'button' && content(e) === label)!.props.onClick();
+  const start = view();
+  expect(elements(start).find(e => e.props['aria-label'] === '연결선 모양')!.props.value).toBe('curved');
+  expect(elements(start).find(e => e.props['data-edge-kind'] === 'project-reference')?.props).toMatchObject({ 'data-from': 'p2', 'data-to': 'p' });
+  header(start, 'p2').props.onContextMenu(pointer(320, 200));
+  click(view(), '프로젝트 계층 편집');
+  let tree = view();
+  expect(renderHierarchy).toHaveBeenLastCalledWith({ projectId: 'p2' }, expect.any(Function));
+  expect(project(tree, 'p2').props.style).toEqual(project(start, 'p2').props.style);
+  click(tree, '닫기');
+  tree = view();
+  elements(tree).find(e => e.props['data-session-id'] === 'b')!.props.onContextMenu({ preventDefault: vi.fn(), clientX: 200, clientY: 250 });
+  click(view(), '세션 계층 편집');
+  tree = view();
+  expect(renderHierarchy).toHaveBeenLastCalledWith({ projectId: 'p', sessionId: 'b' }, expect.any(Function));
+  click(tree, '계층');
+  tree = view();
+  expect(renderRelations).toHaveBeenCalledOnce();
+  expect(elements(tree).find(e => e.props.className === 'wb-body')!.props.hidden).toBe(true);
+  click(tree, 'Pixel Office');
+  tree = view();
+  expect(elements(tree).some(e => e.type === PixelOffice)).toBe(true);
+  click(tree, '업무 보드');
+  expect(project(view(), 'p2').props.style).toEqual(project(start, 'p2').props.style);
+  expect(hooks.invoke).not.toHaveBeenCalled();
 });
 
 it('shows lifecycle actions only on context request and lights only actual outstanding assignment edges', () => {

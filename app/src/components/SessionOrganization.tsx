@@ -22,6 +22,8 @@ type Props = {
   onWorkBoard?: () => void;
   initialProjectId?: string;
   initialSessionId?: string;
+  inspectorOnly?: boolean;
+  onCloseInspector?: () => void;
   onOpenProperties: (id: string) => void;
   onCreateChild: (id: string) => void;
   onUpdateHierarchy: (id: string, hierarchy: SessionHierarchy) => void;
@@ -109,7 +111,7 @@ export function SessionOrganization(props: Props) {
   if (props.officeOpen ?? localOfficeOpen) return <PixelOffice agents={catalog} projects={props.projects} activeProjectId={props.activeProjectId} selectedId={props.selectedId} onSelect={props.onSelect} onOpenSession={props.onOpenSession} onOpenNote={props.onOpenNote} onBack={() => setOfficeOpen(false)} backLabel={text("계층 보드", "Hierarchy board")} onDock={props.onDockOffice}/>;
   if (taskView) return <section className="terminal-area task-flow-host"><button className="task-flow-return" onClick={() => setTaskView(false)}>← 세션 조직도</button><TaskFlow onOpenSession={props.onOpenSession}/></section>;
 
-  if (scope === "all") return <ProjectBoard initialProjectId={props.initialProjectId} initialSessionId={props.initialSessionId} onWorkBoard={props.onWorkBoard} onOffice={() => setOfficeOpen(true)} onTaskFlow={() => setTaskView(true)} projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
+  if (scope === "all" || props.inspectorOnly) return <ProjectBoard initialProjectId={props.initialProjectId} initialSessionId={props.initialSessionId} inspectorOnly={props.inspectorOnly} onCloseInspector={props.onCloseInspector} onWorkBoard={props.onWorkBoard} onOffice={() => setOfficeOpen(true)} onTaskFlow={() => setTaskView(true)} projects={props.projects} agents={catalog} activeAgents={organizationAgents(catalog, true)} renderSessionState={agent => <SessionState agent={agent}/>} onUpdate={props.onUpdateProjects} onScope={setScope} onSelectSession={props.onSelect} onOpenSession={props.onOpenSession} renderSessionInspector={(id, close) => {
     const agent = catalog.find(item => item.id === id);
     return agent ? <HierarchyInspector key={id} agent={agent} agents={catalog} projects={props.projects} onUpdate={props.onUpdateHierarchy} onCreate={props.onCreateChild} onOpen={props.onOpenSession} onProperties={props.onOpenProperties} onClose={close}/> : null;
   }}/>;

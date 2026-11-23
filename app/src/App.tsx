@@ -17,6 +17,7 @@ import { relocateSessionRegistry, type SessionMove } from './lib/sessionRelocati
 import { organizeSessionRegistry } from './lib/sessionOrganization';
 import { fileTreeSessionForTab } from './lib/fileTreeWorkspace';
 import { SessionOrganization } from "./components/SessionOrganization";
+import { ProjectBoardPage, type BoardHierarchyTarget } from "./components/ProjectBoardPage";
 import { boardViewedAgent, type BoardProjectManagement, type BoardSessionManagement } from './lib/workBoard';
 import { remoteAgentStatus, remoteAgentView } from './lib/remoteSessionProjection';
 import { PixelOffice, PixelOfficeIcon } from './components/PixelOffice';
@@ -607,6 +608,8 @@ function App() {
   }, []);
 
   const [projects, setProjects] = useState<Project[]>(boot.projects);
+  const boardProjectReferences = useMemo(() => projects.flatMap(project => (project.hierarchy?.references ?? [])
+    .map(reference => ({ from: project.id, to: reference.projectId }))), [projects]);
   const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>(
     boot.projectFolders
   );
@@ -3134,8 +3137,10 @@ function App() {
   );
 
   const openWorkBoard = useCallback(() => {
-    void invoke('open_project_board').catch(error => pushToast('', 'Project Board', String(error)));
-  }, [pushToast]);
+    setHierarchyTarget(null);
+    setOrganizationOffice(false);
+    setWorkspaceMode('organization');
+  }, []);
 
   useEffect(() => {
     let stopped = false;
@@ -4564,6 +4569,42 @@ function App() {
     };
   }, [projects, visibleTabContextMenu]);
 
+  const renderBoardOrganization = (target: BoardHierarchyTarget, inspectorOnly: boolean, close?: () => void) => (
+    <SessionOrganization
+      key={JSON.stringify([inspectorOnly, target.projectId, target.sessionId])}
+      agents={agents}
+      projects={projects}
+      activeProjectId={activeProjectId}
+      selectedId={organizationSelectedId}
+      initialProjectId={target.projectId}
+      initialSessionId={target.sessionId}
+      inspectorOnly={inspectorOnly}
+      onCloseInspector={close}
+      onOpenNote={setStandaloneNoteId}
+      onSelect={setOrganizationSelectedId}
+      onOpenSession={requestSelectAgent}
+      onOpenProperties={setPropertiesAgentId}
+      onUpdateHierarchy={updateSessionHierarchy}
+      onUpdateProjects={(changes) => {
+        let next = projectsRef.current;
+        for (const change of changes) {
+          if (!next.some(project => project.id === change.id)) continue;
+          if (change.hierarchy !== undefined) next = updateProjectHierarchy(next, change.id, change.hierarchy);
+          if (change.boardPosition) next = next.map(project => project.id === change.id ? { ...project, boardPosition: normalizeBoardPosition(change.boardPosition) } : project);
+        }
+        projectsRef.current = next;
+        setProjects(next);
+      }}
+      onCreateChild={(parentId) => {
+        const parent = agentsRef.current.find((agent) => agent.id === parentId);
+        if (!parent) return;
+        setActiveProjectId(parent.projectId);
+        setNewSessionParentId(parentId);
+        setShowModal(true);
+      }}
+    />
+  );
+
   // ---- Render
 
   return (
@@ -4651,40 +4692,14 @@ function App() {
           onCloseBrowser={closeBrowserFromHub}
         />
       ) : workspaceMode === "organization" ? (
-        <SessionOrganization
-          key={hierarchyTarget?.serial}
-          agents={agents}
-          projects={projects}
-          activeProjectId={activeProjectId}
-          selectedId={organizationSelectedId}
-          initialProjectId={hierarchyTarget?.projectId}
-          initialSessionId={hierarchyTarget?.sessionId}
-          officeOpen={organizationOffice}
-          onOfficeOpenChange={setOrganizationOffice}
+        <ProjectBoardPage
+          hierarchyTarget={hierarchyTarget}
+          startInOffice={organizationOffice}
+          projectReferences={boardProjectReferences}
+          renderHierarchy={(target, close) => renderBoardOrganization(target, true, close)}
+          renderRelations={() => renderBoardOrganization({}, false)}
           onDockOffice={() => { setRightPanelView('office'); setFilesOpen(true); setWorkspaceMode('sessions'); }}
           onOpenNote={setStandaloneNoteId}
-          onSelect={setOrganizationSelectedId}
-          onOpenSession={requestSelectAgent}
-          onWorkBoard={openWorkBoard}
-          onOpenProperties={setPropertiesAgentId}
-          onUpdateHierarchy={updateSessionHierarchy}
-          onUpdateProjects={(changes) => {
-            let next = projectsRef.current;
-            for (const change of changes) {
-              if (!next.some(project => project.id === change.id)) continue;
-              if (change.hierarchy !== undefined) next = updateProjectHierarchy(next, change.id, change.hierarchy);
-              if (change.boardPosition) next = next.map(project => project.id === change.id ? { ...project, boardPosition: normalizeBoardPosition(change.boardPosition) } : project);
-            }
-            projectsRef.current = next;
-            setProjects(next);
-          }}
-          onCreateChild={(parentId) => {
-            const parent = agentsRef.current.find((agent) => agent.id === parentId);
-            if (!parent) return;
-            setActiveProjectId(parent.projectId);
-            setNewSessionParentId(parentId);
-            setShowModal(true);
-          }}
         />
       ) : (
         <TerminalArea
@@ -4736,7 +4751,7 @@ function App() {
             </nav>
             <PixelOffice mode="sidebar" agents={agents} projects={projects} activeProjectId={activeProjectId} selectedId={organizationSelectedId}
               onSelect={setOrganizationSelectedId} onOpenSession={requestSelectAgent} onOpenNote={setStandaloneNoteId}
-              onClose={() => setFilesOpen(false)} onExpand={() => { setFilesOpen(false); setOrganizationOffice(true); setWorkspaceMode('organization'); }}/>
+              onClose={() => setFilesOpen(false)} onExpand={() => { setFilesOpen(false); setHierarchyTarget(null); setOrganizationOffice(true); setWorkspaceMode('organization'); }}/>
           </div> : <FileTreePanel
             projects={projects}
             activeProject={activeProject}

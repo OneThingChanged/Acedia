@@ -34,22 +34,17 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
 .view-head h2 { font-size: 20px; line-height: 1.45; letter-spacing: -.035em; }
 .view-head .eyebrow { color: var(--muted); font-weight: 400; font-size: 11px; letter-spacing: .04em; }
 .view-head p { font-size: 12px; margin-top: 5px; }
-.session-head { gap: 10px; align-items: flex-start; }
-.session-title { min-width: 0; }
-.session-title h2 { overflow-wrap: anywhere; }
-.session-title > .status-chip { float: none; font-size: 11px; padding: 2px 7px; border-radius: 5px; margin-bottom: 6px; font-weight: 500; }
-.session-head-actions { gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
-.workspace-quick-tools { display: flex; flex-wrap: wrap; gap: 5px; }
-.workspace-quick-tools button { font-size: 12px; }
-.session-tools > .workspace-quick-tools { display: flex; flex-direction: column; align-items: stretch; }
-.session-head-actions > .small-button { font-size: 12px; }
+.view-head.session-head { position: relative; align-items: center; flex-wrap: nowrap; gap: 8px; padding: 4px 12px; min-height: 49px; }
+.session-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.session-head .session-title h2 { display: block; min-width: 0; margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-title > .status-chip { flex: 0 0 auto; font-size: 11px; padding: 1px 6px; border-radius: 5px; font-weight: 500; white-space: nowrap; }
+.session-head-actions { flex: 0 0 auto; gap: 6px; }
 .session-mode { padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; }
-.session-mode button { padding: 6px 9px; border-radius: 5px; font-size: 12px; }
+.session-mode button { padding: 6px 9px; border-radius: 5px; font-size: 12px; white-space: nowrap; }
 .session-mode button.on { background: var(--panel-3); box-shadow: none; }
 .workspace-folder { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; max-width: 100%; }
 .session-note-workspace { padding: 0; overflow: hidden; position: relative; }
-.session-content { padding: 0 24px 15px; }
-.session-content > .context-panel { margin: 10px 0 0; max-height: 82px; overflow: auto; }
+.session-content { padding: 0 18px 8px; gap: 6px; }
 .chat-view { padding: 24px max(8px,calc((100% - 820px)/2)); gap: 24px; scroll-padding-bottom: 20px; }
 .chat-role { font-size: 12px; letter-spacing: 0; font-weight: 500; text-transform: none; }
 .chat-md { font-size: 14px; line-height: 1.85; }
@@ -79,14 +74,13 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
 .chat-related-files { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 .chat-related-files > :not(.chat-file-card) { grid-column: 1/-1; }
 .chat-work { background: var(--panel); border-radius: 8px; }
-.chat-working-bar { margin: 0 auto 8px; width: 100%; max-width: 840px; border: 0; padding: 7px 1px; color: var(--amber); background: transparent; font-size: 12px; }
+.chat-working-bar { margin: 0 auto; width: 100%; max-width: 840px; border: 0; padding: 2px 1px; color: var(--amber); background: transparent; font-size: 12px; }
 .chat-working-bar[data-work-state="background"] { color: var(--violet); }
 .composer { width: 100%; max-width: 840px; margin-inline: auto; border: 0; background: transparent; padding: 0; }
-.composer-main-row { align-items: flex-end; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px; gap: 8px; }
-.composer textarea { font-size: 14px; line-height: 1.7; background: transparent; min-height: 68px; border: 0; }
-.composer-settings { gap: 7px; flex-wrap: wrap; padding-top: 7px; }
+.composer-main-row { align-items: flex-end; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 6px; gap: 6px; }
+.composer textarea { font-size: 14px; line-height: 1.7; background: transparent; min-height: 42px; border: 0; }
+.composer-settings { gap: 6px; flex-wrap: wrap; padding: 0; }
 .composer-settings button { font-size: 11px; font-weight: 400; max-width: 100%; }
-.composer-hint { color: var(--muted); font-size: 11px; padding: 6px 1px 0; text-align: right; }
 .composer-queue { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin-bottom: 8px; }
 .composer-queue-head { font-size: 11px; font-weight: 500; }
 .composer-queue-item { background: transparent; border: 0; border-radius: 0; border-top: 1px solid var(--line); padding: 7px 0; }
@@ -130,15 +124,12 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
 .su-stats strong { font-size: 25px; }.su-stats article { min-height: 100px; }
 .usage-view .usage-section { padding-top: 16px; }
 @media(min-width:801px) {
-  .app-shell:not(.nav-collapsed) #sessionNavButton { display: none; }
+  .app-shell:not(.nav-collapsed):not(.touch-workspace) #sessionNavButton { display: none; }
   .navigation-pane { display: flex; flex-direction: column; }
   .navigation-pane > .nav-section:last-child { flex: 1; min-height: 100px; }
-  .session-head-actions > #sessionNoteButton { display: inline-flex; align-items: center; }
 }
 @media(max-width:1100px) and (min-width:801px) {
   .workspace { grid-template-columns: 224px minmax(0,1fr); }
-  .session-head { flex-wrap: wrap; }
-  .session-head-actions { justify-content: flex-start; width: 100%; }
   .workspace-review { position: absolute; inset: 0; width: 100%; z-index: 20; border-left: 0; }
   .session-content { padding-inline: 18px; }
 }
@@ -146,20 +137,14 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
   .workspace-brand { font-size: 20px; padding-bottom: 20px; }
   .workspace { display: block; margin: 0; border: 0; }
   .navigation-pane { width: min(360px,92vw); padding: 20px 16px; }
-  .session-head { padding: 12px 14px; gap: 7px; }
-  .session-head .session-title h2 { font-size: 17px; line-height: 1.5; }
-  .app-shell[data-view="session"] .session-title h2 { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-  .session-head-actions { gap: 5px; width: auto; }
-  .session-head-actions > .small-button { min-height: 36px; font-size: 11px; padding: 5px 8px; }
-  .workspace-folder { display: none; }
+  .app-shell[data-view="session"] .session-title h2 { white-space: nowrap; }
+  .topbar { min-height: 49px; padding-block: 4px; }
+  .topbar .brand span:last-child { display: none; }
   .session-content { padding: 0 12px 8px; }
   .chat-view { padding: 20px 4px; }
   .chat-md { font-size: 14px; }
   .chat-related-files { grid-template-columns: minmax(0,1fr); }
   .chat-user { font-size: 14px; max-width: 96%; padding: 10px 12px; }
-  .composer-main-row { padding: 8px; }
-  .composer textarea { font-size: 16px; min-height: 52px; }
-  .composer-hint { display: none; }
   .composer-settings { flex-wrap: wrap; gap: 4px; }
   .composer-queue { max-height: 130px; padding: 7px 9px; }
   .workspace-review { position: absolute; inset: 0; width: 100%; z-index: 20; border-left: 0; }
@@ -172,8 +157,6 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
   .pool-tabs button { min-height: 44px; }
 }
 @media(pointer:coarse) {
-  .app-shell.touch-workspace[data-view="session"] .workspace-folder { display: none; }
-  .app-shell.touch-workspace[data-view="session"] .session-title h2 { white-space: normal; overflow-wrap: anywhere; }
   .overview-button,.workspace-utilities summary,.workspace-review-item { min-height: 44px; }
   .document-preview-head button { min-height: 44px; }
 }

@@ -1038,17 +1038,15 @@ scroll handling. The Android client separately disables its built-in WebView
 zoom controls; the shared web change does not replace that native policy.
 [^remote-styles][^mobile-remote-screen]
 
-The 2026-10-23 development source, with web cache v103, uses a compact
-name/status header and removes the Chat/Terminal/Browser tabs on phones, touch
-tablets, unfolded phones and the native APK. **More**
-contains notifications, Rename, the personal note and task delegation; model
-selection remains beside the editor. The message input uses the full composer
-width, with attachment, model, delivery mode and Send on one toolbar below it.
-Mobile delivery labels omit desktop keyboard shortcuts. Primary touch controls
-remain at least 44px high and conversation/input text remains 16px. While the
-software keyboard is detected, bottom navigation yields space to the
-conversation and composer. These changes are shared by Remote, Dashboard
-and the APK's host-served WebView content; deployment requires updating the host.
+The session header keeps the name and status on one line. **More** contains
+session details, notifications, Rename, notes, and the last request captured
+by the session's hook. Retry status has its own label. Phones, touch tablets,
+unfolded phones and the native APK keep chat-only mode. The mobile composer
+places attachment, message input and Send on one row, with model, delivery
+mode and task delegation available in **More**. The input expands as text wraps.
+Primary touch controls remain at least 44px high. When the software keyboard
+appears, bottom navigation yields its space to the conversation and composer.
+These changes are shared by Remote, Dashboard and the APK's host-served WebView.
 
 Chat-only mode applies below 801 CSS pixels, when a coarse touch pointer is
 available, or when the native APK flag is present. It overrides stale terminal
@@ -1059,7 +1057,7 @@ narrower screens use the existing drawer. Conversation turns are limited to
 unfolding and rotation retain the selected session, draft and chat-only mode.
 
 The isolated workspace Electron fixture verifies 320/360/390/430px phone widths,
-full-width input, no horizontal page overflow, accessible More actions, Escape
+the single-row input, no horizontal page overflow, accessible More actions, Escape
 and outside dismissal, and a simulated Android visual viewport shrink/restore.
 Remote and Dashboard interaction checks preserve model/effort edits, attachments,
 image node retention, file previews, asynchronous questions and queued delivery.

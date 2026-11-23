@@ -93,11 +93,14 @@ void app.whenReady().then(async () => {
               const box=id=>document.querySelector(id).getBoundingClientRect();
               return {editor:box('#messageInput').width,composer:box('#composerForm').width,
                 height:box('#composerForm').height,header:box('.session-head').height,
+                attach:box('#attachmentButton').width,send:box('#sendButton').width,
+                sameRow:Math.abs(box('#messageInput').bottom-box('#sendButton').bottom)<2,
+                nav:box('.mobile-nav').height,
                 more:box('#sessionToolsToggle').width,mode:box('#sessionMode').width,
                 chat:box('#chatView').height,overflow:document.documentElement.scrollWidth>innerWidth+1,
                 actions:getComputedStyle(document.querySelector('#sessionTools')).display};
             })()`);
-            assert(!layout.overflow && layout.editor >= layout.composer - 22 && layout.height <= 120 && layout.header <= 120 && layout.chat >= 350 && layout.more >= 44 && layout.actions === 'none', `Phone layout ${phoneWidth}px: ${JSON.stringify(layout)}`);
+            assert(!layout.overflow && layout.sameRow && layout.editor + layout.attach + layout.send >= layout.composer - 18 && layout.height <= 60 && layout.header <= 54 && layout.nav <= 46 && layout.chat >= 350 && layout.more >= 44 && layout.actions === 'none', `Phone layout ${phoneWidth}px: ${JSON.stringify(layout)}`);
           }
           win.setContentSize(390, 820); await pause(250);
           await evaluate(win, "document.querySelector('#sessionToolsToggle').click()");
@@ -146,7 +149,7 @@ void app.whenReady().then(async () => {
         await evaluate(win, `Object.defineProperty(navigator,'clipboard',{value:{write:async items=>{window.copiedImage=await items[0].getType('image/png')}}});document.querySelector('#filePreviewCopy').click()`);
         await wait(win, "window.copiedImage?.type==='image/png' && window.copiedImage.size>0");
         await capture(win, `workspace-${kind}-${width}-image`);
-        await evaluate(win, "document.querySelector('#filePreviewClose').click();document.querySelector('#composerModelButton').click()");
+        await evaluate(win, "(() => {document.querySelector('#filePreviewClose').click();const model=document.querySelector('#composerModelButton');if(model.closest('#sessionTools')?.hidden)document.querySelector('#sessionToolsToggle').click();model.click()})()");
         await wait(win, "!document.querySelector('#sessionModelSave').disabled");
         assert(await evaluate(win, "document.querySelector('#sessionModelSelect').value==='gpt-6-astra' && document.querySelector('#sessionFastSelect').value==='fast' && !document.querySelector('#sessionModelRestart').disabled"), 'Current native model/Fast or authoritative readiness was replaced by saved settings');
         await evaluate(win, "document.querySelector('#sessionModelSelect').value='gpt-6.1-sol';document.querySelector('#sessionModelSelect').dispatchEvent(new Event('change'));document.querySelector('#sessionEffortSelect').value='xhigh';document.querySelector('#sessionFastSelect').value='default';document.querySelector('#sessionFastSelect').dispatchEvent(new Event('change'))");
@@ -158,7 +161,7 @@ void app.whenReady().then(async () => {
         await evaluate(win, "document.querySelector('#defaultModelsButton').click()"); await wait(win, "!document.querySelector('#sessionModelSave').disabled");
         await evaluate(win, "document.querySelector('#sessionFastSelect').value='fast';document.querySelector('#sessionModelForm').requestSubmit()"); await wait(win, "document.querySelector('#sessionModelOverlay').hidden");
         assert(defaults.get('codex').settings.serviceTier === 'fast', 'Default model editor did not persist on host');
-        await evaluate(win, "document.querySelector('.session-row[data-agent-id=claude] .session-select').click();document.querySelector('#composerModelButton').click()");
+        await evaluate(win, "(() => {document.querySelector('.session-row[data-agent-id=claude] .session-select').click();const model=document.querySelector('#composerModelButton');if(model.closest('#sessionTools')?.hidden)document.querySelector('#sessionToolsToggle').click();model.click()})()");
         await wait(win, "!document.querySelector('#sessionModelSave').disabled");
         assert(await evaluate(win, "document.querySelector('#sessionFastField').hidden"), 'Claude displayed unsupported Fast option');
         await evaluate(win, "document.querySelector('#sessionModelCancel').click();document.querySelector('.session-row[data-agent-id=codex] .session-select').click()");

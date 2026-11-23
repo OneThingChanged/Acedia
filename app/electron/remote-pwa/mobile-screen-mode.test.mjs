@@ -14,14 +14,14 @@ const implementation = name => {
   return source;
 };
 function fixture({ mobile = false, touch = false, native = false } = {}) {
-  const listeners = new Map(), button = {};
+  const listeners = new Map(), settings = {};
   // Real functions run against bounded DOM/API doubles; no application UI runs.
   const tools = { append: vi.fn(value => { value.parentElement = tools; }) };
   const desktop = { append: vi.fn(value => { value.parentElement = desktop; }) };
   const context = vm.createContext({ mobileMedia: { matches: mobile, addEventListener: (event, fn) => listeners.set('mobile:' + event, fn) },
     touchMedia: { matches: touch, addEventListener: (event, fn) => listeners.set('touch:' + event, fn) }, window: { __MULTIAGENT_NATIVE_APP__: native },
-    ui: { appShell: { classList: { toggle: vi.fn() } }, sessionMode: {}, screensSection: {}, searchInput: {}, sessionTools: tools },
-    document: { querySelector: () => desktop }, taskModeButton: button,
+    ui: { appShell: { classList: { toggle: vi.fn() } }, sessionMode: {}, screensSection: {}, searchInput: {}, sessionTools: tools,
+      composerSettings: settings, messageInput: { parentElement: desktop } },
     preferredSessionViewMode: 'term', sessionViewMode: 'term', selection: { type: 'screen', id: 'screen' }, returnScreenId: 'screen', mobilePaneId: 'pane', screenRenderKey: 'old',
     screenGroups: () => [{ id: 'screen', panes: ['active'] }], allAgents: () => [{ id: 'offline', status: 'offline' }, { id: 'active', status: 'working' }],
     statusOf: agent => agent.status, localDocumentProjects: () => [], agentMap: () => new Map([['active', {}]]), preferredSessionId: () => 'active',
@@ -33,7 +33,7 @@ function fixture({ mobile = false, touch = false, native = false } = {}) {
   vm.runInContext(`const isMobile = () => mobileMedia.matches;\n${mode}\n${['applyScreenAvailability','defaultWorkspaceSelection','validateSelection','syncResponsiveWorkspace'].map(implementation).join('\n')}
     ${script.match(/^mobileMedia\.addEventListener\("change", syncResponsiveWorkspace\);$/m)?.[0] || 'throw Error("Missing mobile listener")'}
     ${script.match(/^touchMedia\.addEventListener\("change", syncResponsiveWorkspace\);$/m)?.[0] || 'throw Error("Missing touch listener")'}`, context);
-  return { context, listeners, tools, desktop, button };
+  return { context, listeners, tools, desktop, settings };
 }
 
 describe("Remote mobile Screen routing", () => {
@@ -45,7 +45,7 @@ describe("Remote mobile Screen routing", () => {
       expect(f.context.ui.sessionMode.hidden).toBe(chatOnly);
       expect(f.context.sessionViewMode).toBe(chatOnly ? 'chat' : 'term');
       expect(f.context.ui.searchInput.placeholder).toBe(chatOnly ? '프로젝트 · 세션 검색' : 'Screen · 프로젝트 · 세션 검색');
-      expect(f.button.parentElement).toBe(chatOnly ? f.tools : f.desktop);
+      expect(f.settings.parentElement).toBe(chatOnly ? f.tools : f.desktop);
     }
   });
 
@@ -70,4 +70,21 @@ describe("Remote mobile Screen routing", () => {
       expect(f.context.updateUrl).toHaveBeenCalledOnce(); expect(f.context.refitAllTerminals).toHaveBeenCalledOnce();
     }
   });
+});
+
+it('keeps the recent request and retry status independent and resets the expanded request when switching sessions', () => {
+  const ui = { promptPanel: { dataset: {} }, promptText: {}, sessionRetryNote: {} };
+  const context = vm.createContext({ ui, text: value => value ?? '', capacityRetryLabel: retry => `Retry: ${retry.status}` });
+  vm.runInContext(implementation('renderSessionRequest'), context);
+  const first = { id: 'a', hook: { prompt: '  Test the mobile layout\nwith the keyboard open  ' }, capacityRetry: { status: 'scheduled' } };
+  context.renderSessionRequest(first);
+  expect(ui.promptPanel).toMatchObject({ hidden: false, open: false });
+  expect(ui.promptText.textContent).toBe('Test the mobile layout\nwith the keyboard open');
+  expect(ui.sessionRetryNote).toMatchObject({ hidden: false, textContent: 'Retry: scheduled' });
+  ui.promptPanel.open = true;
+  context.renderSessionRequest(first);
+  expect(ui.promptPanel.open).toBe(true);
+  context.renderSessionRequest({ id: 'b', hook: { prompt: '   ' } });
+  expect(ui.promptPanel).toMatchObject({ hidden: true, open: false });
+  expect(ui.sessionRetryNote).toMatchObject({ hidden: true, textContent: '' });
 });

@@ -1,7 +1,8 @@
 import { BOARD_CARD, type boardLayout, type BoardEdgeStyle, type BoardReference, type BoardSession } from './workBoard';
-import { boardEdgePath, routeBoardEdges, type BoardEdgePorts, type BoardEdgeRequest, type BoardPort, type BoardRect } from './boardEdgeRouting';
+import { boardEdgePath, routeBoardEdges, type BoardEdgePath, type BoardEdgePorts, type BoardEdgeRequest, type BoardPort, type BoardRect } from './boardEdgeRouting';
 
 const key = (from: string, to: string) => `${from}:${to}`;
+export type BoardProjectReference = { from: string; to: string };
 
 /** Facing sides follow geometry, not the logical parent/child direction. */
 function projectPorts(a: BoardRect, b: BoardRect, clearance = 12): BoardEdgePorts[] {
@@ -22,9 +23,23 @@ function projectPorts(a: BoardRect, b: BoardRect, clearance = 12): BoardEdgePort
     .map(([from, to]) => ({ from: port(a, from), to: port(b, to) }));
 }
 
+function projectCurve(parent: BoardRect, child: BoardRect, cards: Iterable<BoardRect>): BoardEdgePath | null {
+  const from = { x: parent.x + parent.width / 2, y: parent.y + parent.height };
+  const to = { x: child.x + child.width / 2, y: child.y };
+  if (to.y - from.y < 24) return null;
+  const left = Math.min(from.x, to.x) - 8, right = Math.max(from.x, to.x) + 8;
+  for (const card of cards) {
+    if (card !== parent && card !== child && card.x < right && card.x + card.width > left
+      && card.y < to.y && card.y + card.height > from.y) return null;
+  }
+  const mid = (from.y + to.y) / 2;
+  return { points: [from, to], path: `M ${from.x} ${from.y} C ${from.x} ${mid}, ${to.x} ${mid}, ${to.x} ${to.y}` };
+}
+
 export function workBoardConnections(layout: ReturnType<typeof boardLayout> | null, sessions: BoardSession[], references: BoardReference[],
-  collapsed: Set<string>, scroll: Record<string, number>, overview: boolean, edgeStyle: BoardEdgeStyle = 'orthogonal') {
+  collapsed: Set<string>, scroll: Record<string, number>, overview: boolean, edgeStyle: BoardEdgeStyle = 'orthogonal', projectReferences?: BoardProjectReference[]) {
   const projects: BoardEdgeRequest[] = [], external: BoardEdgeRequest[] = [], reads: BoardEdgeRequest[] = [];
+  const curves = new Map<string, BoardEdgePath>();
   const groups = new Map(layout?.groups.map(g => [g.id, { ...g, height: overview || collapsed.has(g.id) ? BOARD_CARD.header : g.height }]));
   const nodes = new Map(layout?.nodes.map(n => [n.session.id, n]));
   const byId = new Map(sessions.map(s => [s.id, s]));
@@ -58,8 +73,17 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
   };
   for (const edge of layout?.projectEdges || []) {
     const a = groups.get(edge.from), b = groups.get(edge.to); if (!a || !b) continue;
+    const id = `project:${key(edge.from, edge.to)}`;
+    const curve = edgeStyle === 'curved' ? projectCurve(a, b, groups.values()) : null;
+    if (curve) { curves.set(id, curve); continue; }
     const [preferred, ...alternatives] = projectPorts(a, b);
-    projects.push({ id: `project:${key(edge.from, edge.to)}`, ...preferred, alternatives, separate: edge.kind === 'parent' });
+    projects.push({ id, ...preferred, alternatives, separate: edge.kind === 'parent' });
+  }
+  for (const edge of projectReferences || []) {
+    const a = groups.get(edge.from), b = groups.get(edge.to);
+    if (!a || !b || a === b) continue;
+    const [preferred, ...alternatives] = projectPorts(a, b);
+    projects.push({ id: `project-reference:${key(edge.from, edge.to)}`, ...preferred, alternatives, separate: true });
   }
   for (const edge of layout?.edges || []) {
     if (byId.get(edge.from)?.projectId === byId.get(edge.to)?.projectId) continue;
@@ -76,6 +100,7 @@ export function workBoardConnections(layout: ReturnType<typeof boardLayout> | nu
     }
   }
   const routes = routeBoardEdges([...projects, ...external, ...reads], [...groups.values()]);
+  for (const [id, curve] of curves) routes.set(id, curve);
   if (edgeStyle === 'curved') {
     for (const { id } of [...projects, ...external]) {
       const route = routes.get(id);

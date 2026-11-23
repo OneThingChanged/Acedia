@@ -55,6 +55,7 @@ export const messages = [
   ['세션 도구', 'Session tools'],
   ['작업 중 추가', 'Steer'],
   ['완료 후 예약', 'Queue'],
+  ['최근 작업 요청', 'Last task request', '最近任务请求', '最近的工作請求', '最新の作業依頼', 'Última solicitud de trabajo'],
   ['세션 메모', 'Session note'],
   ['✎ 메모', '✎ Note'],
   ['개인 메모', 'Personal note'],

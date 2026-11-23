@@ -45,6 +45,7 @@ window.multiAgentElectron = {
   invoke: async (command, args) => {
     window.organizationCalls.push({ command, args });
     if (command === "runtime_flags") return { build_variant: "standard", update_provider: "github", advanced_launch_options: true, coordinator: true, live_agent_ids: [] };
+    if (command === "project_board_snapshot") return { revision: "fixture", sessions: [], projects: [], devices: [], preferences: {}, storageError: null };
     if (command === "get_agent_window_usage") return { in_use_agent_ids: [], owned_agent_ids: [] };
     if (command === "get_detached_agents") return {};
     if (command === "claim_agent_for_window") return { claimed: true };

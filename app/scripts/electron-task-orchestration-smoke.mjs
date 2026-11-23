@@ -135,6 +135,8 @@ if (!process.versions.electron) {
     await clickSidebar('.sidebar-recents', 'root');
     // Shipped desktop organization embeds the same view as Remote.
     await runJS('document.querySelector(".organization-sidebar-slot button").click()');
+    await until(() => runJS('[...document.querySelectorAll(".wb-view-tabs button")].some(b=>b.textContent==="계층")'), 'project board tabs');
+    await runJS('[...document.querySelectorAll(".wb-view-tabs button")].find(b=>b.textContent==="계층").click()');
     await until(() => runJS('[...document.querySelectorAll("button")].some(b=>b.textContent==="작업 흐름")'), 'organization task entry');
     await runJS('[...document.querySelectorAll("button")].find(b=>b.textContent==="작업 흐름").click()');
     await until(() => runJS('document.querySelectorAll(".task-card").length===3'), 'task board');

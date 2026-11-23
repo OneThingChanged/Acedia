@@ -21,6 +21,8 @@ async function exercise() {
   check(find('.browser-hub-sidebar-slot').nextElementSibling.classList.contains('organization-sidebar-slot'), 'Organization follows Browser hub');
   const before = launches().length;
   await click('.organization-sidebar-slot button');
+  check(find('.wb-view-tabs').textContent.includes('Work board'), 'Project board is the shared entry point');
+  button('Hierarchy').click(); await wait();
   check(!document.querySelector('.files-shell'), 'Inspector replaces files in organization view');
   const initialScope=find('[aria-label="Organization project"]');initialScope.value='project';initialScope.dispatchEvent(new Event('change',{bubbles:true}));await wait();
   button('All sessions 4').click(); await wait();
@@ -96,6 +98,7 @@ async function exercise() {
   await click('.browser-hub-sidebar-slot button');
   check(!document.querySelector('.session-organization'), 'Browser navigation still works');
   await click('.organization-sidebar-slot button');
+  button('Hierarchy').click(); await wait();
   check(!window.organizationCalls.some(call => call.command === 'kill_pty' || call.command === 'terminal_session_action'), 'Navigation and movement did not stop sessions');
   window.organizationEvent('remote:restart-session', { requestId: 'resume-fixture', id: 'ui' }); await wait();
   const resumed = stored().find(agent => agent.id === 'ui');
@@ -259,6 +262,7 @@ if (process.versions.electron) {
         const wait=()=>new Promise(resolve=>setTimeout(resolve,200));
         for(let i=0;i<40&&!document.querySelector('.organization-sidebar-slot');i++)await wait();
         document.querySelector('.organization-sidebar-slot button').click();await wait();
+        [...document.querySelectorAll('.wb-view-tabs button')].find(b=>b.textContent==='Hierarchy').click();await wait();
         const scope=document.querySelector('[aria-label="Organization project"]');scope.value='project';scope.dispatchEvent(new Event('change',{bubbles:true}));await wait();
         [...document.querySelectorAll('.org-view-switch button')].find(b=>b.textContent.includes('All sessions')).click();await wait();
         const child=[...document.querySelectorAll('.org-node')].find(node=>node.querySelector('strong')?.textContent==='New child');
@@ -276,9 +280,9 @@ if (process.versions.electron) {
         win.setContentSize(width, height);
         await new Promise(resolve => setTimeout(resolve, 200));
         console.log(await win.webContents.executeJavaScript(`(() => {
-          const org=document.querySelector('.session-organization'),top=document.querySelector('.app-topbar').getBoundingClientRect();
+          const board=document.querySelector('.wb-embedded'),relations=document.querySelector('.wb-relations'),org=document.querySelector('.session-organization'),top=document.querySelector('.app-topbar').getBoundingClientRect();
           if(document.documentElement.scrollWidth>innerWidth)throw Error('Page overflow '+innerWidth);
-          if(Math.abs(org.getBoundingClientRect().top-top.bottom)>1)throw Error('Organization left workspace row');
+          if(Math.abs(board.getBoundingClientRect().top-top.bottom)>1||Math.abs(org.getBoundingClientRect().top-relations.getBoundingClientRect().top)>1)throw Error('Organization left board workspace');
           const head=document.querySelector('.org-header');if(head.scrollWidth>head.clientWidth+1)throw Error('Header overflow '+innerWidth);
           return 'ORGANIZATION_LAYOUT_OK '+innerWidth+'x'+innerHeight;
         })()`));

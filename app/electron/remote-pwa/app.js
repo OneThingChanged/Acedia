@@ -35,7 +35,6 @@ const ui = {
   chatButton: $("#chatButton"),
   sessionDocumentsButton: $("#sessionDocumentsButton"),
   workspaceFolder: $("#workspaceFolder"),
-  workspaceQuickTools: $("#workspaceQuickTools"),
   documentRawButton: $("#documentRawButton"),
   documentSource: $("#documentSource"),
   documentScope: $("#documentScope"),
@@ -197,6 +196,7 @@ const ui = {
   focusAnswerButton: $("#focusAnswerButton"),
   promptPanel: $("#promptPanel"),
   promptText: $("#promptText"),
+  sessionRetryNote: $("#sessionRetryNote"),
   outputText: $("#outputText"),
   sessionOffline: $("#sessionOffline"),
   restartSessionButton: $("#restartSessionButton"),
@@ -227,6 +227,7 @@ const ui = {
   attachmentButton: $("#attachmentButton"),
   attachmentInput: $("#attachmentInput"),
   messageInput: $("#messageInput"),
+  composerSettings: $("#composerSettings"),
   sendButton: $("#sendButton"),
   refreshButton: $("#refreshButton"),
   installButton: $("#installButton"),
@@ -893,7 +894,7 @@ const workspaceReview = createWorkspaceReview({
   getEntries: () => reviewEntries(navigationAgents(), completedUnread, displayStatusOf),
   projectName: id => (remoteState.view?.projects || []).find(p => p.id === id)?.name || '',
   openSession: id => selectSession(id), beforeOpen: () => { sessionNotesView.close(); setSessionToolsOpen(false); },
-  returnFocus: () => isChatOnly() ? ui.sessionToolsToggle : document.getElementById('workspaceReviewButton'),
+  returnFocus: () => ui.sessionToolsToggle,
 });
 document.getElementById('sessionNoteButton').addEventListener('click', () => workspaceReview.close());
 const sessionModelEditor = createSessionModelEditor({
@@ -1574,6 +1575,18 @@ ui.sessionNotifications?.addEventListener('click', async () => {
   finally { savingNotifications = false; if (selectedAgent()) renderSessionNotifications(selectedAgent()); }
 });
 
+function renderSessionRequest(agent) {
+  const prompt = text(agent.hook?.prompt).trim();
+  if (ui.promptPanel.dataset.sessionId !== agent.id || !prompt) ui.promptPanel.open = false;
+  ui.promptPanel.dataset.sessionId = agent.id;
+  ui.promptPanel.hidden = !prompt;
+  ui.promptText.textContent = prompt;
+  const retry = agent.capacityRetry;
+  const showRetry = !!retry && ['scheduled', 'retrying', 'working', 'failed'].includes(retry.status);
+  ui.sessionRetryNote.hidden = !showRetry;
+  ui.sessionRetryNote.textContent = showRetry ? capacityRetryLabel(retry) : '';
+}
+
 function renderSession() {
   const agent = selectedAgent();
   if (!agent) {
@@ -1585,12 +1598,10 @@ function renderSession() {
   const displayStatus = displayStatusOf(agent);
   if (openLinkedQuestionInChat) { openLinkedQuestionInChat = false; if (status === 'question') setSessionViewMode('chat'); }
   const question = questionDetails(agent);
-  const retry = agent.capacityRetry;
-  const retryVisible = retry && ['scheduled', 'retrying', 'working', 'failed'].includes(retry.status);
-  const prompt = retryVisible ? capacityRetryLabel(retry) : text(agent.hook?.prompt);
   ui.detailStatus.className = `status-chip ${displayStatus}`;
   ui.detailStatus.textContent = STATUS[displayStatus].label;
   ui.detailName.textContent = text(agent.name || agent.id);
+  ui.detailName.title = ui.detailName.textContent;
   ui.detailMeta.textContent = `${projectName(agent)} · ${toolName(agent)}`;
   ui.workspaceFolder.textContent = text(agent.folder || projectMap().get(agent.projectId)?.folder);
   ui.workspaceFolder.title = ui.workspaceFolder.textContent;
@@ -1615,8 +1626,7 @@ function renderSession() {
     optionFragment.appendChild(button);
   }
   ui.questionOptions.replaceChildren(optionFragment);
-  ui.promptPanel.hidden = !prompt;
-  ui.promptText.textContent = prompt;
+  renderSessionRequest(agent);
   updateCapacityRetryCard(ui.chatView, agent);
   // The live xterm owns the terminal area; only feed the fallback <pre> when
   // xterm is unavailable (very old browser).
@@ -5458,16 +5468,8 @@ function applyScreenAvailability() {
   ui.appShell.classList.toggle('touch-workspace', mobile);
   ui.sessionMode.hidden = mobile;
   sessionViewMode = mobile ? 'chat' : preferredSessionViewMode;
-  const taskModeHost = mobile ? ui.sessionTools : document.querySelector('.composer-settings');
-  if (taskModeButton.parentElement !== taskModeHost) taskModeHost.append(taskModeButton);
-  if (ui.workspaceQuickTools) {
-    const quick = ui.workspaceQuickTools;
-    const host = mobile ? ui.sessionTools : ui.sessionToolsToggle.parentElement;
-    if (quick.parentElement !== host) {
-      if (mobile) host.prepend(quick); else host.insertBefore(quick, ui.sessionToolsToggle);
-    }
-  }
-  if (!mobile) setSessionToolsOpen(false);
+  const settingsHost = mobile ? ui.sessionTools : ui.messageInput.parentElement;
+  if (ui.composerSettings.parentElement !== settingsHost) settingsHost.append(ui.composerSettings);
   if (ui.screensSection) ui.screensSection.hidden = mobile;
   ui.searchInput.placeholder = mobile
     ? t("프로젝트 · 세션 검색")
@@ -6182,15 +6184,15 @@ ui.sessionNavButton.addEventListener("click", () => {
   }
 });
 function setSessionToolsOpen(open) {
-  const expanded = Boolean(open && isChatOnly());
-  ui.sessionTools.classList.toggle('open', expanded);
-  ui.sessionToolsToggle.setAttribute('aria-expanded', String(expanded));
+  ui.sessionTools.hidden = !open;
+  ui.sessionToolsToggle.setAttribute('aria-expanded', String(open));
 }
 ui.sessionToolsToggle.addEventListener('click', () => {
   setSessionToolsOpen(ui.sessionToolsToggle.getAttribute('aria-expanded') !== 'true');
 });
 ui.sessionTools.addEventListener('click', event => {
-  if (event.target.closest('button')) setSessionToolsOpen(false);
+  const button = event.target.closest('button');
+  if (button && !button.hasAttribute('aria-pressed')) setSessionToolsOpen(false);
 });
 document.addEventListener('click', event => {
   if (!ui.sessionTools.contains(event.target) && !ui.sessionToolsToggle.contains(event.target)) setSessionToolsOpen(false);

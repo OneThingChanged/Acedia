@@ -85,6 +85,8 @@ try {
         native:window.__MULTIAGENT_NATIVE_APP__===true, mode:document.querySelector('.app-shell').dataset.sessionMode,
         tabs:getComputedStyle(document.querySelector('#sessionMode')).display, header:box('.session-head').height,
         chat:box('#chatView').height, editor:box('#messageInput').width, composer:box('#composerForm').width,
+        attach:box('#attachmentButton').width, send:box('#sendButton').width,
+        sameRow:Math.abs(box('#messageInput').bottom-box('#sendButton').bottom)<2,
         bottom:box('#composerForm').bottom, overflow:document.documentElement.scrollWidth>innerWidth+1,
         sidebar:box('#navigationPane').right>0, terminal:!!document.querySelector('.xterm'),
         stored:localStorage.getItem('multiagent.remote.sessionMode') };
@@ -92,7 +94,7 @@ try {
     assert(layout.coarse || layout.native, 'Fixture did not emulate a touch/native device');
     assert.equal(layout.mode, 'chat'); assert.equal(layout.tabs, 'none'); assert.equal(layout.stored, 'term');
     assert.equal(layout.terminal, false); assert.equal(layout.overflow, false);
-    assert(layout.header <= 70 && layout.chat >= 350 && layout.editor >= layout.composer - 22 && layout.bottom <= device.height + 1,
+    assert(layout.header <= 54 && layout.chat >= 350 && layout.sameRow && layout.editor + layout.attach + layout.send >= layout.composer - 18 && layout.bottom <= device.height + 1,
       device.id + ': clipped chat/editor ' + JSON.stringify(layout));
     assert.equal(layout.sidebar, device.width > 800, device.id + ': incorrect drawer/sidebar layout');
     await evaluate(win, "document.querySelector('#sessionMode [data-mode=browser]').click()");

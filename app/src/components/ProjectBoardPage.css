@@ -4,6 +4,8 @@
   --wb-line: #29374b; --wb-muted: #9aaabd; --wb-blue: #6ac3ff; --wb-purple: #bea4ff;
 }
 .work-board-page * { box-sizing: border-box; }
+.work-board-page.wb-embedded { flex: 1; min-width: 0; min-height: 0; height: 100%; }
+.app-desktop > .wb-embedded { grid-column: 2; grid-row: 2; }
 .work-board-page button, .work-board-page select, .work-board-page input { font: inherit; color: inherit; border: 1px solid var(--wb-line); border-radius: 8px; background: #17202d; padding: 7px 11px; }
 .work-board-page button { cursor: pointer; transition: background .15s, border-color .15s; touch-action: manipulation; }
 .work-board-page button:hover { border-color: #4d607a; background: #202c3c; }
@@ -38,12 +40,16 @@
 .wb-visibility[hidden], .wb-body[hidden], .wb-footer[hidden] { display: none; }
 .wb-office { flex: 1; min-height: 0; min-width: 0; margin: 0 26px 16px; border: 1px solid var(--wb-line); border-radius: 15px; overflow: hidden; position: relative; }
 .wb-office > .pixel-office { height: 100%; }
+.wb-relations { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.wb-relations > .terminal-area { min-width: 0; }
+.wb-relations .org-office-button { display: none; }
 @media (max-width: 760px) { .wb-office { margin: 0 8px 8px; } }
 .wb-canvas-wrap { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
-.wb-legend { position: absolute; z-index: 5; left: 19px; right: 19px; top: 17px; display: flex; gap: 17px; align-items: center; pointer-events: none; color: #93a4b9; font-size: 10px; }
+.wb-legend { position: absolute; z-index: 5; left: 19px; right: 19px; top: 17px; display: flex; flex-wrap: wrap; gap: 4px 17px; align-items: center; pointer-events: none; color: #93a4b9; font-size: 10px; }
 .wb-legend > span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .wb-legend > span::before { content: ''; width: 24px; border-top: 2px solid #7598c0; }
 .wb-legend > .inheritance::before { border-color: #41c7a3; }
+.wb-legend > .project-reference::before { border-top-style: dashed; border-color: #e5b67d; }
 .wb-legend > .reference::before { border-top-style: dashed; border-color: var(--wb-purple); }
 .wb-legend small { margin-left: auto; font-size: 10px; }
 .wb-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; isolation: isolate; touch-action: none; cursor: grab; background: #0d1420 radial-gradient(#324358 1px, transparent 1px) 0 0 / 20px 20px; }
@@ -127,8 +133,10 @@
 .wb-edges { position: absolute; z-index: 0; inset: 0; pointer-events: none; overflow: visible; }
 .wb-edges path { fill: none; stroke: #7192b8; stroke-width: 2; opacity: .72; }
 .wb-project-edges path[data-relation=parent] { stroke: #41c7a3; }
+.wb-project-edges path[data-edge-kind=project-reference] { stroke: #e5b67d; stroke-dasharray: 6 6; }
 .wb-project-edges .wb-project-arrow path { fill: #7192b8; stroke: none; }
 .wb-project-edges .wb-project-arrow[data-relation=parent] path { fill: #41c7a3; }
+.wb-project-edges .wb-project-arrow[data-relation=project-reference] path { fill: #e5b67d; }
 .wb-line-style { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
 .work-board-page .wb-line-style select { padding: 3px 6px; }
 .wb-edges path[data-delegated=true] { stroke: #c4a5ff; stroke-width: 2.8; opacity: 1; animation: wb-delegation 2.2s ease-in-out infinite; }
@@ -159,6 +167,9 @@
 .wb-device-strip > span { color: #c2d0e3; }
 .wb-device-strip button { padding: 2px 7px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .wb-inspector { width: 354px; flex-shrink: 0; border-left: 1px solid var(--wb-line); background: linear-gradient(180deg,#141d2a,#111925); padding: 20px 19px 12px; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #45556d transparent; }
+.wb-body > .wb-hierarchy-inspector { display: flex; padding: 0; overflow: hidden; scrollbar-gutter: auto; }
+.wb-hierarchy-inspector .pb-inline-editor { min-width: 0; height: 100%; }
+.wb-hierarchy-inspector .org-inspector { position: static; width: 100%; min-width: 0; border: 0; box-shadow: none; }
 .wb-inbox-heading { display: flex; align-items: center; gap: 10px; }
 .wb-inbox-heading > .wb-icon { color: var(--wb-purple); width: 22px; height: 22px; }
 .wb-inbox-heading h2 { font-size: 18px; letter-spacing: -.5px; margin: 0; }
