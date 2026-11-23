@@ -404,8 +404,10 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "monitor_lan_set":
       if (args.allowedNetworks !== undefined) {
-        if (args.enabled !== undefined || !Array.isArray(args.allowedNetworks) || args.allowedNetworks.length > 32 ||
+        if (args.enabled !== undefined || args.directAccess !== undefined || !Array.isArray(args.allowedNetworks) || args.allowedNetworks.length > 32 ||
             args.allowedNetworks.some(value => typeof value !== "string" || value.length > 64)) throw new TypeError("Invalid LAN allowed networks");
+      } else if (args.directAccess !== undefined) {
+        if (args.enabled !== undefined || typeof args.directAccess !== "boolean") throw new TypeError("Invalid LAN direct access state");
       } else if (typeof args.enabled !== "boolean") throw new TypeError("Invalid LAN access state");
       break;
     case "session_notes_save":

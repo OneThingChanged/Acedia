@@ -6695,6 +6695,7 @@ async function invokeCommand(event, command, rawArgs) {
       return monitorService.status();
     case "monitor_lan_set":
       if (args.allowedNetworks !== undefined) return monitorService.setLanNetworks(args.allowedNetworks);
+      if (args.directAccess !== undefined) return monitorService.setLanDirectAccess(args.directAccess);
       return monitorService.setLanEnabled(args.enabled === true);
     case "monitor_lan_reset_link":
       return monitorService.resetLanLink();

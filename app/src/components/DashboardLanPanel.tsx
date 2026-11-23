@@ -12,6 +12,7 @@ export type DashboardStatus = {
     available: boolean;
     enabled: boolean;
     running: boolean;
+    directAccess?: boolean;
     addresses: { name: string; url: string; accessUrl: string }[];
     allowedNetworks?: string[];
     clients?: { ip: string; connectedAt: number; lastSeenAt: number; active: boolean }[];
@@ -48,8 +49,15 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
     } finally { setBusy(false); }
   };
   const copy = async (entry: { url: string; accessUrl: string }) => {
-    try { await writeClipboardText(entry.accessUrl); setCopied(entry.url); }
+    try { await writeClipboardText(lan?.directAccess ? entry.url : entry.accessUrl); setCopied(entry.url); }
     catch { setError(text("복사하지 못했습니다.", "Could not copy.")); }
+  };
+
+  const setDirectAccess = async (directAccess: boolean) => {
+    setBusy(true); setError(""); setCopied("");
+    try { onChange(await invoke<DashboardStatus>("monitor_lan_set", { directAccess })); }
+    catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); }
+    finally { setBusy(false); }
   };
 
   const saveNetworks = async () => {
@@ -72,7 +80,14 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           disabled={busy || !lan?.available} onChange={() => { void change(); }} />
         <span>{text("LAN 접속 허용", "Allow LAN access")}</span>
       </label>
-      <p className="app-update-message">{text("같은 서브넷이나 아래에 추가한 네트워크의 기기에서 복사한 접속 링크를 여세요.", "Open the copied access link on a device on the same subnet or an added network.")}</p>
+      <label className="app-checkbox-row">
+        <input type="checkbox" checked={lan?.directAccess ?? false} disabled={busy || !lan?.available || !lan.enabled}
+          onChange={event => { void setDirectAccess(event.target.checked); }} />
+        <span>{text("주소만으로 접속 허용", "Allow access by address")}</span>
+      </label>
+      <p className="app-update-message">{lan?.directAccess
+        ? text("같은 서브넷과 추가 허용 네트워크의 기기가 아래 주소로 대시보드에 접속할 수 있습니다.", "Devices on the same subnet or an added network can open the dashboard at the address below.")
+        : text("같은 서브넷이나 아래에 추가한 네트워크의 기기에서 복사한 접속 링크를 여세요.", "Open the copied access link on a device on the same subnet or an added network.")}</p>
       <label className="field">
         <span className="field-label">{text("추가 허용 네트워크 (IPv4 CIDR)", "Additional allowed networks (IPv4 CIDR)")}</span>
         <textarea aria-label={text("추가 허용 네트워크", "Additional allowed networks")} rows={3}
@@ -90,16 +105,16 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
           <div className="app-remote-url-row">
             <code className="app-remote-url">{entry.url}</code>
             <button type="button" className="btn-secondary app-update-btn" disabled={busy} onClick={() => { void copy(entry); }}>
-              {copied === entry.url ? text("복사됨", "Copied") : text("접속 링크 복사", "Copy access link")}
+              {copied === entry.url ? text("복사됨", "Copied") : lan.directAccess ? text("주소 복사", "Copy address") : text("접속 링크 복사", "Copy access link")}
             </button>
           </div>
         </div>)}
         {!lan.addresses.length && <p className="app-update-message" role="status">{text("연결된 로컬 네트워크를 찾지 못했습니다. Wi-Fi 또는 유선 연결을 확인하세요.", "No local network found. Check your Wi-Fi or Ethernet connection.")}</p>}
-        <div className="dashboard-lan-reset">
+        {!lan.directAccess && <div className="dashboard-lan-reset">
           <button type="button" className="btn-secondary app-update-btn" disabled={busy} onClick={() => { void change(true); }}>
             {text("링크 갱신 및 연결 해제", "Reset link and disconnect")}
           </button>
-        </div>
+        </div>}
         <div className="field-label">{text("대시보드 접속 IP", "Dashboard client IPs")} ({lan.clients?.length || 0})</div>
         {lan.clients?.length ? lan.clients.map(client => <div key={client.ip} className="dashboard-lan-client" style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 8 }}>
           <code>{client.ip}</code>

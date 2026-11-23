@@ -5592,6 +5592,11 @@ async function fetchState({ quiet = false } = {}) {
     () => requestJson("/api/state", { cache: "no-store", credentials: "same-origin" }),
     ({ response, data: state }) => {
       if (response.status === 401 || response.status === 403) {
+        if (state?.reason === "lan-session-required") {
+          setConnection("offline", t("연결 끊김"));
+          ui.updated.textContent = t("이 주소의 쿠키를 허용한 뒤 새로고침하세요.");
+          return;
+        }
         location.reload();
         return;
       }
@@ -5629,6 +5634,7 @@ async function fetchState({ quiet = false } = {}) {
           : { projects: [], agents: [], groups: [] },
       };
       syncMobileAppDownload(remoteState.mobileApp);
+      ui.logoutButton.hidden = remoteState.lanDirectAccess === true;
       validateSelection();
       processActivityNotifications(allAgents());
       renderSummary();

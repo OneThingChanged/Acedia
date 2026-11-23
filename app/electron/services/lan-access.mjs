@@ -146,6 +146,10 @@ export class LanAccess {
     if (entry) for (const socket of entry.sockets) if (socket !== except) socket.destroy();
   }
 
+  revokeDirectSessions() {
+    for (const [key, entry] of this.sessions) if (entry.direct) this.revoke(key);
+  }
+
   authenticated(request) {
     const key = this.key(request);
     const entry = this.sessions.get(key);
@@ -157,6 +161,20 @@ export class LanAccess {
 
   cookie(token = "", seconds = SESSION_MS / 1000) {
     return `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${seconds}`;
+  }
+
+  issueDirectCookie(request) { return this.#issueCookie(request, true); }
+
+  #issueCookie(request, direct) {
+    const now = this.now();
+    for (const [key, session] of this.sessions) if (session.expires <= now) this.revoke(key);
+    if (this.sessions.size >= 128) this.revoke(this.sessions.keys().next().value);
+    const token = crypto.randomBytes(32).toString("base64url");
+    const key = crypto.createHash("sha256").update(token).digest("hex");
+    const entry = { expires: now + SESSION_MS, direct, sockets: new Set(), requests: new Map(), clients: new Map() };
+    this.sessions.set(key, entry);
+    this.track(entry, request);
+    return this.cookie(token);
   }
 
   pair(request, value) {
@@ -176,14 +194,7 @@ export class LanAccess {
       }
       return { status: 401, error: "Copy a new access link from Acedia on the host PC." };
     }
-    for (const [key, session] of this.sessions) if (session.expires <= now) this.revoke(key);
-    if (this.sessions.size >= 128) this.revoke(this.sessions.keys().next().value);
-    const token = crypto.randomBytes(32).toString("base64url");
-    const key = crypto.createHash("sha256").update(token).digest("hex");
-    const entry = { expires: now + SESSION_MS, sockets: new Set(), requests: new Map(), clients: new Map() };
-    this.sessions.set(key, entry);
-    this.track(entry, request);
     this.attempts.delete(keys[0]);
-    return { status: 200, cookie: this.cookie(token) };
+    return { status: 200, cookie: this.#issueCookie(request, false) };
   }
 }

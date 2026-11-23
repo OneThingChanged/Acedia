@@ -227,8 +227,10 @@ describe("LAN dashboard HTTP", () => {
     const html = await login.text();
     expect(html).not.toMatch(/<input\b/);
     expect(html).not.toContain(linkKey(status));
-    const mode = await fetch(`${base}/auth/mode`).then(response => response.json());
-    expect(mode).toEqual({ lan: true, language: "ko" });
+    const modeResponse = await fetch(`${base}/auth/mode`);
+    expect(modeResponse.headers.get("cache-control")).toBe("no-store");
+    const mode = await modeResponse.json();
+    expect(mode).toEqual({ lan: true, language: "ko", authenticated: false });
     for (const route of ["/api/state", "/api/chat?id=fixture", "/api/stream?id=fixture", "/api/docs", "/api/account-pool", "/hosting-preview/unknown", "/preview/unknown"]) {
       expect((await fetch(base + route)).status, route).toBe(401);
     }
@@ -241,6 +243,7 @@ describe("LAN dashboard HTTP", () => {
     expect(paired.status).toBe(200);
     const cookie = paired.headers.get("set-cookie").split(";")[0];
     const headers = { cookie, "content-type": "application/json", origin: base };
+    expect(await fetch(`${base}/auth/mode`, { headers }).then(response => response.json())).toEqual({ ...mode, authenticated: true });
     const state = await fetch(`${base}/api/state`, { headers }).then(response => response.json());
     expect(state.agents[0].name).toBe("Private session");
     expect(JSON.stringify(state)).not.toContain(accessKey);
@@ -253,6 +256,7 @@ describe("LAN dashboard HTTP", () => {
     expect(fs.readFileSync(path.join(root, "monitor.json"), "utf8")).not.toContain(accessKey);
     const logout = await fetch(`${base}/auth/logout`, { method: "POST", headers });
     expect(logout.status).toBe(200);
+    expect(await fetch(`${base}/auth/mode`, { headers }).then(response => response.json())).toEqual(mode);
     expect((await fetch(`${base}/api/state`, { headers: { cookie } })).status).toBe(401);
     const pairedAgain = await pair({ accessKey });
     const oldCookie = pairedAgain.headers.get("set-cookie").split(";")[0];
@@ -282,5 +286,53 @@ describe("LAN dashboard HTTP", () => {
     const restoredBase = `http://${actualNetwork.address}:${next.port}`;
     expect((await fetch(`${restoredBase}/api/state`, { headers: { cookie } })).status).toBe(401);
     expect((await pair(restoredBase)).status).toBe(200);
+  });
+
+  lanTest("opens a plain LAN address only when enabled and revokes only its automatic sessions", async () => {
+    const { service, root } = fixture();
+    const initial = await service.setLanEnabled(true);
+    const base = `http://${actualNetwork.address}:${initial.port}`;
+    const open = headers => fetch(`${base}/?agent=fixture`, { headers, redirect: "manual" });
+    const state = headers => fetch(`${base}/api/state`, { headers });
+    expect(initial.lan.directAccess).toBe(false);
+    expect((await open()).status).toBe(302);
+
+    const paired = await fetch(`${base}/auth/lan`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessKey: linkKey(initial) }),
+    });
+    const linkCookie = { cookie: paired.headers.get("set-cookie").split(";")[0] };
+    expect((await state(linkCookie)).status).toBe(200);
+
+    const direct = await service.setLanDirectAccess(true);
+    expect(direct.port).toBe(initial.port);
+    expect(direct.lan.directAccess).toBe(true);
+    await service.setConfig({ enabled: true, serverPort: initial.port, lanDirectAccess: false });
+    const restored = new LocalDashboardService({ title: "Restored", defaultPort: 0, baseDir: root, configName: "monitor.json", allowLan: true });
+    expect(restored.status().lan.directAccess).toBe(true);
+    expect(linkKey(direct)).toBe(linkKey(initial));
+    const crossSite = await open({ "sec-fetch-site": "cross-site" });
+    expect(crossSite.status).toBe(302);
+    expect(crossSite.headers.get("set-cookie")).toBeNull();
+    const proxied = await open({ "x-forwarded-for": actualNetwork.address });
+    expect(proxied.status).toBe(403);
+    expect(proxied.headers.get("set-cookie")).toBeNull();
+
+    const landing = await open();
+    expect(landing.status).toBe(200);
+    expect(landing.headers.get("location")).toBeNull();
+    expect(await landing.text()).toContain("Acedia");
+    expect(landing.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Strict");
+    const directCookie = { cookie: landing.headers.get("set-cookie").split(";")[0] };
+    const signedIn = await state(directCookie);
+    expect(signedIn.status).toBe(200);
+    expect(await signedIn.json()).toMatchObject({ lanDirectAccess: true, agents: [{ id: "fixture" }] });
+    const missingCookie = await state();
+    expect(missingCookie.status).toBe(401);
+    expect(await missingCookie.json()).toMatchObject({ reason: "lan-session-required" });
+
+    await service.setLanDirectAccess(false);
+    expect((await state(directCookie)).status).toBe(401);
+    expect((await state(linkCookie)).status).toBe(200);
+    expect((await open()).headers.get("location")).toBe("/lan-login?agent=fixture");
   });
 });

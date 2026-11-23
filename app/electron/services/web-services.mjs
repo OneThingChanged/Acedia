@@ -841,22 +841,28 @@ export class LocalDashboardService {
         enabled: Boolean(stored.enabled),
         serverPort: Number(stored.serverPort ?? stored.server_port) || this.defaultPort,
         lanEnabled: this.allowLan && stored.lanEnabled === true,
+        lanDirectAccess: this.allowLan && stored.lanDirectAccess === true,
         lanAllowedNetworks: normalizeLanNetworks(stored.lanAllowedNetworks || []),
       };
     } catch {}
   }
 
-  async setConfig(config) {
-    this.config = {
+  setConfig(config) {
+    return this.#queueLifecycle(() => this.#saveConfig({
       enabled: Boolean(config.enabled),
       serverPort: Number(config.serverPort ?? config.server_port) || this.defaultPort,
       // LAN exposure is changed only by the desktop's dedicated action. A stale
       // port/autostart form must not silently enable or disable access.
       lanEnabled: this.allowLan && this.config.lanEnabled === true,
+      lanDirectAccess: this.allowLan && this.config.lanDirectAccess === true,
       lanAllowedNetworks: this.config.lanAllowedNetworks || [],
-    };
+    }));
+  }
+
+  async #saveConfig(config) {
     await fsPromises.mkdir(this.baseDir, { recursive: true });
-    await fsPromises.writeFile(this.configPath, JSON.stringify(this.config, null, 2), "utf8");
+    await fsPromises.writeFile(this.configPath, JSON.stringify(config, null, 2), "utf8");
+    this.config = config;
     return this.config;
   }
 
@@ -874,7 +880,12 @@ export class LocalDashboardService {
       running: Boolean(this.server?.listening),
       url: this.port ? `http://127.0.0.1:${this.port}` : null,
       port: this.port,
-      lan: { available: this.allowLan, allowedNetworks: this.config.lanAllowedNetworks || [], ...this.lanAccess.status(this.port, this.config.lanEnabled === true, this.lanActive) },
+      lan: {
+        available: this.allowLan,
+        directAccess: this.config.lanDirectAccess === true,
+        allowedNetworks: this.config.lanAllowedNetworks || [],
+        ...this.lanAccess.status(this.port, this.config.lanEnabled === true, this.lanActive),
+      },
     };
   }
 
@@ -901,10 +912,7 @@ export class LocalDashboardService {
       if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
       const running = Boolean(this.server?.listening);
       const port = this.port;
-      const previous = this.config.lanEnabled;
-      this.config.lanEnabled = enabled === true;
-      try { await this.setConfig(this.config); }
-      catch (error) { this.config.lanEnabled = previous; throw error; }
+      await this.#saveConfig({ ...this.config, lanEnabled: enabled === true });
       await this.#stop();
       if (enabled || running) await this.#start(port ?? this.config.serverPort);
       return this.status();
@@ -939,15 +947,21 @@ export class LocalDashboardService {
     const change = async () => {
       if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
       const next = normalizeLanNetworks(values);
-      const previous = this.config.lanAllowedNetworks;
-      if (JSON.stringify(next) === JSON.stringify(previous || [])) return this.status();
-      this.config.lanAllowedNetworks = next;
-      try { await this.setConfig(this.config); }
-      catch (error) { this.config.lanAllowedNetworks = previous; throw error; }
+      if (JSON.stringify(next) === JSON.stringify(this.config.lanAllowedNetworks || [])) return this.status();
+      await this.#saveConfig({ ...this.config, lanAllowedNetworks: next });
       this.lanAccess.revalidate(this.port, this.lanActive, next);
       return this.status();
     };
     return this.#queueLifecycle(change);
+  }
+
+  setLanDirectAccess(enabled) {
+    return this.#queueLifecycle(async () => {
+      if (!this.allowLan) throw new Error("LAN access is unavailable in this edition.");
+      await this.#saveConfig({ ...this.config, lanDirectAccess: enabled === true });
+      if (!enabled) this.lanAccess.revokeDirectSessions();
+      return this.status();
+    });
   }
 
   async serveLanAccess(request, response, url) {
@@ -956,7 +970,12 @@ export class LocalDashboardService {
     if (client === "local") return false;
     if (request.method === "GET" && url.pathname === "/auth/mode") {
       const snapshot = this.snapshot();
-      sendJson(response, 200, { lan: true, language: snapshot.language ?? snapshot.view?.language ?? "en" });
+      sendJson(response, 200, {
+        lan: true,
+        language: snapshot.language ?? snapshot.view?.language ?? "en",
+        authenticated: this.lanAccess.authenticated(request),
+        ...(this.config.lanDirectAccess ? { directAccess: true } : {}),
+      }, { "cache-control": "no-store" });
       return true;
     }
     if (request.method === "POST" && ["/auth/lan", "/auth/logout"].includes(url.pathname)) {
@@ -984,7 +1003,13 @@ export class LocalDashboardService {
     }
     if (this.lanAccess.authenticated(request)) return false;
     if (request.method === "GET" && url.pathname === "/") {
+      if (this.config.lanDirectAccess && this.isLocalOrigin(request)) {
+        response.setHeader("set-cookie", this.lanAccess.issueDirectCookie(request));
+        return false;
+      }
       response.writeHead(302, { location: `/lan-login${url.search}`, "cache-control": "no-store" }).end();
+    } else if (this.config.lanDirectAccess && url.pathname === "/api/state") {
+      sendJson(response, 401, { error: "LAN session required", reason: "lan-session-required" }, { "cache-control": "no-store" });
     } else sendJson(response, 401, { error: "LAN access link required" });
     return true;
   }
@@ -1009,7 +1034,9 @@ export class LocalDashboardService {
           if (await sendRemoteHtmlPreview(request, response, this.htmlPreviews, url.pathname)) return;
         }
         if (request.method === "GET" && url.pathname === "/api/state") {
-          sendJson(response, 200, this.snapshot());
+          const state = this.snapshot();
+          if (this.lanActive && this.config.lanDirectAccess) state.lanDirectAccess = true;
+          sendJson(response, 200, state);
           return;
         }
         if (p) {
