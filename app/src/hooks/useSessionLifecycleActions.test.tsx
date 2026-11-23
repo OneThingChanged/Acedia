@@ -7,7 +7,7 @@ const { invoke, saveScrollback } = vi.hoisted(() => ({ invoke: vi.fn(), saveScro
 vi.mock('../platform/runtime', () => ({ invoke }));
 vi.mock('../platform/electronBridge', () => ({ isElectronRuntime: () => true }));
 vi.mock('../lib/scrollback', () => ({ saveScrollback, clearScrollback: vi.fn() }));
-beforeEach(() => { vi.clearAllMocks(); invoke.mockResolvedValue({ sessionId: 'original-conversation', poolResumeOwnerId: 'original-account' }); });
+beforeEach(() => { vi.clearAllMocks(); invoke.mockResolvedValue({ sessionId: 'original-conversation' }); });
 
 function fixture(prepareRestart: (id: string) => Promise<boolean>) {
   const agentsRef = { current: [{ id: 'session', name: 'Work', aiToolId: 'codex', status: 'running', codexPoolAccountId: 'old' } as Agent] };
@@ -43,9 +43,9 @@ it('waits for the account decision before stopping the CLI and spawns with the c
   f.agentsRef.current = [{ ...f.agentsRef.current[0], codexPoolAccountId: 'chosen' }];
   choose(true);
   expect(await restart).toBe(true);
-  expect(invoke).toHaveBeenCalledExactlyOnceWith('restart_session_model', { id: 'session', expectedSessionId: 'original-conversation', interrupt: true });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith('restart_session_model', { id: 'session', expectedSessionId: 'original-conversation', interrupt: true, codexPoolAccountId: 'chosen' });
   expect(f.agentsRef.current[0]).toMatchObject({ codexPoolAccountId: 'chosen', lastSessionId: 'original-conversation', terminalEpoch: 1 });
-  expect(f.spawn).toHaveBeenCalledExactlyOnceWith('session', { recovering: true, resumeSessionId: 'original-conversation', poolResumeOwnerId: 'original-account' });
+  expect(f.spawn).toHaveBeenCalledExactlyOnceWith('session', { recovering: true, resumeSessionId: 'original-conversation', poolResumeOwnerId: undefined });
   expect(f.dispose).toHaveBeenCalledOnce();
 });
 it('does not stop a session removed or detached while its account choice was pending', async () => {
@@ -66,15 +66,16 @@ it('releases the restart lock after cancellation so a later deliberate restart c
   expect(await f.actions.restartAgent('session', f.spawn)).toBe(true);
   expect(f.spawn).toHaveBeenCalledOnce();
 });
-it('restarts from Remote without opening the desktop picker and keeps the conversation and running account', async () => {
+it.each(['old', null])('restarts from Remote with the saved account preference (%s) without opening the desktop picker', async accountId => {
   const choose = vi.fn(async () => false), f = fixture(choose);
+  f.agentsRef.current[0].codexPoolAccountId = accountId ?? undefined;
   const verify = vi.fn(async () => {});
   expect(await f.actions.restartAgent('session', f.spawn, verify)).toBe(true);
   expect(verify).toHaveBeenCalledOnce();
   expect(choose).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledExactlyOnceWith('restart_session_model', { id: 'session', expectedSessionId: 'original-conversation', interrupt: true });
-  expect(f.agentsRef.current[0]).toMatchObject({ codexPoolAccountId: 'old', lastSessionId: 'original-conversation' });
-  expect(f.spawn).toHaveBeenCalledExactlyOnceWith('session', { recovering: true, resumeSessionId: 'original-conversation', poolResumeOwnerId: 'original-account' });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith('restart_session_model', { id: 'session', expectedSessionId: 'original-conversation', interrupt: true, codexPoolAccountId: accountId });
+  expect(f.agentsRef.current[0]).toMatchObject({ codexPoolAccountId: accountId ?? undefined, lastSessionId: 'original-conversation' });
+  expect(f.spawn).toHaveBeenCalledExactlyOnceWith('session', { recovering: true, resumeSessionId: 'original-conversation', poolResumeOwnerId: undefined });
 });
 
 it('keeps the CLI running and reports the expired Remote request', async () => {

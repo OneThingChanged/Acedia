@@ -540,6 +540,10 @@ function assertInvokeRequest(command, rawArgs) {
       }
       if (!["activation", "model"].includes(args.kind)) throw new TypeError("Invalid restart request kind");
       break;
+    case "restart_session_model":
+      assertId(args);
+      if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolAccountId))) throw new TypeError("Invalid routed account id");
+      break;
     case "complete_remote_session_create":
     case "complete_remote_session_activation":
     case "complete_remote_session_model":

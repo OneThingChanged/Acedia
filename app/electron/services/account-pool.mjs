@@ -104,7 +104,7 @@ export class AccountPool {
     return { canManage: true, enabled: this.state.enabled, running: Boolean(this.server?.listening),
       storage: { writable: !this.storageError, ...(this.storageError || {}) },
       accounts: this.state.accounts.map(a => ({ id: a.id, label: a.label, email: a.email || null, plan: a.plan || null,
-        enabled: a.enabled, state: this.jobs.has(a.id) ? 'login_pending' : a.status, error: a.loginError || null, limits: a.limits || null,
+        enabled: a.enabled, state: this.jobs.has(a.id) ? 'login_pending' : a.status, error: a.status === 'ready' ? null : a.loginError || null, limits: a.limits || null,
         available: this.eligible(a),
         limitsAt: a.limitsAt || null, cooldownUntil: a.cooldownUntil || null, stats: a.stats, active: this.active.get(a.id) || 0,
         login: this.jobs.get(a.id)?.public || null,
@@ -208,7 +208,7 @@ export class AccountPool {
     a.identity = identity; a.email = data.account.email || null; a.plan = data.account.planType || null;
     const origin = backendOrigin(data.workspaceRouting?.backendOrigin);
     if (origin) a.backendOrigin = origin;
-    a.status = 'ready'; a.cooldownUntil = null;
+    a.status = 'ready'; a.loginError = null; a.cooldownUntil = null;
   }
   async beginLogin(id, method = 'browser') {
     if (!['browser', 'device'].includes(method)) throw fail('지원하지 않는 로그인 방식입니다.');
@@ -314,6 +314,12 @@ export class AccountPool {
   eligible(a) {
     return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
   }
+  accountBlockReason(a) {
+    if (this.jobs.has(a.id)) return '계정 로그인이 진행 중입니다.';
+    if (!a.auth || a.status !== 'ready') return '계정에 다시 로그인해야 합니다.';
+    if (!a.enabled) return '계정이 분산에서 제외됐습니다.';
+    return (a.cooldownUntil || 0) > this.now() ? '계정이 사용량 제한으로 대기 중입니다.' : '계정의 Codex 사용 한도가 소진됐습니다.';
+  }
   async sessionModels(id, preferredAccountId = null) {
     this.guard();
     const owner = this.state.sessions[id]?.accountId;
@@ -410,6 +416,37 @@ export class AccountPool {
       .finally(() => { this.activeQuotaRefresh = null; });
     return this.activeQuotaRefresh;
   }
+  availableAccount() {
+    const candidates = this.state.accounts.filter(a => this.eligible(a));
+    const assigned = id => Object.values(this.state.sessions).filter(s => s.accountId === id).length;
+    candidates.sort((a, b) => (this.active.get(a.id) || 0) - (this.active.get(b.id) || 0) || assigned(a.id) - assigned(b.id) || a.stats.requests - b.stats.requests);
+    return candidates[0];
+  }
+  launchAccount(id, preferredAccountId = null) {
+    this.guard();
+    if (!this.state.enabled) return null;
+    if (preferredAccountId != null) {
+      if (!validId(preferredAccountId)) throw fail('선택한 분산 계정이 올바르지 않습니다.');
+      const selected = this.account(preferredAccountId);
+      if (!this.eligible(selected)) throw fail(`선택한 분산 ${this.accountBlockReason(selected)} 세션 속성에서 사용 가능한 계정을 선택할 수 있습니다.`, 503);
+      return selected;
+    }
+    const session = Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : null;
+    if (session?.accountId && !session.preferredAccountId) {
+      const assigned = this.account(session.accountId);
+      if (this.eligible(assigned)) return assigned;
+      // Only a quota or participation change may rotate an automatic assignment.
+      if (assigned.status === 'ready' && assigned.auth && !this.jobs.has(assigned.id)) {
+        const replacement = this.availableAccount();
+        if (replacement) return replacement;
+        throw fail(`현재 분산 ${this.accountBlockReason(assigned)} 사용 가능한 다른 분산 계정이 없습니다.`, 503);
+      }
+      throw fail('현재 분산 계정의 인증을 사용할 수 없습니다. 같은 계정으로 다시 로그인하거나 세션 속성에서 다른 계정을 선택하세요.', 503);
+    }
+    const available = this.availableAccount();
+    if (!available) throw fail('사용 가능한 분산 계정이 없습니다. 계정의 로그인·참여·한도를 확인하세요.', 503);
+    return available;
+  }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
     if (session.accountId) {
@@ -418,11 +455,9 @@ export class AccountPool {
       if (this.recordAssignment(sessionId, a.id)) this.persist();
       return a;
     }
-    const candidates = this.state.accounts.filter(a => this.eligible(a));
-    const assigned = id => Object.values(this.state.sessions).filter(s => s.accountId === id).length;
-    candidates.sort((a, b) => (this.active.get(a.id) || 0) - (this.active.get(b.id) || 0) || assigned(a.id) - assigned(b.id) || a.stats.requests - b.stats.requests);
-    if (!candidates.length) throw fail('사용 가능한 분산 계정이 없습니다.', 503);
-    session.accountId = candidates[0].id; this.recordAssignment(sessionId, candidates[0].id); this.persist(); return candidates[0];
+    const available = this.availableAccount();
+    if (!available) throw fail('사용 가능한 분산 계정이 없습니다.', 503);
+    session.accountId = available.id; this.recordAssignment(sessionId, available.id); this.persist(); return available;
   }
   token(id) {
     if (!this.state.secret) { this.state.secret = this.seal(randomBytes(32).toString('base64')); this.persist(); }
@@ -465,36 +500,17 @@ export class AccountPool {
     }
     if (typeof id !== 'string' || !id || id.length > 200 || ['__proto__', 'constructor', 'prototype'].includes(id)) throw fail('세션 식별자가 올바르지 않습니다.');
     await this.start();
-    if (!Object.hasOwn(this.state.sessions, id)) this.state.sessions[id] = { accountId: null, lastUsed: this.now() };
-    const session = this.state.sessions[id];
+    if (!this.state.enabled) throw fail('세션 시작 중 계정 분산 설정이 바뀌었습니다. 다시 시도하세요.', 409);
     if (preserveOwnerId) {
-      if (session.accountId !== preserveOwnerId || !this.eligible(this.account(preserveOwnerId))) throw fail('모델 변경 중 세션 계정이 바뀌었습니다. 계정 상태를 확인하세요.', 409);
-    } else if (preferredAccountId) {
-      const selected = this.account(preferredAccountId);
-      if (!this.eligible(selected)) throw fail('선택한 분산 계정을 사용할 수 없습니다. 로그인·참여·한도를 확인하세요.', 503);
+      if (this.state.sessions[id]?.accountId !== preserveOwnerId || !this.eligible(this.account(preserveOwnerId))) throw fail('모델 변경 중 세션 계정이 바뀌었습니다. 계정 상태를 확인하세요.', 409);
+    } else {
+      const selected = this.launchAccount(id, preferredAccountId);
+      if (!Object.hasOwn(this.state.sessions, id)) this.state.sessions[id] = { accountId: null, lastUsed: this.now() };
+      const session = this.state.sessions[id];
       session.accountId = selected.id;
-      session.preferredAccountId = selected.id;
-      this.recordAssignment(id, selected.id);
-    } else if (session.preferredAccountId) {
-      // Switching back to Auto releases the explicit pin before rebalancing.
-      session.preferredAccountId = null;
-      session.accountId = null;
-      this.recordAssignment(id, null);
+      if (preferredAccountId || session.preferredAccountId) session.preferredAccountId = preferredAccountId;
     }
-    const assigned = session.accountId;
-    if (assigned && !preferredAccountId && !preserveOwnerId) {
-      const previous = this.state.accounts.find(a => a.id === assigned);
-      // Reassign excluded or exhausted automatic accounts only at CLI restart.
-      // Account removal and authentication changes still require user action.
-      if (previous?.status === 'ready' && previous.auth && !this.jobs.has(assigned)
-        && (!previous.enabled || this.quotaBlocked(previous))) {
-        const replacement = this.state.accounts.find(a => a.id !== assigned && this.eligible(a));
-        if (replacement) session.accountId = replacement.id;
-      }
-    }
-    // Validate existing assignments too, so an unavailable account is reported
-    // before starting a CLI that would fail every request with HTTP 503.
-    this.choose(id);
+    this.recordAssignment(id, this.state.sessions[id].accountId);
     this.persist();
     const config = { model_provider: 'acedia_pool', 'model_providers.acedia_pool.name': 'Acedia Accounts',
       'model_providers.acedia_pool.base_url': `http://127.0.0.1:${this.server.address().port}/provider`,
@@ -510,9 +526,13 @@ export class AccountPool {
     const lease = { id: leaseId, sessionId: id, accountId, tokenHashes: [], chatgptAccountId: null, runtime: null };
     const ensureAvailable = () => {
       this.guard();
-      if (!this.state.enabled || this.state.sessions[id]?.accountId !== accountId
-        || !this.eligible(this.account(accountId)) || this.nativeSessions.get(leaseId) !== lease) {
-        throw fail('이 세션의 분산 계정을 사용할 수 없습니다. 계정 상태를 확인한 뒤 세션을 다시 시작하세요.', 503);
+      if (!this.state.enabled) throw fail('계정 분산이 꺼져 있습니다. 세션을 다시 시작하세요.', 503);
+      if (this.state.sessions[id]?.accountId !== accountId || this.nativeSessions.get(leaseId) !== lease) {
+        throw fail('이 세션의 분산 연결이 바뀌었습니다. 세션을 다시 시작하세요.', 503);
+      }
+      const account = this.account(accountId);
+      if (!this.eligible(account)) {
+        throw fail(`${this.accountBlockReason(account)} 계정 관리·분산에서 상태를 확인한 뒤 세션을 다시 시작하세요.`, 503);
       }
     };
     const getAuth = async (force = false, previousAccountId) => {

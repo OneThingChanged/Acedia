@@ -52,6 +52,14 @@ describe('Acedia account pool', () => {
     expect(JSON.stringify(pool.routingStatus('session'))).not.toMatch(/auth|token|secret|email|home/);
     expect(seen).toHaveLength(0);
   });
+  it('does not show an earlier login error after authentication has recovered', () => {
+    const { pool } = fixture(); const id = add(pool, 'A');
+    const account = pool.account(id);
+    account.loginError = 'previous sign-in failure';
+    expect(pool.snapshot().accounts[0]).toMatchObject({ state: 'ready', error: null });
+    account.status = 'login_failed';
+    expect(pool.snapshot().accounts[0]).toMatchObject({ state: 'login_failed', error: 'previous sign-in failure' });
+  });
   it.each(['hasCredits', 'unlimited'])('keeps an exhausted account with %s available across turns and restarts until credits are removed', async flag => {
     const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
     pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, secondary: { usedPercent: 100 },
@@ -539,6 +547,10 @@ describe('Acedia account pool', () => {
     const { pool } = fixture(); const a = add(pool, 'A'), b = add(pool, 'B'); await pool.setEnabled(true);
     await request(pool, 'one');
     pool.account(a).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now()/1000)+3600 } } };
+    const assigned = structuredClone(pool.state.sessions.one);
+    expect(pool.launchAccount('one')?.id).toBe(b);
+    expect(() => pool.launchAccount('one', a)).toThrow(/한도가 소진/);
+    expect(pool.state.sessions.one).toEqual(assigned);
     await pool.launch('one');
     expect(pool.state.sessions.one.accountId).toBe(b);
     expect((await request(pool, 'one')).response.status).toBe(200);

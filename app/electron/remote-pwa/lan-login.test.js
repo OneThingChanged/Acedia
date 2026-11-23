@@ -4,10 +4,12 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function openLogin(hash, { status = 200, hasCookie = false, acceptsCookie = true, directAccess = false } = {}) {
   vi.resetModules();
+  const retry = { addEventListener: vi.fn(), disabled: false };
   const fields = {
     "#lanHelp": { hidden: false },
     "#lanConnecting": { hidden: true },
     "#lanError": { hidden: true },
+    "#lanRetry": retry,
   };
   const location = { hash, pathname: "/lan-login", search: "?agent=fixture", replace: vi.fn(), reload: vi.fn() };
   const history = { replaceState: vi.fn(() => { location.hash = ""; }) };
@@ -30,7 +32,8 @@ async function openLogin(hash, { status = 200, hasCookie = false, acceptsCookie 
   vi.stubGlobal("window", window);
   vi.stubGlobal("fetch", fetch);
   await import("./lan-login.js");
-  return { fields, fetch, history, location, window };
+  return { fields, fetch, history, location, window, enableAddressAccess: () => { directAccess = true; },
+    recheck: () => retry.addEventListener.mock.calls[0][1]() };
 }
 
 it("authenticates automatically, strips the access key and preserves the selected session", async () => {
@@ -70,12 +73,29 @@ it("opens the dashboard when reopening a login page with a valid cookie", async 
 
 it("sends an old login-page bookmark to the dashboard after address access is enabled", async () => {
   const { fetch, location } = await openLogin("", { directAccess: true });
-  expect(fetch).toHaveBeenCalledOnce();
+  expect(fetch).toHaveBeenNthCalledWith(2, "/auth/lan", expect.objectContaining({ method: "POST", body: JSON.stringify({ mode: "address" }) }));
+  expect(fetch).toHaveBeenCalledTimes(3);
   expect(location.replace).toHaveBeenCalledWith("/?agent=fixture");
 });
 
-it("shows a cookie error instead of navigating back to login after a successful POST", async () => {
-  const { fields, location } = await openLogin(`#access=${"A".repeat(43)}`, { acceptsCookie: false });
+it("checks the host setting again without reopening the browser tab", async () => {
+  const { fetch, location, enableAddressAccess, recheck } = await openLogin("");
+  expect(location.replace).not.toHaveBeenCalled();
+  enableAddressAccess(); recheck();
+  await vi.waitFor(() => expect(location.replace).toHaveBeenCalledWith("/?agent=fixture"));
+  expect(fetch).toHaveBeenCalledTimes(4);
+});
+
+it("uses a link as link-based authentication even when address access is enabled", async () => {
+  const accessKey = "A".repeat(43);
+  const { fetch, location } = await openLogin(`#access=${accessKey}`, { directAccess: true });
+  expect(fetch).toHaveBeenNthCalledWith(2, "/auth/lan", expect.objectContaining({ body: JSON.stringify({ accessKey }) }));
+  expect(location.replace).toHaveBeenCalledWith("/?agent=fixture");
+});
+
+it.each([true, false])("reports missing cookies without navigating back to login (address: %s)", async directAccess => {
+  const hash = directAccess ? "" : `#access=${"A".repeat(43)}`;
+  const { fields, location } = await openLogin(hash, { directAccess, acceptsCookie: false });
   expect(location.replace).not.toHaveBeenCalled();
   expect(fields["#lanConnecting"].hidden).toBe(true);
   expect(fields["#lanHelp"].hidden).toBe(false);

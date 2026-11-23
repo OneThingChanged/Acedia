@@ -991,6 +991,16 @@ export class LocalDashboardService {
       let body;
       try { body = await readJson(request, 1024); }
       catch { sendJson(response, 400, { error: "invalid request" }); return true; }
+      if (body?.mode === "address") {
+        if (!this.config.lanDirectAccess) {
+          sendJson(response, 403, { error: "LAN address access is disabled" }, { "cache-control": "no-store" });
+          return true;
+        }
+        sendJson(response, 200, { ok: true }, {
+          "set-cookie": this.lanAccess.issueDirectCookie(request), "cache-control": "no-store",
+        });
+        return true;
+      }
       const result = this.lanAccess.pair(request, body?.accessKey);
       sendJson(response, result.status, result.error ? { error: result.error } : { ok: true }, {
         ...(result.cookie ? { "set-cookie": result.cookie } : {}),

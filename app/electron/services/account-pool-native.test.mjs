@@ -61,8 +61,8 @@ describe('routed native tool credentials', () => {
     runtime.onRateLimits({ rateLimits: { primary: { usedPercent: 100 } } });
     expect(() => runtime.ensureAvailable()).not.toThrow(); // Sparse notifications retain credits.
     runtime.onRateLimits({ rateLimits: { credits: { hasCredits: false, unlimited: false, balance: '0' } } });
-    expect(() => runtime.ensureAvailable()).toThrow(/분산 계정/);
-    expect((await request(runtime)).status).toBe(503);
+    expect(() => runtime.ensureAvailable()).toThrow(/한도가 소진/);
+    expect(await request(runtime)).toMatchObject({ status: 503, text: expect.stringContaining('한도가 소진') });
     expect(f.requests).toHaveLength(1);
     expect(f.pool.state.sessions.credits.accountId).toBe(f.accounts[0]);
   });

@@ -479,7 +479,7 @@ export type RuntimeCommandContract = {
     result: boolean;
   };
   restart_session_model: {
-    args: { id: string; expectedSessionId?: string; interrupt?: boolean };
+    args: { id: string; expectedSessionId?: string; interrupt?: boolean; codexPoolAccountId?: string | null };
     result: { sessionId: string | null; poolResumeOwnerId?: string };
   };
   get_session_model: {

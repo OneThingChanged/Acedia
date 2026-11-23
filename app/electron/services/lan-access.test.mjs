@@ -294,8 +294,14 @@ describe("LAN dashboard HTTP", () => {
     const base = `http://${actualNetwork.address}:${initial.port}`;
     const open = headers => fetch(`${base}/?agent=fixture`, { headers, redirect: "manual" });
     const state = headers => fetch(`${base}/api/state`, { headers });
+    const authorizeAddress = (headers = {}) => fetch(`${base}/auth/lan`, {
+      method: "POST", headers: { "content-type": "application/json", origin: base, ...headers }, body: JSON.stringify({ mode: "address" }),
+    });
     expect(initial.lan.directAccess).toBe(false);
     expect((await open()).status).toBe(302);
+    const disabled = await authorizeAddress();
+    expect(disabled.status).toBe(403);
+    expect(disabled.headers.get("set-cookie")).toBeNull();
 
     const paired = await fetch(`${base}/auth/lan`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accessKey: linkKey(initial) }),
@@ -317,6 +323,15 @@ describe("LAN dashboard HTTP", () => {
     expect(proxied.status).toBe(403);
     expect(proxied.headers.get("set-cookie")).toBeNull();
 
+    const crossSiteCheck = await authorizeAddress({ "sec-fetch-site": "cross-site" });
+    expect(crossSiteCheck.status).toBe(403);
+    expect(crossSiteCheck.headers.get("set-cookie")).toBeNull();
+    const checked = await authorizeAddress();
+    expect(checked.status).toBe(200);
+    const checkedCookie = { cookie: checked.headers.get("set-cookie").split(";")[0] };
+    expect(await fetch(`${base}/auth/mode`, { headers: checkedCookie }).then(response => response.json()))
+      .toMatchObject({ authenticated: true, directAccess: true });
+
     const landing = await open();
     expect(landing.status).toBe(200);
     expect(landing.headers.get("location")).toBeNull();
@@ -332,6 +347,7 @@ describe("LAN dashboard HTTP", () => {
 
     await service.setLanDirectAccess(false);
     expect((await state(directCookie)).status).toBe(401);
+    expect((await state(checkedCookie)).status).toBe(401);
     expect((await state(linkCookie)).status).toBe(200);
     expect((await open()).headers.get("location")).toBe("/lan-login?agent=fixture");
   });

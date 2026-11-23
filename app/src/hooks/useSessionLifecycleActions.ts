@@ -72,16 +72,18 @@ export function useSessionLifecycleActions({
     }
     restartingRef.current.add(agentId); setRestartingAgentIds(new Set(restartingRef.current));
     try {
-      // Remote uses the existing launch settings and the owner returned by the host.
+      // Remote uses the saved launch settings without opening the desktop picker.
       if (verifyRemoteRequest) await verifyRemoteRequest();
       else if (prepareRestart && !await prepareRestart(agentId)) return false;
-      if (!agentsRef.current.some(candidate => candidate.id === agentId) || detachedAgentIdsRef.current.has(agentId)) {
+      const launchAgent = agentsRef.current.find(candidate => candidate.id === agentId);
+      if (!launchAgent || detachedAgentIdsRef.current.has(agentId)) {
         throw new Error("Session changed while preparing to restart.");
       }
       let result: { sessionId: string | null; poolResumeOwnerId?: string } = { sessionId: null };
       if (isElectronRuntime() && !agent.sshHostId && ["codex", "claude"].includes(agent.aiToolId)) {
         result = await invoke("restart_session_model", { id: agentId,
-          expectedSessionId: pinnedSessionId?.(agentId), interrupt: true });
+          expectedSessionId: pinnedSessionId?.(agentId), interrupt: true,
+          ...(agent.aiToolId === "codex" ? { codexPoolAccountId: launchAgent.codexPoolAccountId ?? null } : {}) });
       } else if (isElectronRuntime()) {
         await invoke("terminal_session_action", { id: agentId, action: "restart" });
       } else {

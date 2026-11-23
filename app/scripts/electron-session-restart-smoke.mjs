@@ -54,7 +54,7 @@ try {
           if(command==='restart_session_model'){
             if(window.rejectHost)throw Error('Host rejected restart');
             if(window.holdHost)await new Promise(resolve=>{window.releaseHost=resolve;});
-            return {sessionId:'conversation-'+args.id,poolResumeOwnerId:'original-account'};
+            return {sessionId:'conversation-'+args.id};
           }
         };
         export const listen=async()=>()=>{};
@@ -85,8 +85,8 @@ try {
         fs.writeFileSync(${JSON.stringify(path.resolve(root, "../output/session-restart-smoke/context-menu.png"))},(await win.webContents.capturePage()).toPNG());
         await click('[data-session-action=restart]');await wait('window.calls.some(call=>call[0]==="spawn")');
         let calls=await run('window.calls');
-        assert.deepEqual(calls.find(call=>call[0]==='restart_session_model')[1],{id:'b',expectedSessionId:'conversation-b',interrupt:true});
-        assert.deepEqual(calls.find(call=>call[0]==='spawn').slice(1),['b',{recovering:true,resumeSessionId:'conversation-b',poolResumeOwnerId:'original-account'}]);
+        assert.deepEqual(calls.find(call=>call[0]==='restart_session_model')[1],{id:'b',expectedSessionId:'conversation-b',interrupt:true,codexPoolAccountId:null});
+        assert.deepEqual(calls.find(call=>call[0]==='spawn').slice(1),['b',{recovering:true,resumeSessionId:'conversation-b'}]);
         assert.deepEqual(calls.filter(call=>call[0]==='dispose').map(call=>call[1]),['b']);
         assert.ok(calls.findIndex(call=>call[0]==='save')<calls.findIndex(call=>call[0]==='dispose'));
         const state=await run('window.readState()');

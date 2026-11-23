@@ -6614,8 +6614,13 @@ async function invokeCommand(event, command, rawArgs) {
       if ((agentSessionIds.get(id) || current.lastSessionId || null) !== sessionId) throw new Error("현재 대화가 바뀌었습니다. 다시 확인하세요.");
       if (selectedAccountId(current) !== selectedAccountId(agent)
         || (live && selectedAccountId(live) !== selectedAccountId(current))) throw new Error("세션 계정이 바뀌었습니다. 다시 확인하세요.");
-      const poolResumeOwnerId = agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
-      if ((live?.poolRouted && !poolResumeOwnerId) || (poolResumeOwnerId && (!accountPool.state.enabled || !accountPool.eligible(accountPool.account(poolResumeOwnerId))))) {
+      const manualRestart = args.interrupt === true;
+      const checkLaunchAccount = () => {
+        if (agent.aiToolId === "codex" && !agent.sshHostId) accountPool.launchAccount(id, args.codexPoolAccountId ?? null);
+      };
+      if (manualRestart) checkLaunchAccount();
+      const poolResumeOwnerId = !manualRestart && agent.aiToolId === "codex" && (live ? live.poolRouted : accountPool.state.enabled) ? accountPool.state.sessions[id]?.accountId : undefined;
+      if (!manualRestart && ((live?.poolRouted && !poolResumeOwnerId) || (poolResumeOwnerId && (!accountPool.state.enabled || !accountPool.eligible(accountPool.account(poolResumeOwnerId)))))) {
         throw new Error("현재 분산 계정을 사용할 수 없습니다. 계정 상태를 확인한 뒤 다시 시도하세요.");
       }
       await rememberSessionModel(id);
@@ -6623,6 +6628,7 @@ async function invokeCommand(event, command, rawArgs) {
       const latest = sessionModels.agent(id);
       if ((agentSessionIds.get(id) || latest.lastSessionId || null) !== sessionId
         || latest.aiToolId !== current.aiToolId || selectedAccountId(latest) !== selectedAccountId(current)) throw new Error("현재 대화 또는 계정이 바뀌었습니다. 다시 확인하세요.");
+      if (manualRestart) checkLaunchAccount();
       if (poolResumeOwnerId && (!accountPool.state.enabled || !accountPool.eligible(accountPool.account(poolResumeOwnerId))
         || accountPool.state.sessions[id]?.accountId !== poolResumeOwnerId)) throw new Error("분산 계정 상태가 바뀌었습니다. 다시 확인하세요.");
       terminalSessions.action(id, "restart");
