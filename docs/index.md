@@ -10,6 +10,7 @@ configuration that supports it.
 
 ## Product and architecture
 
+* [Acedia 1.8.2.35](release-1-8-2-35.md) - 하위 경로의 구형 Android APK 다운로드 차단과 브라우저 접속 안내.
 * [Acedia 1.8.2.34](release-1-8-2-34.md) - 미확인 결과 일괄 처리와 보드 갱신 최적화, Codex Fast 복원과 입력 토큰 배지.
 * [Acedia 1.8.2.33](release-1-8-2-33.md) - 보드에서 세션 생성·계층 편집, 연결선 선택, 작업 폴더 변경과 인계 발신자 표시.
 * [Acedia 1.8.2.32](release-1-8-2-32.md) - 취소 후 명령 전달, 대기열·알림 처리와 세션 갱신 개선.
