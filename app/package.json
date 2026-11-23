@@ -141,6 +141,14 @@
     "vitest": "^4.1.12"
   },
   "main": "electron/main.mjs",
+  "overrides": {
+    "app-builder-lib": {
+      "minimatch@^10.2.5": "11.0.9"
+    },
+    "@electron/universal": {
+      "minimatch@^9.0.3": "11.0.9"
+    }
+  },
   "build": {
     "afterPack": "./scripts/bundle-git-runtime.mjs",
     "appId": "com.jintae.multiagent.electron",
