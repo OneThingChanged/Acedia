@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.34
-status: draft
+status: published
 last_updated: 2026-11-23
 ---
 
@@ -20,3 +20,16 @@ last_updated: 2026-11-23
 - Restore the selected Codex `/fast` speed when restarting the same conversation, including when the status line omits speed.
 - Show a sidebar badge when an active local Codex session's latest request reaches 200,000 input tokens. Hover for the exact input count, including cached tokens.
 - The Windows Standard EXE bundles the existing signed Android APK 1.8.1.39.
+
+## 배포 및 검증
+
+- 2026-11-23 09:52:58 KST에 `ec05eef075ef6d70907d9889ea8986d2ea468357`에서 빌드한 Windows Standard EXE를 게시했습니다. [GitHub 릴리스](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.34)
+- 테스트 2,345개를 통과했습니다. 격리된 실제 Codex CLI에서 `/fast`를 켜거나 끈 뒤 같은 대화를 재시작해 다음 요청의 속도를 확인했습니다. 설치 패키지에서는 한도에서 결과 1,260건 확인, 이후 결과와 질문 유지, 토큰 배지와 보드 조회, Dashboard와 앱 수명주기를 검증했습니다.
+- 세션 104개와 결과 1,500건을 사용한 개발 환경의 처리 시간 중앙값은 보드 갱신 87.49ms → 15.48ms, 사이드바 하달 대기 조회 83.82ms → 4.23ms였습니다.
+- 1.8.2.32와 1.8.2.33에서 업데이트를 감지했습니다. 09:53:44 KST에 공개 자산의 SHA-256, NSIS CRC `97465efc`, 압축 데이터와 설치 프로그램 시작을 확인했습니다. 설치 파일의 Authenticode 상태는 `NotSigned`입니다.
+
+| 공개 자산 | 크기(bytes) | SHA-256 |
+| --- | ---: | --- |
+| `Acedia-Setup-1.8.2.34-x64.exe` | 156429994 | `9ffb989b8056fc8cca9d245bda25e3a2cc587798c5239b9d11b65c37fd6f7c17` |
+| `Acedia-Setup-1.8.2.34-x64.exe.blockmap` | 163477 | `27fa8b671767ed4ffda6920c3cd02ee13235e990fe2caa953a7eab4bd60c1acd` |
+| `latest-exe.json` | 256 | `1aa2385a4a3ef1df76beac375f0b8ac839fb82751d52b8770a7846ff072cf03c` |
