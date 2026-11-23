@@ -15,6 +15,7 @@ module.exports = {
   extraMetadata: {
     ...base.extraMetadata,
     multiAgentReleaseVersion: releaseVersion,
+    multiAgentMobileVersion: verified.versionName,
   },
   files: [
     ...base.files,

@@ -18,6 +18,36 @@ afterEach(async () => {
 });
 
 describe("Electron dashboard server", () => {
+  it.each([
+    ['fixture.example.com/acedia', '1.8.1.39', '/acedia', false],
+    ['fixture.example.com/acedia', '1.8.2.30', '/acedia', true],
+    ['fixture.example.com', '1.8.1.39', '', true],
+  ])('offers only a compatible APK for %s at version %s', async (hostname, version, basePath, available) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'multiagent-remote-apk-'));
+    roots.push(root);
+    const mobileApkPath = path.join(root, 'Acedia-Mobile.apk');
+    fs.writeFileSync(mobileApkPath, 'apk-fixture');
+    const service = new RemoteDashboardService({ baseDir: root, mobileApkPath, mobileApkVersion: version });
+    services.push(service);
+    await service.setConfig({ public_hostname: hostname, server_port: 0 });
+    const { url } = await service.start();
+    const base = new URL(url).origin + basePath;
+    const mode = await fetch(`${base}/auth/mode`);
+    expect(mode.status).toBe(200);
+    const state = await fetch(`${base}/api/state`).then(response => response.json());
+    expect(state.mobileApp).toMatchObject(available
+      ? { available: true, downloadUrl: `${basePath}/downloads/Acedia-Mobile.apk` }
+      : { available: false, reason: 'service-path-incompatible', version });
+    for (const name of ['Acedia-Mobile.apk', 'MultiAgent-Mobile.apk']) {
+      const asset = `${base}/downloads/${name}`;
+      const download = await fetch(asset);
+      expect(download.status).toBe(available ? 200 : 409);
+      if (available) expect(await download.text()).toBe('apk-fixture');
+      else expect(await download.json()).toMatchObject({ reason: 'service-path-incompatible' });
+      expect((await fetch(asset, { headers: { 'cf-connecting-ip': '203.0.113.5' } })).status).toBe(401);
+    }
+  });
+
   it('cancels a pending tunnel download without starting a late background process',async()=>{
     const service=new TunnelService({baseDir:'unused',getConfig:()=>({client_id:'fake',owner:'fixture',tunnel_token:'fake',public_hostname:'fixture.example.com',server_port:18800}),getLocalUrl:()=>null,spawnImpl:()=>{throw Error('Late tunnel spawn');}});
     let downloaded;service.ensureExecutable=()=>new Promise(resolve=>{downloaded=resolve;});
@@ -469,7 +499,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v120');
+    expect(workerBody).toContain('multiagent-remote-v121');
     expect(pageBody).toContain('id="childSessionVisibility"');
     for (const status of ['idle', 'stopped', 'sleeping']) expect(pageBody).toContain(`data-child-visibility="${status}"`);
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);

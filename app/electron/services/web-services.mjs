@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { RemoteDeviceMonitorService } from "./remote-device-monitor-service.mjs";
 import { completionNotificationPreview } from "./remote-notification-preview.mjs";
 import { RemotePushService } from "./remote-push-service.mjs";
+import { compareProductVersions, parseProductVersion } from "./local-developer-update.mjs";
 
 async function sendInputStatus(response, url, provider) {
   const id = url.searchParams.get('id'), sessionId = url.searchParams.get('sessionId') || undefined;
@@ -44,6 +45,7 @@ load();setInterval(load,1500);
 const REMOTE_PWA_DIR = fileURLToPath(new URL("../remote-pwa/", import.meta.url));
 const REMOTE_MOBILE_APK_URL = "/downloads/Acedia-Mobile.apk";
 const LEGACY_REMOTE_MOBILE_APK_URL = "/downloads/MultiAgent-Mobile.apk";
+const FIRST_MOBILE_VERSION_WITH_SERVICE_PATHS = "1.8.2.30";
 const DEFAULT_REMOTE_MOBILE_APK_PATH = path.join(
   REMOTE_PWA_DIR,
   "downloads",
@@ -256,10 +258,13 @@ function sendRemoteAsset(response, pathname, basePath = '/') {
   return true;
 }
 
-function remoteMobileApkInfo(apkPath, basePath = '/') {
+function remoteMobileApkInfo(apkPath, basePath, version) {
   try {
     const stats = fs.statSync(apkPath);
     if (!stats.isFile() || stats.size <= 0) return { available: false };
+    if (basePath !== '/' && version && compareProductVersions(version, FIRST_MOBILE_VERSION_WITH_SERVICE_PATHS) < 0) {
+      return { available: false, reason: 'service-path-incompatible', version };
+    }
     return {
       available: true,
       downloadUrl: remotePath(REMOTE_MOBILE_APK_URL, basePath),
@@ -295,25 +300,28 @@ function parseSingleByteRange(value, size) {
   return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
-function sendRemoteMobileApk(request, response, apkPath) {
-  const info = remoteMobileApkInfo(apkPath);
+function sendRemoteMobileApk(request, response, apkPath, info) {
+  if (info.reason === 'service-path-incompatible') {
+    sendJson(response, 409, { error: 'This Android APK does not support the Remote service path', reason: info.reason }, { 'cache-control': 'no-store' });
+    return;
+  }
   if (!info.available) {
     sendJson(response, 404, { error: "Android APK is not available" });
     return;
   }
-  const stats = fs.statSync(apkPath);
+  const size = info.size;
   const rangeHeader = String(request.headers.range || "").trim();
-  const range = rangeHeader ? parseSingleByteRange(rangeHeader, stats.size) : null;
+  const range = rangeHeader ? parseSingleByteRange(rangeHeader, size) : null;
   if (rangeHeader && !range) {
     response.writeHead(416, {
-      "content-range": `bytes */${stats.size}`,
+      "content-range": `bytes */${size}`,
       "cache-control": "private, no-store",
       "x-content-type-options": "nosniff",
     }).end();
     return;
   }
   const start = range?.start ?? 0;
-  const end = range?.end ?? stats.size - 1;
+  const end = range?.end ?? size - 1;
   response.writeHead(range ? 206 : 200, {
     "accept-ranges": "bytes",
     "cache-control": "private, no-store",
@@ -322,7 +330,7 @@ function sendRemoteMobileApk(request, response, apkPath) {
     "content-type": "application/vnd.android.package-archive",
     "cross-origin-resource-policy": "same-origin",
     "x-content-type-options": "nosniff",
-    ...(range ? { "content-range": `bytes ${start}-${end}/${stats.size}` } : {}),
+    ...(range ? { "content-range": `bytes ${start}-${end}/${size}` } : {}),
   });
   if (request.method === "HEAD") {
     response.end();
@@ -1208,7 +1216,7 @@ export class LocalDashboardService {
 }
 
 export class RemoteDashboardService {
-  constructor({ baseDir, stateProvider, writePty, submitPty, inputStatus, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, pushService = null, deviceMonitorService = null, trashDocument = null }) {
+  constructor({ baseDir, stateProvider, writePty, submitPty, inputStatus, requestAccess, fetchImpl = fetch, terminalSnapshot, subscribeTerminal, terminalSize, chatProvider, chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession, restartSession, cancelSession, createSession, renameSession, sessionModels, usageProvider, usageSessionProvider, usageProfileVisibility, browserProvider, accountPoolApi, sessionNotifications, answerQuestion, notificationAllowed, mobileApkPath = DEFAULT_REMOTE_MOBILE_APK_PATH, mobileApkVersion, pushService = null, deviceMonitorService = null, trashDocument = null }) {
     Object.assign(this, { chatImages, chatDetails, modelDefaults, sessionNotes, tasks, closeSession });
     this.sessionNotifications = sessionNotifications;
     this.answerQuestion = answerQuestion;
@@ -1241,6 +1249,7 @@ export class RemoteDashboardService {
     this.browserProvider = browserProvider ?? (() => null);
     this.usageRefreshAt = 0;
     this.mobileApkPath = mobileApkPath;
+    this.mobileApkVersion = parseProductVersion(mobileApkVersion) ? mobileApkVersion.trim() : null;
     this.pushService = pushService ?? new RemotePushService({ baseDir });
     this.deviceMonitorService = deviceMonitorService ?? new RemoteDeviceMonitorService({ baseDir });
     this.server = null;
@@ -1776,7 +1785,7 @@ export class RemoteDashboardService {
           ["GET", "HEAD"].includes(request.method) &&
           [REMOTE_MOBILE_APK_URL, LEGACY_REMOTE_MOBILE_APK_URL].includes(url.pathname)
         ) {
-          sendRemoteMobileApk(request, response, this.mobileApkPath);
+          sendRemoteMobileApk(request, response, this.mobileApkPath, remoteMobileApkInfo(this.mobileApkPath, basePath, this.mobileApkVersion));
           return;
         }
         if (request.method === "GET" && url.pathname === "/api/push/public-key") {
@@ -1873,7 +1882,7 @@ export class RemoteDashboardService {
             view: this.view,
             language: this.view?.language,
             ...runtime,
-            mobileApp: remoteMobileApkInfo(this.mobileApkPath, basePath),
+            mobileApp: remoteMobileApkInfo(this.mobileApkPath, basePath, this.mobileApkVersion),
           });
           return;
         }

@@ -1752,6 +1752,7 @@ remoteService = new RemoteDashboardService({
   stateProvider: () => ({ agents: liveOutputForAgents(remoteService.agents, 4_000) }),
   ...sessionProviders,
   mobileApkPath: remoteMobileApkPath,
+  mobileApkVersion: app.isPackaged ? packageMetadata.multiAgentMobileVersion : undefined,
   trashDocument: (file) => shell.trashItem(file),
   requestAccess(login) {
     sendEventToAll("remote:access-request", { login });

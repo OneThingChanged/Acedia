@@ -624,6 +624,7 @@ export const messages = [
   ["Screen · 프로젝트 · 세션 검색","Search screens, projects, and sessions","搜索屏幕、项目和会话","搜尋畫面、專案與工作階段","画面・プロジェクト・セッションを検索","Buscar pantallas, proyectos y sesiones"],
   ["작업이 완료되었습니다.","Task completed."],
   ["Android APK 다운로드{0}","Download Android APK{0}"],
+  ["Android APK {0}은 이 주소의 하위 경로를 지원하지 않습니다. 브라우저에서 Remote를 이용할 수 있습니다.","Android APK {0} does not support this address path. You can use Remote in your browser."],
   ["연결됨","Connected","已连接","已連線","接続済み","Conectado"],
   ["마지막 동기화 {0}","Last synced {0}","上次同步{0}","上次同步{0}","最終同期 {0}","Última sincronización {0}"],
   ["연결 끊김","Disconnected","连接断开","連線中斷","切断","Desconectado"],

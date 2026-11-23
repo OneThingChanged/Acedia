@@ -231,6 +231,7 @@ const ui = {
   refreshButton: $("#refreshButton"),
   installButton: $("#installButton"),
   androidDownloadButton: $("#androidDownloadButton"),
+  apkCompatibilityNote: $("#apkCompatibilityNote"),
   notifyButton: $("#notifyButton"),
   logoutButton: $("#logoutButton"),
   mobileMonitorButton: $("#mobileMonitorButton"),
@@ -5562,6 +5563,13 @@ function validateSelection() {
 
 function syncMobileAppDownload(info) {
   if (!ui.androidDownloadButton) return;
+  if (ui.apkCompatibilityNote) {
+    const incompatible = info?.reason === 'service-path-incompatible';
+    const message = incompatible
+      ? t('Android APK {0}은 이 주소의 하위 경로를 지원하지 않습니다. 브라우저에서 Remote를 이용할 수 있습니다.', [info.version]) : '';
+    if (ui.apkCompatibilityNote.textContent !== message) ui.apkCompatibilityNote.textContent = message;
+    if (ui.apkCompatibilityNote.hidden === incompatible) ui.apkCompatibilityNote.hidden = !incompatible;
+  }
   const downloadUrl = text(info?.downloadUrl);
   const available = Boolean(info?.available && remoteLocalPath(downloadUrl)?.startsWith('/downloads/'));
   ui.androidDownloadButton.hidden = !available;

@@ -256,7 +256,10 @@ but still checked the root `/auth/mode` before saving a profile, which returned
 saves the same checked base URL. Saved PC labels show the hostname and service
 path so that old root profiles can be distinguished from mounted ones. The
 check is covered for a root path, `/acedia`, and nested paths. This change
-requires a new APK to reach devices.
+requires a new APK to reach devices. Standard builds record the bundled APK's
+verified Android version. A Remote service mounted below the hostname root
+offers a browser-use message when its bundled APK predates this fix. APK
+downloads remain available for root deployments and compatible builds.
 
 The native foreground monitor and session list also receive the full profile
 URL, and the external HTML preview bridge recognizes token routes inside that

@@ -274,7 +274,8 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace {
 .topbar-actions .icon-button { display: grid; place-items: center; text-decoration: none; }
 .icon-button.enabled { border-color: rgba(80, 223, 208, 0.45); color: var(--cyan); }
 .android-download-button { color: var(--cyan); font-size: var(--font-caption); font-weight: 900; letter-spacing: -0.04em; }
-html[data-native-app="true"] .android-download-button { display: none !important; }
+html[data-native-app="true"] :is(.android-download-button, .apk-compatibility-note) { display: none !important; }
+.apk-compatibility-note { flex: 0 0 auto; margin: 0; padding: 7px 12px; color: var(--muted); font-size: var(--font-caption); background: var(--panel); }
 .text-button { min-height: 34px; padding: 0 12px; color: #bfd0dc; font-size: var(--font-small); }
 .small-button { min-height: 30px; padding: 0 10px; color: #b9cbd7; font-size: var(--font-small); }
 
