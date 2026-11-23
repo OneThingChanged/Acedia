@@ -16,6 +16,9 @@ import './BackgroundWork.css';
 import { useTaskSessionNavigation } from '../hooks/useTaskSessionNavigation';
 import { useDelegatedWait } from '../hooks/useDelegatedWait';
 import { useSessionAccountLabel } from '../hooks/useSessionAccountLabel';
+import { useCodexContextUsage } from "../hooks/useCodexContextUsage";
+
+const HIGH_INPUT_TOKEN_COUNT = 200_000;
 
 type SidebarProps = SidebarProjectTreeProps & {
   collapsed?: boolean;
@@ -64,8 +67,10 @@ function ArchiveSessionsDialog({ agents, projects, onRestore, onClose }: {
 }
 
 function WorkspaceSidebar(props: SidebarProps) {
-  const { text } = useAppLanguage();
+  const { language, text } = useAppLanguage();
   const { agents, projects, projectFolders, activeAgentId, activeGroupId, collapsed = false } = props;
+  const contextUsage = useCodexContextUsage(!collapsed && agents.some(agent =>
+    agent.aiToolId === "codex" && !agent.sshHostId && isAgentRuntimeActive(agent)));
   const [filter, setFilter] = useState(loadSidebarFilter);
   const [scope, setScope] = useState<string | null>(null);
   const [sortByName, setSortByName] = useState(false);
@@ -252,11 +257,17 @@ function WorkspaceSidebar(props: SidebarProps) {
       : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : agent.status;
     const accountDetails = agent.id === inspectedSessionId && accountLabel
       ? `${text('Codex 계정', 'Codex account')}: ${accountLabel}` : undefined;
+    const inputTokens = agent.aiToolId === "codex" && !agent.sshHostId && isAgentRuntimeActive(agent) ? contextUsage[agent.id] : undefined;
+    const highInput = inputTokens !== undefined && inputTokens >= HIGH_INPUT_TOKEN_COUNT ? inputTokens : null;
+    const contextDetails = highInput === null ? undefined : text(
+      `최근 Codex 요청의 입력 토큰 ${highInput.toLocaleString(language)}개 (캐시 포함)`,
+      `${highInput.toLocaleString(language)} input tokens in the latest Codex request (including cached tokens)`,
+    );
     const titleWithAccount = (title: string) => accountDetails ? `${title}\n${accountDetails}` : title;
     return <li key={agent.id} data-sidebar-agent-id={agent.id} data-background-wait={background || undefined} data-delegated-wait={delegatedCount || undefined} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}${background ? ' has-background-work' : ''}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
       aria-label={background || unread ? [agent.name, background ? statusTitle : '', unread ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
-      aria-description={accountDetails}
+      aria-description={[accountDetails, contextDetails].filter(Boolean).join("\n") || undefined}
       title={titleWithAccount(`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder}\n${statusTitle}`)}
       onPointerEnter={() => setHoveredSessionId(agent.id)}
       onPointerLeave={() => setHoveredSessionId(current => current === agent.id ? null : current)}
@@ -280,6 +291,7 @@ function WorkspaceSidebar(props: SidebarProps) {
           {task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}
         </span>}
       </div>
+      {highInput !== null && <span className="sidebar-context-tokens" title={contextDetails} aria-hidden="true">{Math.round(highInput / 1_000)}k</span>}
       {familyToggle}
       <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}

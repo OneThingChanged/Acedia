@@ -9,6 +9,7 @@ const short = (value, size = 1000) => typeof value === 'string' ? value.slice(0,
 const attention = new Set(['waiting', 'review', 'completed', 'interrupted', 'failed', 'unknown']);
 const interrupted = new Set(['cancelled', 'canceled', 'interrupted', 'aborted']);
 const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, attempt?.id || null]);
+const MAX_RESULTS = 1500;
 
 function completionReviews(items) {
   return items.filter(item => item.scope === 'response').flatMap(item =>
@@ -71,8 +72,8 @@ export class ProjectBoard {
         const results = { ...this.data.results, [event.id]: result };
         for (const id of Object.keys(results).slice(0, Math.max(0, Object.keys(results).length - 1000))) delete results[id];
         let inbox = this.data.inbox;
-        if (state === 'done') inbox = this.withResult(inbox, { id: result.resultKey, sessionId: event.id, createdAt: result.at, summary: result.summary,
-          scope: 'response', conversationId: short(event.session_id, 256), execution: result.execution, observedAt: result.at });
+        if (state === 'done') inbox = this.withResults(inbox, [{ id: result.resultKey, sessionId: event.id, createdAt: result.at, summary: result.summary,
+          scope: 'response', conversationId: short(event.session_id, 256), execution: result.execution, observedAt: result.at }]);
         try { this.save({ ...this.data, results, inbox }); } catch { this.writeError = '보드 기록을 저장하지 못했습니다. 저장소 상태를 확인하세요.'; }
       }
     }
@@ -91,21 +92,37 @@ export class ProjectBoard {
     this.devices.set(key, { sessionId: id, kind: 'browser', tool: `Acedia · ${action}`, source: 'bridge', startedAt: this.now() });
     try { return await task(); } finally { this.devices.delete(key); }
   }
-  withResult(inbox, item) {
-    if (inbox[item.id]) {
-      // A replayed completion can have a later receipt time. Keep its identity,
-      // review state and content while correlating the legacy desktop notice.
-      return item.observedAt > (inbox[item.id].observedAt || 0)
-        ? { ...inbox, [item.id]: { ...inbox[item.id], observedAt: item.observedAt } } : inbox;
+  withResults(inbox, items) {
+    let next = inbox, count, reviewed, evictionIndex = 0;
+    for (const item of items) {
+      const recorded = next[item.id];
+      if (recorded) {
+        // Keep the original review state when correlating a replayed completion.
+        if (item.observedAt > (recorded.observedAt || 0)) {
+          if (next === inbox) next = { ...inbox };
+          next[item.id] = { ...recorded, observedAt: item.observedAt };
+        }
+        continue;
+      }
+      count ??= Object.keys(next).length;
+      if (count >= MAX_RESULTS) {
+        if (!reviewed) {
+          reviewed = Object.values(next).filter(i => i.reviewedAt).sort((a, b) => a.createdAt - b.createdAt);
+          evictionIndex = 0;
+        }
+        if (reviewed.length - evictionIndex <= count - MAX_RESULTS) { this.resultCapacityReached = true; continue; }
+        if (next === inbox) next = { ...inbox };
+        while (count >= MAX_RESULTS) { delete next[reviewed[evictionIndex++].id]; count--; }
+      }
+      if (next === inbox) next = { ...inbox };
+      const value = { ...item, kind: 'result', summary: short(item.summary), reviewedAt: item.reviewedAt || null };
+      value.fingerprint = digest([value.id, value.summary, value.scope, value.createdAt]);
+      next[value.id] = value;
+      count++;
+      if (value.reviewedAt) reviewed = undefined;
+      this.resultCapacityReached = false;
     }
-    const next = { ...inbox };
-    const reviewed = Object.values(next).filter(i => i.reviewedAt).sort((a, b) => a.createdAt - b.createdAt);
-    while (Object.keys(next).length >= 1500 && reviewed.length) delete next[reviewed.shift().id];
-    if (Object.keys(next).length >= 1500) { this.capacityError = '미확인 결과가 저장 한도에 도달했습니다. 결과를 확인한 뒤 다시 갱신하세요.'; return inbox; }
-    this.capacityError = null;
-    const value = { ...item, kind: 'result', summary: short(item.summary), reviewedAt: item.reviewedAt || null };
-    value.fingerprint = digest([value.id, value.summary, value.scope, value.createdAt]);
-    next[value.id] = value; return next;
+    return next;
   }
   async referenceRead(sessionId, targets, task) {
     const keys = [...new Set(targets)].filter(id => id && id !== sessionId).slice(0, 20).map(targetId => {
@@ -125,14 +142,14 @@ export class ProjectBoard {
       latest.set(item.agentId, item);
     }
     const results = { ...this.data.results }; let changed = false;
-    let inbox = this.data.inbox;
-    const receipts = new Set(Object.values(inbox).filter(i => i.scope === 'response')
+    const candidates = [];
+    const receipts = new Set(Object.values(this.data.inbox).filter(i => i.scope === 'response')
       .flatMap(i => [i.createdAt, i.observedAt].filter(Number.isFinite).map(at => JSON.stringify([i.sessionId, at]))));
     for (const item of Array.isArray(items) ? items.slice(-100) : []) {
       // Desktop notices carry a generic translated label, not the response
       // summary. Correlate by the same hook receipt, never by a fuzzy time window.
       if (item?.kind === 'completed' && item.agentId && Number.isFinite(item.createdAt)
-        && !receipts.has(JSON.stringify([item.agentId, item.createdAt]))) inbox = this.withResult(inbox, {
+        && !receipts.has(JSON.stringify([item.agentId, item.createdAt]))) candidates.push({
         id: digest(['notice', item.id || '', item.agentId, item.createdAt, short(item.body)]), sessionId: item.agentId,
         summary: short(item.body), createdAt: item.createdAt, scope: 'response', reviewedAt: item.read ? item.createdAt : null });
     }
@@ -142,12 +159,20 @@ export class ProjectBoard {
       if (!event) continue;
       results[id] = { event, at: item.createdAt, summary: event === 'done' ? short(item.body) : '', reason: event !== 'done' ? short(item.body) : '', reviewed: item.read === true }; changed = true;
     }
+    const inbox = this.withResults(this.data.inbox, candidates);
     if (changed || inbox !== this.data.inbox) try { this.save({ ...this.data, results, inbox }); } catch { this.writeError = '보드 기록을 저장하지 못했습니다. 저장소 상태를 확인하세요.'; }
   }
   snapshot(revision) {
+    return this.#project(revision, false);
+  }
+  delegatedWaitSnapshot(revision) {
+    return this.#project(revision, true);
+  }
+  #project(revision, delegatedWaitOnly) {
     const source = this.catalog();
+    const runs = this.runs() || [];
     const tasks = new Map();
-    for (const run of this.runs() || []) for (const task of run.tasks || []) {
+    for (const run of runs) for (const task of run.tasks || []) {
       const attempt = task.attempts?.at(-1);
       if (attempt?.sessionId && (!tasks.has(attempt.sessionId) || tasks.get(attempt.sessionId).updatedAt <= run.updatedAt)) {
         tasks.set(attempt.sessionId, { runId: run.id, taskId: task.id, attemptId: attempt.id || null, identity: taskIdentity(run, task, attempt), title: short(task.title, 200), state: task.state,
@@ -186,7 +211,7 @@ export class ProjectBoard {
       if (!live && ['working', 'background', 'waiting'].includes(state)) state = 'unknown';
       const count = hook?.background_count || recorded?.backgroundCount || agent.activity?.backgroundCount;
       const backgroundCount = state === 'background' && Number.isInteger(count) && count > 0 && count <= 1000 ? count : null;
-      const info = this.runtimeInfo(agent.id) || {};
+      const info = (delegatedWaitOnly ? null : this.runtimeInfo(agent.id)) || {};
       const item = { id: agent.id, projectId: agent.projectId, name: short(agent.name, 200), provider: short(agent.aiToolId, 60),
         parentId: agent.sessionHierarchy?.parentId || null,
         folder: short(this.folder(agent, source), 4096),
@@ -217,14 +242,23 @@ export class ProjectBoard {
       while (parent && parent.projectId === session.projectId && !visited.has(parent.id)) { visited.add(parent.id); parent = byId.get(parent.parentId); }
       if (parent || session.parentId && (!byId.has(session.parentId) || byId.get(session.parentId).projectId !== session.projectId)) session.parentId = null;
     }
+    const inbox = this.withResults(this.data.inbox, candidates);
+    if (inbox !== this.data.inbox) try { this.save({ ...this.data, inbox }); } catch { this.writeError = '결과 기록을 저장하지 못했습니다. 다시 확인해 주세요.'; }
+    const transfers = this.transfers(), completedAt = new Map();
+    for (const [id, result] of Object.entries(this.data.results)) if (result.lastCompletedAt || result.event === 'done') completedAt.set(id, result.lastCompletedAt || result.at);
+    for (const item of Object.values(this.data.inbox)) if (item.scope === 'response') completedAt.set(item.sessionId, Math.max(completedAt.get(item.sessionId) || 0, item.createdAt));
+    const delegated = delegatedWaitProjection({ sessions, transfers, runs, completedAt, hook: this.hook, waitingSince: this.waitingSince });
+    if (delegatedWaitOnly) {
+      const waits = Object.fromEntries(delegated);
+      const nextRevision = digest(waits);
+      return revision === nextRevision ? { revision, unchanged: true } : { revision: nextRevision, sessions: waits };
+    }
+
     const devices = [];
     for (const [key, item] of this.devices) {
       if (!this.live(item.sessionId) || !byId.has(item.sessionId) || this.now() - item.startedAt > 5 * 60_000) { this.devices.delete(key); continue; }
       devices.push({ ...item, state: this.now() - item.startedAt > 120_000 ? 'unconfirmed' : 'active' });
     }
-    let inbox = this.data.inbox;
-    for (const candidate of candidates) inbox = this.withResult(inbox, candidate);
-    if (inbox !== this.data.inbox) try { this.save({ ...this.data, inbox }); } catch { this.writeError = '결과 기록을 저장하지 못했습니다. 다시 확인해 주세요.'; }
     const items = Object.values(inbox).filter(i => !i.reviewedAt && byId.has(i.sessionId));
     for (const session of sessions) {
       if (['waiting', 'failed', 'unknown', 'interrupted'].includes(session.state) && session.needsAttention) {
@@ -236,10 +270,6 @@ export class ProjectBoard {
     const itemCounts = new Map();
     for (const item of items) { const count = itemCounts.get(item.sessionId) || { results: 0, total: 0 }; count.total++; if (item.kind === 'result') count.results++; itemCounts.set(item.sessionId, count); }
     for (const session of sessions) { const count = itemCounts.get(session.id); session.unreviewedResults = count?.results || 0; session.needsAttention = !!count?.total; }
-    const transfers = this.transfers(), completedAt = new Map();
-    for (const [id, result] of Object.entries(this.data.results)) if (result.lastCompletedAt || result.event === 'done') completedAt.set(id, result.lastCompletedAt || result.at);
-    for (const item of Object.values(this.data.inbox)) if (item.scope === 'response') completedAt.set(item.sessionId, Math.max(completedAt.get(item.sessionId) || 0, item.createdAt));
-    const delegated = delegatedWaitProjection({ sessions, transfers, runs: this.runs() || [], completedAt, hook: this.hook, waitingSince: this.waitingSince });
     for (const session of sessions) if (delegated.has(session.id)) session.delegatedWait = delegated.get(session.id);
     const delegations = this.delegations().filter(t => byId.has(t.from) && byId.has(t.to));
     const references = [...this.references.values()].filter(r => byId.has(r.from) && byId.has(r.to)).map(({ readers, ...r }) => ({ ...r, active: readers > 0 }));
@@ -249,14 +279,10 @@ export class ProjectBoard {
       items, references, devices, delegations, transfers: transfers.filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
         status: short(t.status, 50), reason: short(t.reason, 300), summary: short(t.summary, 200), savedAt: t.savedAt || null,
         sentAt: t.sentAt || null, receivedAt: t.receivedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
-      preferences: this.data.preferences, storageError: this.storageError || this.writeError || this.capacityError || this.delegationError() || null };
+      preferences: this.data.preferences, resultCapacityReached: this.resultCapacityReached === true,
+      storageError: this.storageError || this.writeError || this.delegationError() || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
-  }
-  delegatedWaitSnapshot(revision) {
-    const sessions = Object.fromEntries(this.snapshot().sessions.filter(s => s.delegatedWait).map(s => [s.id, s.delegatedWait]));
-    const nextRevision = digest(sessions);
-    return revision === nextRevision ? { revision, unchanged: true } : { revision: nextRevision, sessions };
   }
   transferDetail(id) {
     const transfer = this.snapshot().transfers.find(t => t.id === id);
@@ -272,6 +298,7 @@ export class ProjectBoard {
     const reviewedAt = this.now();
     for (const item of items) inbox[item.id] = { ...item, reviewedAt: item.reviewedAt || reviewedAt };
     this.save({ ...this.data, acknowledged, inbox });
+    if (items.length) this.resultCapacityReached = false;
     const completions = completionReviews(items);
     if (completions.length) this.onCompletionsReviewed(completions);
     return this.snapshot();
@@ -297,15 +324,17 @@ export class ProjectBoard {
     return this.saveReview(result ? [result] : [], acknowledged);
   }
   acknowledgeResults(id, results) {
-    if (!Array.isArray(results) || results.length > 1500) throw Error('확인할 결과 목록을 확인하세요.');
+    if (!Array.isArray(results) || results.length > MAX_RESULTS) throw Error('확인할 결과 목록을 확인하세요.');
     const snapshot = this.snapshot();
     if (!results.length) return snapshot;
+    const sessionIds = new Set(id === undefined ? snapshot.sessions.map(session => session.id) : [id]);
     const confirmed = results.map(result => {
       const item = this.data.inbox[result.id];
-      if (!item || item.kind !== 'result' || item.sessionId !== id || item.fingerprint !== result.fingerprint) throw Error('확인할 결과가 변경되었습니다. 다시 확인하세요.');
+      if (!item || item.kind !== 'result' || !sessionIds.has(item.sessionId) || item.fingerprint !== result.fingerprint) throw Error('확인할 결과가 변경되었습니다. 다시 확인하세요.');
       return item;
     });
-    return this.saveReview(confirmed);
+    const unread = [...new Set(confirmed)].filter(item => !item.reviewedAt);
+    return unread.length ? this.saveReview(unread) : snapshot;
   }
   folder(agent, source) {
     const visited = new Set(); let current = agent;

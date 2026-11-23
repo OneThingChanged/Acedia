@@ -191,7 +191,7 @@ export function ChatModelPicker({ agentId, provider, active, busy, sessionId, se
         <button type="button" className="chat-copy-button" aria-label={text("닫기", "Close")} disabled={applying} onClick={close}><ChatIcon name="close" /></button></header>
       <div className="chat-model-body">
         <div className="chat-model-account">{provider === "claude" ? "Claude" : "Codex"}{catalog?.accountLabel ? ` · ${catalog.accountLabel}` : ""}</div>
-        {current && <div className="chat-model-current">{text("현재 모델", "Current model")}: <strong>{modelLabel}</strong>{current.effort ? ` · ${current.effort}` : ""}{current.serviceTier !== undefined ? ` · ${current.serviceTier === "fast" ? "Fast" : !current.serviceTier || current.serviceTier === "default" ? "Standard" : current.serviceTier}` : ""}</div>}
+        {current && <div className="chat-model-current">{text("현재 모델", "Current model")}: <strong>{modelLabel}</strong>{current.effort ? ` · ${current.effort}` : ""}{current.serviceTier !== undefined ? ` · ${current.serviceTier === "fast" || current.serviceTier === "priority" ? "Fast" : !current.serviceTier || current.serviceTier === "default" ? "Standard" : current.serviceTier}` : ""}</div>}
         {loading && <div className="chat-model-notice" role="status">{text("모델 목록을 확인하는 중…", "Checking available models…")}</div>}
         {catalog && <>
           <div className="chat-model-options" role="radiogroup" aria-label={text("모델", "Model")}>

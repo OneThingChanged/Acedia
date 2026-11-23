@@ -167,6 +167,7 @@
 .wb-inbox-filters { display: flex; gap: 5px; margin: 0 0 15px; }
 .wb-inbox-filters button { flex: 1; min-width: 0; font-size: 11px; padding: 5px 6px; border-radius: 7px; white-space: nowrap; background: #1d2939; border-color: #37475e; color: #bfcce0; }
 .wb-inbox-filters [aria-pressed=true] { background: #3c3058; color: #efdeff; border-color: #8066af; }
+.wb-inspector .wb-inbox-review { width: 100%; margin: -5px 0 13px; font-size: 12px; }
 .wb-inbox-list { display: flex; flex-direction: column; gap: 11px; margin-inline: -5px; }
 .wb-inbox-item { border: 1px solid #3a4a63; border-radius: 10px; padding: 14px 13px; background: linear-gradient(130deg,#202b3b,#17212e); }
 .wb-inbox-item-top { display: flex; align-items: center; gap: 9px; }

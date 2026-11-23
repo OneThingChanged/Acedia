@@ -128,6 +128,23 @@ describe("per-session native model memory", () => {
     expect(fs.readFileSync(f.file, "utf8")).not.toMatch(/prompt|accessToken|auth/);
   });
 
+  it("restores both Codex speed selections even when the footer omits speed", () => {
+    const f = fixture();
+    const model = { model: "gpt-6.2-sol", effort: "xhigh" };
+    const entry = f.start({ ...model, serviceTier: "default" });
+    entry.startedAt = Date.now();
+    entry.filter = { viewportText: () => "› Ask Codex\nGPT-6.2-Sol xhigh · C:\\Project" };
+    const checkpoint = (serviceTier, offset) => ({ model: { ...model, serviceTier }, timestamp: entry.startedAt + offset });
+    f.memory.remember(entry, null, checkpoint("priority", -1));
+    expect(f.memory.lastSettings(entry).serviceTier).toBe("default");
+    f.memory.remember(entry, null, checkpoint("priority", 1));
+    f.memory.remember(entry);
+    expect(new SessionModelMemory(f.file).resolve(f.args).settings).toEqual({ ...model, serviceTier: "priority" });
+    f.memory.remember(entry, null, checkpoint(null, 2));
+    f.memory.remember(entry, null, checkpoint("priority", 1));
+    expect(new SessionModelMemory(f.file).resolve(f.args).settings).toEqual({ ...model, serviceTier: null });
+  });
+
   it.each([null, "default", "fast"])("retains a known tier when a later transcript omits it (%s)", serviceTier => {
     const f = fixture();
     const original = { model: "old", effort: "high", serviceTier };

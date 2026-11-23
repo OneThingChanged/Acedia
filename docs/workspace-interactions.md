@@ -713,6 +713,9 @@ Opening a result now marks that exact result read while retaining its detail.
 Opening a conversation captures current result IDs/fingerprints and acknowledges
 only that set after successful navigation. A node's context menu offers the same
 captured-set result review. New arrivals, questions and errors are not consumed.
+In **Your attention → Results**, **Mark N results reviewed** covers all results
+matching the current project and search, including entries past the first page.
+The button sends only the exact result IDs and fingerprints captured at the click.
 The response's display changes to **Response read / 응답 확인됨** once no response
 results remain, while native work state stays independent. Reading never approves,
 publishes or executes work. Response termination,
@@ -753,9 +756,14 @@ Version 1 review settings migrate without reopening acknowledged results. Hook
 completion replays share an execution/result identity, and legacy desktop notices
 are correlated by their exact hook receipt time rather than a fuzzy time window
 or translated notification text. The journal retains up to 1,500 results within
-4 MiB: oldest reviewed history can be pruned, but unread entries are not silently
-deleted to make room. Capacity/write/corruption errors remain visible and disable
-review actions; corrupt files are preserved.
+4 MiB and prunes the oldest reviewed entries when it needs space. Unreviewed
+entries remain until a user reviews them. The result-count warning keeps review
+available so the user can free space even when the board journal is full. Actual
+write and corruption errors still report storage failure, and corrupt files are preserved.
+
+The host applies each refresh's result candidates in one pass over the journal.
+The sidebar's delegated-wait request uses the same session state and result
+evidence and skips full-board serialization and live model/account lookups.
 
 Current states use explicit runtime, hook and task signals. External/tool waiting,
 explicit pause, idle and unreachable states are separate; elapsed silence alone

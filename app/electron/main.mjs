@@ -97,7 +97,7 @@ import { TaskOrchestration } from "./services/task-orchestration.mjs";
 import { taskFileSnapshot } from './services/task-file-audit.mjs';
 import { RemoteSessionActivationBroker } from "./services/remote-session-activation-broker.mjs";
 import { RemoteSessionModelBroker } from "./services/remote-session-model-broker.mjs";
-import { SessionModelService, lastTurnModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
+import { SessionModelService, lastTurnModel, lastCodexThreadModel, codexModelInputReady, verifyModelSessionStart } from "./services/session-model-service.mjs";
 import { SessionModelMemory, nativeCodexModel } from "./services/session-model-memory.mjs";
 import { CommandApprovalResponder } from "./services/command-approval.mjs";
 import { SessionModelDefaults } from "./services/session-model-defaults.mjs";
@@ -119,6 +119,7 @@ import { parseChatTranscript, deriveTurnLifecycleDetails, derivePendingQuestion 
 import { normalizeTranscriptPath, isTranscriptInsideRoot } from "./services/transcript-path.mjs";
 import { ownedQwenTranscript } from './services/qwen-chat.mjs';
 import { CodexTurnCompletion } from "./services/codex-turn-completion.mjs";
+import { CodexContextUsage } from "./services/codex-context-usage.mjs";
 import {
   LocalDashboardService,
   RemoteDashboardService,
@@ -1436,6 +1437,15 @@ function defaultModelCatalog(args) {
   return providerModelCatalog({ provider: args.provider, accountId: args.accountId, codexPoolAccountId: args.codexPoolAccountId,
     routed: args.provider === "codex" && accountPool.state.enabled });
 }
+function sessionModelTranscript(id, provider, accountId, sessionId) {
+  const root = accountTranscriptRoot(provider, accountId);
+  const matches = candidate => candidate && root && isTranscriptInsideRoot(root, candidate)
+    && (!sessionId || candidate.toLowerCase().includes(sessionId.toLowerCase()));
+  const cached = agentTranscripts.get(id);
+  if (matches(cached)) return cached;
+  const resolved = resolveChatTranscriptBySession(provider, sessionId, { toolId: provider, accountId })?.path;
+  return matches(resolved) ? resolved : null;
+}
 async function sessionModelCatalog(agent) {
   const live = ptys.get(agent.id);
   const provider = agent.aiToolId;
@@ -1446,18 +1456,16 @@ async function sessionModelCatalog(agent) {
   if (ptys.get(agent.id) !== live || currentAgent?.aiToolId !== provider || selectedAccountId(currentAgent) !== selectedAccountId(agent)) {
     throw new Error("세션 또는 계정이 바뀌었습니다. 모델 목록을 다시 확인하세요.");
   }
-  const sessionId = agentSessionIds.get(agent.id) || agent.lastSessionId;
-  const candidate = agentTranscripts.get(agent.id) || resolveChatTranscriptBySession(provider, sessionId,
-    { toolId: provider, accountId })?.path;
-  const root = accountTranscriptRoot(provider, accountId);
-  const transcript = candidate && root && isTranscriptInsideRoot(root, candidate)
-    && (!sessionId || candidate.toLowerCase().includes(sessionId.toLowerCase())) ? candidate : null;
-  // A resumed transcript can still end with the old model. Explicit settings
-  // on the replacement CLI take precedence until it emits a new turn context.
-  const turnModel = await lastTurnModel(transcript, provider,
+  const currentSessionId = () => agentSessionIds.get(agent.id) || live?.resumeContext?.sessionId || agent.lastSessionId;
+  const sessionId = currentSessionId();
+  const transcript = sessionModelTranscript(agent.id, provider, accountId, sessionId);
+  // Read current-process settings even if no new turn has followed /fast.
+  // Older turns must not override the settings applied by the replacement CLI.
+  const checkpoint = provider === "codex" && live && sessionId ? await lastCodexThreadModel(transcript, live.startedAt) : null;
+  const turnModel = checkpoint ? null : await lastTurnModel(transcript, provider,
     normalizeSessionModel(live?.modelSettings) ? live.startedAt : undefined);
-  if (ptys.get(agent.id) !== live) throw new Error("세션 상태가 바뀌었습니다. 모델 목록을 다시 확인하세요.");
-  const current = live ? sessionModelMemory.remember(live, turnModel)
+  if (ptys.get(agent.id) !== live || currentSessionId() !== sessionId) throw new Error("세션 상태가 바뀌었습니다. 모델 목록을 다시 확인하세요.");
+  const current = live ? sessionModelMemory.remember(live, turnModel, checkpoint)
     : sessionModelMemory.lastSettings(agent) || turnModel;
   // Include a model actually used by this Claude session (full IDs, 3P models)
   // in addition to the installed CLI's documented aliases.
@@ -1475,16 +1483,15 @@ async function rememberSessionModel(id) {
   const entry = ptys.get(id);
   if (!entry || entry.ssh || !["codex", "claude"].includes(entry.aiToolId)) return;
   try {
-    if (entry.runtimeModelSettings || nativeCodexModel(entry)) { sessionModelMemory.remember(entry); return; }
     const accountId = selectedAccountId(entry);
     const sessionId = agentSessionIds.get(id) || entry.resumeContext?.sessionId;
-    const candidate = agentTranscripts.get(id) || resolveChatTranscriptBySession(entry.aiToolId, sessionId,
-      { toolId: entry.aiToolId, accountId })?.path;
-    const root = accountTranscriptRoot(entry.aiToolId, accountId);
-    const transcript = candidate && root && isTranscriptInsideRoot(root, candidate)
-      && (!sessionId || candidate.toLowerCase().includes(sessionId.toLowerCase())) ? candidate : null;
-    const observed = await lastTurnModel(transcript, entry.aiToolId, entry.modelSettings ? entry.startedAt : undefined);
-    if (ptys.get(id) === entry) sessionModelMemory.remember(entry, observed);
+    const transcript = sessionModelTranscript(id, entry.aiToolId, accountId, sessionId);
+    const checkpoint = entry.aiToolId === "codex" && sessionId ? await lastCodexThreadModel(transcript, entry.startedAt) : null;
+    const observed = checkpoint || entry.runtimeModelSettings || nativeCodexModel(entry) ? null
+      : await lastTurnModel(transcript, entry.aiToolId, entry.modelSettings ? entry.startedAt : undefined);
+    if (ptys.get(id) === entry && (agentSessionIds.get(id) || entry.resumeContext?.sessionId) === sessionId) {
+      sessionModelMemory.remember(entry, observed, checkpoint);
+    }
   } catch (error) { console.warn("[electron] session model capture failed", error.message); }
 }
 const sessionModels = new SessionModelService({
@@ -4075,6 +4082,55 @@ function resolveChatTranscriptBySession(preferredTool, sessionId, binding = null
   return null;
 }
 
+const codexContextUsage = new CodexContextUsage();
+const contextTranscriptLookups = new WeakMap();
+let activeContextUsageRead;
+
+function currentCodexConversation(entry) {
+  return agentSessionIds.get(entry.id) || entry.resumeContext?.sessionId;
+}
+
+function contextUsageTranscript(entry, sessionId) {
+  const accountId = selectedAccountId(entry);
+  const root = accountTranscriptRoot("codex", accountId);
+  const suffix = `-${sessionId.toLowerCase()}.jsonl`;
+  const matches = candidate => candidate?.toLowerCase().endsWith(suffix)
+    && isTranscriptInsideRoot(root, candidate);
+  const hooked = agentTranscripts.get(entry.id);
+  if (matches(hooked)) return hooked;
+
+  const previous = contextTranscriptLookups.get(entry);
+  if (previous?.sessionId === sessionId) {
+    if (previous.path && matches(previous.path)) return previous.path;
+    if (previous.retryAt > Date.now()) return null;
+  }
+  const found = resolveChatTranscriptBySession("codex", sessionId, { toolId: "codex", accountId })?.path;
+  const transcript = matches(found) ? found : null;
+  contextTranscriptLookups.set(entry, { sessionId, path: transcript, retryAt: Date.now() + 15_000 });
+  return transcript;
+}
+
+function readActiveCodexContextUsage() {
+  activeContextUsageRead ??= (async () => {
+    const result = Object.create(null);
+    for (const [id, entry] of [...ptys]) {
+      if (entry.aiToolId !== "codex" || entry.ssh) continue;
+      const sessionId = currentCodexConversation(entry);
+      if (!sessionId) continue;
+      try {
+        const transcript = contextUsageTranscript(entry, sessionId);
+        if (!transcript) continue;
+        const inputTokens = await codexContextUsage.read(transcript);
+        if (inputTokens !== null && ptys.get(id) === entry && currentCodexConversation(entry) === sessionId) {
+          result[id] = inputTokens;
+        }
+      } catch { /* A removed account or rolling transcript can become unavailable. */ }
+    }
+    return result;
+  })().finally(() => { activeContextUsageRead = undefined; });
+  return activeContextUsageRead;
+}
+
 function conversationMetadataForAgent(agentId) {
   const id = asString(agentId).trim();
   const catalogAgent = usageIndex.catalog.agents.find((agent) => agent.id === id);
@@ -5706,6 +5762,9 @@ async function invokeCommand(event, command, rawArgs) {
         callerViewId: event.sender.id,
       });
     }
+    case "get_active_codex_context_usage":
+      if (!runtimeByWebContents.get(event.sender.id)?.workspace_window) return {};
+      return readActiveCodexContextUsage();
     case "claim_agent_for_window": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (!runtime?.workspace_window) {

@@ -53,6 +53,8 @@ describe("Electron IPC contract", () => {
     for (const args of [{ id: 'a', action: 'stop' }, { id: 'a', action: 'delete', confirmed: true }, { id: '', action: 'delete' }])
       expect(() => contract.assertInvokeRequest('project_board_manage_session', args)).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results: [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64) }] })).toBeTruthy();
+    expect(contract.assertInvokeRequest('project_board_ack_results', { results: [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64) }] })).toBeTruthy();
+    expect(() => contract.assertInvokeRequest('project_board_ack_results', { id: null, results: [] })).toThrow();
     for (const results of [null, [{ id: 'a'.repeat(64) }], [{ id: 'a'.repeat(64), fingerprint: 'b'.repeat(64), execute: true }], Array(1501).fill({})]) expect(() => contract.assertInvokeRequest('project_board_ack_results', { id: 'a', results })).toThrow();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64) })).toBeTruthy();
     expect(contract.assertInvokeRequest('project_board_ack', { id: 'a', fingerprint: 'a'.repeat(64), itemId: 'b'.repeat(64) })).toBeTruthy();

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeSessionModel, sessionModelArgs, readCodexModels, claudeModelCatalog } from "../shared/session-model.mjs";
-import { SessionModelService, lastTurnModel, modelRestartAllowed, codexModelInputReady, verifyModelSessionStart } from "./session-model-service.mjs";
+import { SessionModelService, lastCodexThreadModel, lastTurnModel, modelRestartAllowed, codexModelInputReady, verifyModelSessionStart } from "./session-model-service.mjs";
 import { CodexScrollbackFilter } from "./terminal-stream.mjs";
 import { RemoteSessionModelBroker } from "./remote-session-model-broker.mjs";
 import { LocalDashboardService, RemoteDashboardService } from "./web-services.mjs";
@@ -193,6 +193,25 @@ describe("session model controls", () => {
     const file = path.join(root, "turn.jsonl");
     await fs.writeFile(file, 'x'.repeat(600000) + '\n' + JSON.stringify({ type: "turn_context", payload: { model: "account-only", effort: "high" } }) + '\n{"partial":');
     expect(await lastTurnModel(file)).toEqual({ model: "account-only", effort: "high" });
+  });
+  it("reads Codex speed changes before another turn and keeps them separate from turn evidence", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-thread-settings-"));
+    resources.push(() => fs.rm(root, { recursive: true }));
+    const file = path.join(root, "thread.jsonl");
+    const since = Date.parse("2026-11-23T10:00:00Z");
+    const model = { model: "gpt-6.2-sol", effort: "xhigh" };
+    const event = (service_tier, timestamp) => JSON.stringify({ type: "event_msg", timestamp, payload: {
+      type: "thread_settings_applied", thread_settings: { model: model.model, reasoning_effort: model.effort, service_tier },
+    } }) + "\n";
+    await fs.writeFile(file, event("default", "2026-11-23T09:59:00Z"));
+    expect(await lastCodexThreadModel(file, since)).toBeNull();
+    await fs.appendFile(file, event("priority", "2026-11-23T10:00:01Z"));
+    expect(await lastCodexThreadModel(file, since)).toEqual({ model: { ...model, serviceTier: "priority" }, timestamp: since + 1000 });
+    await fs.appendFile(file, event(undefined, "2026-11-23T10:00:02Z"));
+    expect((await lastCodexThreadModel(file, since)).model.serviceTier).toBe("priority");
+    await fs.appendFile(file, event(null, "2026-11-23T10:00:03Z"));
+    expect(await lastCodexThreadModel(file, since)).toEqual({ model: { ...model, serviceTier: null }, timestamp: since + 3000 });
+    expect(await lastTurnModel(file, "codex", since)).toBeNull();
   });
   it.each(["codex", "claude"])("retains a model behind large images, partial records and later tool output (%s)", async provider => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "acedia-model-large-"));

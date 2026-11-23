@@ -41,6 +41,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "open_new_app_window",
   "get_detached_agents",
   "get_agent_window_usage",
+  "get_active_codex_context_usage",
   "claim_agent_for_window",
   "set_desktop_pet_enabled",
   "update_desktop_pet",
@@ -324,10 +325,13 @@ function assertInvokeRequest(command, rawArgs) {
       if (Object.keys(args).some(key => command === 'open_project_board' || key !== 'revision')
         || args.revision !== undefined && !/^[a-f0-9]{64}$/.test(args.revision)) throw new TypeError('Invalid board snapshot');
       break;
+    case "get_active_codex_context_usage":
+      if (Object.keys(args).length) throw new TypeError("Unexpected context usage arguments");
+      break;
     case 'project_board_ack':
     case 'project_board_ack_results':
     case 'project_board_open_session':
-      assertId(args);
+      if (command !== 'project_board_ack_results' || args.id !== undefined) assertId(args);
       if (Object.keys(args).some(key => !['id', ...(command === 'project_board_ack' ? ['fingerprint', 'itemId'] : command === 'project_board_ack_results' ? ['results'] : ['compose', 'reviewResults'])].includes(key))
         || args.itemId !== undefined && (typeof args.itemId !== 'string' || !/^[a-f0-9]{64}$/.test(args.itemId))
         || command === 'project_board_ack' && (typeof args.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(args.fingerprint))

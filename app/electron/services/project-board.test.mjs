@@ -54,9 +54,11 @@ describe('Independent project board', () => {
     const first = f.board.snapshot(), fingerprint = first.sessions[0].fingerprint, result = first.items.find(i => i.sessionId === 'a');
     expect(first.sessions[0].delegatedWait).toMatchObject({ count: 1, childIds: ['b'] });
     expect(f.board.snapshot(first.revision).unchanged).toBe(true);
+    f.board.runtimeInfo = vi.fn();
     const thin = f.board.delegatedWaitSnapshot();
     expect(Object.keys(thin)).toEqual(['revision', 'sessions']); expect(thin.sessions.a).toEqual(first.sessions[0].delegatedWait);
     expect(f.board.delegatedWaitSnapshot(thin.revision)).toEqual({ revision: thin.revision, unchanged: true });
+    expect(f.board.runtimeInfo).not.toHaveBeenCalled();
     f.board.observe({ id: 'b', event: 'done', received_at: 2500, assistant_message: 'child response' });
     expect(f.board.snapshot().sessions[0].delegatedWait).toBeUndefined();
     expect(f.board.delegatedWaitSnapshot(thin.revision).sessions).toEqual({});
@@ -199,12 +201,42 @@ describe('Independent project board', () => {
     const f = fixture(); const inbox = {};
     for (let i = 0; i < 1500; i++) { const id = i.toString(16).padStart(64, '0'); inbox[id] = { id, sessionId: 'a', createdAt: i, reviewedAt: null }; }
     const next = { id: 'f'.repeat(64), sessionId: 'b', createdAt: 2000, summary: '새 결과', scope: 'response' };
-    expect(f.board.withResult(inbox, next)).toBe(inbox); expect(f.board.capacityError).toContain('한도');
+    expect(f.board.withResults(inbox, [next])).toBe(inbox); expect(f.board.resultCapacityReached).toBe(true);
     inbox['0'.repeat(64)].reviewedAt = 1000;
-    const updated = f.board.withResult(inbox, next);
+    const updated = f.board.withResults(inbox, [next]);
     expect(Object.keys(updated)).toHaveLength(1500); expect(updated['0'.repeat(64)]).toBeUndefined();
     expect(updated[next.id]).toMatchObject({ summary: '새 결과', reviewedAt: null });
     expect(inbox['0'.repeat(64)]).toBeTruthy();
+  });
+  it('reviews the 1,260 listed results across sessions at the 1,500-record limit and resumes recording', () => {
+    const f = fixture();
+    delete f.source.agents[0].activity;
+    f.source.agents.push({ id: 'c', name: '검수', projectId: 'p', aiToolId: 'codex' });
+    f.live.add('c');
+    f.hooks.set('c', { event: 'waiting', received_at: 1500, interactive_question: '사용자 확인 필요' });
+    const saved = Array.from({ length: 1500 }, (_, index) => ({
+      id: index.toString(16).padStart(64, '0'), fingerprint: index.toString(16).padStart(64, 'f'),
+      sessionId: index < 1260 ? (index % 2 === 0 ? 'a' : 'b') : 'removed',
+      kind: 'result', scope: 'response', summary: '이전 응답', createdAt: index + 1, reviewedAt: null,
+    }));
+    f.board.save({ ...f.board.data, inbox: Object.fromEntries(saved.map(item => [item.id, item])) });
+    f.board.observe({ id: 'b', event: 'done', received_at: 3000, assistant_message: '한도 이후 응답' });
+    const full = f.board.snapshot();
+    expect(full).toMatchObject({ resultCapacityReached: true, storageError: null });
+    const results = full.items.filter(item => item.kind === 'result').map(({ id, fingerprint }) => ({ id, fingerprint }));
+    expect(results).toHaveLength(1260);
+    const { id, fingerprint } = saved.at(-1);
+    expect(() => f.board.acknowledgeResults(undefined, [...results, { id, fingerprint }])).toThrow('변경');
+    expect(f.board.snapshot().items).toHaveLength(1261);
+    const next = f.board.acknowledgeResults(undefined, results);
+    expect(next.resultCapacityReached).toBe(false);
+    expect(next.items).toMatchObject([
+      { sessionId: 'b', kind: 'result', summary: '한도 이후 응답' },
+      { sessionId: 'c', kind: 'question' },
+    ]);
+    const reopened = new ProjectBoard(f.options);
+    expect(reopened.snapshot().items).toEqual(next.items);
+    expect(reopened.data.inbox[id].reviewedAt).toBeNull();
   });
   it('keeps multiple response results during new work and reviews exactly one across restarts', () => {
     const f = fixture(); delete f.source.agents[0].activity;

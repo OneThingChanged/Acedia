@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { CodexScrollbackFilter } from "../electron/services/terminal-stream.mjs";
 import { TerminalSessionService } from "../electron/services/terminal-session-service.mjs";
 import { SessionModelMemory, nativeCodexModel, updateNativeSessionModel } from "../electron/services/session-model-memory.mjs";
-import { lastTurnModel } from "../electron/services/session-model-service.mjs";
+import { lastCodexThreadModel, lastTurnModel } from "../electron/services/session-model-service.mjs";
 import { sessionModelArgs } from "../electron/shared/session-model.mjs";
 import { codexServerConfigArgs } from "../electron/services/account-pool-session.mjs";
 import { AccountPoolRpc } from "../electron/services/account-pool-rpc.mjs";
@@ -16,6 +16,7 @@ import { decodeCodexRequestBody } from "../electron/services/codex-request-body.
 
 const require = createRequire(import.meta.url);
 const binary = process.env.ACEDIA_CODEX_BINARY;
+const slashFast = process.argv.includes("--slash-fast");
 assert.ok(binary && path.isAbsolute(binary), "Set ACEDIA_CODEX_BINARY to the installed native executable");
 const output = path.resolve(import.meta.dirname, "../../output/session-settings-cli");
 await fs.mkdir(output, { recursive: true });
@@ -55,10 +56,11 @@ const env = { ...process.env, CODEX_HOME: cliHome, TERM: "xterm-256color" };
 for (const key of Object.keys(env)) if (/^(?:OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN)$/i.test(key)) delete env[key];
 async function config(model, effort) {
   const base = `http://127.0.0.1:${server.address().port}`;
-  const provider = process.argv.includes("--inline-fast")
+  const provider = slashFast || process.argv.includes("--inline-fast")
     ? `model_provider="openai"\nopenai_base_url=${JSON.stringify(base + "/v1")}\nchatgpt_base_url=${JSON.stringify(base)}\n`
     : 'model_provider="fixture"\n';
-  await fs.writeFile(path.join(cliHome, "config.toml"), `model=${JSON.stringify(model)}\nmodel_reasoning_effort=${JSON.stringify(effort)}\n${provider}[windows]\nsandbox="unelevated"\n[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n[model_providers.fixture]\nname="Fixture"\nbase_url="${base}/v1"\nwire_api="responses"\n`);
+  const footer = slashFast ? '[tui]\nstatus_line=["model"]\n' : "";
+  await fs.writeFile(path.join(cliHome, "config.toml"), `model=${JSON.stringify(model)}\nmodel_reasoning_effort=${JSON.stringify(effort)}\n${provider}${footer}[windows]\nsandbox="unelevated"\n[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n[model_providers.fixture]\nname="Fixture"\nbase_url="${base}/v1"\nwire_api="responses"\n`);
 }
 async function start(sessionId) {
   const resolved = memory.resolve(context);
@@ -82,7 +84,7 @@ async function start(sessionId) {
       keptExistingModel = true;
       child.write("2"); await wait(200); child.write("\r");
     }
-    return nativeCodexModel(entry);
+    return slashFast ? /› Ask Codex to do anything/.test(viewport) : nativeCodexModel(entry);
   }, "native model composer/footer");
   // A resumed history can paint a footer before the input handler is ready.
   // Production model changes also require a settled, empty native composer.
@@ -102,9 +104,9 @@ async function message(text, count) {
   const entry = sessions.get(context.id);
   entry.process.write(text); await wait(500); entry.process.write("\r");
   await until(async () => (await records()).filter(item => item.row.payload?.type === "task_complete").length >= count, text);
-  await until(() => nativeCodexModel(entry), "composer restored after response");
+  await until(() => slashFast ? /› Ask Codex to do anything/.test(entry.filter.viewportText()) : nativeCodexModel(entry), "composer restored after response");
 }
-async function inlineFastRoundTrip() {
+async function writeFastFixtureAuth() {
   // Fast UI is available only with ChatGPT authentication. These unsigned
   // fixture tokens and every provider URL exist solely in the isolated home
   // and loopback server; no real account is read or contacted.
@@ -112,6 +114,46 @@ async function inlineFastRoundTrip() {
     'https://api.openai.com/auth': { chatgpt_account_id: 'fixture-fast', chatgpt_plan_type: 'pro', chatgpt_user_id: 'fixture-fast' } })).toString('base64url') + '.x';
   await fs.writeFile(path.join(cliHome, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt',
     tokens: { id_token: token, access_token: token, refresh_token: 'fixture-only' }, last_refresh: new Date().toISOString() }));
+}
+async function slashFastRoundTrip() {
+  await writeFastFixtureAuth();
+  const settings = { model: "gpt-6.2-sol", effort: "xhigh", serviceTier: "default" };
+  await config(settings.model, settings.effort);
+  memory.stage(context, settings);
+  const entry = await start();
+  await message("SLASH_FAST_INITIAL", 1);
+  const meta = (await records()).find(item => item.row.type === "session_meta");
+  const threadId = meta?.row.payload.id;
+  assert.ok(threadId);
+  let live = entry;
+  for (const [enabled, count] of [[true, 2], [false, 3]]) {
+    const since = Date.now();
+    live.process.write("/fast"); await wait(500); live.process.write("\r");
+    let checkpoint;
+    await until(async () => {
+      checkpoint = await lastCodexThreadModel(meta.file, since);
+      return checkpoint;
+    }, `Codex persisted /fast ${enabled ? "on" : "off"}`);
+    assert.equal(nativeCodexModel(live), undefined);
+    assert.equal(enabled ? checkpoint.model.serviceTier : (checkpoint.model.serviceTier ?? "default"), enabled ? "priority" : "default");
+    memory.remember(live, null, checkpoint);
+    sessions.action(context.id, "restart"); await wait(300);
+    memory = new SessionModelMemory(memoryFile);
+    assert.deepEqual(memory.resolve(context).settings, { ...settings, serviceTier: checkpoint.model.serviceTier });
+    live = await start(threadId);
+    const prompt = enabled ? "SLASH_FAST_RESUMED" : "SLASH_STANDARD_RESUMED";
+    await message(prompt, count);
+    const request = calls.findLast(body => JSON.stringify(body.input).includes(prompt));
+    assert.equal(request?.model, settings.model);
+    assert.equal(request?.reasoning?.effort, settings.effort);
+    assert.equal(request.service_tier ?? "default", enabled ? "priority" : "default");
+  }
+  assert.deepEqual([...new Set((await records()).filter(item => item.row.type === "session_meta").map(item => item.row.payload.id))], [threadId]);
+  console.log("CODEX_SLASH_FAST_RESTART_OK /fast on and off without a speed footer; same conversation, model, effort and request tier verified");
+  console.log(root);
+}
+async function inlineFastRoundTrip() {
+  await writeFastFixtureAuth();
   const old = { model: "gpt-5.6-luna", effort: "max", serviceTier: "priority" };
   const selected = { model: "gpt-6.1-sol", effort: "xhigh", serviceTier: "priority" };
   await config(old.model, old.effort);
@@ -200,7 +242,8 @@ async function modelSettingsRoundTrip() {
   console.log(root);
 }
 try {
-  if (process.argv.includes("--inline-fast")) await inlineFastRoundTrip();
+  if (slashFast) await slashFastRoundTrip();
+  else if (process.argv.includes("--inline-fast")) await inlineFastRoundTrip();
   else await modelSettingsRoundTrip();
 } finally {
   sessions.closeAll();

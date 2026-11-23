@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import type { Agent } from "../types";
 import { useDelegatedWait } from '../hooks/useDelegatedWait';
+import { useCodexContextUsage } from "../hooks/useCodexContextUsage";
 vi.mock('../hooks/useDelegatedWait', () => ({ useDelegatedWait: vi.fn(() => ({})) }));
+vi.mock("../hooks/useCodexContextUsage", () => ({ useCodexContextUsage: vi.fn(() => ({})) }));
 
 const project = { id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 };
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: project.folder, aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
@@ -13,6 +15,22 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
+  it("shows large recent Codex requests in both sidebar lists and hides the indicator after compaction", () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.sidebarExpandedProjects.v1" ? '["p"]' : null, setItem: vi.fn() });
+    const agents = [
+      agent("large", { status: "working", runtimeStatus: "running" }),
+      agent("small", { status: "working", runtimeStatus: "running" }),
+      agent("offline", { status: "exited", runtimeStatus: "exited" }),
+    ];
+    vi.mocked(useCodexContextUsage).mockReturnValueOnce({ large: 430_449, small: 199_999, offline: 400_000 });
+    const before = render(agents);
+    expect(before.match(/class="sidebar-context-tokens"/g)).toHaveLength(2);
+    expect(before).toContain(">430k</span>");
+    expect(before).toContain("최근 Codex 요청의 입력 토큰 430,449개 (캐시 포함)");
+
+    vi.mocked(useCodexContextUsage).mockReturnValueOnce({ large: 23_799, small: 199_999, offline: 400_000 });
+    expect(render(agents)).not.toContain("sidebar-context-tokens");
+  });
   it('shows the same purple waiting border and count in project and recent rows while preserving unread results', () => {
     vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'multiagent.sidebarExpandedProjects.v1' ? '["p"]' : null, setItem: vi.fn() });
     vi.mocked(useDelegatedWait).mockReturnValueOnce({ leader: { count: 1, childIds: ['child'], observedAt: 1000 } });

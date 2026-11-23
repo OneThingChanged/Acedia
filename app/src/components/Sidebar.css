@@ -143,6 +143,17 @@
 @media (prefers-reduced-motion: reduce) { .sidebar-workspace .sidebar-recent-row.agent-completion-unread::after { animation: none; } }
 .sidebar-workspace .sidebar-recent-row .status { flex: 0 0 5px; width: 5px; height: 5px; margin: 0; }
 .sidebar-session-copy { min-width: 0; flex: 1; }
+.sidebar-context-tokens {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--app-warning) 13%, transparent);
+  color: var(--app-warning);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .sidebar-workspace .sidebar-recent-row .agent-name { display: block; color: var(--app-heading); font-size: 12px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-session-meta { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--app-soft-text); font-size: 9px; line-height: 1.5; white-space: nowrap; }
 .sidebar-session-meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

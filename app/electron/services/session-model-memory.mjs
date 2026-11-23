@@ -37,14 +37,14 @@ export function nativeCodexModel(entry) {
   return undefined;
 }
 
-export function updateNativeSessionModel(entry, settings) {
+export function updateNativeSessionModel(entry, settings, timestamp = Date.now()) {
   const native = normalizeSessionModel(settings);
   if (!native) return;
   // Repeated copies of the same thread snapshot must not restart the wait or
   // move its baseline past a /model repaint that has already happened.
   if (sameSessionModel(native, entry.runtimeModelSettings) && Object.hasOwn(entry, "runtimeModelFooter")) return;
   entry.runtimeModelSettings = native;
-  entry.runtimeModelUpdatedAt = Date.now();
+  entry.runtimeModelUpdatedAt = timestamp;
   // The notification can arrive before its TUI repaint. Remember the footer
   // that was already visible so it cannot undo the newly reported settings.
   entry.runtimeModelFooter = nativeCodexModel(entry) ?? null;
@@ -159,8 +159,12 @@ export class SessionModelMemory {
       ...(keepNext ? { next: previous.next, nextToken: previous.nextToken } : {}) });
     this.#save();
   }
-  remember(entry, observed) {
+  remember(entry, observed, checkpoint) {
     if (!supported(entry)) return undefined;
+    if (entry.aiToolId === "codex" && checkpoint?.timestamp >= entry.startedAt
+      && checkpoint.timestamp > (entry.runtimeModelUpdatedAt ?? 0)) {
+      updateNativeSessionModel(entry, checkpoint.model, checkpoint.timestamp);
+    }
     const previous = this.record(entry);
     const pending = this.#accountRecord(entry);
     const settings = rememberedModel(entry, previous?.settings || entry.modelSettings, observed);

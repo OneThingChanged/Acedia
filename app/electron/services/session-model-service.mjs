@@ -47,6 +47,14 @@ export async function verifyModelSessionStart({ id, settings, entryFor, hookFor,
 const modelReads = new Map();
 const MODEL_CHUNK = 256 * 1024;
 const MAX_MODEL_LINE = 1024 * 1024;
+const MAX_SETTINGS_LOOKBACK = 4 * MAX_MODEL_LINE;
+
+function codexSettingsRecord(row) {
+  const event = row.type === "event_msg" && row.payload?.type === "thread_settings_applied" ? row.payload : null;
+  const settings = event?.thread_settings;
+  if (!settings || !Object.hasOwn(settings, "service_tier")) return undefined;
+  return normalizeSessionModel({ model: settings.model, effort: settings.reasoning_effort, serviceTier: settings.service_tier });
+}
 
 function modelRecord(row, provider) {
   const payload = row.payload;
@@ -58,7 +66,7 @@ function modelRecord(row, provider) {
   return normalizeSessionModel(value);
 }
 
-async function readModelRecord(file, provider, previous, since) {
+async function readModelRecord(file, match, parse, previous, since, maxLookback) {
   const handle = await fs.open(file, "r");
   try {
     const stat = await handle.stat();
@@ -66,7 +74,11 @@ async function readModelRecord(file, provider, previous, since) {
     const appended = previous && previous.ino === stat.ino && stat.size > previous.size;
     // A new record can straddle the old end. Re-read that boundary but retain
     // the last known model when appended tools/images contain no model record.
-    const floor = appended ? Math.max(0, previous.size - MAX_MODEL_LINE) : 0;
+    const floor = Math.max(appended ? previous.size - MAX_MODEL_LINE : 0, stat.size - maxLookback, 0);
+    const readRecord = row => {
+      const model = parse(row), timestamp = Date.parse(row.timestamp);
+      return model && (since == null || timestamp >= since) ? { model, timestamp } : null;
+    };
     let end = stat.size, carry = Buffer.alloc(0), oversized = false, found = null;
     while (end > floor && !found) {
       const start = Math.max(floor, end - MODEL_CHUNK);
@@ -77,11 +89,10 @@ async function readModelRecord(file, provider, previous, since) {
         if (buffer[index] !== 10) continue;
         const part = buffer.subarray(index + 1, lineEnd);
         const line = !oversized && part.length + carry.length <= MAX_MODEL_LINE ? Buffer.concat([part, carry]).toString("utf8") : "";
-        if ((provider === "codex" ? /"type"\s*:\s*"turn_context"/ : /"type"\s*:\s*"assistant"/).test(line)) {
+        if (match.test(line)) {
           try {
-            const row = JSON.parse(line);
-            const model = modelRecord(row, provider);
-            if (model && (since == null || Date.parse(row.timestamp) >= since)) { found = { model, timestamp: Date.parse(row.timestamp) }; break; }
+            found = readRecord(JSON.parse(line));
+            if (found) break;
           } catch { /* A concurrently written final record may be incomplete. */ }
         }
         carry = Buffer.alloc(0); oversized = false; lineEnd = index;
@@ -94,9 +105,7 @@ async function readModelRecord(file, provider, previous, since) {
     // The very first JSONL line need not have a leading newline.
     if (!found && floor === 0 && !oversized && carry.length) {
       try {
-        const row = JSON.parse(carry.toString("utf8"));
-        const model = modelRecord(row, provider);
-        if (model && (since == null || Date.parse(row.timestamp) >= since)) found = { model, timestamp: Date.parse(row.timestamp) };
+        found = readRecord(JSON.parse(carry.toString("utf8")));
       } catch { /* Not a model record. */ }
     }
     return { size: stat.size, mtimeMs: stat.mtimeMs, ino: stat.ino, record: found || (appended ? previous.record : null) };
@@ -105,20 +114,30 @@ async function readModelRecord(file, provider, previous, since) {
 
 // Backward, bounded-memory reads find the last model even after large images
 // or long tool runs. Cache only metadata/model, never conversation contents.
-export async function lastTurnModel(file, provider = "codex", since) {
+async function lastModelRecord(file, kind, match, parse, since, maxLookback = Infinity) {
   if (!file) return null;
-  const key = `${provider}:${file}:${since ?? "all"}`;
+  const key = `${kind}:${file}:${since ?? "all"}`;
   let entry = modelReads.get(key);
   if (!entry) {
     entry = {}; modelReads.set(key, entry);
     if (modelReads.size > 64) modelReads.delete(modelReads.keys().next().value);
   }
   try {
-    entry.pending ??= readModelRecord(file, provider, entry.value, since).then(value => { entry.value = value; return value; }).finally(() => { entry.pending = null; });
+    entry.pending ??= readModelRecord(file, match, parse, entry.value, since, maxLookback).then(value => { entry.value = value; return value; }).finally(() => { entry.pending = null; });
     const { record } = await entry.pending;
-    return record && (since == null || record.timestamp >= since) ? record.model : null;
+    return record;
   } catch { /* the CLI may not have emitted its first turn yet */ }
   return null;
+}
+
+export async function lastTurnModel(file, provider = "codex", since) {
+  const match = provider === "codex" ? /"type"\s*:\s*"turn_context"/ : /"type"\s*:\s*"assistant"/;
+  const record = await lastModelRecord(file, provider, match, row => modelRecord(row, provider), since);
+  return record?.model ?? null;
+}
+
+export function lastCodexThreadModel(file, since) {
+  return lastModelRecord(file, "codex-settings", /"type"\s*:\s*"thread_settings_applied"/, codexSettingsRecord, since, MAX_SETTINGS_LOOKBACK);
 }
 
 export class SessionModelService {

@@ -4,7 +4,7 @@ title: 에이전트 고급 실행 설정
 description: 로컬 세션의 기본 모델·effort·Fast와 CLI 실행 파일, 추가 인수, 환경변수의 적용 범위.
 tags: [settings, agents, sessions]
 status: stable
-last_updated: 2026-10-23
+last_updated: 2026-11-23
 sources:
   - resource: ../app/src/components/AdvancedLaunchOptions.tsx
   - resource: ../app/src/components/AgentsSettings.tsx
@@ -196,6 +196,24 @@ native `priority`가 화면에서 `fast`로 표시되면 확인된 서비스 티
 선택창을 열어 둔 사이 CLI에서 Fast를 바꿔도 최신 확인값을 사용한다. 목록 조회 중
 도구·계정·작업 폴더·명시적 모델 설정이 바뀌면 오래된 선택을 적용하지 않고 다시 확인한다.
 고급 실행에서 모델·서비스 티어를 직접 지정하면 자동 복원 값과의 충돌을 피한다.
+
+#### `/fast` 변경 직후 재시작
+
+Windows EXE 1.8.2.33의 복원 경로는 Codex 상태줄과 마지막 턴에서 속도를 읽는다.
+상태줄이 속도를 표시하지 않는 구성에서 `/fast`를 바꾸고 다음 요청 없이 재시작하면,
+Codex가 변경을 저장했어도 Acedia가 이전 속도를 새 CLI에 다시 넘길 수 있다.
+Codex는 `/fast` 변경을 현재 대화에 즉시 저장한다. [Codex CLI 명령 문서](https://learn.chatgpt.com/docs/developer-commands?surface=cli#toggle-fast-mode-with-fast)
+
+수정된 소스는 재시작 전 같은 계정과 대화의 `thread_settings_applied` 기록에서 현재 CLI가
+확정한 모델·effort·서비스 티어를 읽는다. Fast 활성화와 기본 속도로의 전환을 모두 복원한다.
+이전 실행의 기록은 제외하고, Acedia에서 별도로 저장한 다음 실행 설정을 우선한다.
+화면과 기록 모두에서 속도를 확인할 수 없는 경우에는 마지막으로 확인한 값을 유지한다.
+
+`app/`에서 `ACEDIA_CODEX_BINARY`를 설치된 실행 파일로 지정하고
+`npm run codex:session-settings-smoke -- --slash-fast`를 실행하면 이 경로를 검증할 수 있다.
+Codex 0.171.0에서 속도 없는 상태줄로 재현한 뒤 `/fast` 켜기와 끄기 각각에서 명령 직후
+재시작했다. 같은 대화 ID와 모델·effort를 유지하고, 재시작 뒤 첫 요청이 각각 Fast와
+기본 속도를 사용하는 것을 격리된 프로필과 로컬 응답 서버에서 확인했다.
 
 검증 명령 `npm run codex:session-settings-smoke`는 `ACEDIA_CODEX_BINARY`로 지정한
 설치된 Codex를 격리된 프로필·loopback 모델 응답으로 실행한다. 실제 대화 ID를 유지한

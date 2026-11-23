@@ -526,6 +526,30 @@ it('keeps related projects in place when folding while preserving totals, hierar
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);
 });
 
+it('offers bulk review at capacity for all matching results, including those past the first page', async () => {
+  const data = fixture(); data.resultCapacityReached = true;
+  const results = Array.from({ length: 60 }, (_, index) => ({ ...data.items![0],
+    id: index.toString(16).padStart(64, '0'), sessionId: index % 2 === 0 ? 'a' : 'b', summary: '대상 보고',
+  }));
+  data.items!.push(...results, { ...results[0], id: '1'.repeat(64), sessionId: 'c' });
+  let tree = render(data);
+  const filters = elements(tree).find(e => e.props.className === 'wb-inbox-filters')!;
+  elements(filters).find(e => e.type === 'button' && content(e).startsWith('결과'))!.props.onClick();
+  elements(tree).find(e => e.type === 'select' && content(e).includes('전체 프로젝트'))!.props.onChange({ target: { value: 'p' } });
+  elements(tree).find(e => e.type === 'input' && e.props.type === 'search')!.props.onChange({ target: { value: '대상' } });
+  tree = render(data);
+  expect(content(elements(tree).find(e => e.props.role === 'status' && e.props.className === 'wb-error')!)).toContain('저장 한도');
+  expect(elements(tree).filter(e => e.props['data-item-id'])).toHaveLength(50);
+  const review = elements(tree).find(e => e.props.className === 'wb-inbox-review')!;
+  expect(review.props.disabled).toBe(false);
+  expect(content(review)).toBe('결과 60건 모두 확인');
+  review.props.onClick(); await Promise.resolve();
+  expect(hooks.invoke).toHaveBeenCalledExactlyOnceWith('project_board_ack_results', {
+    results: results.map(({ id, fingerprint }) => ({ id, fingerprint })),
+  });
+  expect((hooks.values[0] as BoardSnapshot).items).toHaveLength(4);
+});
+
 it('scrolls a dense project internally and locates an offscreen result without opening or launching its session', () => {
   const data = fixture(); data.projects = [data.projects[0]];
   data.sessions = Array.from({ length: 36 }, (_, index) => ({ ...data.sessions[0], id: `s${index}`, name: `Worker ${index}`, parentId: index ? 's0' : null }));
