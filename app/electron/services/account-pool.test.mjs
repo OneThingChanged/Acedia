@@ -73,28 +73,37 @@ describe('Acedia account pool', () => {
     expect(pool.state.sessions.credits.accountId).toBe(first);
     expect(seen.map(call => call.headers['chatgpt-account-id'])).toEqual(['A', 'A']);
     pool.account(first).limits.rateLimits.credits = { hasCredits: false, unlimited: false, balance: '0' };
-    expect(pool.snapshot().accounts.find(a => a.id === first).available).toBe(false);
+    expect(pool.snapshot().accounts.find(a => a.id === first)).toMatchObject({ available: false, reason: 'quota-exhausted' });
     expect((await sendRequest(pool, original)).response.status).toBe(503);
     expect(seen).toHaveLength(2);
     await expect(pool.launch('credits', first)).rejects.toMatchObject({ status: 503 });
     await pool.launch('credits'); // Switching back to automatic is an explicit restart.
     expect(pool.state.sessions.credits.accountId).toBe(second);
   });
-  it('honors an upstream 429 cooldown even with credits and never replays the rejected generation', async () => {
-    let now = Date.now(), calls = 0;
+  it.each(['seconds', 'http-date', 'absent'])('honors an upstream 429 cooldown (%s) even with credits and never replays the rejected generation', async retryFormat => {
+    let now = Math.floor(Date.now() / 1000) * 1000, calls = 0;
+    const retryAt = now + (retryFormat === 'absent' ? 60_000 : 120_000);
+    const headers = retryFormat === 'absent' ? {} : { 'retry-after': retryFormat === 'seconds' ? '120' : new Date(retryAt).toUTCString() };
     const { pool } = fixture({ now: () => now, fetchImpl: async () => {
       calls++;
-      return calls === 1 ? new Response('{}', { status: 429, headers: { 'retry-after': '120' } })
+      return calls === 1 ? new Response('{}', { status: 429, headers })
         : new Response('data: {"type":"response.completed"}\n\n', { headers: { 'content-type': 'text/event-stream' } });
     } });
     const first = add(pool, 'A'); add(pool, 'B');
     pool.account(first).limits = { rateLimits: { primary: { usedPercent: 100 }, credits: { hasCredits: true } } };
     await pool.setEnabled(true); const launch = await pool.launch('credits', first);
     expect((await sendRequest(pool, launch)).response.status).toBe(429);
-    expect(pool.quotaBlocked(pool.account(first))).toBe(true);
-    expect((await sendRequest(pool, launch)).response.status).toBe(503);
+    expect(pool.choices().accounts[0]).toMatchObject({ available: false, reason: 'rate-limited', retryAt });
+    expect(pool.snapshot().accounts[0]).toMatchObject({ available: false, reason: 'rate-limited', retryAt });
+    const blocked = await sendRequest(pool, launch);
+    expect(blocked.response.status).toBe(503);
+    expect(JSON.parse(blocked.text).error).toMatchObject({ code: 'rate-limited', retryAt });
+    fs.mkdirSync(pool.home(first), { recursive: true });
+    fs.writeFileSync(path.join(pool.home(first), 'auth.json'), JSON.stringify(auth('A')));
+    pool.identity(pool.account(first), { account: { type: 'chatgpt' } });
+    expect(pool.deliveryBlock('credits')).toEqual({ reason: 'rate-limited', retryAt });
     expect(calls).toBe(1); expect(pool.state.sessions.credits.accountId).toBe(first);
-    now += 120_001;
+    now = retryAt;
     expect((await sendRequest(pool, launch)).response.status).toBe(200);
     expect(calls).toBe(2); expect(pool.state.sessions.credits.accountId).toBe(first);
   });
@@ -185,7 +194,7 @@ describe('Acedia account pool', () => {
     expect(pool.state.sessions.manual.accountId).toBe(second);
     if (reason === 'excluded') pool.update(second, false);
     else pool.account(second).limits = { rateLimits: { primary: { usedPercent: 100, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
-    await expect(pool.launch('manual', second)).rejects.toThrow(/선택한 분산 계정/);
+    await expect(pool.launch('manual', second)).rejects.toMatchObject({ code: reason === 'excluded' ? 'account-disabled' : 'quota-exhausted' });
     expect(pool.state.sessions.manual.accountId).toBe(second);
     await pool.launch('manual');
     expect(pool.state.sessions.manual).toMatchObject({ accountId: first, preferredAccountId: null });
@@ -242,8 +251,8 @@ describe('Acedia account pool', () => {
     expect((await request(pool, 'one')).response.status).toBe(200);
     expect(pool.state.sessions.one.accountId).toBe(second);
   });
-  it.each(['removed', 'login_required', 'login_pending', 'credentials_missing'])('keeps ownership when the original account is %s', async reason => {
-    const { pool, seen } = fixture(); const first = add(pool, 'A'); add(pool, 'B');
+  it.each(['removed', 'login_required', 'login_pending', 'credentials_missing'])('fails a live request and reselects only on the next automatic launch (%s)', async reason => {
+    const { pool, seen } = fixture(); const first = add(pool, 'A'), second = add(pool, 'B');
     await pool.setEnabled(true);
     const original = await pool.launch('one'); await sendRequest(pool, original);
     if (reason === 'removed') pool.remove(first);
@@ -256,9 +265,26 @@ describe('Acedia account pool', () => {
     }
     const status = reason === 'removed' ? 404 : 503;
     expect((await sendRequest(pool, original)).response.status).toBe(status);
-    await expect(pool.launch('one')).rejects.toMatchObject({ status });
     expect(pool.state.sessions.one.accountId).toBe(first);
     expect(seen).toHaveLength(1);
+    await expect(pool.launch('one', first)).rejects.toMatchObject({ status });
+    await pool.launch('one');
+    expect(pool.state.sessions.one.accountId).toBe(second);
+    expect(seen).toHaveLength(1);
+  });
+  it('treats the default as an unpinned preference and finds an available alternative when it cools down', async () => {
+    const { pool } = fixture(); const backup = add(pool, 'Backup'), preferred = add(pool, 'Default');
+    pool.account(backup).limits = { primary: { usedPercent: 18 } };
+    await pool.setEnabled(true);
+    await pool.launch('first', null, null, preferred);
+    expect(pool.state.sessions.first.accountId).toBe(preferred);
+    expect(pool.state.sessions.first.preferredAccountId).toBeUndefined();
+    pool.account(preferred).cooldownUntil = Date.now() + 60_000;
+    await pool.launch('first', null, null, preferred);
+    await pool.launch('new', null, null, preferred);
+    expect(pool.state.sessions.first.accountId).toBe(backup);
+    expect(pool.state.sessions.new.accountId).toBe(backup);
+    await expect(pool.launch('pinned', preferred)).rejects.toMatchObject({ code: 'rate-limited' });
   });
   it('does not forward unauthenticated, cross-origin or unsupported requests', async () => {
     const { pool, seen } = fixture(); add(pool, 'A'); await pool.setEnabled(true);

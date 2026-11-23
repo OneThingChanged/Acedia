@@ -33,4 +33,16 @@ describe('delivery warnings', () => {
     expect(takeDeliveryWarning({ ...changed, readAt: 123 }, recent, 65000)).toBe(false);
     expect(takeDeliveryWarning(changed, recent, 65000)).toBe(true);
   });
+
+  it('shows a retry time for queued rate limits and deduplicates account failures by recipient and reason', () => {
+    const retryAt = Date.UTC(2026, 10, 24, 12);
+    const queued: SessionDelivery = { ...uncertain, status: 'queued', reason: 'rate-limited', retryAt, isMessage: true };
+    expect(deliveryStatusMessage(queued, true)).toMatch(/Saved in inbox.*Retry at/);
+    expect(isDeliveryWarning(queued)).toBe(false);
+    const failed: SessionDelivery = { ...queued, status: 'failed', reason: 'authentication-required', retryAt: undefined };
+    const recent = new Map<string, number>();
+    expect(takeDeliveryWarning(failed, recent, 100)).toBe(true);
+    expect(takeDeliveryWarning({ ...failed, deliveryId: 'second', sourceId: 'another-sender' }, recent, 200)).toBe(false);
+    expect(takeDeliveryWarning({ ...failed, reason: 'quota-exhausted' }, recent, 200)).toBe(true);
+  });
 });

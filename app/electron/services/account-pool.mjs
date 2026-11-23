@@ -14,6 +14,17 @@ import { readCodexModels } from '../shared/session-model.mjs';
 import { codexQuotaInfo } from '../shared/codex-quota.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+function retryAfterAt(value, now) {
+  if (value && /^\d+$/.test(value)) {
+    const retryAt = now + Number(value) * 1000;
+    if (Number.isFinite(retryAt) && retryAt > now && retryAt <= 8.64e15) return retryAt;
+  }
+  if (value && !/^\d+$/.test(value)) {
+    const retryAt = Date.parse(value);
+    if (retryAt > now) return retryAt;
+  }
+  return now + 60_000;
+}
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
 const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(data)); };
 const stats = () => ({ version: 3, requests: 0, failures: 0, cancelled: 0,
@@ -105,7 +116,7 @@ export class AccountPool {
       storage: { writable: !this.storageError, ...(this.storageError || {}) },
       accounts: this.state.accounts.map(a => ({ id: a.id, label: a.label, email: a.email || null, plan: a.plan || null,
         enabled: a.enabled, state: this.jobs.has(a.id) ? 'login_pending' : a.status, error: a.status === 'ready' ? null : a.loginError || null, limits: a.limits || null,
-        available: this.eligible(a),
+        ...this.accountAvailability(a),
         limitsAt: a.limitsAt || null, cooldownUntil: a.cooldownUntil || null, stats: a.stats, active: this.active.get(a.id) || 0,
         login: this.jobs.get(a.id)?.public || null,
         transcriptUsage: (() => { try { return this.transcriptUsageForPeriods?.(periodsByAccount.get(a.id) || []) || null; } catch { return null; } })() })),
@@ -208,7 +219,7 @@ export class AccountPool {
     a.identity = identity; a.email = data.account.email || null; a.plan = data.account.planType || null;
     const origin = backendOrigin(data.workspaceRouting?.backendOrigin);
     if (origin) a.backendOrigin = origin;
-    a.status = 'ready'; a.loginError = null; a.cooldownUntil = null;
+    a.status = 'ready'; a.loginError = null;
   }
   async beginLogin(id, method = 'browser') {
     if (!['browser', 'device'].includes(method)) throw fail('지원하지 않는 로그인 방식입니다.');
@@ -287,12 +298,6 @@ export class AccountPool {
       return JSON.parse(this.unseal(a.auth)).tokens;
     });
   }
-  quotaBlocked(a) {
-    const now = this.now();
-    if ((a.cooldownUntil || 0) > now) return true;
-    const quota = codexQuotaInfo(a.limits, now);
-    return quota.includedExhausted && !quota.creditsAvailable;
-  }
   sessionAssignment(id) {
     this.guardReadable();
     const session = Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : null;
@@ -302,7 +307,7 @@ export class AccountPool {
   choices() {
     this.guard();
     return { enabled: this.state.enabled, accounts: this.state.accounts.map(account => ({
-      id: account.id, label: account.label, available: this.eligible(account),
+      id: account.id, label: account.label, ...this.accountAvailability(account),
     })) };
   }
   routingStatus(id) {
@@ -312,13 +317,36 @@ export class AccountPool {
       accounts: this.state.accounts.map(a => ({ id: a.id, label: a.label, available: this.eligible(a) })) };
   }
   eligible(a) {
-    return a.enabled && a.status === 'ready' && Boolean(a.auth) && !this.jobs.has(a.id) && !this.quotaBlocked(a);
+    return this.accountAvailability(a).available;
   }
-  accountBlockReason(a) {
-    if (this.jobs.has(a.id)) return '계정 로그인이 진행 중입니다.';
-    if (!a.auth || a.status !== 'ready') return '계정에 다시 로그인해야 합니다.';
-    if (!a.enabled) return '계정이 분산에서 제외됐습니다.';
-    return (a.cooldownUntil || 0) > this.now() ? '계정이 사용량 제한으로 대기 중입니다.' : '계정의 Codex 사용 한도가 소진됐습니다.';
+  accountAvailability(a) {
+    if (!a) return { available: false, reason: 'account-missing' };
+    if (this.jobs.has(a.id)) return { available: false, reason: 'login-pending' };
+    if (!a.auth || a.status !== 'ready') return { available: false, reason: 'authentication-required' };
+    if (!a.enabled) return { available: false, reason: 'account-disabled' };
+    const now = this.now();
+    const quota = codexQuotaInfo(a.limits, now);
+    if (quota.includedExhausted && !quota.creditsAvailable) return { available: false, reason: 'quota-exhausted' };
+    if (a.cooldownUntil > now) return { available: false, reason: 'rate-limited', retryAt: a.cooldownUntil };
+    return { available: true };
+  }
+  accountBlockError(a, prefix = '') {
+    const { reason, retryAt } = this.accountAvailability(a);
+    const description = {
+      'account-missing': '등록된 계정을 찾을 수 없습니다.',
+      'login-pending': '계정 로그인이 진행 중입니다.',
+      'authentication-required': '계정에 다시 로그인해야 합니다.',
+      'account-disabled': '계정이 분산에서 제외됐습니다.',
+      'quota-exhausted': '계정의 Codex 사용 한도가 소진됐습니다.',
+      'rate-limited': retryAt && `계정이 일시 제한 중입니다. 재시도 가능 시각 ${new Date(retryAt).toLocaleString('ko-KR')}`,
+    }[reason] || '계정 상태가 바뀌었습니다. 다시 시도하세요.';
+    return Object.assign(fail(prefix + description, a ? 503 : 404), { code: reason, retryAt });
+  }
+  deliveryBlock(id) {
+    if (!this.state.enabled) return { reason: 'account-pool-disabled' };
+    const accountId = this.state.sessions[id]?.accountId;
+    const { available, reason, retryAt } = this.accountAvailability(this.state.accounts.find(a => a.id === accountId));
+    return available ? null : { reason, retryAt };
   }
   async sessionModels(id, preferredAccountId = null) {
     this.guard();
@@ -422,36 +450,35 @@ export class AccountPool {
     candidates.sort((a, b) => (this.active.get(a.id) || 0) - (this.active.get(b.id) || 0) || assigned(a.id) - assigned(b.id) || a.stats.requests - b.stats.requests);
     return candidates[0];
   }
-  launchAccount(id, preferredAccountId = null) {
+  launchAccount(id, preferredAccountId = null, defaultAccountId = null) {
     this.guard();
     if (!this.state.enabled) return null;
     if (preferredAccountId != null) {
       if (!validId(preferredAccountId)) throw fail('선택한 분산 계정이 올바르지 않습니다.');
-      const selected = this.account(preferredAccountId);
-      if (!this.eligible(selected)) throw fail(`선택한 분산 ${this.accountBlockReason(selected)} 세션 속성에서 사용 가능한 계정을 선택할 수 있습니다.`, 503);
+      const selected = this.state.accounts.find(a => a.id === preferredAccountId);
+      if (!this.eligible(selected)) throw this.accountBlockError(selected, '지정한 분산 계정을 사용할 수 없습니다. ');
       return selected;
     }
     const session = Object.hasOwn(this.state.sessions, id) ? this.state.sessions[id] : null;
-    if (session?.accountId && !session.preferredAccountId) {
-      const assigned = this.account(session.accountId);
-      if (this.eligible(assigned)) return assigned;
-      // Only a quota or participation change may rotate an automatic assignment.
-      if (assigned.status === 'ready' && assigned.auth && !this.jobs.has(assigned.id)) {
-        const replacement = this.availableAccount();
-        if (replacement) return replacement;
-        throw fail(`현재 분산 ${this.accountBlockReason(assigned)} 사용 가능한 다른 분산 계정이 없습니다.`, 503);
-      }
-      throw fail('현재 분산 계정의 인증을 사용할 수 없습니다. 같은 계정으로 다시 로그인하거나 세션 속성에서 다른 계정을 선택하세요.', 503);
-    }
+    const assigned = session?.preferredAccountId ? null : this.state.accounts.find(a => a.id === session?.accountId);
+    if (this.eligible(assigned)) return assigned;
+    const preferred = this.state.accounts.find(a => a.id === defaultAccountId);
+    if (this.eligible(preferred)) return preferred;
     const available = this.availableAccount();
-    if (!available) throw fail('사용 가능한 분산 계정이 없습니다. 계정의 로그인·참여·한도를 확인하세요.', 503);
+    if (!available) {
+      const cooling = this.state.accounts.filter(a => this.accountAvailability(a).reason === 'rate-limited')
+        .sort((a, b) => a.cooldownUntil - b.cooldownUntil)[0];
+      const blocked = cooling || assigned || preferred || this.state.accounts[0];
+      if (blocked) throw this.accountBlockError(blocked, '사용 가능한 분산 계정이 없습니다. ');
+      throw Object.assign(fail('등록된 분산 계정이 없습니다.', 503), { code: 'no-routing-accounts' });
+    }
     return available;
   }
   choose(sessionId) {
     const session = this.state.sessions[sessionId];
     if (session.accountId) {
       const a = this.account(session.accountId);
-      if (!this.eligible(a)) throw fail('이 대화의 계정을 사용할 수 없습니다. 계정 상태 또는 세션 속성의 분산 계정을 확인한 뒤 다시 시작하세요.', 503);
+      if (!this.eligible(a)) throw this.accountBlockError(a);
       if (this.recordAssignment(sessionId, a.id)) this.persist();
       return a;
     }
@@ -490,7 +517,7 @@ export class AccountPool {
     if (enabled) { if (!this.state.accounts.some(a => this.eligible(a))) throw fail('로그인 후 분산에 참여할 계정을 활성화하세요.'); await this.start(); }
     this.state.enabled = enabled; this.persist();
   }
-  async launch(id, preferredAccountId = null, preserveOwnerId = null) {
+  async launch(id, preferredAccountId = null, preserveOwnerId = null, defaultAccountId = null) {
     this.guard();
     if (preferredAccountId != null && !validId(preferredAccountId)) throw fail('선택한 분산 계정이 올바르지 않습니다.');
     if (!this.state.enabled) {
@@ -504,7 +531,7 @@ export class AccountPool {
     if (preserveOwnerId) {
       if (this.state.sessions[id]?.accountId !== preserveOwnerId || !this.eligible(this.account(preserveOwnerId))) throw fail('모델 변경 중 세션 계정이 바뀌었습니다. 계정 상태를 확인하세요.', 409);
     } else {
-      const selected = this.launchAccount(id, preferredAccountId);
+      const selected = this.launchAccount(id, preferredAccountId, defaultAccountId);
       if (!Object.hasOwn(this.state.sessions, id)) this.state.sessions[id] = { accountId: null, lastUsed: this.now() };
       const session = this.state.sessions[id];
       session.accountId = selected.id;
@@ -519,7 +546,7 @@ export class AccountPool {
     return { env: { ACEDIA_ACCOUNT_POOL_KEY: this.token(id) }, args: Object.entries(config).flatMap(([key, value]) => ['-c', `${key}=${JSON.stringify(value)}`]) };
   }
   async launchNative(id, preferredAccountId, preserveOwnerId, context) {
-    if (!await this.launch(id, preferredAccountId, preserveOwnerId)) return null;
+    if (!await this.launch(id, preferredAccountId, preserveOwnerId, context.defaultAccountId)) return null;
     const accountId = this.state.sessions[id].accountId;
     for (const lease of this.nativeSessions.values()) if (lease.sessionId === id) lease.runtime.close();
     const leaseId = randomUUID();
@@ -530,10 +557,8 @@ export class AccountPool {
       if (this.state.sessions[id]?.accountId !== accountId || this.nativeSessions.get(leaseId) !== lease) {
         throw fail('이 세션의 분산 연결이 바뀌었습니다. 세션을 다시 시작하세요.', 503);
       }
-      const account = this.account(accountId);
-      if (!this.eligible(account)) {
-        throw fail(`${this.accountBlockReason(account)} 계정 관리·분산에서 상태를 확인한 뒤 세션을 다시 시작하세요.`, 503);
-      }
+      const account = this.state.accounts.find(a => a.id === accountId);
+      if (!this.eligible(account)) throw this.accountBlockError(account);
     };
     const getAuth = async (force = false, previousAccountId) => {
       ensureAvailable();
@@ -664,10 +689,14 @@ export class AccountPool {
       if (!upstream.ok) {
         record.status = 'failed';
         if (upstream.status === 401 || (!nativeTool && upstream.status === 403)) a.status = 'login_required';
-        if (!nativeTool && upstream.status === 429) { const retry = Number(upstream.headers.get('retry-after')); a.cooldownUntil = this.now() + Math.min(3600, Math.max(30, Number.isFinite(retry) ? retry : 60)) * 1000; }
+        if (!nativeTool && upstream.status === 429) {
+          a.cooldownUntil = Math.max(a.cooldownUntil || 0, retryAfterAt(upstream.headers.get('retry-after'), this.now()));
+        }
         if (!lease || upstream.status < 400 || upstream.status >= 600) {
           await upstream.body?.cancel();
-          throw fail(`계정 요청이 실패했습니다 (HTTP ${upstream.status}). 계정 상태를 확인하세요.`, upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502);
+          const status = upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502;
+          if (!nativeTool && [401, 403, 429].includes(status)) throw Object.assign(this.accountBlockError(a), { status });
+          throw fail(`계정 요청이 실패했습니다 (HTTP ${upstream.status}). 계정 상태를 확인하세요.`, status);
         }
       }
       const contentType = upstream.headers.get('content-type') || 'application/json';
@@ -767,7 +796,10 @@ export class AccountPool {
       // EOF. Closing that transport must not erase a known terminal outcome.
       if (record && record.status !== 'failed') record.status = record.completionObserved ? 'completed'
         : clientDisconnected ? 'cancelled' : 'failed';
-      if (!res.headersSent && !res.destroyed) json(res, error.status || 502, { error: { message: error.status ? error.message : '분산 요청 연결에 실패했습니다.', type: 'acedia_pool_error' } });
+      if (!res.headersSent && !res.destroyed) json(res, error.status || 502, { error: {
+        message: error.status ? error.message : '분산 요청 연결에 실패했습니다.',
+        type: 'acedia_pool_error', code: error.code, retryAt: error.retryAt,
+      } });
       else if (!res.destroyed) res.destroy();
     } finally {
       bodyLease?.release();

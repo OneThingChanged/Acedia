@@ -162,6 +162,7 @@ export function createTerminalLauncher({
       const launchOptions = normalizeLaunchOptions(args.launchOptions);
       const poolLaunch = !ssh && aiToolId === "codex" ? await accountPoolLaunch(id,
         args.codexPoolAccountId || null, args.poolResumeOwnerId || null, {
+          defaultAccountId: args.codexPoolDefaultAccountId,
           env: { ...guiTerminalEnvironment(launchEnvironment), TERM: "xterm-256color", COLORTERM: "truecolor",
             ...hookEnvironment(hookService, id, browserMcpScriptPath, true) },
           cwd, cliExecutable: launchOptions?.executable,

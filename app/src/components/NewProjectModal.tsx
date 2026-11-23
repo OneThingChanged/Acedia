@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from "react";
 import { loadAgentDefaults } from "../lib/agentDefaults";
-import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import type { LaunchOptions } from "../lib/launchOptions";
 import { AccountSelect } from "./ProviderAccounts";
@@ -45,7 +44,7 @@ export function NewProjectModal({
   const [aiToolId, setAiToolId] = useState("");
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
-  const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const [dangerous, setDangerous] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<LaunchOptions>();

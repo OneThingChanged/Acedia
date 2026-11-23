@@ -199,7 +199,7 @@ import { TopBar } from "./components/TopBar";
 import { TerminalArea } from "./components/TerminalArea";
 import { NewAgentModal } from "./components/NewAgentModal";
 import { SessionLaunchAccountModal } from "./components/SessionLaunchAccountModal";
-import { newSessionPoolAccountId, sessionLaunchAccountDecision, type LaunchPoolAccount, type LaunchPoolChoices } from "./lib/sessionLaunchAccount";
+import { launchAccountBlockedMessage, sessionLaunchAccountDecision, type LaunchPoolAccount, type LaunchPoolChoices } from "./lib/sessionLaunchAccount";
 import { NewProjectModal } from "./components/NewProjectModal";
 import { useRendererConfirmation } from "./hooks/useRendererConfirmation";
 import { DeleteSessionModal } from "./components/DeleteSessionModal";
@@ -1591,10 +1591,20 @@ function App() {
 
   // ---- Notifications
 
+  const recentLaunchErrors = useRef(new Map<string, { body: string; at: number }>());
   const pushToast = useCallback(
-    (agentId: string, title: string, body: string) => {
+    (agentId: string, title: string, body: string, launchError = false) => {
+      if (launchError) {
+        const now = Date.now();
+        for (const [id, error] of recentLaunchErrors.current) {
+          if (now - error.at >= 30_000) recentLaunchErrors.current.delete(id);
+        }
+        if (recentLaunchErrors.current.get(agentId)?.body === body) return;
+        recentLaunchErrors.current.set(agentId, { body, at: now });
+      }
       const id = crypto.randomUUID();
-      setToasts((prev) => [...prev, { id, agentId, title, body }]);
+      setToasts((prev) => launchError && prev.some(item => item.agentId === agentId && item.body === body)
+        ? prev : [...prev, { id, agentId, title, body }]);
       window.setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, 5000);
@@ -2273,21 +2283,17 @@ function App() {
     try {
       choices = await invoke("account_pool_choices", {});
     } catch (error) {
-      pushToast(agentId, agent.name, text(`분산 계정을 확인할 수 없습니다: ${String(error)}`, `Could not check routed accounts: ${String(error)}`));
+      pushToast(agentId, agent.name, text(`분산 계정을 확인할 수 없습니다: ${String(error)}`, `Could not check routed accounts: ${String(error)}`), true);
       return false;
     }
     if (!choices.enabled) return true;
     const decision = sessionLaunchAccountDecision(choices, loadAgentDefaults("codex"), agent.codexPoolAccountId);
     if (decision.action === "blocked") {
-      pushToast(agentId, agent.name, text("자동 시작에 사용할 분산 계정이 없습니다. 설정 → 에이전트 → Codex에서 기본 계정을 바꾸거나 수동을 선택하세요. Usage에서 계정 상태도 확인할 수 있습니다.", "No routed account is available for automatic start. Change the default account or choose Manual in Settings → Agents → Codex. Check account status in Usage."));
+      pushToast(agentId, agent.name, text(launchAccountBlockedMessage(choices.accounts, decision.accountId, false), launchAccountBlockedMessage(choices.accounts, decision.accountId, true)), true);
       return false;
     }
     if (decision.action === "start") {
-      const next = agentsRef.current.map(candidate => candidate.id === agentId
-        ? { ...candidate, codexPoolAccountId: decision.accountId || undefined }
-        : candidate);
-      agentsRef.current = next;
-      setAgents(next);
+      recentLaunchErrors.current.delete(agentId);
       return true;
     }
     if (sessionAccountLaunchResolveRef.current) return false;
@@ -3003,7 +3009,7 @@ function App() {
             aiLabel: tool.label,
             shellCommand: tool.id === "none" ? payload.shellCommand : undefined,
             codexAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexAccountId : undefined,
-            codexPoolAccountId: !project.sshHostId && tool.id === "codex" ? newSessionPoolAccountId(payload.codexPoolAccountId, loadAgentDefaults("codex")) : undefined,
+            codexPoolAccountId: !project.sshHostId && tool.id === "codex" ? payload.codexPoolAccountId || undefined : undefined,
             claudeAccountId: !project.sshHostId && tool.id === "claude" ? payload.claudeAccountId : undefined,
             dangerous: payload.dangerous && !!tool.dangerousFlag,
             launchOptions: !project.sshHostId && tool.command ? normalizeLaunchOptions(
@@ -3769,7 +3775,7 @@ function App() {
           const group = groupsRef.current.find((g) =>
             collectAgentIds(g.layout).has(agentId)
           );
-          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, sessionReferenceFolders, resumeContext } = await buildSpawnArgs(
+          const { initCommand, ssh, cwd, launchOptions, initialPrompt, modelSettings, sessionInstructions, sessionReferenceFolders, resumeContext, codexPoolDefaultAccountId } = await buildSpawnArgs(
             agent,
             group?.sessionPins ?? null,
             setAgentSessionId,
@@ -3790,6 +3796,7 @@ function App() {
             aiToolId: agent.aiToolId,
             codexAccountId: agent.codexAccountId,
             codexPoolAccountId: agent.codexPoolAccountId,
+            codexPoolDefaultAccountId,
             claudeAccountId: agent.claudeAccountId,
             ssh,
             cols: 120,
@@ -3875,7 +3882,7 @@ function App() {
         if (agent) pushToast(id, agent.name, text("세션을 다시 시작했습니다.", "Session restarted."));
       }).catch(error => {
         const agent = agentsRef.current.find(item => item.id === id);
-        if (agent) pushToast(id, agent.name, text(`재시작 실패: ${String(error)}`, `Restart failed: ${String(error)}`));
+        if (agent) pushToast(id, agent.name, text(`재시작 실패: ${String(error)}`, `Restart failed: ${String(error)}`), true);
       });
     } else if (action === "relink") relinkSession(id);
     else if (action === "properties") setPropertiesAgentId(id);

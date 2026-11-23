@@ -10,7 +10,6 @@ import { folderTail } from "../lib/path";
 import { openDialog } from "../platform/plugins";
 import { loadAgentDefaults } from "../lib/agentDefaults";
 import { newSessionDangerous, newSessionToolId, rememberNewSession } from "../lib/newSessionPreferences";
-import { newSessionPoolAccountId } from "../lib/sessionLaunchAccount";
 import { AdvancedLaunchOptions } from "./AdvancedLaunchOptions";
 import "./NewAgentModal.css";
 
@@ -58,7 +57,7 @@ export function NewAgentModal({
   const [inheritModel, setInheritModel] = useState(true);
   const [claudeAccountId, setClaudeAccountId] = useState(() => loadAgentDefaults("claude").claudeAccountId);
   const [codexAccountId, setCodexAccountId] = useState(() => loadAgentDefaults("codex").codexAccountId);
-  const [codexPoolAccountId, setCodexPoolAccountId] = useState(() => newSessionPoolAccountId(undefined, loadAgentDefaults("codex")) || "");
+  const [codexPoolAccountId, setCodexPoolAccountId] = useState("");
   const [dangerous, setDangerous] = useState(() => newSessionDangerous(aiToolId));
   const [useAltScreen, setUseAltScreen] = useState(() => loadAgentDefaults("codex").useAltScreen);
   const selectedTool = toolForId(aiToolId);

@@ -183,7 +183,11 @@ export function createAccountPoolView(root, { sessionLabel = (id) => id, onChang
       else if (account.available === true) badges.append(el('span', data.enabled ? '요청 대기' : '분산 대기', 'pool-account-badge ready'));
       card.dataset.routingActive = String(working);
       const state = el('p', `${account.email || ''} ${account.plan || ''} · ${t(names[account.state] || '확인 필요')}`);
-      if (account.cooldownUntil > Date.now()) state.append(el('span', ' · ' + t('한도 대기')));
+      if (account.reason === 'quota-exhausted') state.append(el('span', ' · ' + t('Codex 사용 한도 소진')));
+      else if (account.reason === 'rate-limited' && account.retryAt > Date.now()) {
+        const retryAt = new Date(account.retryAt).toLocaleString(getLanguage());
+        state.append(el('span', ' · ' + t('일시 제한 · 재시도 가능 시각 {0}', [retryAt])));
+      }
       const statistics = account.stats;
       const legacy = Number(statistics.legacyFailedOrCancelled) || 0;
       const legacyDisconnected = Number(statistics.version >= 3 ? statistics.legacyDisconnected : statistics.cancelled) || 0;

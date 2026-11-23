@@ -60,8 +60,8 @@ export function sessionMessageText(body) {
 
 /** Durable UTF-8 mailbox. The terminal receives the sender and a reference to the stored body. */
 export class SessionMessages {
-  constructor({ file, sessionFor, context, notify, start = null, prepare = null, receipt = async () => null, publish = () => {}, observe = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
-    Object.assign(this, { file, sessionFor, context, notify, start, prepare, receipt, publish, observe, readActivity, now });
+  constructor({ file, sessionFor, context, notify, start = null, startBlocker = () => null, prepare = null, receipt = async () => null, publish = () => {}, observe = () => {}, readActivity = (_id, _targets, task) => task(), now = Date.now }) {
+    Object.assign(this, { file, sessionFor, context, notify, start, startBlocker, prepare, receipt, publish, observe, readActivity, now });
     this.records = []; this.inflight = new Map(); this.targets = new Set(); this.sequence = 0; this.closed = false;
     this.persisted = new Map();
     this.archive = new SessionMessageArchive(file + '.archive.sqlite', validRecord);
@@ -163,10 +163,14 @@ export class SessionMessages {
     this.observe(record);
     void this.view(record).then(value => this.publish(value)).catch(() => {});
   }
-  #queue(record, reason) { this.#state(record, { status: 'queued', reason, nextAttemptAt: this.now() + Math.min(30000, 1000 * 2 ** Math.min(record.notificationAttempts || 0, 5)) }); }
+  #queue(record, reason, retryAt) {
+    const nextAttemptAt = this.now() + Math.min(30000, 1000 * 2 ** Math.min(record.notificationAttempts || 0, 5));
+    this.#state(record, { status: 'queued', reason, nextAttemptAt: Math.max(retryAt || 0, nextAttemptAt), retryAt });
+  }
   async dispatch(record, waitMs = 0, activationOnly = false) {
     if (this.closed || record.delivery?.status !== 'queued') return;
     if (activationOnly && record.activation?.status !== 'pending') return;
+    if (!activationOnly && record.activation?.status === 'pending') return;
     if (this.inflight.has(record.messageId)) return this.inflight.get(record.messageId);
     if (this.targets.has(record.targetId)) return;
     if (!activationOnly && this.records.some(r => r.sequence < record.sequence && r.targetId === record.targetId && r.notify && pendingNotification(r.delivery?.status))) return;
@@ -187,6 +191,12 @@ export class SessionMessages {
     if (!matches(context)) {
       record.activation = { status: 'failed', at: this.now() };
       this.#state(record, { status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true }); return;
+    }
+    const blocker = !context?.entry && this.startBlocker(this.sessionFor(record.targetId));
+    if (blocker?.retryAt) { this.#queue(record, blocker.reason, blocker.retryAt); return; }
+    if (blocker) {
+      record.activation = { status: 'failed', at: this.now() };
+      this.#state(record, { status: 'notification-error', reason: blocker.reason, nothingSent: true }); return;
     }
     record.activation = { status: 'starting', at: this.now() };
     this.#state(record, { status: 'queued', reason: 'target-starting' });
@@ -228,7 +238,7 @@ export class SessionMessages {
           || !context.conversationId && current?.conversationId && !status?.firstMessageReady) {
           this.#state(record, { status: 'notification-error', reason: 'session-or-conversation-changed', nothingSent: true }); return;
         }
-        if (!status?.ready) { this.#queue(record, status?.reason || 'startup-pending'); return; }
+        if (!status?.ready) { this.#queue(record, status?.reason || 'startup-pending', status?.retryAt); return; }
         remaining = Math.max(0, Math.floor(deadline - performance.now()));
       }
     } catch (error) { this.#state(record, { status: 'notification-error', reason: String(error.message || error).slice(0, 1000), nothingSent: true }); return; }

@@ -1,3 +1,5 @@
+import { accountBlockMessage, isAccountBlockReason } from './sessionLaunchAccount';
+
 export type SessionDelivery = {
   deliveryId: string;
   requestKey: string;
@@ -14,6 +16,7 @@ export type SessionDelivery = {
   receivedAt?: number;
   startedAt?: number;
   reason?: string;
+  retryAt?: number;
 };
 
 export function isDeliveryWarning(record: SessionDelivery) {
@@ -26,12 +29,13 @@ export function isMailboxConversationChanged(record: SessionDelivery) {
 
 export function takeDeliveryWarning(record: SessionDelivery, recentTargets: Map<string, number>, now = Date.now()) {
   if (!isDeliveryWarning(record)) return false;
-  if (!isMailboxConversationChanged(record)) return true;
+  if (!isMailboxConversationChanged(record) && !isAccountBlockReason(record.reason)) return true;
+  const key = isMailboxConversationChanged(record) ? record.targetId : `${record.targetId}:${record.reason}`;
   for (const [target, shownAt] of recentTargets) {
     if (now - shownAt >= 60_000) recentTargets.delete(target);
   }
-  if (recentTargets.has(record.targetId)) return false;
-  recentTargets.set(record.targetId, now);
+  if (recentTargets.has(key)) return false;
+  recentTargets.set(key, now);
   return true;
 }
 
@@ -54,5 +58,9 @@ export function deliveryStatusMessage(record: SessionDelivery, english: boolean)
   if (isMailboxConversationChanged(record)) return english
     ? 'The receiving conversation changed. The original is still in its inbox.'
     : '받는 세션의 대화가 바뀌었습니다. 원문은 해당 세션의 수신함에 남아 있습니다.';
+  if (['queued', 'failed'].includes(record.status) && isAccountBlockReason(record.reason)) {
+    const saved = english ? 'Saved in inbox' : '메시지함에 저장됨';
+    return `${saved} · ${accountBlockMessage(record.reason, record.retryAt, english)}`;
+  }
   return messages[record.status][english ? 1 : 0];
 }

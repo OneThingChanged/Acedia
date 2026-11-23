@@ -280,15 +280,20 @@ describe('routed native tool credentials', () => {
     const result = await new Promise((resolve, reject) => { const socket = new WebSocket(url, { headers }); socket.on('message', raw => resolve(JSON.parse(raw))); socket.on('error', reject); });
     expect(result).toEqual({ fixture: true }); expect(f.runtimes[0].attach).toHaveBeenCalledOnce();
   });
-  it('revokes the old runtime when an excluded automatic account is reassigned on restart', async () => {
+  it.each(['excluded', 'authentication'])('revokes the old runtime when an automatic account is reassigned on restart (%s)', async reason => {
     const f = await fixture(); const first = await f.pool.launchNative('one', null, null, f.context);
-    const old = f.runtimes[0]; f.pool.update(f.accounts[0], false);
-    expect((await request(old)).status).toBe(503);
+    const old = f.runtimes[0];
+    if (reason === 'excluded') f.pool.update(f.accounts[0], false);
+    else f.pool.account(f.accounts[0]).status = 'login_required';
+    const blocked = await request(old);
+    expect(blocked.status).toBe(503);
+    expect(JSON.parse(blocked.text).error.code).toBe(reason === 'excluded' ? 'account-disabled' : 'authentication-required');
     const replacement = await f.pool.launchNative('one', null, null, f.context);
     expect(old.closed).toBe(true); expect(f.runtimes[1].auth.chatgptAccountId).toBe('chatgpt-B');
     expect((await request(old)).status).toBe(401);
     first.release(); expect(f.runtimes[1].closed).toBe(false);
     expect((await request(f.runtimes[1])).status).toBe(200);
+    expect(f.requests).toHaveLength(1);
     replacement.release(); expect(f.pool.nativeSessions.size).toBe(0);
     expect((await request(f.runtimes[1])).status).toBe(401);
   });

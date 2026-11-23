@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SessionMessages, sessionMessageText } from './session-messages.mjs';
 import { SessionDeliveries } from './session-delivery.mjs';
+import { SessionReadiness } from './session-readiness.mjs';
 import { WorkspaceManagement } from './workspace-management.mjs';
 import { HookService } from './hook-service.mjs';
 
@@ -198,6 +199,36 @@ it('retries only definite non-input failures with backoff and never replays unkn
   const restored = new SessionMessages({ ...f.options, now: () => 99999, receipt: async () => null });
   await restored.poll(); expect(f.notify).toHaveBeenCalledTimes(3);
   expect((await restored.list('sender'))[0].delivery.status).toBe('unconfirmed');
+});
+it.each([true, false])('waits for a routed account cooldown and submits the same handoff once (active: %s)', async active => {
+  const f = fixture(), entry = { id: 'receiver', aiToolId: 'codex', startedAt: 1, poolRouted: true };
+  const retryAt = 121_000;
+  let now = 1000;
+  if (!active) f.active.delete('receiver');
+  f.service.now = () => now;
+  f.service.context = id => f.active.has(id) ? { entry: id === 'receiver' ? entry : {}, conversationId: 'conversation' } : null;
+  const accountBlock = () => now < retryAt ? { reason: 'rate-limited', retryAt } : null;
+  const readiness = new SessionReadiness({ context: f.service.context,
+    read: async () => ({ sessionId: 'conversation', lifecycle: 'done' }),
+    freshRead: () => null, ready: () => true, deliveryBlock: accountBlock });
+  f.service.prepare = (id, { waitMs, context }) => readiness.waitForReady(id, waitMs, context);
+  f.service.startBlocker = accountBlock;
+  f.service.start = vi.fn(async id => { f.active.add(id); return { active: true, started: true }; });
+  const body = { sessionId: 'receiver', message: text, requestKey: 'rate-limit-queue', waitMs: 0, startIfOffline: !active };
+  const waiting = await f.call('message-send', body);
+  expect(waiting.delivery).toMatchObject({ status: 'queued', reason: 'rate-limited', nextAttemptAt: retryAt, retryAt });
+  now = retryAt - 1;
+  await f.service.poll();
+  expect(f.service.start).not.toHaveBeenCalled();
+  expect(f.notify).not.toHaveBeenCalled();
+  now = retryAt;
+  await f.service.poll();
+  const done = await f.call('message-send', body);
+  expect(done.messageId).toBe(waiting.messageId);
+  expect(done.delivery.status).toBe('started');
+  await f.service.poll();
+  expect(f.service.start).toHaveBeenCalledTimes(active ? 0 : 1);
+  expect(f.notify).toHaveBeenCalledOnce();
 });
 it('uses the same native delivery key for a definite non-input retry and never executes it twice', async () => {
   const f = fixture(), entry = { id: 'receiver', aiToolId: 'codex', startedAt: 1, lastInputAt: 1 }; let clock = 1000, writes = 0;

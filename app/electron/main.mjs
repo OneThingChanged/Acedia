@@ -1103,6 +1103,9 @@ function deliveryContext(id) {
     projectName: monitorService?.state?.projects?.find(p => p.id === agent.projectId)?.name,
     ...state };
 }
+function deliveryAccountBlock(entry) {
+  return entry.poolRouted && entry.aiToolId === 'codex' ? accountPool.deliveryBlock(entry.id) : null;
+}
 const sessionDeliveries = new SessionDeliveries({
   freshRead: freshDeliverySession,
   file: path.join(app.getPath('userData'), 'session-deliveries.json'), context: deliveryContext, read: currentQuestion,
@@ -1113,7 +1116,8 @@ const sessionDeliveries = new SessionDeliveries({
       && cancelledAt >= Math.max(entry.startedAt || 0, entry.lastInputAt || 0, hook?.received_at || hook?.lastTs || 0);
     const ready = ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason);
     return !forceClosing && !questionResponder.isBusy(entry.id) && !capacityRetry.isActive(entry.id)
-      && (freshSession || resumedSession || cancelled || ready) && deliveryComposerReady(entry);
+      && (freshSession || resumedSession || cancelled || ready) && deliveryComposerReady(entry)
+      && !deliveryAccountBlock(entry);
   },
   submit: async (id, entry, message, isCurrent) => {
     capacityRetry.cancel(id);
@@ -1136,12 +1140,19 @@ const sessionDeliveries = new SessionDeliveries({
 const sessionReadiness = new SessionReadiness({
   context: deliveryContext, read: currentQuestion, freshRead: freshDeliverySession,
   ready: (target, options) => sessionDeliveries.ready(target, options),
+  deliveryBlock: deliveryAccountBlock,
 });
 const sessionMessages = new SessionMessages({
   observe: record => delegatedWork.transfer(record, true),
   readActivity: (id, targets, task) => projectBoard.referenceRead(id, targets, task),
   file: path.join(app.getPath('userData'), 'session-messages-v1.json'),
   start: (sessionId, waitMs) => sessionStart.handle({ sessionId, waitMs }),
+  startBlocker: target => {
+    if (target?.aiToolId !== 'codex') return null;
+    try { accountPool.launchAccount(target.id, target.codexPoolAccountId ?? null); }
+    catch (error) { if (error.code) return { reason: error.code, retryAt: error.retryAt }; }
+    return null;
+  },
   sessionFor: id => (monitorService?.state?.agents || []).find(agent => agent.id === id),
   context: deliveryContext,
   prepare: (id, { waitMs, context }) => sessionReadiness.waitForReady(id, waitMs, context),

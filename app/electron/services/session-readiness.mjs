@@ -17,8 +17,8 @@ export function startupBlocker(entry) {
 // Read the same transcript, fresh-launch and native-composer gates as delivery.
 // Acedia's stable session ID is sufficient; a CLI conversation need not exist.
 export class SessionReadiness {
-  constructor({ context, read, freshRead, ready, now = () => performance.now(), wait = delay }) {
-    Object.assign(this, { context, read, freshRead, ready, now, wait });
+  constructor({ context, read, freshRead, ready, deliveryBlock = () => null, now = () => performance.now(), wait = delay }) {
+    Object.assign(this, { context, read, freshRead, ready, deliveryBlock, now, wait });
   }
   canWait(id) {
     const entry = this.context(id)?.entry;
@@ -45,6 +45,8 @@ export class SessionReadiness {
     if (after?.entry !== entry || after.conversationId !== target.conversationId) return result('changed', 'session-changed');
     if (current && current.sessionId !== target.conversationId) return result('changed', 'conversation-changed');
     if (current?.question) return result('question', 'question-pending', { question: current.question });
+    const route = this.deliveryBlock(entry);
+    if (route && current?.lifecycle !== 'working') return result('blocked', route.reason, { retryAt: route.retryAt });
     const fresh = this.freshRead(sessionId);
     if (fresh && fresh.sessionId === (target.conversationId ?? null) && !current?.turn && !fresh.turn && !fresh.question
       && this.ready(target, { freshSession: true })) {

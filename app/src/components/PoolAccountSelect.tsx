@@ -2,11 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAppLanguage } from "../lib/appLanguage";
 import { invoke } from "../platform/runtime";
 import { isElectronRuntime } from "../platform/electronBridge";
-
-type PoolChoices = {
-  enabled: boolean;
-  accounts: { id: string; label: string; available: boolean }[];
-};
+import { accountBlockMessage, type LaunchPoolChoices } from "../lib/sessionLaunchAccount";
 
 export function PoolAccountSelect({ value, onChange, disabled = false, alwaysShow = false, label, hint }: {
   value?: string;
@@ -17,13 +13,13 @@ export function PoolAccountSelect({ value, onChange, disabled = false, alwaysSho
   hint?: string;
 }) {
   const { text } = useAppLanguage();
-  const [choices, setChoices] = useState<PoolChoices | null>(null);
+  const [choices, setChoices] = useState<LaunchPoolChoices | null>(null);
   const [loadError, setLoadError] = useState(false);
   const electron = typeof window !== "undefined" && isElectronRuntime();
   useEffect(() => {
     if (!electron) return;
     let cancelled = false;
-    void invoke<PoolChoices>("account_pool_choices", {}).then(result => {
+    void invoke<LaunchPoolChoices>("account_pool_choices", {}).then(result => {
       if (!cancelled) setChoices(result);
     }).catch(() => { if (!cancelled) { setChoices(null); setLoadError(true); } });
     return () => { cancelled = true; };
@@ -35,7 +31,7 @@ export function PoolAccountSelect({ value, onChange, disabled = false, alwaysSho
     <select value={value || ""} disabled={disabled || !choices} onChange={event => onChange(event.target.value)}>
       <option value="">{text("자동 배정", "Automatic")}</option>
       {accounts.map(account => <option key={account.id} value={account.id} disabled={!account.available && account.id !== value}>
-        {account.label}{account.available ? "" : text(" · 사용 불가", " · unavailable")}
+        {account.label}{account.available ? "" : ` · ${text(accountBlockMessage(account.reason, account.retryAt, false), accountBlockMessage(account.reason, account.retryAt, true))}`}
       </option>)}
       {value && !accounts.some(account => account.id === value) && <option value={value} disabled>{text("등록되지 않은 계정", "Account no longer registered")}</option>}
     </select>

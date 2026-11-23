@@ -6,10 +6,12 @@ import { resolveProjectSettings } from "./projectHierarchy";
 import { findSshHost } from "./sshHosts";
 import { normalizeLaunchOptions, type LaunchOptions } from "./launchOptions";
 import { handoffPromptForAccount } from "./accountHandoff";
+import { loadAgentDefaults } from "./agentDefaults";
 
 export type SpawnArgs = {
   sessionReferenceFolders?: { path: string; access: "read" | "write" }[];
   resumeContext?: SessionResumeContext;
+  codexPoolDefaultAccountId?: string;
   sessionInstructions?: string;
   modelSettings?: Agent["modelSettings"];
   launchOptions?: LaunchOptions;
@@ -260,7 +262,10 @@ export async function buildSpawnArgs(
       }
     : null;
 
-  return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null,
+  const codexDefaults = !sshHost && agent.aiToolId === "codex" ? loadAgentDefaults("codex") : undefined;
+  const codexPoolDefaultAccountId = codexDefaults?.codexSessionAccountMode === "automatic"
+    ? codexDefaults.codexPoolAccountId || undefined : undefined;
+  return { initCommand, ssh, cwd: sshHost ? null : agent.folder || null, codexPoolDefaultAccountId,
     ...(!sshHost && references.length && ["codex", "claude"].includes(agent.aiToolId) ? { sessionReferenceFolders: references.filter(ref => ref.scopes.some(scope => scope !== "instructions")).map(ref => ({ path: ref.path, access: ref.access })) } : {}),
     launchOptions, initialPrompt, modelSettings: settings.modelSettings, resumeContext,
     ...(agent.aiToolId === "claude" && settings.instructions ? { sessionInstructions: settings.instructions } : {}) };

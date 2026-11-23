@@ -504,6 +504,7 @@ function assertInvokeRequest(command, rawArgs) {
       if (args.sessionInstructions != null && (typeof args.sessionInstructions !== "string" || !args.sessionInstructions.trim() || args.sessionInstructions.length > 20000 || args.sessionInstructions.includes("\0"))) throw new TypeError("Invalid session instructions");
       if (args.codexAccountId != null && (typeof args.codexAccountId !== "string" || (args.codexAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.codexAccountId)))) throw new TypeError("Invalid Codex account id");
       if (args.codexPoolAccountId != null && (typeof args.codexPoolAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolAccountId))) throw new TypeError("Invalid routed account id");
+      if (args.codexPoolDefaultAccountId != null && (typeof args.codexPoolDefaultAccountId !== "string" || !SESSION_STORAGE_ID_RE.test(args.codexPoolDefaultAccountId))) throw new TypeError("Invalid default routed account id");
       if (args.claudeAccountId != null && (typeof args.claudeAccountId !== "string" || (args.claudeAccountId !== "default" && !SESSION_STORAGE_ID_RE.test(args.claudeAccountId)))) throw new TypeError("Invalid Claude account id");
       assertPositiveInteger(args.cols, "terminal cols");
       assertPositiveInteger(args.rows, "terminal rows");

@@ -143,6 +143,7 @@ export type SpawnTerminalArgs = {
   initialPrompt?: string;
   codexAccountId?: string;
   codexPoolAccountId?: string;
+  codexPoolDefaultAccountId?: string;
   claudeAccountId?: string;
   id: string;
   shell: string | null;
