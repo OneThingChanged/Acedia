@@ -127,11 +127,14 @@ export class RemotePushService {
   unsubscribe(loginValue, endpointValue) {
     const login = normalizeLogin(loginValue);
     const endpoint = clean(endpointValue);
-    const before = this.subscriptions.length;
-    this.subscriptions = this.subscriptions.filter(
+    const previous = this.subscriptions;
+    const updated = previous.filter(
       (entry) => entry.login !== login || entry.endpoint !== endpoint,
     );
-    if (this.subscriptions.length !== before) this.save();
+    if (updated.length !== previous.length) {
+      this.subscriptions = updated;
+      try { this.save(); } catch (error) { this.subscriptions = previous; throw error; }
+    }
     return { subscribed: false };
   }
 

@@ -1209,6 +1209,13 @@ bearer tokens. The separate browser Web Push payload remains generic.
 Phone-level notification settings still determine lock-screen visibility.
 [^notification-preview][^device-monitor][^native-monitor][^web-services]
 
+In the Remote browser or installed PWA, the notification button toggles web
+notifications for the current Remote address. Turning it off removes that
+browser's push registration from the PC and unsubscribes it in the browser.
+The off setting survives a reload and takes effect on other open tabs of the
+same Remote address. The button remains available to resubscribe. Other browsers
+and the Android app's separate background monitor have their own subscriptions.
+
 Opening a profile lazily creates one WebView for that PC. The APK keeps an opened
 profile view mounted but hidden when the operator returns to the combined Session
 Hub or switches PCs, preserving page state and that WebView's navigation history

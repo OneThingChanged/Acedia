@@ -498,7 +498,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v123');
+    expect(workerBody).toContain('multiagent-remote-v124');
     expect(pageBody).toContain('id="childSessionVisibility"');
     for (const status of ['idle', 'stopped', 'sleeping']) expect(pageBody).toContain(`data-child-visibility="${status}"`);
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);
@@ -587,6 +587,13 @@ describe("Electron dashboard server", () => {
     expect(pushKey.supported).toBe(true);
     expect(pushKey.publicKey).toBeTruthy();
     expect(pushSubscription.status).toBe(201);
+    const pushRemoval = await fetch(`${status.url}/api/push/subscription`, {
+      method: 'DELETE', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endpoint: 'https://push.example.test/device-1' }),
+    });
+    expect(pushRemoval.status).toBe(200);
+    expect(await pushRemoval.json()).toEqual({ subscribed: false });
+    expect(service.pushService.subscriptions).toHaveLength(0);
     const loginBody = await externalLogin.text();
     // The heading text is set at runtime by login.js per auth mode; assert on
     // stable markup instead (brand + the elements login.js drives).

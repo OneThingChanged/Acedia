@@ -42,7 +42,6 @@ export type BoardSnapshot = {
   transfers?: BoardTransfer[];
   delegations?: { id: string; from: string; to: string }[];
   preferences: { viewMode?: BoardViewMode; edgeStyle?: BoardEdgeStyle; layoutVersion?: number; zoom?: number; x?: number; y?: number; collapsed?: string[]; projectId?: string | null; collapsedProjects?: string[]; motion?: boolean; projectPositions?: BoardProjectPositions; sessionOrder?: string[]; showSleeping?: boolean; showStopped?: boolean; activeOnly?: boolean };
-  resultCapacityReached?: boolean;
   storageError: string | null;
 };
 export function boardItems(data: BoardSnapshot): BoardItem[] {

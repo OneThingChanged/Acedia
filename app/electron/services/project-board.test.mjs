@@ -197,18 +197,7 @@ describe('Independent project board', () => {
       { agentId: 'a', createdAt: 2000 }, { agentId: 'a', createdAt: 3000 },
     ]);
   });
-  it('does not discard unread results at the journal limit and prunes only explicitly reviewed history', () => {
-    const f = fixture(); const inbox = {};
-    for (let i = 0; i < 1500; i++) { const id = i.toString(16).padStart(64, '0'); inbox[id] = { id, sessionId: 'a', createdAt: i, reviewedAt: null }; }
-    const next = { id: 'f'.repeat(64), sessionId: 'b', createdAt: 2000, summary: '새 결과', scope: 'response' };
-    expect(f.board.withResults(inbox, [next])).toBe(inbox); expect(f.board.resultCapacityReached).toBe(true);
-    inbox['0'.repeat(64)].reviewedAt = 1000;
-    const updated = f.board.withResults(inbox, [next]);
-    expect(Object.keys(updated)).toHaveLength(1500); expect(updated['0'.repeat(64)]).toBeUndefined();
-    expect(updated[next.id]).toMatchObject({ summary: '새 결과', reviewedAt: null });
-    expect(inbox['0'.repeat(64)]).toBeTruthy();
-  });
-  it('reviews the 1,260 listed results across sessions at the 1,500-record limit and resumes recording', () => {
+  it('automatically replaces the oldest unread result in a full legacy journal and keeps the new result across restarts', () => {
     const f = fixture();
     delete f.source.agents[0].activity;
     f.source.agents.push({ id: 'c', name: '검수', projectId: 'p', aiToolId: 'codex' });
@@ -220,23 +209,48 @@ describe('Independent project board', () => {
       kind: 'result', scope: 'response', summary: '이전 응답', createdAt: index + 1, reviewedAt: null,
     }));
     f.board.save({ ...f.board.data, inbox: Object.fromEntries(saved.map(item => [item.id, item])) });
-    f.board.observe({ id: 'b', event: 'done', received_at: 3000, assistant_message: '한도 이후 응답' });
+    const failedWrite = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw Error('disk'); });
+    try {
+      f.board.observe({ id: 'b', event: 'done', received_at: 3000, assistant_message: '한도 이후 응답' });
+      const failed = f.board.snapshot();
+      expect(failed.storageError).toBeTruthy();
+      expect(failed.items.some(item => item.id === saved[0].id)).toBe(true);
+      expect(failed.items.some(item => item.summary === '한도 이후 응답')).toBe(false);
+    } finally { failedWrite.mockRestore(); }
     const full = f.board.snapshot();
-    expect(full).toMatchObject({ resultCapacityReached: true, storageError: null });
+    expect(full.storageError).toBeNull();
+    expect(Object.keys(f.board.data.inbox)).toHaveLength(1500);
+    expect(f.board.data.inbox[saved[0].id]).toBeUndefined();
+    expect(f.board.data.inbox[saved[1].id]).toMatchObject({ reviewedAt: null });
+    expect(full.items).toContainEqual(expect.objectContaining({ sessionId: 'b', summary: '한도 이후 응답', reviewedAt: null }));
     const results = full.items.filter(item => item.kind === 'result').map(({ id, fingerprint }) => ({ id, fingerprint }));
     expect(results).toHaveLength(1260);
     const { id, fingerprint } = saved.at(-1);
     expect(() => f.board.acknowledgeResults(undefined, [...results, { id, fingerprint }])).toThrow('변경');
     expect(f.board.snapshot().items).toHaveLength(1261);
-    const next = f.board.acknowledgeResults(undefined, results);
-    expect(next.resultCapacityReached).toBe(false);
-    expect(next.items).toMatchObject([
-      { sessionId: 'b', kind: 'result', summary: '한도 이후 응답' },
-      { sessionId: 'c', kind: 'question' },
-    ]);
     const reopened = new ProjectBoard(f.options);
-    expect(reopened.snapshot().items).toEqual(next.items);
+    reopened.seedAttention([{ id: 'old-desktop-notice', agentId: 'a', kind: 'completed', createdAt: saved[0].createdAt, body: '이전 알림 재수신' }]);
+    expect(reopened.snapshot().items).toEqual(full.items);
     expect(reopened.data.inbox[id].reviewedAt).toBeNull();
+    const next = reopened.acknowledgeResults(undefined, results);
+    expect(next.items).toMatchObject([{ sessionId: 'c', kind: 'question' }]);
+  });
+  it('prunes oldest result records at the byte limit and keeps newer artifacts available', () => {
+    const f = fixture(); delete f.source.agents[0].activity;
+    const artifacts = Array.from({ length: 20 }, () => 'a'.repeat(4096));
+    const saved = Array.from({ length: 50 }, (_, index) => ({ id: index.toString(16).padStart(64, '0'), fingerprint: 'f'.repeat(64),
+      sessionId: 'a', kind: 'result', scope: 'task', summary: '이전 결과', createdAt: index + 1, reviewedAt: null, artifacts }));
+    f.board.save({ ...f.board.data, inbox: Object.fromEntries(saved.map(item => [item.id, item])) });
+    expect(Object.keys(f.board.data.inbox)).toHaveLength(50);
+    f.runs.push({ id: 'r', updatedAt: 3000, tasks: [{ id: 't', state: 'completed', attempts: [{ sessionId: 'b' }], result: { summary: '새 결과', artifacts } }] });
+    const snapshot = f.board.snapshot();
+    expect(snapshot.storageError).toBeNull();
+    expect(snapshot.items.some(item => item.id === saved[0].id)).toBe(false);
+    expect(snapshot.items.find(item => item.summary === '새 결과')).toMatchObject({ artifacts });
+    expect(fs.statSync(f.options.file).size).toBeLessThanOrEqual(4 * 1024 * 1024);
+    const reopened = new ProjectBoard(f.options);
+    reopened.seedAttention([{ id: 'expired', agentId: 'a', kind: 'completed', createdAt: saved[0].createdAt, body: '이전 알림' }]);
+    expect(reopened.snapshot().items).toEqual(snapshot.items);
   });
   it('keeps multiple response results during new work and reviews exactly one across restarts', () => {
     const f = fixture(); delete f.source.agents[0].activity;

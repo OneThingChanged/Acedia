@@ -756,10 +756,11 @@ Version 1 review settings migrate without reopening acknowledged results. Hook
 completion replays share an execution/result identity, and legacy desktop notices
 are correlated by their exact hook receipt time rather than a fuzzy time window
 or translated notification text. The journal retains up to 1,500 results within
-4 MiB and prunes the oldest reviewed entries when it needs space. Unreviewed
-entries remain until a user reviews them. The result-count warning keeps review
-available so the user can free space even when the board journal is full. Actual
-write and corruption errors still report storage failure, and corrupt files are preserved.
+4 MiB. At either limit it removes the oldest result records, including unreviewed
+ones, to keep newer results. The pruning boundary is saved with the journal so
+replayed notices cannot refill it with expired results. Conversation transcripts,
+artifacts, questions, and errors have separate storage or state. Write and corruption
+errors still report storage failure, and corrupt files are preserved.
 
 The host applies each refresh's result candidates in one pass over the journal.
 The sidebar's delegated-wait request uses the same session state and result

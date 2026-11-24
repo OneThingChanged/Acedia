@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   normalizePushSubscription,
   RemotePushService,
@@ -98,5 +98,28 @@ describe("RemotePushService", () => {
         removed: 0,
         duplicate: true,
       });
+  });
+
+  it('revokes only the selected browser and preserves the subscription if saving fails', async () => {
+    const baseDir = createRoot();
+    const deliveries = [];
+    const webPushImpl = {
+      generateVAPIDKeys: () => ({ publicKey: 'public', privateKey: 'private' }),
+      async sendNotification(target) { deliveries.push(target.endpoint); },
+    };
+    const service = new RemotePushService({ baseDir, webPushImpl });
+    const browser = subscription();
+    const other = subscription('https://push.example.test/device-2');
+    service.subscribe('owner', browser);
+    service.subscribe('owner', other);
+    service.unsubscribe('another-login', browser.endpoint);
+    const failingWrite = vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw Error('disk'); });
+    try {
+      expect(() => service.unsubscribe('owner', browser.endpoint)).toThrow('disk');
+      expect(service.subscriptions.map(item => item.endpoint)).toEqual([browser.endpoint, other.endpoint]);
+    } finally { failingWrite.mockRestore(); }
+    expect(service.unsubscribe('owner', browser.endpoint)).toEqual({ subscribed: false });
+    await new RemotePushService({ baseDir, webPushImpl }).notifyDone({ agentId: 'agent' });
+    expect(deliveries).toEqual([other.endpoint]);
   });
 });

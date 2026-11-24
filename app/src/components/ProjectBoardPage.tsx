@@ -42,9 +42,11 @@ function elapsed(start: number | undefined, now: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 }
 function systemReducedMotion() { return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true; }
-function itemTime(value: number) {
+function itemTime(value: number, language: string) {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? { dateTime: date.toISOString(), label: date.toLocaleTimeString() } : { dateTime: undefined, label: '—' };
+  return value > 0 && Number.isFinite(date.getTime()) ? { dateTime: date.toISOString(), label: date.toLocaleString(language, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  }) } : { dateTime: undefined, label: '—' };
 }
 type ProjectDrag = { id: string; pointerId: number; clientX: number; clientY: number; x: number; y: number; zoom: number; point: { x: number; y: number }; moved: boolean };
 type BoardBounds = { x: number; y: number; width: number; height: number };
@@ -64,7 +66,7 @@ type Props = {
 };
 
 export function ProjectBoardPage({ initialSnapshot, hierarchyTarget, startInOffice, projectReferences, renderHierarchy, renderRelations, onDockOffice, onOpenNote }: Props = {}) {
-  const { text } = useAppLanguage();
+  const { text, language } = useAppLanguage();
   const [data, setData] = useState<BoardSnapshot | null>(initialSnapshot || null), [error, setError] = useState('');
   const [viewMode, setViewMode] = useState<BoardViewMode>(startInOffice ? 'office' : hierarchyTarget ? 'board' : initialSnapshot?.preferences.viewMode || (renderHierarchy ? 'board' : 'sessions'));
   const [edgeStyle, setEdgeStyle] = useState<BoardEdgeStyle>(initialSnapshot?.preferences.edgeStyle || (renderHierarchy ? 'curved' : 'orthogonal'));
@@ -233,7 +235,7 @@ export function ProjectBoardPage({ initialSnapshot, hierarchyTarget, startInOffi
     const s = sessionsById.get(i.sessionId);
     return s && (!projectId || s.projectId === projectId) && (!backgroundOnly || s.state === 'background') && (!workingOnly || s.state === 'working') && (kind === 'all' || i.kind === kind)
       && (!query || `${s.name} ${i.summary} ${s.task?.title || ''} ${s.folder}`.toLowerCase().includes(query.trim().toLowerCase()));
-  }).sort((a, b) => ({ question: 0, error: 1, result: 2 }[a.kind] - { question: 0, error: 1, result: 2 }[b.kind] || b.createdAt - a.createdAt)), [allItems, sessionsById, projectId, kind, query, backgroundOnly, workingOnly]);
+  }).sort((a, b) => b.createdAt - a.createdAt), [allItems, sessionsById, projectId, kind, query, backgroundOnly, workingOnly]);
   useEffect(() => { if (data && projectId && !data.projects.some(p => p.id === projectId)) setProject(''); }, [data, projectId]);
   useEffect(() => { setVisibleCount(50); }, [projectId, query, kind]);
   useEffect(() => {
@@ -442,7 +444,6 @@ export function ProjectBoardPage({ initialSnapshot, hierarchyTarget, startInOffi
       {!showRelations && <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button>}</header>
 
     {(placementError || error || data?.storageError) && <div role="alert" className="wb-error">{placementError || error || data?.storageError}</div>}
-    {data?.resultCapacityReached && <div role="status" className="wb-error">{text('미확인 결과가 저장 한도에 도달했습니다. 결과 목록에서 일괄 확인할 수 있습니다.', 'Unreviewed results reached the storage limit. Use the Results list to mark them reviewed.')}</div>}
     {showRelations && renderRelations && <div className="wb-relations">{renderRelations()}</div>}
     {!showRelations && viewMode === 'office' && <div className="wb-office">{office ? <PixelOffice agents={office.agents} projects={office.projects} activeProjectId={projectId || null} visibleSessionIds={visibleSessionIds} motion={motion && connected}
       onOpenSession={id => { void open(id); }} onOpenNote={onOpenNote} onDock={onDockOffice} onBack={() => setViewMode('board')} backLabel={text('업무 보드', 'Work board')}/>
@@ -612,7 +613,7 @@ export function ProjectBoardPage({ initialSnapshot, hierarchyTarget, startInOffi
           title={text('현재 프로젝트와 검색 조건에 맞는 결과를 확인 처리합니다.', 'Marks results matching the current project and search as reviewed.')}>
           {text(`결과 ${inbox.length.toLocaleString()}건 모두 확인`, `Mark ${inbox.length.toLocaleString()} results reviewed`)}</button>}
         <div className="wb-inbox-list">{inbox.slice(0, visibleCount).map(item => {
-          const s = sessionsById.get(item.sessionId)!, time = itemTime(item.createdAt); return <article key={item.id} className="wb-inbox-item" data-kind={item.kind}><div className="wb-inbox-item-top"><StateIcon state={item.kind}/><strong>{s.name}</strong><span data-state={item.kind}>{text(...kinds[item.kind])}</span></div><p>{item.summary || text(...kinds[item.kind])}</p><time dateTime={time.dateTime}>{time.label}</time><div className="wb-inbox-item-bottom"><small>{data?.projects.find(p => p.id === s.projectId)?.name}</small><button data-item-id={item.id} onClick={e => choose(s.id, item.id, e.currentTarget)}>{actionLabel(item)} ›</button></div></article>;
+          const s = sessionsById.get(item.sessionId)!, time = itemTime(item.createdAt, language); return <article key={item.id} className="wb-inbox-item" data-kind={item.kind}><div className="wb-inbox-item-top"><StateIcon state={item.kind}/><strong>{s.name}</strong><span data-state={item.kind}>{text(...kinds[item.kind])}</span></div><p>{item.summary || text(...kinds[item.kind])}</p><time dateTime={time.dateTime}>{time.label}</time><div className="wb-inbox-item-bottom"><small>{data?.projects.find(p => p.id === s.projectId)?.name}</small><button data-item-id={item.id} onClick={e => choose(s.id, item.id, e.currentTarget)}>{actionLabel(item)} ›</button></div></article>;
         })}{inbox.length > visibleCount && <button onClick={() => setVisibleCount(n => n + 50)}>{text('더 보기', 'Show more')} · {inbox.length - visibleCount}</button>}{!inbox.length && <div className="wb-inbox-empty"><span>✓</span><p>{query ? text('검색과 일치하는 항목이 없습니다.', 'No matching items.') : text('확인할 새 항목이 없습니다.', 'Nothing needs your attention.')}</p></div>}</div><p className="wb-inbox-help">{text('결과나 대화를 열면 기존 결과를 확인 처리합니다. 이후 새 결과와 질문은 유지합니다.', 'Opening a result or conversation marks captured results read; later results and questions remain.')}</p></>}
     </aside>}</div>
     {menu?.kind === 'project' && menuProject && <div ref={menuPanel} className="wb-context-menu" role="menu" aria-label={text('프로젝트 메뉴', 'Project menu')} style={{ left: menu.x, top: menu.y }}>

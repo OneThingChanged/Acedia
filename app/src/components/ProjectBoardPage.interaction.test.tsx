@@ -560,8 +560,8 @@ it('keeps related projects in place when folding while preserving totals, hierar
   expect(content(elements(tree).find(e => e.props.className === 'wb-summary')!)).toBe(summary);
 });
 
-it('offers bulk review at capacity for all matching results, including those past the first page', async () => {
-  const data = fixture(); data.resultCapacityReached = true;
+it('offers bulk review for all matching results, including those past the first page', async () => {
+  const data = fixture();
   const results = Array.from({ length: 60 }, (_, index) => ({ ...data.items![0],
     id: index.toString(16).padStart(64, '0'), sessionId: index % 2 === 0 ? 'a' : 'b', summary: '대상 보고',
   }));
@@ -572,7 +572,6 @@ it('offers bulk review at capacity for all matching results, including those pas
   elements(tree).find(e => e.type === 'select' && content(e).includes('전체 프로젝트'))!.props.onChange({ target: { value: 'p' } });
   elements(tree).find(e => e.type === 'input' && e.props.type === 'search')!.props.onChange({ target: { value: '대상' } });
   tree = render(data);
-  expect(content(elements(tree).find(e => e.props.role === 'status' && e.props.className === 'wb-error')!)).toContain('저장 한도');
   expect(elements(tree).filter(e => e.props['data-item-id'])).toHaveLength(50);
   const review = elements(tree).find(e => e.props.className === 'wb-inbox-review')!;
   expect(review.props.disabled).toBe(false);

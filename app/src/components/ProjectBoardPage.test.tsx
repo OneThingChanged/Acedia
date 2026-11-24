@@ -4,6 +4,21 @@ import { ProjectBoardPage } from './ProjectBoardPage';
 import { AppLanguageProvider } from '../lib/appLanguage';
 import type { BoardSnapshot } from '../lib/workBoard';
 describe('Board-only renderer without GUI automation', () => {
+  it('shows the newest attention items first across types and displays their dates', () => {
+    const day = Date.UTC(2026, 10, 25, 4, 15);
+    const data: BoardSnapshot = { revision: 'r', preferences: { viewMode: 'sessions' }, storageError: null,
+      projects: [{ id: 'p', name: 'Project', folder: 'D:/Project' }], devices: [],
+      sessions: [{ id: 'a', projectId: 'p', name: 'Worker', runtime: 'running', state: 'review', provider: 'codex', parentId: null,
+        folder: 'D:/Project', updatedAt: day, summary: '', reason: '', fingerprint: 'a', needsAttention: true, task: null }],
+      items: [{ id: 'error', sessionId: 'a', kind: 'error', createdAt: day - 86400000, summary: 'Earlier error', fingerprint: 'error' },
+        { id: 'result', sessionId: 'a', kind: 'result', createdAt: day, summary: 'Latest result', fingerprint: 'result' }] };
+    const markup = renderToStaticMarkup(<ProjectBoardPage initialSnapshot={data}/>);
+    expect(markup).toContain('Latest result');
+    expect(markup).toContain('Earlier error');
+    expect(markup.indexOf('Latest result')).toBeLessThan(markup.indexOf('Earlier error'));
+    expect(markup).toContain(`dateTime="${new Date(day).toISOString()}"`);
+    expect(markup).toMatch(/<time[^>]+>[^<]*2026[^<]*<\/time>/);
+  });
   it('automatically packs a hidden overview without replacing the saved full-board positions', () => {
     const data: BoardSnapshot = { revision: 'r', preferences: { viewMode: 'board', showSleeping: true, showStopped: true, zoom: .8,
       projectPositions: { p: { x: 9000, y: 8000 } } }, storageError: null, projects: [{ id: 'p', name: 'Project', folder: 'D:/Project' }],

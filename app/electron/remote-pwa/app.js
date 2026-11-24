@@ -5479,12 +5479,13 @@ function applyScreenAvailability() {
 
 async function showNotification(title, body, tag, agentId) {
   if (!("Notification" in window)
-    || localStorage.getItem("multiagent.remote.notifications") !== "on"
+    || notificationPreference() !== "on"
     || window.Notification.permission !== "granted"
     || (backgroundPushEnabled && /^(?:done|question):/.test(String(tag)))) return;
   const options = { body, tag, renotify: true, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", data: { agentId } };
   try {
     const registration = await navigator.serviceWorker?.ready;
+    if (notificationPreference() !== "on") return;
     if (registration) await registration.showNotification(title, options);
     else new window.Notification(title, options);
   } catch {}
@@ -5618,10 +5619,9 @@ async function fetchState({ quiet = false } = {}) {
           ui.sessionEditorSubmit.textContent = ui.sessionEditorSubmit.disabled
             ? t("처리 중…") : sessionEditorMode === "rename" ? t("저장") : t("생성");
         }
-        if (ui.notifyButton.classList.contains("enabled")) {
-          ui.notifyButton.title = backgroundPushEnabled
-            ? window.__MULTIAGENT_NATIVE_APP__ ? t("휴대폰 백그라운드 모니터링 켜짐") : t("백그라운드 알림 켜짐")
-            : t("알림 켜짐");
+        if (!window.__MULTIAGENT_NATIVE_APP__) syncWebNotificationButton();
+        else if (ui.notifyButton.classList.contains("enabled")) {
+          ui.notifyButton.title = t(backgroundPushEnabled ? "휴대폰 백그라운드 모니터링 켜짐" : "알림 켜짐");
         }
       }
       remoteState = {
@@ -5675,6 +5675,44 @@ function samePushKey(subscription, expected) {
   if (!current) return true;
   const bytes = new Uint8Array(current);
   return bytes.length === expected.length && bytes.every((value, index) => value === expected[index]);
+}
+
+const WEB_NOTIFICATION_KEY = `multiagent.remote.notifications:${REMOTE_BASE_PATH}`;
+let webNotificationOperation = Promise.resolve();
+
+function notificationPreference() {
+  return (window.__MULTIAGENT_NATIVE_APP__ ? null : localStorage.getItem(WEB_NOTIFICATION_KEY))
+    ?? localStorage.getItem("multiagent.remote.notifications");
+}
+
+function syncWebNotificationButton() {
+  const enabled = notificationPreference() === "on" && window.Notification?.permission === "granted";
+  ui.notifyButton.classList.toggle("enabled", enabled);
+  ui.notifyButton.setAttribute("aria-pressed", String(enabled));
+  ui.notifyButton.title = enabled ? t("알림 끄기") : t("알림 켜기");
+  ui.notifyButton.setAttribute("aria-label", ui.notifyButton.title);
+}
+
+function runWebNotificationOperation(task) {
+  const operation = webNotificationOperation.then(() => (navigator.locks
+    ? navigator.locks.request(WEB_NOTIFICATION_KEY, task) : task()));
+  webNotificationOperation = operation.catch(() => {});
+  return operation;
+}
+
+async function removeBackgroundPush() {
+  const registration = await navigator.serviceWorker?.getRegistration(REMOTE_BASE_PATH);
+  if (!registration || new URL(registration.scope).pathname !== REMOTE_BASE_PATH) return;
+  const subscription = await registration.pushManager?.getSubscription();
+  if (!subscription) return;
+  const response = await fetch(remotePath("/api/push/subscription"), {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ endpoint: subscription.endpoint }),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  await subscription.unsubscribe();
 }
 
 async function ensureBackgroundPush(registration) {
@@ -5769,24 +5807,38 @@ async function enableNotifications() {
     }
     return;
   }
-  if (!("Notification" in window)) {
+  if (ui.notifyButton.disabled) return;
+  const turnOff = notificationPreference() === "on";
+  if (!turnOff && !("Notification" in window)) {
     showToast(t("이 브라우저는 알림을 지원하지 않습니다."));
     return;
   }
-  if (Notification.permission === "denied") {
+  if (!turnOff && Notification.permission === "denied") {
     showToast(t("브라우저 사이트 설정에서 알림 권한을 허용해 주세요."));
     return;
   }
-  const permission = await Notification.requestPermission();
-  if (permission === "granted") {
-    localStorage.setItem("multiagent.remote.notifications", "on");
-    ui.notifyButton.classList.add("enabled");
-    const registration = await registerServiceWorker();
-    const background = await ensureBackgroundPush(registration);
-    ui.notifyButton.title = background ? t("백그라운드 알림 켜짐") : t("알림 켜짐");
-    showToast(background
-      ? t("앱을 닫아도 작업 완료 알림을 받습니다.")
-      : t("PWA 실행 중 완료와 질문 알림을 받습니다."));
+  ui.notifyButton.disabled = true;
+  try {
+    if (!turnOff && Notification.permission !== "granted" && await Notification.requestPermission() !== "granted") return;
+    await runWebNotificationOperation(async () => {
+      if (turnOff) {
+        await removeBackgroundPush();
+        localStorage.setItem(WEB_NOTIFICATION_KEY, "off");
+        backgroundPushEnabled = false;
+        showToast(t("웹 알림을 껐습니다."));
+        return;
+      }
+      localStorage.setItem(WEB_NOTIFICATION_KEY, "on");
+      const background = await ensureBackgroundPush(await registerServiceWorker());
+      showToast(background
+        ? t("앱을 닫아도 작업 완료 알림을 받습니다.")
+        : t("PWA 실행 중 완료와 질문 알림을 받습니다."));
+    });
+  } catch {
+    showToast(t(turnOff ? "웹 알림을 끄지 못했습니다. 다시 시도해 주세요." : "웹 알림을 켜지 못했습니다. 다시 시도해 주세요."));
+  } finally {
+    ui.notifyButton.disabled = false;
+    syncWebNotificationButton();
   }
 }
 
@@ -5794,12 +5846,14 @@ function applyNativeMonitorState(detail) {
   if (!detail?.ok) {
     backgroundPushEnabled = false;
     ui.notifyButton.classList.remove("enabled");
+    ui.notifyButton.setAttribute("aria-pressed", "false");
     ui.notifyButton.title = t("휴대폰 모니터링 꺼짐");
     if (detail?.userInitiated) showToast(text(detail?.error) || t("백그라운드 모니터링을 시작하지 못했습니다."));
     return;
   }
   backgroundPushEnabled = Boolean(detail.active);
   ui.notifyButton.classList.toggle("enabled", backgroundPushEnabled);
+  ui.notifyButton.setAttribute("aria-pressed", String(backgroundPushEnabled));
   ui.notifyButton.title = backgroundPushEnabled
     ? t("휴대폰 백그라운드 모니터링 켜짐")
     : t("휴대폰 모니터링 꺼짐");
@@ -5835,23 +5889,23 @@ async function installPwa() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return null;
   try {
-    await navigator.serviceWorker.register(remotePath('/sw.js'), { scope: REMOTE_BASE_PATH });
-    return await navigator.serviceWorker.ready;
+    const registration = await navigator.serviceWorker.register(remotePath('/sw.js'), { scope: REMOTE_BASE_PATH });
+    if (registration.active) return registration;
+    const active = await navigator.serviceWorker.ready;
+    return active.scope === registration.scope ? active : registration;
   } catch {
     return null;
   }
 }
 
 async function initializeNotifications() {
-  const registration = await registerServiceWorker();
-  if (
-    localStorage.getItem("multiagent.remote.notifications") === "on" &&
-    window.Notification?.permission === "granted"
-  ) {
-    ui.notifyButton.classList.add("enabled");
-    const background = await ensureBackgroundPush(registration);
-    ui.notifyButton.title = background ? t("백그라운드 알림 켜짐") : t("알림 켜짐");
-  }
+  const pendingRegistration = registerServiceWorker();
+  if (window.__MULTIAGENT_NATIVE_APP__) return;
+  await runWebNotificationOperation(async () => {
+    backgroundPushEnabled = notificationPreference() === "on" && window.Notification?.permission === "granted"
+      ? await ensureBackgroundPush(await pendingRegistration) : false;
+    syncWebNotificationButton();
+  });
 }
 
 document.addEventListener('click', async event => {
@@ -6427,6 +6481,9 @@ ui.terminalFollowButton?.addEventListener("click", () => {
   followTerminalOutput(terminals.get(ui.terminalMount));
 });
 ui.notifyButton.addEventListener("click", enableNotifications);
+addEventListener("storage", ({ key }) => {
+  if (!window.__MULTIAGENT_NATIVE_APP__ && key === WEB_NOTIFICATION_KEY) void initializeNotifications();
+});
 ui.installButton.addEventListener("click", installPwa);
 ui.logoutButton.addEventListener("click", async () => {
   stopNativeMonitor();
@@ -6577,14 +6634,10 @@ window.visualViewport?.addEventListener("scroll", syncVisualViewport);
 document.addEventListener("focusin", () => setTimeout(syncVisualViewport, 0));
 document.addEventListener("focusout", () => setTimeout(syncVisualViewport, 80));
 
-if (
-  localStorage.getItem("multiagent.remote.notifications") === "on" &&
-  (window.__MULTIAGENT_NATIVE_APP__ || window.Notification?.permission === "granted")
-) {
+if (!window.__MULTIAGENT_NATIVE_APP__) syncWebNotificationButton();
+else if (notificationPreference() === "on") {
   ui.notifyButton.classList.add("enabled");
-  ui.notifyButton.title = window.__MULTIAGENT_NATIVE_APP__
-    ? t("휴대폰 모니터링 상태 확인 중")
-    : t("알림 켜짐");
+  ui.notifyButton.title = t("휴대폰 모니터링 상태 확인 중");
 }
 applyNavCollapsed(localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
 syncVisualViewport();

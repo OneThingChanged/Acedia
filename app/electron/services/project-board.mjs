@@ -10,6 +10,26 @@ const attention = new Set(['waiting', 'review', 'completed', 'interrupted', 'fai
 const interrupted = new Set(['cancelled', 'canceled', 'interrupted', 'aborted']);
 const taskIdentity = (run, task, attempt) => JSON.stringify([run.id, task.id, attempt?.id || null]);
 const MAX_RESULTS = 1500;
+const MAX_BOARD_BYTES = 4 * 1024 * 1024;
+const PRUNING_MARKER_BYTES = Buffer.byteLength(JSON.stringify({ resultPrunedThroughAt: -Number.MAX_VALUE }));
+
+function pruneOldestResults(data, excessCount, excessBytes = 0) {
+  const oldest = Object.values(data.inbox).sort((a, b) => a.createdAt - b.createdAt);
+  if (!oldest.length) return data;
+  const inbox = { ...data.inbox };
+  let resultPrunedThroughAt = data.resultPrunedThroughAt ?? -Infinity;
+  for (let index = 0; index < oldest.length && (excessCount > 0 || excessBytes > 0); index++) {
+    const item = oldest[index];
+    if (excessBytes > 0) {
+      const entryBytes = Buffer.byteLength(JSON.stringify({ [item.id]: item })) - 2;
+      excessBytes -= entryBytes + (index < oldest.length - 1 ? 1 : 0);
+    }
+    delete inbox[item.id];
+    excessCount--;
+    resultPrunedThroughAt = Math.max(resultPrunedThroughAt, item.createdAt);
+  }
+  return { ...data, inbox, resultPrunedThroughAt };
+}
 
 function completionReviews(items) {
   return items.filter(item => item.scope === 'response').flatMap(item =>
@@ -26,7 +46,7 @@ export class ProjectBoard {
     this.devices = new Map();
     this.references = new Map();
     try {
-      if (fs.statSync(file).size > 4 * 1024 * 1024) throw Error();
+      if (fs.statSync(file).size > MAX_BOARD_BYTES) throw Error();
       const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (![1, 2].includes(stored.version) || !stored.acknowledged || Array.isArray(stored.acknowledged)
         || typeof stored.acknowledged !== 'object' || !stored.preferences || typeof stored.preferences !== 'object') throw Error();
@@ -34,13 +54,22 @@ export class ProjectBoard {
       if (Object.entries(stored.inbox || {}).some(([id, i]) => !i || id !== i.id || !/^[a-f0-9]{64}$/.test(id)
         || typeof i.sessionId !== 'string' || i.kind !== 'result' || !Number.isFinite(i.createdAt)
         || typeof i.summary !== 'string' || !/^[a-f0-9]{64}$/.test(i.fingerprint))) throw Error();
+      if (stored.resultPrunedThroughAt !== undefined && !Number.isFinite(stored.resultPrunedThroughAt)) throw Error();
       this.data = { ...stored, version: 2, results: stored.results || {}, inbox: stored.inbox || {} };
     } catch (error) { if (error.code !== 'ENOENT') this.storageError = '보드 설정을 읽지 못했습니다. 기존 파일을 확인하세요.'; }
   }
   save(next) {
     if (this.storageError) throw Error(this.storageError);
-    const serialized = JSON.stringify(next);
-    if (Buffer.byteLength(serialized) > 4 * 1024 * 1024) throw Error('보드 기록 저장 한도를 초과했습니다.');
+    const excessCount = Object.keys(next.inbox).length - MAX_RESULTS;
+    if (excessCount > 0) next = pruneOldestResults(next, excessCount);
+    let serialized = JSON.stringify(next);
+    const excessBytes = Buffer.byteLength(serialized) - MAX_BOARD_BYTES;
+    if (excessBytes > 0) {
+      // Include space for the persisted pruning boundary in the byte budget.
+      next = pruneOldestResults(next, 0, excessBytes + PRUNING_MARKER_BYTES);
+      serialized = JSON.stringify(next);
+      if (Buffer.byteLength(serialized) > MAX_BOARD_BYTES) throw Error('보드 기록 저장 한도를 초과했습니다.');
+    }
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file + '.tmp', serialized, { mode: 0o600 });
     fs.renameSync(this.file + '.tmp', this.file); this.data = next; this.writeError = null;
@@ -93,7 +122,7 @@ export class ProjectBoard {
     try { return await task(); } finally { this.devices.delete(key); }
   }
   withResults(inbox, items) {
-    let next = inbox, count, reviewed, evictionIndex = 0;
+    let next = inbox;
     for (const item of items) {
       const recorded = next[item.id];
       if (recorded) {
@@ -104,23 +133,13 @@ export class ProjectBoard {
         }
         continue;
       }
-      count ??= Object.keys(next).length;
-      if (count >= MAX_RESULTS) {
-        if (!reviewed) {
-          reviewed = Object.values(next).filter(i => i.reviewedAt).sort((a, b) => a.createdAt - b.createdAt);
-          evictionIndex = 0;
-        }
-        if (reviewed.length - evictionIndex <= count - MAX_RESULTS) { this.resultCapacityReached = true; continue; }
-        if (next === inbox) next = { ...inbox };
-        while (count >= MAX_RESULTS) { delete next[reviewed[evictionIndex++].id]; count--; }
-      }
+      // Periodic snapshots and legacy notice imports can replay old results.
+      // Keep the pruning boundary even when the byte limit leaves spare slots.
+      if (this.data.resultPrunedThroughAt !== undefined && item.createdAt <= this.data.resultPrunedThroughAt) continue;
       if (next === inbox) next = { ...inbox };
       const value = { ...item, kind: 'result', summary: short(item.summary), reviewedAt: item.reviewedAt || null };
       value.fingerprint = digest([value.id, value.summary, value.scope, value.createdAt]);
       next[value.id] = value;
-      count++;
-      if (value.reviewedAt) reviewed = undefined;
-      this.resultCapacityReached = false;
     }
     return next;
   }
@@ -231,7 +250,8 @@ export class ProjectBoard {
         const existing = priorResults.get(JSON.stringify([item.id, item.updatedAt, item.summary]));
         const resultId = task ? digest(['task', task.identity, scope, item.summary]) : recorded?.event === 'done' && recorded.resultKey || existing?.id || digest(['catalog', item.id, item.updatedAt, item.summary]);
         item.resultId = resultId;
-        candidates.push({ id: resultId, sessionId: item.id, createdAt: item.updatedAt, summary: item.summary, scope,
+        const createdAt = !task && recorded?.event === 'done' && recorded.resultKey ? recorded.at : item.updatedAt;
+        candidates.push({ id: resultId, sessionId: item.id, createdAt, summary: item.summary, scope,
           runId: task?.runId || null, taskId: task?.taskId || null, artifacts: task?.artifacts || [], reviewedAt: item.needsAttention ? null : this.now() });
       }
       return item;
@@ -259,7 +279,7 @@ export class ProjectBoard {
       if (!this.live(item.sessionId) || !byId.has(item.sessionId) || this.now() - item.startedAt > 5 * 60_000) { this.devices.delete(key); continue; }
       devices.push({ ...item, state: this.now() - item.startedAt > 120_000 ? 'unconfirmed' : 'active' });
     }
-    const items = Object.values(inbox).filter(i => !i.reviewedAt && byId.has(i.sessionId));
+    const items = Object.values(this.data.inbox).filter(i => !i.reviewedAt && byId.has(i.sessionId));
     for (const session of sessions) {
       if (['waiting', 'failed', 'unknown', 'interrupted'].includes(session.state) && session.needsAttention) {
         items.push({ id: digest(['current', session.id, session.fingerprint]), sessionId: session.id,
@@ -279,7 +299,7 @@ export class ProjectBoard {
       items, references, devices, delegations, transfers: transfers.filter(t => byId.has(t.from) && byId.has(t.to)).slice(-100).map(t => ({ id: short(t.id, 128), from: t.from, to: t.to,
         status: short(t.status, 50), reason: short(t.reason, 300), summary: short(t.summary, 200), savedAt: t.savedAt || null,
         sentAt: t.sentAt || null, receivedAt: t.receivedAt || null, readAt: t.readAt || null, startedAt: t.startedAt || null, isMessage: !!t.isMessage })),
-      preferences: this.data.preferences, resultCapacityReached: this.resultCapacityReached === true,
+      preferences: this.data.preferences,
       storageError: this.storageError || this.writeError || this.delegationError() || null };
     const nextRevision = digest(value);
     return revision === nextRevision ? { revision, unchanged: true, sampledAt: this.now() } : { ...value, revision: nextRevision, sampledAt: this.now() };
@@ -298,7 +318,6 @@ export class ProjectBoard {
     const reviewedAt = this.now();
     for (const item of items) inbox[item.id] = { ...item, reviewedAt: item.reviewedAt || reviewedAt };
     this.save({ ...this.data, acknowledged, inbox });
-    if (items.length) this.resultCapacityReached = false;
     const completions = completionReviews(items);
     if (completions.length) this.onCompletionsReviewed(completions);
     return this.snapshot();
@@ -325,16 +344,15 @@ export class ProjectBoard {
   }
   acknowledgeResults(id, results) {
     if (!Array.isArray(results) || results.length > MAX_RESULTS) throw Error('확인할 결과 목록을 확인하세요.');
-    const snapshot = this.snapshot();
-    if (!results.length) return snapshot;
-    const sessionIds = new Set(id === undefined ? snapshot.sessions.map(session => session.id) : [id]);
+    if (!results.length) return this.snapshot();
+    const sessionIds = new Set(id === undefined ? (this.catalog().agents || []).map(session => session.id) : [id]);
     const confirmed = results.map(result => {
       const item = this.data.inbox[result.id];
       if (!item || item.kind !== 'result' || !sessionIds.has(item.sessionId) || item.fingerprint !== result.fingerprint) throw Error('확인할 결과가 변경되었습니다. 다시 확인하세요.');
       return item;
     });
     const unread = [...new Set(confirmed)].filter(item => !item.reviewedAt);
-    return unread.length ? this.saveReview(unread) : snapshot;
+    return unread.length ? this.saveReview(unread) : this.snapshot();
   }
   folder(agent, source) {
     const visited = new Set(); let current = agent;
