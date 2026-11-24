@@ -4,11 +4,11 @@ import { TerminalSessionService } from './terminal-session-service.mjs';
 import { TrackedTerminalFilter } from './terminal-stream.mjs';
 
 const screen = (count = 1) => `${count ? `✻ Waiting for ${count} background agent${count === 1 ? '' : 's'} to finish` : '✻ Thinking…'}\n\n─────────────────\n❯ \n─────────────────\nbypass permissions on (shift+tab to cycle) · ↓ to manage`;
-function fixture(provider = 'claude') {
+function fixture(provider = 'claude', options = {}) {
   vi.useFakeTimers(); let text = screen();
   const entry = { id: 'a', aiToolId: provider, filter: { viewportText: vi.fn(() => text) } };
   const entries = new Map([['a', entry]]), events = [];
-  const monitor = new BackgroundWorkMonitor({ entry: id => entries.get(id), publish: event => events.push(event) });
+  const monitor = new BackgroundWorkMonitor({ entry: id => entries.get(id), publish: event => events.push(event), ...options });
   return { entry, entries, events, monitor, frame: value => { text = value; }, flush: () => vi.advanceTimersByTime(200) };
 }
 afterEach(() => vi.useRealTimers());
@@ -48,6 +48,40 @@ it('holds a foreground Stop while native background work remains, then releases 
   expect(f.events.at(-1)).toMatchObject({ event: 'done', session_id: 'original', assistant_message: '결과 요약', hook_event_name: 'BackgroundWorkResume' });
   expect(f.events.map(e => e.event)).toEqual(['tool-end', 'background-wait', 'done']);
   f.monitor.output(f.entry); f.flush(); expect(f.events).toHaveLength(3);
+});
+
+it.each(['done', 'blocked'])('holds Claude completion until the linked job reports %s', async finalStatus => {
+  const readExternalJobs = vi.fn(async () => ['linked-job']);
+  const readExternalStatus = vi.fn().mockResolvedValueOnce('pending').mockResolvedValueOnce(null).mockResolvedValue(finalStatus);
+  const f = fixture('claude', { readExternalJobs, readExternalStatus });
+  f.frame(screen(0).replace('✻ Thinking…', ''));
+  const stop = { id: 'a', session_id: 'original', event: 'done', assistant_message: '응답 완료' };
+  await f.monitor.prepare(stop);
+  expect(readExternalJobs).toHaveBeenCalledWith(f.entry, 'original');
+  expect(f.monitor.hook(stop)).toMatchObject({ event: 'background-wait', background_count: 1 });
+  f.monitor.output(f.entry);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(f.events).toEqual([]);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(f.events).toMatchObject([{ id: 'a', event: finalStatus, session_id: 'original', background_count: 0 }]);
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(f.events).toHaveLength(1);
+});
+
+it('discards an outstanding external check when the PTY is replaced', async () => {
+  let finish;
+  const readExternalStatus = vi.fn().mockResolvedValueOnce('pending')
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const f = fixture('claude', { readExternalJobs: async () => ['linked-job'], readExternalStatus });
+  const stop = { id: 'a', session_id: 'original', event: 'done' };
+  await f.monitor.prepare(stop);
+  f.monitor.hook(stop);
+  await vi.advanceTimersByTimeAsync(5000);
+  f.entries.set('a', { ...f.entry });
+  f.monitor.prune(['a']);
+  finish('done');
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(f.events).toEqual([]);
 });
 
 it('keeps questions/cancellation authoritative and drops timers from closed or replaced PTYs', () => {

@@ -471,10 +471,9 @@ describe("Electron dashboard server", () => {
     expect(stylesBody).toContain(".usage-chart-bar");
     expect(stylesBody).toContain(".usage-remaining-progress");
     expect(stylesBody).toContain('.app-shell[data-view="session"] .chat-view');
-    expect(stylesBody).toContain(".composer-main-row");
-    expect(stylesBody).toContain(".composer textarea { flex: 1 1 auto");
+    expect(stylesBody).toMatch(/\.composer textarea \{[^}]*width: 100%[^}]*border: 0/);
     expect(stylesBody).toContain("max-height: min(220px, 34dvh)");
-    expect(stylesBody).toContain(".composer-main-row { display: flex; align-items: flex-end");
+    expect(stylesBody).toMatch(/\.composer-toolbar \{[^}]*display: flex[^}]*user-select: none/);
     expect(stylesBody).toContain(".composer-attachment");
     expect(stylesBody).toContain(".composer.drag-active::after");
     expect(stylesBody).toContain(".file-preview-overlay");
@@ -499,7 +498,7 @@ describe("Electron dashboard server", () => {
     expect(manifestBody.display).toBe("standalone");
     expect(worker.headers.get("service-worker-allowed")).toBe("/");
     expect(workerBody).toContain("notificationclick");
-    expect(workerBody).toContain('multiagent-remote-v122');
+    expect(workerBody).toContain('multiagent-remote-v123');
     expect(pageBody).toContain('id="childSessionVisibility"');
     for (const status of ['idle', 'stopped', 'sleeping']) expect(pageBody).toContain(`data-child-visibility="${status}"`);
     for (const asset of ['session-notes.js', 'session-notes.css', 'session-notes-client.js']) expect(workerBody).toContain(`/pwa/${asset}`);

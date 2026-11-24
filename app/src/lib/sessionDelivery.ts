@@ -62,5 +62,11 @@ export function deliveryStatusMessage(record: SessionDelivery, english: boolean)
     const saved = english ? 'Saved in inbox' : '메시지함에 저장됨';
     return `${saved} · ${accountBlockMessage(record.reason, record.retryAt, english)}`;
   }
+  if (record.isMessage && record.status === 'queued') return english
+    ? 'Saved in inbox · automatic notification pending'
+    : '수신함에 저장됨 · 자동 알림 대기 중';
+  if (record.isMessage && record.status === 'unconfirmed') return english
+    ? 'Saved in inbox · CLI submission unconfirmed'
+    : '수신함에 저장됨 · CLI 입력 제출 미확인';
   return messages[record.status][english ? 1 : 0];
 }

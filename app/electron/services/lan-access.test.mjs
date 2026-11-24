@@ -200,17 +200,30 @@ const actualNetwork = lanInterfaces()[0];
 const lanTest = actualNetwork ? it : it.skip;
 
 describe("LAN dashboard HTTP", () => {
+  it("defaults address access on for fresh and legacy settings without enabling LAN", async () => {
+    const { service, root } = fixture();
+    expect(service.status().lan).toMatchObject({ enabled: false, directAccess: true, running: false });
+    fs.writeFileSync(path.join(root, "monitor.json"), JSON.stringify({ enabled: true, serverPort: 4421 }));
+    const restored = new LocalDashboardService({ title: "Legacy", defaultPort: 0, baseDir: root, configName: "monitor.json", allowLan: true });
+    expect(restored.status().lan).toMatchObject({ enabled: false, directAccess: true, running: false });
+    const status = await restored.start(0);
+    services.push(restored);
+    expect(restored.server.address().address).toBe("127.0.0.1");
+    expect(status.lan.running).toBe(false);
+  });
+
   it("keeps loopback as the default and prevents unavailable editions from enabling LAN", async () => {
     const { service } = fixture(false);
     const status = await service.start();
     expect(service.server.address().address).toBe("127.0.0.1");
     expect((await fetch(`${status.url}/api/state`)).status).toBe(200);
     await expect(service.setLanEnabled(true)).rejects.toThrow("unavailable");
-    expect(service.status().lan.available).toBe(false);
+    expect(service.status().lan).toMatchObject({ available: false, directAccess: false });
   });
 
   lanTest("pairs over the actual LAN interface, protects every data route, and revokes access", async () => {
     const { service, writes, root } = fixture();
+    await service.setLanDirectAccess(false);
     const local = await service.start();
     expect((await fetch(`${local.url}/api/state`)).status).toBe(200);
     const status = await service.setLanEnabled(true);
@@ -288,7 +301,7 @@ describe("LAN dashboard HTTP", () => {
     expect((await pair(restoredBase)).status).toBe(200);
   });
 
-  lanTest("opens a plain LAN address only when enabled and revokes only its automatic sessions", async () => {
+  lanTest("opens a plain LAN address by default and preserves a saved link-only choice", async () => {
     const { service, root } = fixture();
     const initial = await service.setLanEnabled(true);
     const base = `http://${actualNetwork.address}:${initial.port}`;
@@ -297,7 +310,14 @@ describe("LAN dashboard HTTP", () => {
     const authorizeAddress = (headers = {}) => fetch(`${base}/auth/lan`, {
       method: "POST", headers: { "content-type": "application/json", origin: base, ...headers }, body: JSON.stringify({ mode: "address" }),
     });
-    expect(initial.lan.directAccess).toBe(false);
+    expect(initial.lan.directAccess).toBe(true);
+    const defaultLanding = await open();
+    expect(defaultLanding.status).toBe(200);
+    expect(defaultLanding.headers.has("set-cookie")).toBe(true);
+    await defaultLanding.arrayBuffer();
+    await service.setLanDirectAccess(false);
+    const optedOut = new LocalDashboardService({ title: "Opted out", defaultPort: 0, baseDir: root, configName: "monitor.json", allowLan: true });
+    expect(optedOut.status().lan.directAccess).toBe(false);
     expect((await open()).status).toBe(302);
     const disabled = await authorizeAddress();
     expect(disabled.status).toBe(403);

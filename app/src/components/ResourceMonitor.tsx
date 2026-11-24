@@ -143,6 +143,8 @@ export function ResourceMonitor({
     usage && usage.system_memory_bytes > 0
       ? Math.round((usage.total_memory_bytes / usage.system_memory_bytes) * 100)
       : 0;
+  const privateCommit = usage?.memory_kind === "private-commit";
+  const memoryLabel = privateCommit ? text("전용 커밋", "Private commit") : text("메모리", "Memory");
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -159,7 +161,7 @@ export function ResourceMonitor({
         type="button"
         className={`resource-status ${open ? "resource-status-open" : ""}`}
         onClick={() => setOpen((value) => !value)}
-        title="Resource Manager"
+        title={privateCommit ? text("리소스 관리자 · 전용 커밋", "Resource Manager · Private commit") : "Resource Manager"}
       >
         <span className="resource-status-icon">▦</span>
         <span>{usage ? formatBytes(usage.total_memory_bytes) : "—"}</span>
@@ -181,12 +183,12 @@ export function ResourceMonitor({
             <span>·</span>
             <b>{formatBytes(usage?.total_memory_bytes ?? 0)}</b>
             <span>·</span>
-            <span>{text(`시스템 RAM의 ${systemPercent}%`, `${systemPercent}% of system RAM`)}</span>
+            <span>{privateCommit ? memoryLabel : text(`시스템 RAM의 ${systemPercent}%`, `${systemPercent}% of system RAM`)}</span>
           </div>
           <div className="resource-popover-columns">
             <span>{text("이름", "Name")}</span>
             <span>CPU</span>
-            <span>{text("메모리", "Memory")}</span>
+            <span>{memoryLabel}</span>
           </div>
           <div className="resource-popover-body">
             {usage && !usage.sampled && (
@@ -235,7 +237,7 @@ export function ResourceMonitor({
             ))}
             {usage?.sampled && (
               <div className="resource-row resource-row-app">
-                <span className="resource-name">{text("앱 프로세스 (UI 등)", "App processes (UI, etc.)")}</span>
+                <span className="resource-name">{text("세션에 미분류 (UI·브라우저 등)", "Outside session totals (UI, browsers, etc.)")}</span>
                 <span className="resource-cpu" />
                 <span className="resource-mem">{formatBytes(appSelfMemory)}</span>
               </div>

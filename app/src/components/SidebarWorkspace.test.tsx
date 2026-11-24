@@ -37,6 +37,7 @@ describe("workspace sidebar", () => {
     const html = render([agent('leader', { status: 'running', runtimeStatus: 'running' }), agent('child', { status: 'working', runtimeStatus: 'running', sessionHierarchy: { parentId: 'leader' } })],
       { unreadCompletedAgentIds: new Set(['leader']) });
     expect(html.match(/data-delegated-wait="1"/g)).toHaveLength(2);
+    expect(html.match(/data-child-wait="true"/g)).toHaveLength(2);
     expect(html.match(/status-background/g)).toHaveLength(2);
     expect(html).toContain('자식 작업 1개 대기'); expect(html).toContain('agent-completion-unread');
     expect(html).toContain('leader · 자식 작업 1개 대기 · 읽지 않은 작업 완료');
@@ -45,6 +46,7 @@ describe("workspace sidebar", () => {
     const html = render([agent('Claude', { aiToolId: 'claude', status: 'background', runtimeStatus: 'running',
       activity: { workStatus: 'background', source: 'terminal', receivedAt: 1, stateStartedAt: 1, backgroundCount: 2 } })], { unreadCompletedAgentIds: new Set(['Claude']) });
     expect(html).toContain('data-background-wait="true"'); expect(html).toContain('has-background-work');
+    expect(html).not.toContain('data-child-wait');
     expect(html).toContain('status-background'); expect(html).toContain('백그라운드 2개 대기');
     expect(html).toContain('agent-completion-unread'); expect(html).not.toContain('sidebar-question-label');
   });

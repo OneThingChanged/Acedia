@@ -227,6 +227,7 @@ const ui = {
   attachmentButton: $("#attachmentButton"),
   attachmentInput: $("#attachmentInput"),
   messageInput: $("#messageInput"),
+  composerSettingsSlot: $("#composerSettingsSlot"),
   composerSettings: $("#composerSettings"),
   sendButton: $("#sendButton"),
   refreshButton: $("#refreshButton"),
@@ -5468,7 +5469,7 @@ function applyScreenAvailability() {
   ui.appShell.classList.toggle('touch-workspace', mobile);
   ui.sessionMode.hidden = mobile;
   sessionViewMode = mobile ? 'chat' : preferredSessionViewMode;
-  const settingsHost = mobile ? ui.sessionTools : ui.messageInput.parentElement;
+  const settingsHost = mobile ? ui.sessionTools : ui.composerSettingsSlot;
   if (ui.composerSettings.parentElement !== settingsHost) settingsHost.append(ui.composerSettings);
   if (ui.screensSection) ui.screensSection.hidden = mobile;
   ui.searchInput.placeholder = mobile

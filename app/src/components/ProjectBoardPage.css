@@ -119,7 +119,7 @@
 .work-board-page .wb-node-menu { position: absolute; right: 5px; bottom: 4px; width: 24px; height: 22px; padding: 0; border-color: transparent; background: transparent; color: #b7c5d8; line-height: 1; }
 .work-board-page .wb-node-menu:hover, .work-board-page .wb-node-menu:focus-visible, .work-board-page .wb-node-menu[aria-expanded=true] { border-color: #607995; background: #253346; color: #eef3fb; }
 .work-board-page [data-state=working] { color: #6ac3ff; }
-.work-board-page [data-state=background] { color: #d4baff; }
+.work-board-page [data-state=background] { color: #efaad3; }
 .work-board-page [data-state=waiting], .work-board-page [data-state=question] { color: #f3c278; }
 .work-board-page [data-state=failed], .work-board-page [data-state=error] { color: #f3949d; }
 .work-board-page [data-state=review], .work-board-page [data-state=completed] { color: #8ce4b5; }
@@ -128,8 +128,11 @@
 .wb-state-icon svg { width: 100%; height: 100%; }
 .wb-state-icon[data-state=working] { color: #6ac3ff; border: 3px solid #314d66; border-top-color: #6ac3ff; border-right-color: #6ac3ff; border-radius: 50%; animation: wb-spin 1.35s linear infinite; }
 .wb-state-icon[data-state=result], .wb-state-icon[data-state=completed], .wb-state-icon[data-state=review] { color: #8ce4b5; }
-.wb-node[data-state=background] { background: #2c253a; border-color: #88719f; }
-.wb-state-icon[data-state=background] { border: 3px solid #665476; border-top-color: #e0c7ff; border-right-color: #e0c7ff; border-radius: 50%; animation: wb-spin 3.2s linear infinite; }
+.wb-node[data-state=background] { background: #352236; border-color: #a46990; }
+.wb-state-icon[data-state=background] { border: 3px solid #74506a; border-top-color: #f6bedf; border-right-color: #f6bedf; border-radius: 50%; animation: wb-spin 3.2s linear infinite; }
+.wb-node[data-state=background][data-child-wait] { background: #2c253a; border-color: #88719f; }
+.work-board-page [data-child-wait] [data-state=background] { color: #d4baff; }
+.work-board-page [data-child-wait] .wb-state-icon[data-state=background] { border-color: #665476; border-top-color: #e0c7ff; border-right-color: #e0c7ff; }
 .wb-edges { position: absolute; z-index: 0; inset: 0; pointer-events: none; overflow: visible; }
 .wb-edges path { fill: none; stroke: #7192b8; stroke-width: 2; opacity: .72; }
 .wb-project-edges path[data-relation=parent] { stroke: #41c7a3; }

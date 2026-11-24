@@ -229,6 +229,7 @@ export type ResourceUsageResult = {
   sampled: boolean;
   total_cpu_percent: number;
   total_memory_bytes: number;
+  memory_kind: "private-commit" | "resident";
   total_process_count: number;
   system_memory_bytes: number;
   sessions: ResourceSessionUsage[];

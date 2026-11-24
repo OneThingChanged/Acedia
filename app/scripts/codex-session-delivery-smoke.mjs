@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import * as pty from 'node-pty';
 import { AccountPool } from '../electron/services/account-pool.mjs';
 import { ActiveQuestions } from '../electron/services/active-questions.mjs';
-import { SessionDeliveries, deliveryComposerReady } from '../electron/services/session-delivery.mjs';
+import { SessionDeliveries, codexDeliveryDraftReady, deliveryComposerReady } from '../electron/services/session-delivery.mjs';
 import { SessionMessages } from '../electron/services/session-messages.mjs';
 import { SessionReadiness } from '../electron/services/session-readiness.mjs';
 import { WorkspaceManagement } from '../electron/services/workspace-management.mjs';
@@ -51,7 +51,8 @@ const pool = new AccountPool(path.join(root, 'pool'), { port: 0, safeStorage, fe
     { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response }];
   return new Response(events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
 } });
-let filter = new CodexScrollbackFilter(34, 140);
+const cols = messageApi ? 96 : 140;
+let filter = new CodexScrollbackFilter(34, cols);
 let transcriptResolutions = 0;
 const questions = new ActiveQuestions({ resolveTranscript: ({ root: scopedRoot, tool, sessionId }) => {
   transcriptResolutions++;
@@ -74,7 +75,7 @@ try {
   for (const key of Object.keys(env)) if (/^(OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN)$/i.test(key)) delete env[key];
   terminal = pty.spawn(binary, ['--no-alt-screen', '-m', 'gpt-6.1-sol', ...launch.args, '-c', 'model_reasoning_effort="high"',
     '-c', 'features.daemon_auto_start=false', '-c', 'features.hooks=false', '-c', 'features.plugins=false', '-c', 'analytics.enabled=false'],
-    { cwd: workingFolder, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
+    { cwd: workingFolder, env, cols, rows: 34, name: 'xterm-256color', useConpty: true });
   const entry = { id: 'target', cwd:workingFolder, aiToolId: 'codex', startedAt: Date.now(), lastInputAt: 0, process: terminal, filter }, caller = {};
   terminal.onData(data => { if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
   const read = async () => {
@@ -105,16 +106,17 @@ try {
   }
   if(!immediate) await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'initial composer');
   if(!firstMessage){
-    await submitPtyMessage({ ptyProcess: terminal, message: 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.' });
+    const message = 'Remember ORIGINAL_CONTEXT_MARKER. Reply SESSION_DELIVERY_FIXTURE_OK. Do not call tools.';
+    await submitPtyMessage({ ptyProcess: terminal, message, draftReady: () => codexDeliveryDraftReady(entry, message) });
     await waitFor(async () => (await read())?.turn?.status === 'done' && deliveryComposerReady(entry), 'completed native composer');
   }else{assert.equal(calls.length,0);assert.equal(conversationId,undefined);}
   if (process.env.ACEDIA_DELIVERY_RESUME === '1') {
     const stopped = new Promise(resolve => terminal.onExit(resolve)); terminal.kill(); await stopped;
-    filter.dispose(); filter = new CodexScrollbackFilter(34, 140);
+    filter.dispose(); filter = new CodexScrollbackFilter(34, cols);
     terminal = pty.spawn(binary, ['resume', conversationId, '--cd', root, '--no-alt-screen', '-m', 'gpt-6.1-sol', ...launch.args,
       '-c', 'model_reasoning_effort="high"', '-c', 'features.daemon_auto_start=false', '-c', 'features.hooks=false',
       '-c', 'features.plugins=false', '-c', 'analytics.enabled=false'],
-      { cwd: root, env, cols: 140, rows: 34, name: 'xterm-256color', useConpty: true });
+      { cwd: root, env, cols, rows: 34, name: 'xterm-256color', useConpty: true });
     Object.assign(entry, { process: terminal, filter, startedAt: Date.now(), lastInputAt: 0 });
     terminal.onData(data => { if (data.includes('\x1b[6n')) terminal.write('\x1b[1;1R'); filter.push(data); });
     await waitFor(() => codexRetryPromptReady(filter.viewportText()), 'resumed native composer');
@@ -127,10 +129,10 @@ try {
     context: id => id === 'caller' ? { entry: caller, name: '한글 관리자', projectName: 'Fixture' }
       : id === 'target' ? { entry, name: 'UI', conversationId:conversationId??null } : null,
     ready: () => deliveryComposerReady(entry), publish: payload => updates.push(payload),
-    submit: (_id, _entry, message, isCurrent) => {
+    submit: (_id, _entry, message, isCurrent, draftReady) => {
       submissions++;
       entry.firstMessageSubmitted = true;
-      return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, encodeInput: encodeConptyUnicode });
+      return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, draftReady, encodeInput: encodeConptyUnicode });
     } };
   service = new SessionDeliveries(options);
   const readiness = new SessionReadiness({ context: options.context, read, freshRead: options.freshRead, ready: options.ready });
@@ -141,12 +143,13 @@ try {
   }, 100);
   const messageOptions = { file: path.join(root, 'session-messages.json'), sessionFor: id => catalog().agents.find(a => a.id === id), context: options.context,
     prepare: async (id, { waitMs, context }) => {
-      if(immediate && confirmStartup) {
+      const awaitingTrust = immediate && Boolean(confirmStartup);
+      if (awaitingTrust) {
         assert.equal((await readiness.inspect(id)).phase,'folder-trust');
         const confirm=confirmStartup;confirmStartup=null;setTimeout(confirm,100);
       }
       const status=await readiness.waitForReady(id,waitMs,context);
-      if(immediate) {assert.equal(status.firstMessageReady,true);console.log('SESSION_MESSAGE_WAITED_FOR_NATIVE_STARTUP_BEFORE_NOTIFY_OK');}
+      if (awaitingTrust) {assert.equal(status.firstMessageReady,true);console.log('SESSION_MESSAGE_WAITED_FOR_NATIVE_STARTUP_BEFORE_NOTIFY_OK');}
       return status;
     },
     notify: (agentId, body) => service.handle({ action: 'send', agentId, body, mailboxNotification: true, freshSession:true }),
@@ -198,6 +201,20 @@ try {
     const inbox = await rpc('tools/call', { name: 'acedia_session_message_receive', arguments: {} });
     assert.equal(inbox.structuredContent.messages[0].message, '한글 답장도 정상입니다.');
     console.log('SESSION_MESSAGE_REAL_CODEX_NAMED_NOTIFICATION_UTF8_INBOX_READ_REPLY_AND_NO_REPLAY_OK');
+    await waitFor(() => deliveryComposerReady(entry), 'empty composer before testing the preserved draft');
+    const draft = 'preserve my input';
+    terminal.write(draft);
+    await waitFor(() => filter.viewportText().includes(draft) && !deliveryComposerReady(entry), 'unsubmitted draft');
+    const queued = await rpc('tools/call', { name: 'acedia_session_message_send', arguments: { ...body, requestKey: 'draft-present', waitMs: 0 } });
+    assert.equal(queued.structuredContent.saved, true);
+    assert.equal(queued.structuredContent.delivery.status, 'queued');
+    const queuedResponse = await fetch(`http://127.0.0.1:${hook.port}/integration/v1/workspace/messages/receive`, { method: 'POST', headers,
+      body: JSON.stringify({ messageId: queued.structuredContent.messageId }) });
+    assert.equal(queuedResponse.status, 200);
+    assert.equal((await queuedResponse.json()).messages[0].message, message);
+    assert.equal(submissions, 1);
+    assert.ok(filter.viewportText().includes(draft));
+    console.log('SESSION_MESSAGE_REAL_CODEX_READS_API_INBOX_WITH_UNSUBMITTED_DRAFT_OK');
   } else {
   const message = '노드 선택 UI 초안: 인벤토리·캐릭터·지도 A02 → 확인! 🚀\n1~3개 후보, 준비 중/실패 상태를 HTML로 보여 주세요. 원래 작업 문맥을 유지해 주세요.';
   const body = { sessionId: 'target', expectedConversationId: conversationId, message, requestKey: 'node-ui-1', waitMs: 10000 };

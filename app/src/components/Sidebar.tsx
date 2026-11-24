@@ -235,7 +235,8 @@ function WorkspaceSidebar(props: SidebarProps) {
     const sleeping = isStandbySession(agent);
     const delegatedCount = delegatedWait[agent.id]?.count || 0;
     const background = !sleeping && (agent.status === 'background' || delegatedCount > 0);
-    const waitingLabel = delegatedCount ? text(`자식 작업 ${delegatedCount}개 대기`, `Waiting for ${delegatedCount} child task${delegatedCount === 1 ? '' : 's'}`)
+    const childWait = delegatedCount > 0 && agent.status !== 'background';
+    const waitingLabel = childWait ? text(`자식 작업 ${delegatedCount}개 대기`, `Waiting for ${delegatedCount} child task${delegatedCount === 1 ? '' : 's'}`)
       : text(...backgroundWaitingLabels(agent.activity?.backgroundCount));
     const detached = props.detachedAgentIds.has(agent.id);
     const unread = props.unreadCompletedAgentIds.has(agent.id);
@@ -264,7 +265,7 @@ function WorkspaceSidebar(props: SidebarProps) {
       `${highInput.toLocaleString(language)} input tokens in the latest Codex request (including cached tokens)`,
     );
     const titleWithAccount = (title: string) => accountDetails ? `${title}\n${accountDetails}` : title;
-    return <li key={agent.id} data-sidebar-agent-id={agent.id} data-background-wait={background || undefined} data-delegated-wait={delegatedCount || undefined} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}${background ? ' has-background-work' : ''}`}
+    return <li key={agent.id} data-sidebar-agent-id={agent.id} data-background-wait={background || undefined} data-child-wait={childWait || undefined} data-delegated-wait={delegatedCount || undefined} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}${background ? ' has-background-work' : ''}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
       aria-label={background || unread ? [agent.name, background ? statusTitle : '', unread ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
       aria-description={[accountDetails, contextDetails].filter(Boolean).join("\n") || undefined}

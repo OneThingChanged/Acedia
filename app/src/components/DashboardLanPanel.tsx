@@ -81,7 +81,7 @@ export function DashboardLanPanel({ status, onChange }: { status: DashboardStatu
         <span>{text("LAN 접속 허용", "Allow LAN access")}</span>
       </label>
       <label className="app-checkbox-row">
-        <input type="checkbox" checked={lan?.directAccess ?? false} disabled={busy || !lan?.available || !lan.enabled}
+        <input type="checkbox" checked={lan?.directAccess ?? false} disabled={busy || !lan?.available}
           onChange={event => { void setDirectAccess(event.target.checked); }} />
         <span>{text("주소만으로 접속 허용", "Allow access by address")}</span>
       </label>

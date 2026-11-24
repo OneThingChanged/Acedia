@@ -169,6 +169,19 @@ it('does not conflate notification start with body read, and does not replay unc
   await f.call('message-send', body); expect(f.notify).toHaveBeenCalledOnce();
   const inbox = await f.call('message-receive', {}, 'receiver'); expect(inbox.messages[0].message).toBe(text);
 });
+it('reads and acknowledges the original while terminal receipt lookup is unavailable', async () => {
+  const f = fixture();
+  const entry = { aiToolId: 'codex' };
+  f.service.context = () => ({ entry, conversationId: 'conversation' });
+  f.service.prepare = async () => ({ ready: false, reason: 'composer-or-runtime-not-ready' });
+  const queued = await f.call('message-send', { sessionId: 'receiver', message: text, requestKey: 'busy-composer' });
+  expect(queued).toMatchObject({ saved: true, delivery: { status: 'queued' } });
+  f.receipt.mockReset().mockImplementation(() => new Promise(() => {}));
+  const inbox = await f.call('message-receive', { messageId: queued.messageId }, 'receiver');
+  expect(inbox.messages[0]).toMatchObject({ message: text, readAt: 1000 });
+  expect(f.receipt).not.toHaveBeenCalled();
+  expect(f.notify).not.toHaveBeenCalled();
+});
 it.each(['codex', 'claude'])('durably queues busy %s input, resumes in order, and preserves original text without replay', async aiToolId => {
   const f = fixture(), entry = { aiToolId, startedAt: 1 }; let clock = 1000, ready = false;
   f.agents[1].aiToolId = aiToolId; f.service.now = () => clock;

@@ -5,6 +5,7 @@ import {
   PTY_SUBMIT_DELAY_MS,
   PTY_SUBMIT_QUIET_MS,
   PTY_SUBMIT_TIMEOUT_MS,
+  PTY_DRAFT_TIMEOUT_MS,
   submitPtyMessage,
 } from "./pty-submit.mjs";
 
@@ -140,6 +141,31 @@ describe("PTY message submission", () => {
 
     expect(accepted).toBe(false);
     expect(write).not.toHaveBeenCalled();
+  });
+  it('sends Enter only after the full handoff draft has been visible past the paste-burst window', async () => {
+    let clock = 0;
+    const writes = [];
+    await submitPtyMessage({
+      ptyProcess: { write: value => writes.push({ value, at: clock }) },
+      message: 'Acedia inbox reference', draftReady: () => clock >= 1550,
+      now: () => clock, wait: async ms => { clock += ms; },
+    });
+    expect(writes).toEqual([{ value: 'Acedia inbox reference', at: 0 }, { value: '\r', at: 1550 + PTY_SUBMIT_QUIET_MS }]);
+  });
+
+  it('does not submit a draft that stays incomplete or changes before Enter', async () => {
+    for (const changes of [false, true]) {
+      let clock = 0;
+      const write = vi.fn();
+      await expect(submitPtyMessage({
+        ptyProcess: { write }, message: 'Acedia inbox reference',
+        draftReady: () => changes && clock >= 500 && clock < 600,
+        isCurrent: () => !changes || clock < 600,
+        now: () => clock, wait: async ms => { clock += ms; },
+      })).rejects.toThrow('handoff draft could not be verified');
+      expect(clock).toBe(changes ? 600 : PTY_DRAFT_TIMEOUT_MS);
+      expect(write).toHaveBeenCalledExactlyOnceWith('Acedia inbox reference');
+    }
   });
   it("crosses the Windows paste-burst Enter suppression window", async () => {
     let clock = 0, pasteAt = 0, submitted = 0, insertedNewlines = 0;

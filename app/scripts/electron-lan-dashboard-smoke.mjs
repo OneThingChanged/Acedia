@@ -41,6 +41,7 @@ if (process.versions.electron) {
           subscribeTerminal: () => () => {},
         },
       });
+      await service.setLanDirectAccess(false);
       service.sync({ language: "ko", agents: [agent], ptyAgentIds: [agent.id], view: {
         language: "ko", projects: [{ id: "p1", name: "LAN project", folder: project }], agents: [agent],
       } });

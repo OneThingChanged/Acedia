@@ -812,14 +812,28 @@ non-interactive).
 ## Native background-agent waiting (1.8.2.10)
 
 Claude's native **Waiting for N background agent(s) to finish** is a separate
-`background` execution state. The sidebar shows a light-purple tint, a slowly
+`background` execution state. The sidebar shows a magenta tint, a slowly
 orbiting outline and a readable waiting count. Foreground work and completed
 results keep their existing colors. Earlier unreviewed completion evidence is
-retained, but the purple current-state outline takes visual priority. The board
+retained, and the magenta outline shows the current state. The board
 uses the same waiting state, outline and count, with a separate **Background**
 summary/filter and project-header aggregate. The summary counts waiting Acedia
-sessions; a row's count refers to that session's native Claude background agents.
-They are not fabricated Acedia sessions or task-tree children.
+sessions. A row counts the native Claude background agents and explicitly linked
+Extract Studio jobs for that session.
+
+To associate an Extract Studio job, save a JSON array in
+`.acedia/background-jobs.json` in the Claude session's working folder. Each
+entry accepts `provider: "extract-studio"`, the registered Acedia `sessionId`,
+the native Claude `conversationId`, and the 24-character Extract Studio
+`jobId`. Record the ID returned by job submission before publishing the
+foreground response. Keep the file local.
+
+Acedia checks matching receipts at Claude session start and foreground
+completion, then reads the exact job from the local Extract Studio API while it
+is queued or running. A transient read failure keeps a previously verified
+pending job visible. Success releases the held foreground completion, and
+failure or review-required results surface as blocked for review after the
+remaining jobs settle.
 
 The host observes the existing parsed Claude viewport after PTY output, coalesced
 to one scan per 200 ms. It does not start another emulator, reread transcripts,

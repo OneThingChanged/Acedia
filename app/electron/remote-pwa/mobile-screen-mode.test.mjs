@@ -21,7 +21,7 @@ function fixture({ mobile = false, touch = false, native = false } = {}) {
   const context = vm.createContext({ mobileMedia: { matches: mobile, addEventListener: (event, fn) => listeners.set('mobile:' + event, fn) },
     touchMedia: { matches: touch, addEventListener: (event, fn) => listeners.set('touch:' + event, fn) }, window: { __MULTIAGENT_NATIVE_APP__: native },
     ui: { appShell: { classList: { toggle: vi.fn() } }, sessionMode: {}, screensSection: {}, searchInput: {}, sessionTools: tools,
-      composerSettings: settings, messageInput: { parentElement: desktop } },
+      composerSettings: settings, composerSettingsSlot: desktop },
     preferredSessionViewMode: 'term', sessionViewMode: 'term', selection: { type: 'screen', id: 'screen' }, returnScreenId: 'screen', mobilePaneId: 'pane', screenRenderKey: 'old',
     screenGroups: () => [{ id: 'screen', panes: ['active'] }], allAgents: () => [{ id: 'offline', status: 'offline' }, { id: 'active', status: 'working' }],
     statusOf: agent => agent.status, localDocumentProjects: () => [], agentMap: () => new Map([['active', {}]]), preferredSessionId: () => 'active',
@@ -69,6 +69,27 @@ describe("Remote mobile Screen routing", () => {
       expect(f.context.returnScreenId).toBeNull(); expect(f.context.mobilePaneId).toBeNull(); expect(f.context.screenRenderKey).toBe('');
       expect(f.context.updateUrl).toHaveBeenCalledOnce(); expect(f.context.refitAllTerminals).toHaveBeenCalledOnce();
     }
+  });
+
+  it("moves the same settings controls out of and back into the desktop toolbar", () => {
+    const f = fixture();
+    f.context.applyScreenAvailability();
+    expect(f.settings.parentElement).toBe(f.desktop);
+    f.context.mobileMedia.matches = true;
+    f.context.applyScreenAvailability();
+    expect(f.settings.parentElement).toBe(f.tools);
+    f.context.mobileMedia.matches = false;
+    f.context.applyScreenAvailability();
+    expect(f.settings.parentElement).toBe(f.desktop);
+    expect(f.desktop.append.mock.calls).toEqual([[f.settings], [f.settings]]);
+  });
+
+  it("declares one message editor before the attachment and settings toolbar", () => {
+    const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+    const composer = html.match(/<form[^>]+id="composerForm"[^>]*>([^]*?)<\/form>/)?.[1];
+    expect(composer?.match(/<textarea\b/g)).toHaveLength(1);
+    expect(composer).toMatch(/<textarea id="messageInput"[^>]*><\/textarea>\s*<div class="composer-toolbar">/);
+    expect(composer).toMatch(/<div id="composerSettingsSlot"[^>]*>\s*<div[^>]+id="composerSettings">/);
   });
 });
 

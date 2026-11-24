@@ -42,6 +42,7 @@ import {
 import fs from "node:fs";
 import { createTerminalLauncher } from "./services/terminal-launcher.mjs";
 import { BackgroundWorkMonitor } from './services/background-work.mjs';
+import { extractStudioJobStatus, extractStudioReceipts } from './services/extract-studio-background.mjs';
 import { selectedAccountId } from "./services/provider-accounts.mjs";
 import { ChildLaunchPolicy, childLaunchPreferences } from './services/child-launch-policy.mjs';
 import { SessionRuns } from './services/session-runs.mjs';
@@ -837,11 +838,21 @@ const hookService = new HookService({
   browserProvider: (request) => handleBrowserIntegration(request),
   workspaceProvider: (request) => workspaceManagement.handle(request),
   mcpScriptPath: browserMcpScriptPath,
-  sendEvent: publishAgentHookEvent,
+  onHook: payload => backgroundWorkMonitor?.prepare(payload),
+  sendEvent: (event, payload) => {
+    // A native output check may finish while the preceding Stop is reading an
+    // attached job. Ignore the Stop if a newer real hook already took over.
+    if (payload.event === 'done' && ptys.get(payload.id)?.aiToolId === 'claude') {
+      const latest = monitorHooks.get(payload.id);
+      if (latest?.received_at > payload.received_at && !/^BackgroundWork/.test(latest.hook_event_name || '')) return;
+    }
+    publishAgentHookEvent(event, payload);
+  },
   sessionService,
 });
 backgroundWorkMonitor = new BackgroundWorkMonitor({ entry: id => ptys.get(id),
-  publish: payload => publishAgentHookEvent('agent:hook-event', payload) });
+  publish: payload => publishAgentHookEvent('agent:hook-event', payload),
+  readExternalJobs: extractStudioReceipts, readExternalStatus: extractStudioJobStatus });
 
 let browserReady = null;
 let hookMaintenanceTimer = null;
@@ -1119,11 +1130,11 @@ const sessionDeliveries = new SessionDeliveries({
       && (freshSession || resumedSession || cancelled || ready) && deliveryComposerReady(entry)
       && !deliveryAccountBlock(entry);
   },
-  submit: async (id, entry, message, isCurrent) => {
+  submit: async (id, entry, message, isCurrent, draftReady) => {
     capacityRetry.cancel(id);
     const previous = entry.firstMessageSubmitted;
     entry.firstMessageSubmitted = true;
-    const submitted = await submitPtyMessage({ ptyProcess: entry.process, message, isCurrent,
+    const submitted = await submitPtyMessage({ ptyProcess: entry.process, message, isCurrent, draftReady,
       encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined });
     if (!submitted && ptys.get(id) === entry) entry.firstMessageSubmitted = previous;
     return submitted;
@@ -4597,7 +4608,18 @@ function sumProcessTree(rootPid, stats, childrenByPpid) {
   return { cpuPercent, memoryBytes, processCount };
 }
 
-async function resourceUsage() {
+let resourceUsagePending;
+let resourceUsageSample;
+function resourceUsage() {
+  if (!resourceUsagePending && resourceUsageSample && Date.now() - resourceUsageSample.updated_at < 2000) return resourceUsageSample;
+  resourceUsagePending ??= collectResourceUsage().then(sample => {
+    if (sample.sampled) resourceUsageSample = sample;
+    return sample;
+  }).finally(() => { resourceUsagePending = undefined; });
+  return resourceUsagePending;
+}
+
+async function collectResourceUsage() {
   const stats = await snapshotProcessStats();
   const childrenByPpid = new Map();
   for (const [pid, stat] of stats) {
@@ -4628,6 +4650,7 @@ async function resourceUsage() {
     sampled: stats.size > 0,
     total_cpu_percent: Math.round(appUsage.cpuPercent * 10) / 10,
     total_memory_bytes: appUsage.memoryBytes,
+    memory_kind: process.platform === "win32" ? "private-commit" : "resident",
     total_process_count: appUsage.processCount,
     system_memory_bytes: os.totalmem(),
     sessions,

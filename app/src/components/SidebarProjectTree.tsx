@@ -683,7 +683,8 @@ export function SidebarProjectTree({
     const sleeping = isStandbySession(a);
     const delegatedCount = delegatedWait[a.id]?.count || 0;
     const background = !sleeping && (a.status === 'background' || delegatedCount > 0);
-    const waitingLabel = delegatedCount ? text(`자식 작업 ${delegatedCount}개 대기`, `Waiting for ${delegatedCount} child task${delegatedCount === 1 ? '' : 's'}`)
+    const childWait = delegatedCount > 0 && a.status !== 'background';
+    const waitingLabel = childWait ? text(`자식 작업 ${delegatedCount}개 대기`, `Waiting for ${delegatedCount} child task${delegatedCount === 1 ? '' : 's'}`)
       : text(...backgroundWaitingLabels(a.activity?.backgroundCount));
     const statusTitle = sleeping
       ? a.idleResumeSessionId
@@ -695,6 +696,7 @@ export function SidebarProjectTree({
       <li
         key={a.id}
         data-background-wait={background || undefined}
+        data-child-wait={childWait || undefined}
         data-delegated-wait={delegatedCount || undefined}
         aria-label={background || hasUnreadCompletion ? [a.name, background ? statusTitle : '', hasUnreadCompletion ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
         className={[

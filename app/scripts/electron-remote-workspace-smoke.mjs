@@ -230,7 +230,13 @@ void app.whenReady().then(async () => {
         assert(closes.at(-1) === 'claude', 'Close targeted a different session');
         const overflow = await evaluate(win, "document.documentElement.scrollWidth>innerWidth+1 || document.querySelector('#composerForm').getBoundingClientRect().bottom>innerHeight");
         assert(!overflow, 'Responsive composer overflowed the viewport');
-        assert(await evaluate(win, "document.querySelector('#messageInput').clientWidth >= document.querySelector('.composer-input-column').clientWidth-2"), 'Textarea did not fill the available input column');
+        assert(await evaluate(win, `(() => {
+          const form = document.querySelector('#composerForm');
+          const input = form.querySelector('#messageInput');
+          const leftInset = input.getBoundingClientRect().left - form.getBoundingClientRect().left;
+          return form.querySelectorAll('textarea').length === 1 && input.parentElement === form && leftInset <= 8
+            && getComputedStyle(input).borderLeftWidth === '0px';
+        })()`), 'Composer should have one left-aligned editor inside a single frame');
         assert(errors.length === 0, errors.join('\n'));
         console.log(`Remote workspace passed: ${kind} ${width}px; images=${imageReads}`);
         win.destroy();

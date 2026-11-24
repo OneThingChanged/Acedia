@@ -6,6 +6,7 @@ const BRACKETED_PASTE_END = "\x1b[201~";
 export const PTY_SUBMIT_DELAY_MS = 500;
 export const PTY_SUBMIT_QUIET_MS = 250;
 export const PTY_SUBMIT_TIMEOUT_MS = 3000;
+export const PTY_DRAFT_TIMEOUT_MS = 8000;
 const pending = new WeakSet();
 
 // ConPTY's character-to-key translation can assign modifiers to Unicode
@@ -28,6 +29,7 @@ export async function submitPtyMessage({
   encodeInput = value => value,
   writeInput = value => ptyProcess.write(value),
   waitForOutputQuiet = true,
+  draftReady = null,
   confirm = null,
   confirmTimeoutMs = 8000,
   isCurrent = () => true,
@@ -64,6 +66,24 @@ export async function submitPtyMessage({
       const quietRemaining = bracketedPaste && observesOutput && !sawOutput
         ? PTY_SUBMIT_QUIET_MS : PTY_SUBMIT_QUIET_MS - (now() - lastOutput);
       await wait(Math.min(quietRemaining, PTY_SUBMIT_TIMEOUT_MS - (now() - started)));
+    }
+    if (draftReady) {
+      // ConPTY can spend the initial delay still feeding input to Codex. Wait
+      // through the paste-burst interval after the complete draft is visible.
+      const deadline = started + PTY_DRAFT_TIMEOUT_MS;
+      let visibleAt = null;
+      while (isCurrent() && now() < deadline) {
+        const time = now();
+        if (!draftReady()) visibleAt = null;
+        else {
+          visibleAt ??= time;
+          if (time - visibleAt >= PTY_SUBMIT_QUIET_MS) break;
+        }
+        await wait(Math.min(50, deadline - time));
+      }
+      if (now() >= deadline || !isCurrent()) {
+        throw new Error("The handoff draft could not be verified; submission outcome unknown.");
+      }
     }
     if (!isCurrent()) throw new Error("Terminal changed after paste; submission outcome unknown.");
     writeInput("\r");

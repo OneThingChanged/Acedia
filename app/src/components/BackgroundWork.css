@@ -1,6 +1,8 @@
 @property --acedia-background-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
-.has-background-work { --wait-track: #cdb2f52b; --wait-tail: #b891ed80; --wait-head: #f0e3ff; }
-.app-theme-light .has-background-work { --wait-track: #8052bb38; --wait-tail: #9369c9a6; --wait-head: #7241b5; }
+.has-background-work { --wait-track: #d671ac2b; --wait-tail: #d67bad80; --wait-head: #f6bedf; --wait-label: #efaad3; --wait-dot: #e394c4; --wait-fill: #bd579318; --wait-active-fill: #bd57932c; }
+.app-theme-light .has-background-work { --wait-track: #a03f7938; --wait-tail: #ab548aa6; --wait-head: #8c2a66; --wait-label: #8c2a66; }
+.has-background-work[data-child-wait] { --wait-track: #cdb2f52b; --wait-tail: #b891ed80; --wait-head: #f0e3ff; --wait-label: #d4baff; --wait-dot: #d2b8ff; --wait-fill: #b995ef18; --wait-active-fill: #b995ef2c; }
+.app-theme-light .has-background-work[data-child-wait] { --wait-track: #8052bb38; --wait-tail: #9369c9a6; --wait-head: #7241b5; --wait-label: #7652a6; }
 .has-background-work::after, .sidebar-workspace .sidebar-recent-row.has-background-work[data-background-wait=true]::after, .agent-item.agent-item-nested.has-background-work::after {
   content: ''; position: absolute; inset: 0; padding: 1.5px; border: 0; border-radius: inherit; pointer-events: none; opacity: 1;
   background: conic-gradient(from var(--acedia-background-angle), var(--wait-track) 0deg 250deg, var(--wait-tail) 310deg, var(--wait-head) 348deg, var(--wait-track) 360deg);
@@ -9,6 +11,6 @@
   -webkit-mask-composite: xor; mask-composite: exclude;
   animation: acedia-background-orbit 3.6s linear infinite;
 }
-.status-background { background: #d2b8ff; box-shadow: 0 0 0 2px #ceb0ff33; }
+.status-background { background: var(--wait-dot, #e394c4); box-shadow: 0 0 0 2px var(--wait-track, #d671ac33); }
 @keyframes acedia-background-orbit { to { --acedia-background-angle: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .has-background-work::after { animation: none!important; background: var(--wait-tail); } }

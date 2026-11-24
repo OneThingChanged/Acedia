@@ -67,6 +67,25 @@ export function deliveryComposerReady(entry, { allowWorking = false } = {}) {
   return true;
 }
 
+export function codexDeliveryDraftReady(entry, message) {
+  const buffer = entry.filter?.shadow?.buffer.active;
+  if (!buffer) return false;
+  const lastRow = buffer.baseY + buffer.cursorY;
+  const line = buffer.getLine(lastRow);
+  if (!line || line.translateToString(true, buffer.cursorX).trim()) return false;
+  const expected = message.replace(/\s/g, '');
+  let draft = '';
+  // Codex may reflow the one-line draft across several terminal rows. Its
+  // cursor and input prefix distinguish the draft from the transcript above it.
+  for (let row = lastRow; row >= buffer.baseY && draft.length <= expected.length; row--) {
+    const text = buffer.getLine(row)?.translateToString(true) || '';
+    const prefix = text.match(/^\s*›\s/);
+    if (prefix) return text.slice(prefix[0].length).replace(/\s/g, '') + draft === expected;
+    draft = text.replace(/\s/g, '') + draft;
+  }
+  return false;
+}
+
 // Claude has no Codex task_started event. Bind a real top-level user UUID to
 // an assistant whose parent chain descends from it. A user append alone is
 // received, never started. Keep bounded ancestry across incremental tail reads.
@@ -295,7 +314,8 @@ export class SessionDeliveries {
         && entry.lastInputAt === inputAt;
       try {
         inputAttempted = true;
-        const submitted = await this.submit(body.sessionId, entry, message, isCurrent);
+        const draftReady = mailboxNotification && entry.aiToolId === 'codex' ? () => codexDeliveryDraftReady(entry, message) : null;
+        const submitted = await this.submit(body.sessionId, entry, message, isCurrent, draftReady);
         if (!submitted) this.#update(record, 'failed', { reason: 'not-sent' });
         else if (record.status === 'sending') this.#update(record, 'sent', { sentAt: this.now() });
         else this.#update(record, record.status, { sentAt: this.now() });

@@ -22,6 +22,12 @@ describe('delivery warnings', () => {
     expect(isDeliveryWarning({ ...uncertain, status: 'queued' })).toBe(false);
   });
 
+  it('shows that an unread original remains in the inbox when CLI submission is unconfirmed', () => {
+    const pending = { ...uncertain, isMessage: true };
+    expect(deliveryStatusMessage(pending, true)).toBe('Saved in inbox · CLI submission unconfirmed');
+    expect(deliveryStatusMessage({ ...pending, status: 'queued' }, true)).toBe('Saved in inbox · automatic notification pending');
+  });
+
   it('shows one conversation-change warning per recipient during a burst without hiding other failures', () => {
     const changed: SessionDelivery = { ...uncertain, isMessage: true, status: 'failed', reason: 'session-or-conversation-changed' };
     const recent = new Map<string, number>();

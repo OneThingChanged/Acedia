@@ -384,10 +384,12 @@ export class SessionMessages {
     if (changed.length) {
       const at = this.now(); changed.forEach(r => { r.readAt = at; });
       try { this.save(); } catch (error) { changed.forEach(r => { r.readAt = null; }); throw error; }
-      for (const r of changed) { this.observe(r); void this.view(r).then(value => this.publish(value)).catch(() => {}); }
+      for (const r of changed) { this.observe(r); void this.view(r, { refreshReceipt: false }).then(value => this.publish(value)).catch(() => {}); }
     }
     return this.readActivity(agentId, outgoing ? [] : records.map(r => r.sourceId), async () => ({
-      direction: outgoing ? 'outbox' : 'inbox', messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true }))),
+      direction: outgoing ? 'outbox' : 'inbox',
+      // Reading the durable inbox must finish even while a terminal receipt is pending.
+      messages: await Promise.all(records.map(r => this.view(r, { content: true, includeBase64: body.includeBase64 === true, refreshReceipt: outgoing }))),
       nextAfter: records.at(-1)?.sequence ?? body.after ?? 0, hasMore: candidates.length > records.length }));
   }
 }

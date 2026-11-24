@@ -25,7 +25,7 @@ describe('Board-only renderer without GUI automation', () => {
       devices: [], items: [{ id: 'result', sessionId: 'a', kind: 'result', createdAt: 1000, summary: 'Earlier leader result', fingerprint: 'result' }] };
     const markup = renderToStaticMarkup(<ProjectBoardPage initialSnapshot={data}/>);
     expect(markup).toContain('has-background-work'); expect(markup).toContain('자식 작업 2개 대기');
-    expect(markup).toContain('data-state="background"'); expect(markup).toContain('Earlier leader result');
+    expect(markup).toContain('data-state="background" data-child-wait="true"'); expect(markup).toContain('Earlier leader result');
   });
   it('shows the native background count and orbit separately from earlier unreviewed results', () => {
     const data: BoardSnapshot = { revision: 'r', preferences: { viewMode: 'board' }, storageError: null, projects: [{ id: 'p', name: 'Project', folder: 'D:/Project' }],
@@ -34,6 +34,7 @@ describe('Board-only renderer without GUI automation', () => {
       devices: [], items: [{ id: 'result', sessionId: 'a', kind: 'result', createdAt: 1000, summary: 'Earlier result', fingerprint: 'result' }] };
     const markup = renderToStaticMarkup(<ProjectBoardPage initialSnapshot={data}/>);
     expect(markup).toContain('has-background-work'); expect(markup).toContain('data-state="background"');
+    expect(markup).not.toContain('data-child-wait');
     expect(markup).toContain('백그라운드 3개 대기'); expect(markup).toContain('Earlier result');
     expect(markup).toContain('미확인 결과'); expect(markup).not.toContain('세션에서 답변하기');
   });

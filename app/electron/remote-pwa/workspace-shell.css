@@ -76,9 +76,9 @@ html.remote-workspace-locked .app-shell[data-view="session"] .workspace { margin
 .chat-work { background: var(--panel); border-radius: 8px; }
 .chat-working-bar { margin: 0 auto; width: 100%; max-width: 840px; border: 0; padding: 2px 1px; color: var(--amber); background: transparent; font-size: 12px; }
 .chat-working-bar[data-work-state="background"] { color: var(--violet); }
-.composer { width: 100%; max-width: 840px; margin-inline: auto; border: 0; background: transparent; padding: 0; }
-.composer-main-row { align-items: flex-end; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 6px; gap: 6px; }
-.composer textarea { font-size: 14px; line-height: 1.7; background: transparent; min-height: 42px; border: 0; }
+.composer { width: 100%; max-width: 840px; margin-inline: auto; border-color: var(--line-strong); background: var(--panel); padding: 6px; }
+.composer:focus-within { border-color: #3e7192; }
+.composer textarea { font-size: 14px; line-height: 1.7; }
 .composer-settings { gap: 6px; flex-wrap: wrap; padding: 0; }
 .composer-settings button { font-size: 11px; font-weight: 400; max-width: 100%; }
 .composer-queue { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin-bottom: 8px; }

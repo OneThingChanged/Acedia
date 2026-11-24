@@ -826,7 +826,7 @@ export class LocalDashboardService {
     this.lanAccess = lanAccess;
     this.lanActive = false;
     this.lifecycle = Promise.resolve();
-    this.config = { enabled: false, serverPort: defaultPort };
+    this.config = { enabled: false, serverPort: defaultPort, lanDirectAccess: allowLan };
     this.loadConfig();
   }
 
@@ -841,7 +841,7 @@ export class LocalDashboardService {
         enabled: Boolean(stored.enabled),
         serverPort: Number(stored.serverPort ?? stored.server_port) || this.defaultPort,
         lanEnabled: this.allowLan && stored.lanEnabled === true,
-        lanDirectAccess: this.allowLan && stored.lanDirectAccess === true,
+        lanDirectAccess: this.allowLan && (!Object.hasOwn(stored, "lanDirectAccess") || stored.lanDirectAccess === true),
         lanAllowedNetworks: normalizeLanNetworks(stored.lanAllowedNetworks || []),
       };
     } catch {}

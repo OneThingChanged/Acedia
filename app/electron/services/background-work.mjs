@@ -21,8 +21,9 @@ export function claudeBackgroundFrame(screen) {
 }
 
 export class BackgroundWorkMonitor {
-  constructor({ entry, publish, now = Date.now, delay = 200 }) {
-    Object.assign(this, { entry, publish, now, delay }); this.records = new Map();
+  constructor({ entry, publish, readExternalJobs, readExternalStatus, now = Date.now, delay = 200, externalInterval = 5000 }) {
+    Object.assign(this, { entry, publish, readExternalJobs, readExternalStatus, now, delay, externalInterval });
+    this.records = new Map();
   }
   record(entry) {
     if (!entry || entry.aiToolId !== 'claude' || this.entry(entry.id) !== entry) return null;
@@ -41,16 +42,73 @@ export class BackgroundWorkMonitor {
       if (['waiting', 'question', 'blocked'].includes(record.base?.event)) return;
       if (!frame || frame.count === record.count) return;
       const previous = record.count; record.count = frame.count;
-      if (frame.count) { if (!this.emit(this.waitEvent(record))) record.count = previous; }
-      else if (previous && !this.emit({ ...(record.base || {}), id: entry.id,
-        event: frame.foreground || !record.base || record.base.event === 'working' ? 'tool-end' : record.base.event,
-        hook_event_name: 'BackgroundWorkResume', received_at: this.now(), background_count: 0 })) record.count = previous;
+      if (frame.count || this.hasWaitingExternal(record)) {
+        if (!this.emit(this.waitEvent(record))) record.count = previous;
+      } else if (previous && !this.emit(this.resumeEvent(record, frame.foreground))) record.count = previous;
     }, this.delay);
     record.timer.unref?.();
   }
   waitEvent(record, base = record.base || {}) {
     return { ...base, id: record.entry.id, event: 'background-wait', hook_event_name: 'BackgroundWorkWait',
-      received_at: this.now(), background_count: record.count };
+      received_at: this.now(), background_count: Math.min(1000, record.count + (record.external?.pending.size || 0)) };
+  }
+  resumeEvent(record, foreground = false) {
+    const base = record.base || {};
+    if (!foreground && ['done', 'session-start'].includes(base.event) && record.external?.failed) return this.externalFailure(base);
+    const event = foreground || !base.event || base.event === 'working' ? 'tool-end' : base.event;
+    return { ...base, id: record.entry.id, event, hook_event_name: 'BackgroundWorkResume',
+      received_at: this.now(), background_count: 0 };
+  }
+  hasWaitingExternal(record) {
+    return record.external?.pending.size > 0 && ['done', 'session-start'].includes(record.base?.event);
+  }
+  async prepare(payload) {
+    if (!this.readExternalJobs || !payload.session_id || !['done', 'session-start'].includes(payload.event)) return;
+    const record = this.record(this.entry(payload.id));
+    if (!record || record.entry.ssh) return;
+    if (record.external?.conversationId !== payload.session_id) {
+      clearTimeout(record.external?.timer);
+      record.external = { conversationId: payload.session_id, pending: new Set(), failed: false, timer: null, check: null };
+    }
+    const external = record.external;
+    await external.check;
+    if (record.external !== external || this.entry(payload.id) !== record.entry) return;
+    await this.checkExternal(record, true);
+  }
+  checkExternal(record, loadReceipts) {
+    const external = record.external;
+    const current = () => this.records.get(record.entry.id) === record && this.entry(record.entry.id) === record.entry && record.external === external;
+    if (external.check) return external.check;
+    external.check = (async () => {
+      const ids = new Set(external.pending);
+      if (loadReceipts) {
+        for (const id of await this.readExternalJobs(record.entry, external.conversationId)) ids.add(id);
+      }
+      const answers = await Promise.all([...ids].map(async id => [id, await this.readExternalStatus(id)]));
+      if (!current()) return;
+      const previous = external.pending.size;
+      for (const [id, status] of answers) {
+        if (status === 'pending') external.pending.add(id);
+        else if (status && external.pending.delete(id) && status === 'blocked') external.failed = true;
+      }
+      if (!loadReceipts && previous !== external.pending.size && ['done', 'session-start'].includes(record.base?.event)) {
+        if (external.pending.size || record.count) this.emit(this.waitEvent(record));
+        else this.emit(this.resumeEvent(record));
+      }
+    })().catch(() => {}).finally(() => {
+      external.check = null;
+      if (!current() || !external.pending.size || external.timer) return;
+      external.timer = setTimeout(() => {
+        external.timer = null;
+        void this.checkExternal(record, false);
+      }, this.externalInterval);
+      external.timer.unref?.();
+    });
+    return external.check;
+  }
+  externalFailure(base) {
+    return { ...base, event: 'blocked', hook_event_name: 'BackgroundWorkResume',
+      assistant_message: '연결된 백그라운드 작업 결과를 확인하세요.', received_at: this.now(), background_count: 0 };
   }
   emit(payload) { try { this.publish(payload); return true; } catch { return false; } }
   hook(payload) {
@@ -58,16 +116,31 @@ export class BackgroundWorkMonitor {
     const record = this.record(this.entry(payload.id)); if (!record) return payload;
     if (record.timer) { clearTimeout(record.timer); record.timer = null; }
     record.base = payload;
+    if (record.external && !record.external.pending.size && payload.hook_event_name === 'UserPromptSubmit') {
+      record.external.failed = false;
+    }
     if (['cancelled', 'canceled', 'interrupted', 'aborted'].includes(payload.event)) record.cancelled = true;
     else if (['working', 'tool-start', 'session-start'].includes(payload.event)) record.cancelled = false;
     if (payload.event === 'done') {
       let frame; try { frame = claudeBackgroundFrame(record.entry.filter.viewportText?.()); } catch { frame = null; }
-      if (frame?.count || !frame && record.count) { record.count = frame?.count || record.count; return this.waitEvent(record, payload); }
+      if (frame?.count || !frame && record.count || this.hasWaitingExternal(record)) {
+        record.count = frame?.count ?? record.count;
+        return this.waitEvent(record, payload);
+      }
+      if (record.external?.failed) return this.externalFailure(payload);
+    } else if (this.hasWaitingExternal(record)) {
+      record.count = 0;
+      return this.waitEvent(record, payload);
     }
     // An explicit foreground/question/cancellation event wins immediately.
     record.count = 0;
     return payload;
   }
-  forget(id) { const record = this.records.get(id); if (record?.timer) clearTimeout(record.timer); this.records.delete(id); }
+  forget(id) {
+    const record = this.records.get(id);
+    clearTimeout(record?.timer);
+    clearTimeout(record?.external?.timer);
+    this.records.delete(id);
+  }
   prune(ids) { const live = new Set(ids); for (const [id, record] of this.records) if (!live.has(id) || this.entry(id) !== record.entry) this.forget(id); }
 }
