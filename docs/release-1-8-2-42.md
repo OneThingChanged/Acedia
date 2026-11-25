@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.42
-status: prepared
+status: published
 last_updated: 2026-11-25
 ---
 
@@ -16,3 +16,9 @@ last_updated: 2026-11-25
 - Fixed a handoff stall where an unfinished turn from a previous Claude process could keep a resumed conversation in `turn-working`. Pending handoffs keep their original message IDs and resume when the conversation can accept input.
 - Delivery can resume when a current completion hook and an empty composer confirm readiness while the transcript catches up. Active work, background work, questions, approvals, and drafts still block automatic delivery.
 - The Windows Standard installer includes the existing, signature-verified Android APK 1.8.1.39.
+
+## 검증
+
+- 2026-11-25에 `23ef4e46708212fd400c795da470de69447eb871`에서 빌드한 Windows Standard EXE를 게시했습니다. [GitHub 릴리스](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.42)
+- 소스 테스트 2,385개, TypeScript·Vite 빌드, 패키지의 Dashboard·수명주기 검사와 Claude 수정 코드 포함 여부를 확인했습니다. 내장 MinGit은 Windows ZIP 압축 해제 호환성 수정 후 원본 해시와 실행을 검증했습니다.
+- 1.8.2.40과 1.8.2.41에서 업데이트를 감지했습니다. 공개 자산 세 개의 SHA-256, 설치 파일의 NSIS CRC·압축 데이터·Windows 실행을 검증했습니다. 설치 파일의 Authenticode 상태는 `NotSigned`입니다.
