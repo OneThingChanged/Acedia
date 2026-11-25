@@ -1,7 +1,7 @@
 ---
 type: Release
 title: Acedia 1.8.2.41
-status: draft
+status: published
 last_updated: 2026-11-25
 ---
 
@@ -18,3 +18,9 @@ last_updated: 2026-11-25
 - The session overview shows attention items newest first with full timestamps. Old results roll off at the storage limit so the board can keep recording new results.
 - The Codex session inbox returns the original message independently of terminal state. Automatic notifications submit after the full message appears in the composer.
 - The Windows installer includes the verified Android APK 1.8.1.39. Android connections to a mounted path such as `/acedia/` require a new APK signed with the original release key.
+
+## 검증
+
+- 2026-11-25에 `de72661ca83c350441691232d89e97be31dc7216`에서 빌드한 Windows Standard EXE를 게시했습니다. [GitHub 릴리스](https://github.com/OneThingChanged/Acedia/releases/tag/v1.8.2.41)
+- 소스 테스트 2,384개와 패키징된 앱의 Dashboard 및 수명주기 검사를 통과했습니다.
+- 1.8.2.36, 1.8.2.39, 1.8.2.40에서 업데이트를 감지했습니다. 공개 다운로드로 받은 세 자산의 SHA-256과 설치 파일의 NSIS CRC, 압축 데이터, Windows 시작 검사를 확인했습니다. 설치 파일의 Authenticode 상태는 `NotSigned`입니다.
