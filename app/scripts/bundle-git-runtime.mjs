@@ -77,7 +77,12 @@ export default async function bundleGitRuntime(context) {
     const extracted = path.join(temporary, "extracted");
     const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     const quote = value => `'${value.replaceAll("'", "''")}'`;
-    await execute(powershell, ["-NoProfile", "-NonInteractive", "-Command", `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(extracted)} -ErrorAction Stop`], { windowsHide: true, timeout: 120_000 });
+    const extract = [
+      "$ErrorActionPreference = 'Stop'",
+      "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+      `[System.IO.Compression.ZipFile]::ExtractToDirectory(${quote(archive)}, ${quote(extracted)})`,
+    ].join("; ");
+    await execute(powershell, ["-NoProfile", "-NonInteractive", "-Command", extract], { windowsHide: true, timeout: 120_000 });
     const destination = path.join(resources, "git");
     if (await fs.stat(destination).catch(error => { if (error.code === "ENOENT") return null; throw error; })) {
       throw new Error("The packaged Git destination already exists. Build into a fresh output directory.");

@@ -27,7 +27,10 @@ describe("live work lifecycle", () => {
     const records = [{ timestamp: at(2000), type: "assistant", message: { stop_reason: "tool_use", content: [{ type: "tool_use", name: "Read" }] } }];
     expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "working", lifecycleAt: 2000, activeTool: "Read" });
     records.push({ timestamp: at(3000), type: "assistant", message: { stop_reason: "end_turn", content: [{ type: "text", text: "done" }] } });
+    records.push({ timestamp: at(1000), type: "user", message: { content: "Delayed prompt" } });
+    records.push({ ...records[0], timestamp: at(4000), isSidechain: true });
     expect(deriveTurnLifecycleDetails(serialize(records), "claude")).toEqual({ lifecycle: "idle", lifecycleAt: 3000, activeTool: undefined });
+    expect(deriveTurnLifecycle(serialize(records), "claude")).toBe("idle");
   });
   it("recognizes image-only input, Claude tool results and explicit interruption", () => {
     expect(deriveTurnLifecycleDetails(serialize([{ timestamp: at(1000), type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,YQ==" }] } }]), "codex")).toMatchObject({ lifecycle: "working", lifecycleAt: 1000 });

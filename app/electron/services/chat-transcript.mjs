@@ -167,11 +167,9 @@ function decodeCodexLine(obj, out) {
 // finished ("idle"), read from the transcript itself — reliable even when the
 // completion hook never fired and the app's status is stuck at "working".
 //   Codex: task_started (working) vs task_complete / turn_aborted (idle).
-//   Claude: last record — assistant with a terminal stop_reason = idle; an
-//           assistant awaiting tools (stop_reason "tool_use") or a trailing
-//           user turn = working.
+//   Claude: latest main-conversation work or completion record.
 export function deriveTurnLifecycle(text, tool) {
-  if (tool === 'qwen') return deriveTurnLifecycleDetails(text, tool).lifecycle || 'idle';
+  if (tool === 'claude' || tool === 'qwen') return deriveTurnLifecycleDetails(text, tool).lifecycle || 'idle';
   const lines = String(text ?? "").split(/\r?\n/);
   if (tool === "codex") {
     let state = "idle";
@@ -188,28 +186,6 @@ export function deriveTurnLifecycle(text, tool) {
       else if (type === "task_complete" || type === "turn_aborted") state = "idle";
     }
     return state;
-  }
-  if (tool === "claude") {
-    let last = null;
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let obj;
-      try {
-        obj = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (obj?.type === "user" || obj?.type === "assistant") last = obj;
-    }
-    if (!last) return "idle";
-    if (last.type === "assistant") {
-      const stop = last.message?.stop_reason;
-      return stop && stop !== "tool_use" ? "idle" : "working";
-    }
-    // Trailing user turn → agent should act, UNLESS it's an interrupt marker
-    // ("[Request interrupted…]"), which means the turn was cancelled → idle.
-    if (/\[request interrupted/i.test(contentToText(last.message?.content))) return "idle";
-    return "working";
   }
   return "idle";
 }
@@ -236,10 +212,12 @@ export function deriveTurnLifecycleDetails(text, tool) {
       else if (record.type === "response_item" && part?.type === "message" && part.role === "assistant" && part.phase === "final_answer") next = "idle";
       if (record.type === "response_item" && ["function_call", "custom_tool_call", "local_shell_call"].includes(part?.type)) activeTool = part.name || part.tool_name || "shell";
       else if (next !== undefined || ["function_call_output", "custom_tool_call_output"].includes(part?.type)) activeTool = undefined;
-    } else if (tool === "claude" && ["user", "assistant"].includes(record.type)) {
+    } else if (tool === "claude" && ["user", "assistant"].includes(record?.type)) {
+      // Claude can append an earlier prompt after a streamed assistant record.
+      if (record.isSidechain || timestamp < lifecycleAt) continue;
       const content = record.message?.content;
       const messageText = contentToText(content);
-      const interrupted = /\[request interrupted/i.test(messageText);
+      const interrupted = record.type === "user" && /\[request interrupted/i.test(messageText);
       if (record.type === "user" && !interrupted && isNoiseUserText(messageText)
         && !(Array.isArray(content) && content.some(part => ["image", "tool_result"].includes(part?.type)))) continue;
       const stop = record.message?.stop_reason;
@@ -269,7 +247,7 @@ export function derivePendingQuestions(text, tool, previous = []) {
   });
   if (tool === 'qwen') records = records.map(normalizeQwenRecord);
   if (tool === 'claude' || tool === 'qwen') {
-    records = records.filter(record => ['assistant','user'].includes(record?.type)
+    records = records.filter(record => (['assistant','user'].includes(record?.type) && (tool !== 'claude' || !record.isSidechain))
       || (tool === 'qwen' && record?.type === 'system' && qwenLifecycle(record)?.lifecycle === 'idle'));
     // Claude 2.1 can flush the streamed assistant call before its earlier user
     // prompt. File append order must not make that old prompt dismiss the form.

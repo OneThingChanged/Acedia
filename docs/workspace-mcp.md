@@ -3,7 +3,7 @@ type: Integration
 title: Acedia 프로젝트·세션 MCP
 description: 기존 MCP 연결에서 프로젝트·세션과 조직도를 관리하고, UTF-8 전용 수신함·한글 메시지·답장·읽음 확인과 Codex 작업 전달을 지원한다.
 status: stable
-last_updated: 2026-11-16
+last_updated: 2026-11-25
 sources:
   - resource: ../app/electron/services/workspace-management.mjs
   - resource: ../app/electron/services/workspace-management.test.mjs
@@ -294,6 +294,20 @@ BOM 제거 뒤 원문 UTF-8의 SHA-256과 비교하고, 다르면 저장·알림
 작업 중인 대상의 알림은 기존 준비 확인과 순서 있는 대기열을 사용한다. 1.8.2.20 이전에
 저장 한도로 거부된 본문은 대기열에도 없으므로 자동 복구·재전송하지 않는다. 발신자가
 기존 요청 키와 같은 본문으로 다시 보내고, 저장·읽음·착수·완료를 각각 확인해야 한다.
+
+### Claude 재시작 후 전달 대기 복구 (1.8.2.42)
+
+`saved:true`와 `delivery.status:queued`는 원문이 수신함에 저장됐고 자동 알림이
+대기 중이라는 뜻이다. Claude의 수신과 응답 착수는 `readAt`과 전달 영수증에서 각각
+확인한다. 같은 대화로 재시작하면 이전 실행의 미완료 기록을 현재 `turn-working`
+판정에서 제외한다. 실제 작업, 백그라운드 작업, 질문, 승인 또는 작성 중인 초안이
+있으면 알림을 대기한다. 현재 실행의 완료 훅이 마지막 작업 기록보다 최신이고 빈
+입력창이 확인되면, 최종 대화 기록이 저장되기 전에도 알림을 전달할 수 있다.
+
+기존 대기열은 같은 메시지 ID와 순서를 사용해 다시 준비 상태를 확인한다. 급히
+원문을 확인해야 하면 수신 세션에서 `acedia_session_message_receive`에 기존
+`messageId`를 지정한다. 전달 결과가 `unconfirmed`인 기존 요청은 중복 실행을 막기
+위해 자동 재전송하지 않는다.
 
 ### 비활성 세션 시작 후 지시 전달 (1.8.2.22)
 

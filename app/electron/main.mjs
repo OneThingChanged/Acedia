@@ -571,6 +571,13 @@ function sessionNotificationPreference(id, change) {
   return next;
 }
 
+function claudeDeliveryStopAt(entry, sessionId, hook) {
+  if (entry.aiToolId !== 'claude' || !sessionId || hook?.session_id !== sessionId || hook.event !== 'done'
+    || !['Stop', 'BackgroundWorkResume'].includes(hook.hook_event_name)) return null;
+  const at = hook.received_at || hook.lastTs;
+  return at > Math.max(entry.startedAt || 0, entry.lastInputAt || 0) ? at : null;
+}
+
 async function currentQuestion(id) {
   const entry = ptys.get(id);
   if (!entry || entry.ssh) return null;
@@ -584,6 +591,19 @@ async function currentQuestion(id) {
   if (ptys.get(id) !== entry) return null;
   const resolvedApproval = commandApprovals.read(id, result?.sessionId);
   if (resolvedApproval) return resolvedApproval;
+  if (entry.aiToolId === 'claude' && result && !result.question) {
+    const hook = monitorHooks.get(id);
+    const hookAt = hook?.received_at || hook?.lastTs;
+    if (hook?.session_id === result.sessionId && hookAt >= entry.startedAt
+      && (hook.event === 'background-wait' || result.resumedHistory && ['working', 'tool-start', 'tool-end'].includes(hook.event))) {
+      return { ...result, lifecycle: 'working' };
+    }
+    // A current Stop can arrive before its final transcript record is flushed.
+    const stoppedAt = claudeDeliveryStopAt(entry, result.sessionId, hook);
+    if (result.lifecycle === 'working' && stoppedAt > (result.lifecycleAt || 0) && deliveryComposerReady(entry)) {
+      return { ...result, lifecycle: 'idle' };
+    }
+  }
   // A resumed log can contain accepted calls whose queue no longer exists.
   if (result?.question?.async) {
     const screen = entry.filter.viewportText?.() || '';
@@ -1126,8 +1146,9 @@ const sessionDeliveries = new SessionDeliveries({
     const cancelled = entry.aiToolId === 'codex' && Number.isFinite(cancelledAt)
       && cancelledAt >= Math.max(entry.startedAt || 0, entry.lastInputAt || 0, hook?.received_at || hook?.lastTs || 0);
     const ready = ['DONE', 'WAIT'].includes(target.state) && ['completed', 'ready'].includes(target.reason);
+    const claudeStopped = claudeDeliveryStopAt(entry, target.conversationId, hook) !== null;
     return !forceClosing && !questionResponder.isBusy(entry.id) && !capacityRetry.isActive(entry.id)
-      && (freshSession || resumedSession || cancelled || ready) && deliveryComposerReady(entry)
+      && (freshSession || resumedSession || cancelled || ready || claudeStopped) && deliveryComposerReady(entry)
       && !deliveryAccountBlock(entry);
   },
   submit: async (id, entry, message, isCurrent, draftReady) => {

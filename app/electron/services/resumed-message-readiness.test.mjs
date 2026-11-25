@@ -22,14 +22,15 @@ async function fixture() {
   const entry = { id: 'target', aiToolId: 'codex', startedAt: Date.now(), resumeContext: { sessionId, folder: root }, filter: { viewportText: () => '' } };
   const source = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
   const setup = source.match(/const activeQuestions = new ActiveQuestions\(\{[\s\S]*?\r?\n\}\);/)?.[0];
+  const stopSource = source.match(/function claudeDeliveryStopAt\([^\n]+\n[\s\S]*?\r?\n\}/)?.[0];
   const readSource = source.match(/async function currentQuestion\(id\) \{[\s\S]*?\r?\n\}/)?.[0];
-  if (!setup || !readSource) throw Error('Production reader wiring unavailable');
+  if (!setup || !stopSource || !readSource) throw Error('Production reader wiring unavailable');
   const resolve = vi.fn(() => ({ path: transcriptPath, tool: 'codex' }));
   const env = { ActiveQuestions, ptys: new Map([['target', entry]]), agentSessionIds: new Map(), accountBindings: new Map(),
     agentTranscripts: new Map(), agentTranscriptTool: new Map(), transcriptMissUntil: new Map(), normalizeTranscriptPath, isTranscriptInsideRoot,
     resolveChatTranscriptBySession: resolve, selectedAccountId: () => 'selected', accountTranscriptRoot: () => root,
-    commandApprovals: { read: () => null }, hasQueuedCodexQuestion, codexQuestionFrame };
-  const read = vm.runInNewContext(`(function(){${setup}; return ${readSource};})()`, env);
+    monitorHooks: new Map(), commandApprovals: { read: () => null }, hasQueuedCodexQuestion, codexQuestionFrame };
+  const read = vm.runInNewContext(`(function(){${setup}\n${stopSource}\nreturn ${readSource};})()`, env);
   const target = { entry, conversationId: sessionId }, ready = vi.fn(() => true);
   const readiness = new SessionReadiness({ context: () => target, read: () => read('target'), freshRead: () => null, ready });
   return { root, sessionId, transcriptPath, old, complete, entry, env, resolve, read, target, ready, readiness };

@@ -6,6 +6,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { ActiveQuestions, AsyncQuestionNotifier, QUESTION_TAIL_BYTES } from './active-questions.mjs';
 import { hasQueuedCodexQuestion, codexQuestionFrame } from './question-responder.mjs';
 import { CommandApprovalResponder } from './command-approval.mjs';
+import { SessionDeliveries, deliveryComposerReady } from './session-delivery.mjs';
+import { SessionMessages } from './session-messages.mjs';
+import { SessionReadiness } from './session-readiness.mjs';
+import { TrackedTerminalFilter } from './terminal-stream.mjs';
 import { normalizeTranscriptPath, isTranscriptInsideRoot } from './transcript-path.mjs';
 
 const line = payload => JSON.stringify({ type: 'response_item', payload }) + '\n';
@@ -73,6 +77,90 @@ describe('active question tail monitor', () => {
       await fs.appendFile(transcriptPath,JSON.stringify({...ask,timestamp:'2026-10-15T02:49:06.000Z'})+'\n'+JSON.stringify({...prompt,timestamp:'2026-10-15T02:49:07.000Z'})+'\n');
       expect((await monitor.read(args)).question).toBeNull();
     }finally{await fs.rm(root,{recursive:true});}
+  });
+  it('delivers a queued Claude message once after resume and verifies newer work and completion', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-claude-resume-'));
+    const filter = new TrackedTerminalFilter(15, 100);
+    let messages;
+    try {
+      const sessionId = 'claude-conversation';
+      const transcriptPath = path.join(root, sessionId + '.jsonl');
+      let now = Date.now() - 100;
+      const row = (at, fields) => JSON.stringify({ timestamp: new Date(at).toISOString(), ...fields }) + '\n';
+      const toolCall = { type: 'assistant', uuid: 'old-tool', message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'Read' }] } };
+      await fs.writeFile(transcriptPath, row(now - 500, { type: 'user', uuid: 'old-turn', message: { role: 'user', content: 'Old request' } }) + row(now - 400, toolCall));
+      const showComposer = (draft = '', status = '') => {
+        filter.push(`\x1b[2J\x1b[H${status}\r\n────────────────────\r\n❯ ${draft}\r\n────────────────────\r\n auto mode on (shift+tab to cycle)\x1b[3;3H`);
+      };
+      showComposer();
+      const sender = { id: 'sender', name: 'Parent', aiToolId: 'codex' };
+      const receiver = { id: 'receiver', name: 'Claude', aiToolId: 'claude', filter, startedAt: now - 1000 };
+      const ptys = new Map([[sender.id, sender], [receiver.id, receiver]]);
+      const monitorHooks = new Map();
+      const context = id => id === receiver.id ? { entry: ptys.get(id), conversationId: sessionId, state: 'WORK', reason: 'working' }
+        : { entry: ptys.get(id), name: sender.name };
+      const source = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
+      const stopSource = source.match(/function claudeDeliveryStopAt\([^\n]+\n[\s\S]*?\r?\n\}/)?.[0];
+      const readSource = source.match(/async function currentQuestion\(id\) \{[\s\S]*?\r?\n\}/)?.[0];
+      const readySource = source.match(/ready: (\(target, \{ freshSession = false, resumedSession = false, cancelledAt \} = \{\}\) => \{[\s\S]*?\r?\n  \}),/)?.[1];
+      expect(stopSource && readSource && readySource).toBeTruthy();
+      const { read, ready } = vm.runInNewContext(`(() => { ${stopSource}\n${readSource}\nreturn { read: currentQuestion, ready: ${readySource} }; })()`, {
+        ptys, monitorHooks, agentSessionIds: new Map([[receiver.id, sessionId]]), commandApprovals: { read: () => null },
+        accountTranscriptRoot: () => root, selectedAccountId: () => 'default',
+        agentTranscripts: new Map([[receiver.id, transcriptPath]]), activeQuestions: new ActiveQuestions(),
+        deliveryComposerReady, questionResponder: { isBusy: () => false }, capacityRetry: { isActive: () => false },
+        forceClosing: false, deliveryAccountBlock: () => null,
+      });
+      const submit = vi.fn(async (_id, _entry, text) => {
+        await fs.appendFile(transcriptPath, row(now, { type: 'user', uuid: 'new-turn', message: { role: 'user', content: text } })
+          + row(now + 1, { type: 'assistant', uuid: 'new-answer', parentUuid: 'new-turn', message: { role: 'assistant', id: 'model-new-answer' } }));
+        return true;
+      });
+      const deliveries = new SessionDeliveries({ file: path.join(root, 'deliveries.json'), context, read, ready, submit, now: () => now });
+      const readiness = new SessionReadiness({ context, read, ready, freshRead: () => null });
+      messages = new SessionMessages({ file: path.join(root, 'messages.json'), context, sessionFor: id => ptys.get(id), now: () => now,
+        prepare: (id, { waitMs, context: pinned }) => readiness.waitForReady(id, waitMs, pinned),
+        notify: (agentId, body) => deliveries.handle({ action: 'send', agentId, body, mailboxNotification: true }),
+        receipt: (agentId, requestKey) => deliveries.handle({ action: 'delivery', agentId, body: { requestKey, waitMs: 0 } }),
+      });
+      const send = () => messages.handle({ action: 'message-send', agentId: sender.id, body: {
+        sessionId: receiver.id, expectedConversationId: sessionId, requestKey: 'existing-claude-work', message: '저장할 작업', waitMs: 0,
+      } });
+      const queued = await send();
+      expect(queued.delivery).toMatchObject({ status: 'queued', reason: 'turn-working' });
+      const resumed = { ...receiver, startedAt: now, lastInputAt: now, resumeContext: { sessionId } };
+      ptys.set(receiver.id, resumed);
+      await fs.appendFile(transcriptPath, row(++now, { type: 'system', subtype: 'session_start' })
+        + row(++now, { type: 'user', message: { content: '<system-reminder>resume bookkeeping</system-reminder>' } }));
+      expect(await read(receiver.id)).toMatchObject({ lifecycle: 'idle', resumedHistory: true, turn: { id: 'old-turn' } });
+      showComposer('Unsaved draft');
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: false, reason: 'composer-or-runtime-not-ready' });
+      showComposer();
+      for (const event of ['working', 'background-wait']) {
+        monitorHooks.set(receiver.id, { session_id: sessionId, received_at: ++now, event });
+        expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: false, reason: 'turn-working' });
+      }
+      monitorHooks.delete(receiver.id);
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: true });
+      now = Math.max(now, queued.delivery.nextAttemptAt);
+      await messages.poll();
+      expect(await send()).toMatchObject({ messageId: queued.messageId, delivery: { status: 'started' } });
+      expect(submit).toHaveBeenCalledOnce();
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: false, reason: 'turn-working' });
+
+      resumed.resumeContext = null;
+      monitorHooks.set(receiver.id, { session_id: sessionId, received_at: now + 2, event: 'done', hook_event_name: 'Stop' });
+      showComposer('', 'Working · esc to interrupt');
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: false, reason: 'turn-working' });
+      showComposer();
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: true });
+      await fs.appendFile(transcriptPath, row(now + 3, { ...toolCall, uuid: 'newer-tool' }));
+      expect(await readiness.inspect(receiver.id)).toMatchObject({ ready: false, reason: 'turn-working' });
+    } finally {
+      messages?.close();
+      filter.dispose();
+      await fs.rm(root, { recursive: true });
+    }
   });
   it('keeps working async questions visible through the live host guard with either CLI shortcut', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'acedia-active-question-'));

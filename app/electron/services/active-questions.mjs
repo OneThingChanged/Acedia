@@ -76,18 +76,22 @@ export class ActiveQuestions {
       text = text.slice(0, text.lastIndexOf('\n') + 1);
       const questions = derivePendingQuestions(text, tool, same && stat.size >= previous.size ? previous.questions : []);
       const question = questions.find(q => !q.async) || questions.find(q => q.async) || null;
-      const hasTurnMarker = /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
-      const resumedHistory = resumed && (stat.mtimeMs < startedAt ||
+      const hasTurnMarker = tool === 'codex' && /"type"\s*:\s*"(?:task_started|task_complete|turn_aborted)"/.test(text);
+      const claudeTurn = tool === 'claude' ? deriveTurnLifecycleDetails(text, tool) : null;
+      // Claude can touch a resumed log with bookkeeping before accepting input.
+      // Use the time of the actual turn when present, keeping questions and receipts.
+      const resumedHistory = resumed && (Number.isFinite(claudeTurn?.lifecycleAt) ? claudeTurn.lifecycleAt < startedAt
+        : stat.mtimeMs < startedAt ||
         tool === 'codex' && !hasTurnMarker && /"type"\s*:\s*"thread_settings_applied"/.test(text)
           && deriveTurnLifecycleDetails(text, tool).lifecycleAt < startedAt);
-      // A pinned resume cannot continue a turn from a stopped Codex process.
-      // Keep historical questions and receipts, and retain the native composer gate.
-      const lifecycle = tool === 'codex' && resumedHistory ? 'idle'
+      const lifecycle = resumedHistory ? 'idle'
         : tool === 'codex' && !hasTurnMarker ? same && !previous.result.resumedHistory ? previous.result.lifecycle : 'working'
+        : claudeTurn ? claudeTurn.lifecycle || 'idle'
         : deriveTurnLifecycle(text, tool);
       const delivery = ['codex', 'claude'].includes(tool) ? (tool === 'claude' ? claudeDeliveryEvidence : deliveryEvidence)(text, same && stat.size >= previous.size ? previous.delivery : undefined) : undefined;
       const turn = tool === 'codex' ? codexRetryTurn(text, same && stat.size >= previous.size ? previous.result.turn : null) : delivery?.turn || null;
       const result = { question, lifecycle, sessionId, turn,
+        ...(Number.isFinite(claudeTurn?.lifecycleAt) ? { lifecycleAt: claudeTurn.lifecycleAt } : {}),
         ...(resumedHistory ? { resumedHistory: true } : {}),
         ...(delivery ? { deliveries: delivery.receipts } : {}) };
       this.cache.set(id, { path: transcriptPath, startedAt, resumed, size: stat.size, mtime: stat.mtimeMs, questions, delivery, result });
