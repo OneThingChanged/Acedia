@@ -17,6 +17,12 @@
 - 제품 버전은 네 부분 `X.Y.Z.R`을 사용한다. Microsoft Store 배포 시에는 별도 채널의 버전 검증 규칙도 확인한다.
 - 두 채널을 모두 배포해야 할 때도 GitHub와 Microsoft Store 절차를 각각 독립적으로 검증하고 실행한다.
 
+## Acedia GitHub 게시 예외
+
+- 사용자가 `OneThingChanged/Acedia`에 대해 전역 외부 게시·업로드 금지 규칙의 지속 예외를 승인했다. 이 저장소의 소스·문서 Git 푸시와 GitHub Release 릴리스 자산 게시에 적용한다.
+- 이 저장소의 푸시 또는 배포를 사용자가 요청하면 기존 배포 절차를 진행한다. 같은 대상에 대한 전역 금지 규칙의 예외 승인은 매번 다시 받지 않는다.
+- 예외 범위는 `OneThingChanged/Acedia`의 Git과 GitHub Releases다. 다른 저장소, Microsoft Store, 외부 호스팅, Git LFS는 각각 기존 지침을 따른다.
+
 ## 작은 변경의 버전 증가
 
 - 작은 수정·개선은 Git 커밋을 기준으로 네 번째 자리 `R`만 1 올린다. 예: `1.7.3.0` → `1.7.3.1` → `1.7.3.2`.
