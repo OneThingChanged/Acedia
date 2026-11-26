@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatCopyButton } from "./ChatCopyButton";
 import { ChatSessionMessage } from './ChatSessionMessage';
@@ -37,6 +37,7 @@ import { QuestionForm } from './QuestionForm';
 import type { ChatAnswer } from '../../electron/shared/chat-prompt.mjs';
 import { questionDetails } from '../../electron/shared/chat-prompt.mjs';
 import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, selectChatTurns } from '../../electron/shared/chat-pagination.mjs';
+import { shouldAttachPastedText } from "../../electron/shared/remote-attachments.mjs";
 
 // Follow-ups can steer the current turn or wait for completion. Queued sends
 // drain once ready, with a cooldown for the lag before "working" registers.
@@ -53,12 +54,47 @@ const failedSubmissionStore = new Map<string, string>();
 // The in-progress composer draft + image attachments, likewise kept per session
 // so switching to the terminal and back doesn't lose them.
 const draftStore = new Map<string, string>();
-// Composer attachments: a pasted/dropped image (path + preview), or a large
-// pasted text block collapsed to a chip (like a terminal's pasted-text token).
+type PastedTextFile = { kind: "pasted-file"; characters: number } & (
+  | { state: "saving" | "failed"; text: string }
+  | { state: "ready"; path: string }
+);
 type Attachment =
   | { kind: "image"; path: string; dataUrl: string }
-  | { kind: "text"; text: string };
+  | { kind: "text"; text: string }
+  | PastedTextFile;
 const attachStore = new Map<string, Attachment[]>();
+const emptyAttachments: Attachment[] = [];
+const attachmentListeners = new Set<() => void>();
+const subscribeAttachments = (listener: () => void) => {
+  attachmentListeners.add(listener);
+  return () => { attachmentListeners.delete(listener); };
+};
+function publishAttachments() {
+  for (const listener of attachmentListeners) listener();
+}
+function setComposerAttachments(key: string, update: (attachments: Attachment[]) => Attachment[]) {
+  const next = update(attachStore.get(key) ?? emptyAttachments);
+  if (next.length) attachStore.set(key, next);
+  else attachStore.delete(key);
+  publishAttachments();
+}
+function storePastedTextFile(key: string, text: string, replace?: PastedTextFile) {
+  const pending = { kind: "pasted-file", state: "saving", text, characters: text.length } as const;
+  setComposerAttachments(key, attachments => replace
+    ? attachments.map(attachment => attachment === replace ? pending : attachment)
+    : [...attachments, pending]);
+  const finish = (result: PastedTextFile) => {
+    // The first native conversation ID may bind while the write is in flight.
+    for (const [currentKey, attachments] of attachStore) {
+      if (!attachments.includes(pending)) continue;
+      setComposerAttachments(currentKey, items => items.map(item => item === pending ? result : item));
+      break;
+    }
+  };
+  void invoke("save_pasted_text", { text }).then(path => {
+    finish({ kind: "pasted-file", state: "ready", path, characters: text.length });
+  }, () => finish({ ...pending, state: "failed" }));
+}
 type ComposerContext = { mode: "reuse" | "quote"; value: string };
 type ComposerIntent = ComposerContext & { storageKey: string };
 const composerContextStore = new Map<string, ComposerContext>();
@@ -343,6 +379,7 @@ export function ChatView({
   connectionLabel,
   provider,
   modelEditingSupported = true,
+  canAttachLocalText = true,
   modelSettingsKey,
   workStartedAt,
   activeTool,
@@ -363,6 +400,7 @@ export function ChatView({
   connectionLabel?: string;
   provider?: string;
   modelEditingSupported?: boolean;
+  canAttachLocalText?: boolean;
   modelSettingsKey?: string;
   workStartedAt?: number;
   activeTool?: string;
@@ -463,6 +501,7 @@ export function ChatView({
     moveChatStorage(queueStore, unboundKey, storeKey);
     moveChatStorage(draftStore, unboundKey, storeKey);
     moveChatStorage(attachStore, unboundKey, storeKey);
+    publishAttachments();
     moveChatStorage(sendModeStore, unboundKey, storeKey);
     moveChatStorage(composerContextStore, unboundKey, storeKey);
     moveChatStorage(failedSubmissionStore, unboundKey, storeKey);
@@ -1174,7 +1213,7 @@ export function ChatView({
       {status !== "unsupported" && (
         <ChatComposer storageKey={storeKey} onSend={sendMessage} busy={busy || !!prompt} waitingForAnswer={!!prompt} authenticationRequired={prompt?.kind === "authentication"} tool={provider || tool} folder={folder}
           forceQueue={!alive || initializing || !!prompt}
-          agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} modelSettingsKey={modelSettingsKey}
+          agentId={agentId} active={active} sessionId={sessionId} modelEditingSupported={modelEditingSupported} canAttachLocalText={canAttachLocalText} modelSettingsKey={modelSettingsKey}
           modelBusy={busy || !!prompt || initializing || submittingMessage || !!failedSubmission || queue.length > 0}
           projectName={projectName} connectionLabel={connectionLabel} intent={composerIntent} onInterrupt={busy && !initializing && !prompt ? interrupt : undefined} />
       )}
@@ -1194,6 +1233,7 @@ function ChatComposer({
   active,
   sessionId,
   modelEditingSupported,
+  canAttachLocalText,
   modelSettingsKey,
   modelBusy,
   storageKey,
@@ -1213,6 +1253,7 @@ function ChatComposer({
   active: boolean;
   sessionId?: string;
   modelEditingSupported: boolean;
+  canAttachLocalText: boolean;
   modelSettingsKey?: string;
   modelBusy: boolean;
   storageKey: string;
@@ -1232,9 +1273,9 @@ function ChatComposer({
   const modelChanging = useChatSessionModelChanging(agentId);
   const [text, setText] = useState(() => draftStore.get(storageKey) ?? "");
   const [taskMode, setTaskMode] = useState(false);
-  const [attachments, setAttachments] = useState<Attachment[]>(
-    () => attachStore.get(storageKey) ?? []
-  );
+  const attachmentSnapshot = () => attachStore.get(storageKey) ?? emptyAttachments;
+  const attachments = useSyncExternalStore(subscribeAttachments, attachmentSnapshot, attachmentSnapshot);
+  const textFilePending = attachments.some(attachment => attachment.kind === "pasted-file" && attachment.state !== "ready");
   const [context, setContext] = useState<ComposerContext | null>(() => composerContextStore.get(storageKey) ?? null);
   const [sendMode, setSendMode] = useState<SendMode>(() => sendModeStore.get(storageKey) ?? "queue");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1309,7 +1350,6 @@ function ChatComposer({
   // Restore the persisted draft/attachments when the session changes.
   useEffect(() => {
     setText(draftStore.get(storageKey) ?? "");
-    setAttachments(attachStore.get(storageKey) ?? []);
     setContext(composerContextStore.get(storageKey) ?? null);
     setSendMode(sendModeStore.get(storageKey) ?? "queue");
   }, [storageKey]);
@@ -1332,25 +1372,21 @@ function ChatComposer({
     if (value) draftStore.set(storageKey, value);
     else draftStore.delete(storageKey);
   };
-  const updateAttachments = (fn: (a: Attachment[]) => Attachment[]) => {
-    setAttachments((prev) => {
-      const next = fn(prev);
-      if (next.length) attachStore.set(storageKey, next);
-      else attachStore.delete(storageKey);
-      return next;
-    });
-  };
+  const updateAttachments = (fn: (attachments: Attachment[]) => Attachment[]) => setComposerAttachments(storageKey, fn);
 
   const send = () => {
-    if (authenticationRequired || isChatSessionModelChanging(agentId)) return;
-    // Expand attachments on send: pasted-text blocks and image paths join the
-    // typed text so the agent receives everything.
+    if (authenticationRequired || textFilePending || isChatSessionModelChanging(agentId)) return;
     const texts = attachments.filter((a) => a.kind === "text").map((a) => a.text);
     const paths = attachments
       .filter((a) => a.kind === "image")
-      .map((a) => formatDroppedPathForTerminal((a as { path: string }).path))
+      .map((a) => formatDroppedPathForTerminal(a.path))
       .filter(Boolean);
-    const request = [text.trim(), ...texts, ...paths].filter(Boolean).join("\n").trim();
+    const pastedFiles = attachments.flatMap(attachment => attachment.kind === "pasted-file" && attachment.state === "ready"
+      ? [formatDroppedPathForTerminal(attachment.path)] : []);
+    const pastedText = pastedFiles.length
+      ? `${localize("아래 UTF-8 파일에서 붙여넣은 원문을 읽어 주세요.", "Read the original pasted text in the UTF-8 file(s) below.")}\n${pastedFiles.join("\n")}`
+      : "";
+    const request = [text.trim(), ...texts, pastedText, ...paths].filter(Boolean).join("\n").trim();
     if (!request) return;
     const value = context?.mode === "quote" ? `${context.value.split(/\r?\n/).map(line => `> ${line}`).join("\n")}\n\n${request}` : request;
     onSend(taskMode && tool === 'codex' && !value.startsWith('/') ? taskDelegationRequest(value) : value, effectiveSendMode);
@@ -1386,9 +1422,7 @@ function ChatComposer({
     finally { setAttaching(false); }
   };
 
-  // Ctrl+V: a clipboard image saves to a temp file and shows as a chip; a large
-  // text paste collapses into a "pasted text" chip (like a terminal) instead of
-  // flooding the input; small text pastes go inline as normal.
+  // Keep short text inline and save large clipboard strings before PTY submission.
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
     const hasImage = items && Array.from(items).some((it) => it.type.startsWith("image/"));
@@ -1402,6 +1436,11 @@ function ChatComposer({
       return;
     }
     const pasted = e.clipboardData?.getData("text") ?? "";
+    if (canAttachLocalText && shouldAttachPastedText(pasted)) {
+      e.preventDefault();
+      storePastedTextFile(storageKey, pasted);
+      return;
+    }
     const lines = pasted.split(/\r?\n/).length;
     if (pasted.length > PASTE_COLLAPSE_CHARS || lines > PASTE_COLLAPSE_LINES) {
       e.preventDefault();
@@ -1484,7 +1523,7 @@ function ChatComposer({
     send();
   };
 
-  const canSend = !authenticationRequired && !modelChanging && Boolean(text.trim() || attachments.length);
+  const canSend = !authenticationRequired && !modelChanging && !textFilePending && Boolean(text.trim() || attachments.length);
   const supportsSteering = tool === "codex" || tool === "claude";
   const canChooseSendMode = supportsSteering && !forceQueue && !modelChanging;
   const effectiveSendMode = canChooseSendMode ? sendMode : "queue";
@@ -1528,6 +1567,17 @@ function ChatComposer({
                 >
                   ×
                 </button>
+              </div>
+            ) : a.kind === "pasted-file" ? (
+              <div key={`file-${i}`} className="chat-attachment-textchip" title={a.state === "ready" ? a.path : undefined}>
+                <span className="chat-attachment-texticon">📄</span>
+                {a.state === "saving" ? localize("TXT 저장 중", "Saving TXT")
+                  : a.state === "failed" ? localize("TXT 저장 실패 (최대 8MB)", "Could not save TXT (8 MB limit)")
+                  : localize(`TXT 첨부 · ${a.characters.toLocaleString()}자`, `TXT attached · ${a.characters.toLocaleString()} characters`)}
+                {a.state === "failed" && <button type="button" className="chat-attachment-textremove" title={localize("다시 저장", "Retry saving")}
+                  aria-label={localize("다시 저장", "Retry saving")} onClick={() => storePastedTextFile(storageKey, a.text, a)}>↻</button>}
+                <button type="button" className="chat-attachment-textremove" title={localize("첨부 제거", "Remove attachment")}
+                  onClick={() => updateAttachments(arr => arr.filter(item => item !== a))}>×</button>
               </div>
             ) : (
               <div

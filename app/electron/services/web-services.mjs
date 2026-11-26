@@ -131,6 +131,7 @@ function validRemoteText(buffer) {
 }
 
 const REMOTE_ATTACHMENT_TYPES = new Map([
+  ["text/plain", { extension: ".txt", signature: validRemoteText }],
   ["text/markdown", { extension: ".md", signature: validRemoteText }],
   ["text/html", { extension: ".html", signature: validRemoteText }],
   ["image/png", { extension: ".png", signature: (buffer) => buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) }],
@@ -715,7 +716,7 @@ async function saveRemoteAttachment(request, baseDir) {
   const encoded = match?.[2] || "";
   const attachmentType = REMOTE_ATTACHMENT_TYPES.get(mime);
   if (!id || !attachmentType || declaredType !== mime || encoded.length % 4 !== 0) {
-    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.");
+    throw new RemoteDocumentError(415, "PNG, JPEG, GIF, WebP, BMP 이미지, TXT, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.");
   }
   const maxBytes = remoteAttachmentMaxBytes(mime);
   const sizeError = remoteAttachmentSizeError(mime);

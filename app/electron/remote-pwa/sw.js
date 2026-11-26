@@ -1,6 +1,6 @@
 const BASE_PATH = new URL(self.registration.scope).pathname;
 const CACHE_PREFIX = `acedia-remote:${BASE_PATH}:`;
-const CACHE_NAME = CACHE_PREFIX + 'multiagent-remote-v124';
+const CACHE_NAME = CACHE_PREFIX + 'multiagent-remote-v125';
 const scopePath = path => BASE_PATH + path.replace(/^\//, '');
 const STATIC_ASSETS = [
   '/pwa/base-path.js',

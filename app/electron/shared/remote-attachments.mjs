@@ -2,6 +2,7 @@ export const MAX_REMOTE_IMAGE_BYTES = 8 * 1024 * 1024;
 export const MAX_REMOTE_ZIP_BYTES = 32 * 1024 * 1024;
 export const MAX_REMOTE_DOCUMENT_BYTES = 8 * 1024 * 1024;
 export const MAX_REMOTE_ATTACHMENTS = 4;
+const PASTED_TEXT_ATTACHMENT_BYTES = 4 * 1024;
 
 const imageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"]);
 const zipTypes = new Set(["application/zip", "application/x-zip-compressed", "application/x-zip"]);
@@ -10,7 +11,12 @@ const markdownTypes = new Set(["text/markdown", "text/x-markdown"]);
 const htmlTypes = new Set(["text/html", "application/xhtml+xml"]);
 
 export function remoteAttachmentIsText(type) {
-  return type === "text/markdown" || type === "text/html";
+  return type === "text/plain" || type === "text/markdown" || type === "text/html";
+}
+
+export function shouldAttachPastedText(text, availableCharacters = Infinity) {
+  return text.length > availableCharacters || text.length >= PASTED_TEXT_ATTACHMENT_BYTES
+    || new TextEncoder().encode(text).byteLength >= PASTED_TEXT_ATTACHMENT_BYTES;
 }
 
 export function remoteAttachmentType(file) {
@@ -19,6 +25,7 @@ export function remoteAttachmentType(file) {
   // Browsers can report ZIPs with an empty or generic MIME type. The host
   // verifies the actual bytes before storing a file with this classification.
   if (zipTypes.has(type) || /\.zip$/i.test(name)) return "application/zip";
+  if (/\.txt$/i.test(name) && genericTextTypes.has(type)) return "text/plain";
   if (/\.(?:md|markdown)$/i.test(name) && (genericTextTypes.has(type) || markdownTypes.has(type))) return "text/markdown";
   if (/\.html?$/i.test(name) && (genericTextTypes.has(type) || htmlTypes.has(type))) return "text/html";
   return imageTypes.has(type) ? type : "";

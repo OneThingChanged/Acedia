@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
 import { crc32 } from "node:zlib";
 import { afterEach, expect, it } from "vitest";
 import { LocalDashboardService, RemoteDashboardService } from "./web-services.mjs";
-import { remoteAttachmentMessage } from "../shared/remote-attachments.mjs";
+import { remoteAttachmentMessage, shouldAttachPastedText } from "../shared/remote-attachments.mjs";
 
 const services = [], roots = [];
 afterEach(async () => {
@@ -51,9 +52,10 @@ function largeZip() {
   return Buffer.concat([local, name, content, central, name, end]);
 }
 
-it.each(["Remote", "Dashboard"])("%s uploads MD, HTML and a 9 MiB ZIP and delivers their original bytes to the session", async kind => {
+it.each(["Remote", "Dashboard"])("%s uploads TXT, MD, HTML and a 9 MiB ZIP and delivers their original bytes to the session", async kind => {
   const f = await fixture(kind), uploaded = [];
   for (const [name, bytes, type, dataType] of [
+    ["pasted-text.txt", Buffer.from("  한글🙂\r\n".repeat(1800) + "  끝\r\n"), "text/plain", "text/plain;charset=utf-8"],
     ["한글 보고서.md", Buffer.from("# 작업 보고서\n한글·이모지 ✅\r\n"), "text/plain", "text/plain;charset=utf-8"],
     ["미리 보기.HTML", Buffer.from('<!doctype html><meta charset="utf-8"><h1>결과</h1><script>throw new Error("must not execute")</script>'), ""],
     ["자료 묶음.zip", largeZip(), "application/octet-stream"],
@@ -66,8 +68,10 @@ it.each(["Remote", "Dashboard"])("%s uploads MD, HTML and a 9 MiB ZIP and delive
     expect(fs.readFileSync(item.path).equals(bytes)).toBe(true);
     uploaded.push(item);
   }
-  expect(uploaded.map(item => item.type)).toEqual(["text/markdown", "text/html", "application/zip"]);
+  expect(uploaded.map(item => item.type)).toEqual(["text/plain", "text/markdown", "text/html", "application/zip"]);
   const message = remoteAttachmentMessage("확인해줘", uploaded);
+  expect(message.length).toBeLessThan(8192);
+  expect(message).not.toContain("한글🙂");
   expect(message).not.toContain("첨부 이미지:");
   const request = { id: "fixture", requestId: `${Date.now()}-0123456789abcdef`, message };
   expect((await f.post("/api/session/submit", request)).status).toBe(200);
@@ -85,6 +89,7 @@ it.each(["Remote", "Dashboard"])("%s preserves BOM/empty documents and rejects i
   }
   for (const bytes of [Buffer.from([0xff, 0x80]), Buffer.from("MZ\0binary"), Buffer.from([0xff, 0xfe, 0x41])]) {
     expect((await f.upload("fake.md", bytes, "text/markdown")).status).toBe(415);
+    expect((await f.upload("fake.txt", bytes, "text/plain")).status).toBe(415);
   }
   expect((await f.upload("large.html", Buffer.alloc(8 * 1024 * 1024 + 1, 65), "text/html")).status).toBe(413);
   expect((await f.upload("payload.exe", Buffer.from("payload"), "text/html")).status).toBe(415);
@@ -99,3 +104,33 @@ it.each(["Remote", "Dashboard"])("%s preserves BOM/empty documents and rejects i
   }
   expect(fs.readdirSync(path.join(f.root, "remote-attachments"))).toHaveLength(3);
 }, 30000);
+
+it("uses TXT for a UTF-8-heavy paste or a paste that would exceed the remaining draft length", () => {
+  expect(shouldAttachPastedText("a".repeat(4000), 4000)).toBe(false);
+  expect(shouldAttachPastedText("a".repeat(4001), 4000)).toBe(true);
+  expect(shouldAttachPastedText("a".repeat(1000), 999)).toBe(true);
+  expect(shouldAttachPastedText("가".repeat(1400), 4000)).toBe(true);
+  expect(shouldAttachPastedText("a".repeat(4096))).toBe(true);
+});
+
+it("turns the full Remote paste into a TXT attachment before the textarea truncates it", async () => {
+  const source = fs.readFileSync(new URL("../remote-pwa/app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const handler = source.match(/^function handleComposerPaste\(event\) \{[\s\S]*?\n\}/m)?.[0];
+  const text = "  한글🙂\r\n".repeat(1800) + "  끝\r\n";
+  const attached = [];
+  let prevented = false;
+  const input = { maxLength: 4000, value: "원본 초안", selectionStart: 0, selectionEnd: 2 };
+  const clipboard = { getData: () => text };
+  const event = { currentTarget: input, clipboardData: clipboard, preventDefault() { prevented = true; } };
+  vm.runInNewContext(`${handler}\nhandleComposerPaste(event);`, {
+    event, File, shouldAttachPastedText,
+    clipboardAttachmentFiles: () => [],
+    addAttachments: files => attached.push(...files),
+  });
+  expect(prevented).toBe(true);
+  expect(input.value).toBe("원본 초안");
+  expect(attached).toHaveLength(1);
+  expect(attached[0].name).toBe("pasted-text.txt");
+  expect(attached[0].type).toBe("text/plain");
+  expect(await attached[0].text()).toBe(text);
+});

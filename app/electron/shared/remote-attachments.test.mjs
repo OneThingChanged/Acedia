@@ -11,10 +11,13 @@ it.each(["", "application/octet-stream", "text/plain", "text/html; charset=UTF-8
     expect(remoteAttachmentType({ name: "미리보기.HTML", type })).toBe("text/html");
     expect(remoteAttachmentType({ name: "page.htm", type })).toBe("text/html");
   });
+it.each(["", "application/octet-stream", "text/plain; charset=utf-8"])("recognizes TXT reported as %j", type => {
+  expect(remoteAttachmentType({ name: "한글 노트.TXT", type })).toBe("text/plain");
+});
 it("does not accept an unsupported extension or mismatched document MIME", () => {
   expect(remoteAttachmentType({ name: "payload.exe", type: "text/html" })).toBe("");
   expect(remoteAttachmentType({ name: "notes.md", type: "text/html" })).toBe("");
-  expect(remoteAttachmentType({ name: "payload.txt", type: "text/plain" })).toBe("");
+  expect(remoteAttachmentType({ name: "payload.txt", type: "text/html" })).toBe("");
 });
 it("sends documents and archives as file paths alongside image paths, omitting failed uploads", () => {
   const attachments = [

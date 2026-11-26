@@ -21,5 +21,5 @@ it.each(['session-tree.js', 'session-notes.js', 'task-flow.js', 'video-preview.j
   fetcher.mockRejectedValueOnce(new Error('offline'));
   listeners.get('fetch')(event());
   expect(await (await pending).text()).toBe('old-tree'); expect(match).toHaveBeenCalledExactlyOnceWith(request);
-  expect(open.mock.calls.every(([name]) => name === 'acedia-remote:/:multiagent-remote-v124')).toBe(true);
+  expect(open.mock.calls.every(([name]) => name === 'acedia-remote:/:multiagent-remote-v125')).toBe(true);
 });

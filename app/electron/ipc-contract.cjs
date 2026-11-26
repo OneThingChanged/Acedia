@@ -117,6 +117,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "clipboard_write_text",
   "clipboard_write_image",
   "save_clipboard_image",
+  "save_pasted_text",
   "check_tools",
   "qwen_region_get",
   "qwen_region_set",
@@ -295,6 +296,11 @@ function assertInvokeRequest(command, rawArgs) {
   assertAllowed(invokeSet, command, "command");
   const args = assertObject(rawArgs);
   switch (command) {
+    case "save_pasted_text":
+      if (typeof args.text !== "string" || !args.text.length || args.text.length > 8 * 1024 * 1024) {
+        throw new TypeError("Pasted text must be a non-empty string up to 8 MiB.");
+      }
+      break;
     case 'session_recovery': {
       const keys = { offer: [], status: [], decide: ['checkpointId', 'restore'], claim: ['checkpointId', 'id'], launched: ['checkpointId', 'id', 'failed'] };
       if (!Object.hasOwn(keys, args.action) || Object.keys(args).some(k => k !== 'action' && !keys[args.action].includes(k))

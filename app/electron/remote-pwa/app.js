@@ -24,7 +24,7 @@ import { CHAT_TURNS_PER_PAGE, CHAT_CACHED_TURNS, CHAT_CACHED_SESSIONS, selectCha
 import { parseChatPrompt, promptSignature, questionDetails as parseQuestionDetails } from "./chat-prompt.js";
 import { questionForm } from './question-form.js';
 import { isSleepingSession, matchesSessionFilter, normalizeSessionFilter, sessionFilterCounts, resolveSessionWorkStatus, childSessionVisibilityState } from "./session-state.js";
-import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage, remoteAttachmentIsText, remoteAttachmentSizeError } from "./attachments.js";
+import { MAX_REMOTE_ATTACHMENTS as MAX_ATTACHMENTS, remoteAttachmentType, remoteAttachmentMaxBytes, remoteAttachmentMessage, remoteAttachmentIsText, remoteAttachmentSizeError, shouldAttachPastedText } from "./attachments.js";
 
 bindShellTranslations(document);
 
@@ -3669,6 +3669,7 @@ const ATTACHMENT_EXTENSIONS = new Map([
   ["image/webp", "webp"],
   ["image/bmp", "bmp"],
   ["application/zip", "zip"],
+  ["text/plain", "txt"],
   ["text/markdown", "md"],
   ["text/html", "html"],
 ]);
@@ -3689,7 +3690,7 @@ function updateComposerSendState() {
   const attachments = currentAttachments();
   const hasMessage = Boolean(ui.messageInput.value.trim());
   const hasReadyAttachment = attachments.some((attachment) => attachment.path && !attachment.error);
-  const uploading = attachments.some((attachment) => attachment.uploading);
+  const attachmentBlocked = attachments.some((attachment) => attachment.uploading || (attachment.retryFile && attachment.error));
   const inactiveTerminal = Boolean(
     agent && ["offline", "recovering", "starting"].includes(statusOf(agent)) && sessionViewMode === "term"
   );
@@ -3705,7 +3706,7 @@ function updateComposerSendState() {
     : waitingForAnswer ? t('답변 대기 중 · 새 메시지는 예약됩니다')
       : isChatOnly() ? t("메시지 입력") : t("메시지 입력 · Enter 전송 · Shift+Enter 줄바꿈");
   ui.sendButton.textContent = t(waitingForAnswer ? '예약' : '전송');
-  ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || uploading || (!hasMessage && !hasReadyAttachment);
+  ui.sendButton.disabled = sendingAgents.has(agent?.id) || inactiveTerminal || attachmentBlocked || (!hasMessage && !hasReadyAttachment);
   ui.attachmentButton.disabled = inactiveTerminal || !agent || Boolean(agent.sshHostId) || attachments.length >= MAX_ATTACHMENTS;
   ui.attachmentButton.title = agent?.sshHostId
     ? t("SSH 세션은 파일 첨부를 지원하지 않습니다")
@@ -3713,7 +3714,7 @@ function updateComposerSendState() {
       ? initializingTerminal
         ? t("세션 초기화가 끝나면 첨부할 수 있습니다")
         : t("비활성 세션은 채팅 모드에서 활성화할 수 있습니다")
-    : t("이미지, MD, HTML 또는 ZIP 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
+    : t("이미지, TXT, MD, HTML 또는 ZIP 첨부 · 클립보드 붙여넣기 · 드래그 앤 드롭 지원");
 }
 
 function resizeComposerInput() {
@@ -3768,7 +3769,23 @@ function renderComposerAttachments() {
       }
       renderComposerAttachments();
     });
-    item.append(icon, meta, remove);
+    item.append(icon, meta);
+    if (attachment.error && attachment.retryFile) {
+      const retry = make("button", "composer-attachment-remove", "↻");
+      retry.type = "button";
+      retry.title = t("첨부 다시 시도");
+      retry.setAttribute("aria-label", retry.title);
+      retry.addEventListener("click", () => {
+        const agent = selectedAgent();
+        if (!agent || !currentAttachments().includes(attachment) || attachment.uploading) return;
+        attachment.error = "";
+        attachment.uploading = true;
+        renderComposerAttachments();
+        void uploadAttachment(agent.id, attachment, attachment.retryFile);
+      });
+      item.appendChild(retry);
+    }
+    item.appendChild(remove);
     ui.composerAttachments.appendChild(item);
   });
   updateComposerSendState();
@@ -3797,6 +3814,7 @@ async function uploadAttachment(agentId, attachment, file) {
     if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
     attachment.path = result.path;
     attachment.uploading = false;
+    attachment.retryFile = null;
   } catch (error) {
     attachment.uploading = false;
     attachment.error = error.message || t("업로드하지 못했습니다.");
@@ -3841,7 +3859,7 @@ function addAttachments(files, { source = "picker" } = {}) {
     }
     const type = remoteAttachmentType(file);
     if (!type) {
-      showToast(t("{0}: 이미지, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.", [file.name]));
+      showToast(t("{0}: 이미지, TXT, MD, HTML 또는 ZIP 파일만 첨부할 수 있습니다.", [file.name]));
       continue;
     }
     if ((!file.size && !remoteAttachmentIsText(type)) || file.size > remoteAttachmentMaxBytes(type)) {
@@ -3856,6 +3874,7 @@ function addAttachments(files, { source = "picker" } = {}) {
       path: "",
       uploading: true,
       error: "",
+      retryFile: type === "text/plain" ? file : null,
     };
     draft.push(attachment);
     added += 1;
@@ -3877,12 +3896,23 @@ function clipboardAttachmentFiles(event) {
     .filter((file) => remoteAttachmentType(file));
 }
 
-function handleComposerImagePaste(event) {
+function handleComposerPaste(event) {
   const files = clipboardAttachmentFiles(event);
-  if (!files.length) return;
+  if (files.length) {
+    event.preventDefault();
+    const added = addAttachments(files, { source: "clipboard" });
+    if (added > 0) showToast(t("클립보드 파일 {0}개를 첨부했습니다.", [added]));
+    return;
+  }
+  const text = event.clipboardData?.getData("text/plain") || "";
+  if (!text) return;
+  const input = event.currentTarget;
+  const selectedLength = input.selectionEnd - input.selectionStart;
+  const availableCharacters = input.maxLength >= 0 ? input.maxLength - input.value.length + selectedLength : Infinity;
+  if (!shouldAttachPastedText(text, availableCharacters)) return;
+  // Keep the draft intact and avoid the browser truncating the original paste.
   event.preventDefault();
-  const added = addAttachments(files, { source: "clipboard" });
-  if (added > 0) showToast(t("클립보드 파일 {0}개를 첨부했습니다.", [added]));
+  addAttachments([new File([text], "pasted-text.txt", { type: "text/plain" })], { source: "clipboard" });
 }
 
 function hasDraggedFiles(event) {
@@ -4264,7 +4294,8 @@ async function sendSelectedMessage() {
   const agent = selectedAgent();
   const message = ui.messageInput.value.trim();
   const attachments = currentAttachments();
-  if (!agent || sendingAgents.has(agent.id) || attachments.some((attachment) => attachment.uploading)) return;
+  if (!agent || sendingAgents.has(agent.id)
+    || attachments.some((attachment) => attachment.uploading || (attachment.retryFile && attachment.error))) return;
   acknowledgeCompletion(agent.id);
   const rawOutgoing = remoteAttachmentMessage(message, attachments);
   const outgoing = rawOutgoing && taskModes.has(agent.id) && agent.aiToolId === 'codex' && !rawOutgoing.startsWith('/') ? taskDelegationRequest(rawOutgoing) : rawOutgoing;
@@ -6370,7 +6401,7 @@ ui.attachmentInput.addEventListener("change", () => {
   addAttachments([...ui.attachmentInput.files]);
   ui.attachmentInput.value = "";
 });
-ui.messageInput.addEventListener("paste", handleComposerImagePaste);
+ui.messageInput.addEventListener("paste", handleComposerPaste);
 ui.composerForm.addEventListener("dragenter", handleComposerImageDragEnter);
 ui.composerForm.addEventListener("dragover", handleComposerImageDragOver);
 ui.composerForm.addEventListener("dragleave", handleComposerImageDragLeave);

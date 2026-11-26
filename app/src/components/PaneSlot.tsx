@@ -1211,6 +1211,7 @@ export function PaneSlot({
           assistantMessage={activeAgent?.activity?.lastAssistantMessage ?? null}
           provider={activeAgent?.aiToolId}
           modelEditingSupported={!activeAgent?.sshHostId}
+          canAttachLocalText={!activeAgent?.sshHostId}
           modelSettingsKey={activeAgent ? JSON.stringify(resolveSessionSettings(activeAgent, ctx.agents, ctx.projects).modelSettings ?? null) : undefined}
           folder={activeAgent?.sshHostId ? undefined : activeAgent?.folder}
           projectName={ctx.projects.find(project => project.id === activeAgent?.projectId)?.name}

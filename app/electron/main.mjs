@@ -73,6 +73,7 @@ import { prepareLaunchCommand } from "./services/agent-launch.mjs";
 import { findExecutableOnPath, refreshWindowsPath } from './services/executable-path.mjs';
 import { CodexUsageAccounts } from "./services/codex-usage-accounts.mjs";
 import { ClaudeAccounts } from "./services/claude-accounts.mjs";
+import { savePastedText } from "./services/pasted-text.mjs";
 import { SessionService } from "./services/session-service.mjs";
 import { ConversationStoreManager } from "./services/conversation-store.mjs";
 import { SessionNotes } from './services/session-notes.mjs';
@@ -6358,6 +6359,8 @@ async function invokeCommand(event, command, rawArgs) {
     case "clipboard_write_text":
       clipboard.writeText(asString(args.text));
       return null;
+    case "save_pasted_text":
+      return savePastedText(path.join(os.tmpdir(), "multiagent-pasted"), args.text);
     case "clipboard_write_image": {
       const dataUrl = asString(args.dataUrl);
       if (!/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i.test(dataUrl) || dataUrl.length > Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 128) throw new Error("올바른 이미지 데이터가 필요합니다.");
