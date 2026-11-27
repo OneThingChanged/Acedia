@@ -22,7 +22,8 @@ async function exerciseFileRoots() {
   window.dispatchEvent(new Event('focus'));
   await until(() => root() === 'D:/AI2/PCGLab' && document.querySelector('.file-tree-panel')?.textContent.includes('pcg-only.md'));
   check(document.querySelector('.file-tree-project-name').textContent === 'PCGLab', 'Tree title is still the parent project');
-  check(document.querySelector('.sidebar-recents [data-sidebar-agent-id="pcg"] .sidebar-session-meta [title]').title === 'D:/AI2/PCGLab', 'Sidebar still reports the stale root');
+  const pcgSidebarRow = document.querySelector('.sidebar-recents [data-sidebar-agent-id="pcg"]');
+  check(pcgSidebarRow.title.includes('D:/AI2/PCGLab') && !pcgSidebarRow.textContent.includes('D:/AI2/PCGLab'), 'Sidebar folder details are missing or visible on the row');
   const row = () => [...document.querySelectorAll('.file-tree-row')].find(e => e.textContent.includes('README.md'));
   row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   await until(() => window.layoutCalls.some(c => c.command === 'read_markdown_file' && c.args.folder === 'D:/AI2/PCGLab' && c.args.relativePath === 'README.md'));
@@ -82,12 +83,12 @@ async function exerciseScreenIdentity() {
   for (const [id, provider] of [['ux', 'codex'], ['image', 'claude']]) {
     const logo = document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"] .provider-logo');
     check(logo?.dataset.provider === provider && logo.getAttribute('role') === 'img' && logo.getAttribute('aria-label') && logo.querySelector('path')?.getAttribute('d').length > 100, 'Provider logo missing or inaccessible');
-    check(!document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"] .sidebar-session-meta').textContent.includes(provider === 'codex' ? 'Codex' : 'Claude'), 'Provider text still fills conversation metadata');
+    check(document.querySelector('.sidebar-recents [data-sidebar-agent-id="'+id+'"] .sidebar-session-model-name')?.textContent, 'Model label missing from conversation row');
   }
   const project = document.querySelector('[data-sidebar-project-id="acedia"] .project-item');
   if (project.getAttribute('aria-expanded') !== 'true') { project.click(); await wait(); }
   const nested = [...document.querySelectorAll('[data-sidebar-project-id="acedia"] .project-session-list [data-sidebar-agent-id]')];
-  check(nested.length === 3 && nested.every(row => row.querySelector('.provider-logo') && row.getBoundingClientRect().height <= 34), 'Folded project provider logos or compact rows');
+  check(nested.length === 3 && nested.every(row => row.querySelector('.provider-logo') && row.getBoundingClientRect().height === 38), 'Folded project provider logos or compact rows');
   check(nested.filter(row => row.dataset.sidebarScreenId).every(row => getComputedStyle(row).getPropertyValue('--screen-color').trim() === colors[0]), 'Project session color mismatch');
   document.querySelector('.sidebar-primary-nav > button').click(); await wait();
   return 'SIDEBAR_SCREEN_IDENTITY_OK S1='+colors[0]+' S2='+colors[1];
@@ -204,7 +205,9 @@ async function exercise() {
   check(expanded('toon') && expanded('acedia') && projectRows('acedia').length === 3 && rows() === 3, 'Independent project folds');
   const nested = projectRows('acedia')[0];
   check(nested.dataset.sidebarAgentId === 'ux' && nested.getAttribute('aria-current') === 'page', 'Nested conversation order or active state');
-  check(nested.getBoundingClientRect().height <= 34 && !nested.querySelector('.sidebar-session-meta'), 'Nested rows are not compact');
+  const recent = document.querySelector('.sidebar-recents [data-sidebar-agent-id="ux"]');
+  check(nested.getBoundingClientRect().height === 38 && recent.getBoundingClientRect().height === nested.getBoundingClientRect().height
+    && nested.querySelector('.sidebar-session-model-name'), 'Project and recent rows are not equally compact');
   await click(projectButton('acedia')); check(!expanded('acedia') && expanded('toon'), 'Closing one project folded another');
   await click('.sidebar-primary-nav > button'); check(rows() === 5, 'All conversations');
   const setInput = (selector, value) => { const input = find(selector); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
@@ -464,7 +467,7 @@ async function exerciseSessionFamilies(reload = false) {
     check(toggle()?.getAttribute('aria-expanded')==='true','Current-parent tree is not expanded by default');
     for(const id of ids) {
       check(row(id)?.closest('[data-sidebar-parent-id="rnd-root"]'),'Shader not nested below current RnDHub parent');
-      check(row(id).querySelector('.sidebar-session-task-meta').textContent.includes('RnDHub'),'Row still labels the original creator as parent');
+      check(row(id).title.includes('RnDHub') && !row(id).title.includes('AIHub'),'Row still labels the original creator as parent');
       check(document.querySelectorAll(`.sidebar-recents [data-sidebar-agent-id="${id}"]`).length===1,'Child duplicated in recents');
     }
     const calls=window.layoutCalls.filter(c=>['spawn_pty','kill_pty','terminal_session_action'].includes(c.command)).length;
@@ -528,12 +531,12 @@ async function exerciseActiveFamilySleeping(stopParent = false) {
     await until(()=>JSON.parse(localStorage.getItem('multiagent.agents.v1')).find(a=>a.id==='rnd-root').sidebarShowInactiveChildren===true);
     for(const id of sleeping) {
       check(row(id).closest('[data-sidebar-parent-id="rnd-root"]'),'Sleeping child detached from active parent');
-      check(row(id).querySelector('.status-sleeping') && row(id).querySelector('.sidebar-sleep-label')?.textContent,'Sleeping child changed runtime classification');
+      check(row(id).querySelector('.status-sleeping') && row(id).title.includes('Sleeping'),'Sleeping child changed runtime classification');
       check(document.querySelector(`[data-sidebar-project-id="rnd"] [data-sidebar-parent-id="rnd-root"] [data-sidebar-agent-id="${id}"]`),'Project list omitted sleeping context');
     }
     for(const id of inactive) {
       check(row(id).closest('[data-sidebar-parent-id="rnd-root"]'),'Stopped/new child detached from active parent');
-      check(!row(id).querySelector('.sidebar-sleep-label')&&!row(id).querySelector('.sidebar-session-close'),'Stopped/new child acquired a sleeping or live classification');
+      check(!row(id).querySelector('.status-sleeping')&&!row(id).querySelector('.sidebar-session-close'),'Stopped/new child acquired a sleeping or live classification');
       check(document.querySelector(`[data-sidebar-project-id="rnd"] [data-sidebar-agent-id="${id}"]`),'Project list omitted stopped/new context');
     }
     check(row('SleepingGrandchild').closest('[data-sidebar-parent-id="StoppedChild"]'),'Inactive intermediate child broke the family tree');

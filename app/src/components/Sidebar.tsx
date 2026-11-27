@@ -4,21 +4,29 @@ import { toolForId } from "../types";
 import { useAppLanguage } from "../lib/appLanguage";
 import { isStandbySession } from "../lib/sessionStandby";
 import { isAgentRuntimeActive, backgroundWaitingLabels } from "../lib/agentActivity";
-import { LS_SIDEBAR_FILTER, LS_SIDEBAR_COLLAPSED_FAMILIES, loadSidebarFilter, loadSidebarCollapsedFamilies, matchesSidebarFilter, recentSidebarSessions, searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth, sidebarSessionFamilies, type SidebarDateGroup } from "../lib/sidebarNavigation";
+import { LS_SIDEBAR_FILTER, LS_SIDEBAR_SHOW_SLEEPING, LS_SIDEBAR_SHOW_IDLE, LS_SIDEBAR_COLLAPSED_FAMILIES,
+  loadSidebarFilter, loadSidebarCollapsedFamilies, matchesSidebarFilter, isSidebarIdleSession, recentSidebarSessions,
+  searchSidebarItems, sidebarDateGroup, sidebarScreens, sidebarWidth, sidebarSessionFamilies, type SidebarDateGroup } from "../lib/sidebarNavigation";
 import { useNativeViewOcclusion } from "../hooks/useNativeViewOcclusion";
 import { SCREEN_COLORS, SidebarProjectTree, type SidebarProjectTreeProps } from "./SidebarProjectTree";
 import { SidebarIcon } from "./SidebarIcon";
 import { ProviderLogo } from "./ProviderLogo";
 import { resolveSessionSettings } from '../lib/sessionHierarchy';
-import { folderTail } from '../lib/path';
 import "./Sidebar.css";
 import './BackgroundWork.css';
 import { useTaskSessionNavigation } from '../hooks/useTaskSessionNavigation';
 import { useDelegatedWait } from '../hooks/useDelegatedWait';
 import { useSessionAccountLabel } from '../hooks/useSessionAccountLabel';
 import { useCodexContextUsage } from "../hooks/useCodexContextUsage";
+import { useSidebarSessionModels } from "../hooks/useSidebarSessionModels";
 
 const HIGH_INPUT_TOKEN_COUNT = 200_000;
+
+function sidebarModelName(provider: string, model: string) {
+  const claude = provider === "claude" && /^(?:claude-)?(fable|opus|sonnet|haiku)(?:-(\d+(?:-\d{1,2})?))?(?:-\d{8})?$/i.exec(model);
+  if (claude) return [`Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()}`, claude[2]?.replace(/-/g, ".")].filter(Boolean).join(" ");
+  return model.replace(/^gpt-/i, "GPT-").replace(/-(sol|astra|terra|luna)$/i, (_, name: string) => `-${name[0].toUpperCase()}${name.slice(1).toLowerCase()}`);
+}
 
 type SidebarProps = SidebarProjectTreeProps & {
   collapsed?: boolean;
@@ -69,9 +77,14 @@ function ArchiveSessionsDialog({ agents, projects, onRestore, onClose }: {
 function WorkspaceSidebar(props: SidebarProps) {
   const { language, text } = useAppLanguage();
   const { agents, projects, projectFolders, activeAgentId, activeGroupId, collapsed = false } = props;
-  const contextUsage = useCodexContextUsage(!collapsed && agents.some(agent =>
-    agent.aiToolId === "codex" && !agent.sshHostId && isAgentRuntimeActive(agent)));
-  const [filter, setFilter] = useState(loadSidebarFilter);
+  const sessionModels = useSidebarSessionModels(!collapsed && agents.some(agent =>
+    !agent.sidebarArchived && !agent.sshHostId && (agent.aiToolId === "codex" || agent.aiToolId === "claude")));
+  const [showSleeping, setShowSleeping] = useState(() => readBoolean(LS_SIDEBAR_SHOW_SLEEPING, true));
+  const [showIdle, setShowIdle] = useState(() => readBoolean(LS_SIDEBAR_SHOW_IDLE, true));
+  const [filter, setFilter] = useState(() => {
+    const saved = loadSidebarFilter();
+    return saved === "sleeping" && !showSleeping ? "all" : saved;
+  });
   const [scope, setScope] = useState<string | null>(null);
   const [sortByName, setSortByName] = useState(false);
   const [collapsedFamilies, setCollapsedFamilies] = useState(loadSidebarCollapsedFamilies);
@@ -93,6 +106,12 @@ function WorkspaceSidebar(props: SidebarProps) {
   useEffect(() => () => pointerCleanupRef.current?.(), []);
   useEffect(() => { const timer = window.setInterval(() => setToday(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { try { localStorage.setItem(LS_SIDEBAR_FILTER, filter); } catch {} }, [filter]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_SIDEBAR_SHOW_SLEEPING, String(showSleeping));
+      localStorage.setItem(LS_SIDEBAR_SHOW_IDLE, String(showIdle));
+    } catch {}
+  }, [showSleeping, showIdle]);
   useEffect(() => { try { localStorage.setItem(LS_SIDEBAR_COLLAPSED_FAMILIES, JSON.stringify([...collapsedFamilies])); } catch {} }, [collapsedFamilies]);
   useEffect(() => { try { localStorage.setItem("multiagent.sidebarProjectsOpen.v1", String(projectsOpen)); } catch {} }, [projectsOpen]);
   useEffect(() => { try { localStorage.setItem("multiagent.sidebarScreensOpen.v1", String(screensOpen)); } catch {} }, [screensOpen]);
@@ -125,6 +144,8 @@ function WorkspaceSidebar(props: SidebarProps) {
   const inspectedSessionId = hoveredSessionId ?? focusedSessionId;
   const inspectedSession = inspectedSessionId && !collapsed ? agentById.get(inspectedSessionId) : undefined;
   const inspectedProject = inspectedSession && projects.find(project => project.id === inspectedSession.projectId);
+  const contextUsage = useCodexContextUsage(!!inspectedSession && inspectedSession.aiToolId === "codex"
+    && !inspectedSession.sshHostId && isAgentRuntimeActive(inspectedSession));
   const accountLabel = useSessionAccountLabel(inspectedSession?.aiToolId === 'codex' && !inspectedSession.sidebarArchived
     && !inspectedSession.sshHostId && !inspectedProject?.sshHostId ? inspectedSession : undefined);
   const activeFamilyPath = useMemo(() => {
@@ -149,14 +170,16 @@ function WorkspaceSidebar(props: SidebarProps) {
   const scoped = useMemo(() => navigable.filter(agent => !scope || agent.projectId === scope), [navigable, scope]);
   const counts = { all: scoped.length, active: scoped.filter(agent => matchesSidebarFilter(agent, "active")).length, sleeping: scoped.filter(agent => matchesSidebarFilter(agent, "sleeping")).length };
   const recent = useMemo(() => recentSidebarSessions(agents, projects, projectFolders, { projectId: scope, filter, query: "", sortByName }), [agents, projects, projectFolders, scope, filter, sortByName]);
-  const families = useMemo(() => sidebarSessionFamilies(recent, navigable, { includeDescendants: filter === 'active', respectInactiveChildrenVisibility: true, sortByName }), [recent, navigable, filter, sortByName]);
+  const familyOptions = useMemo(() => ({
+    includeDescendants: filter === "active", respectInactiveChildrenVisibility: true, sortByName,
+    isVisible: showSleeping && showIdle ? undefined : (agent: Agent) =>
+      isStandbySession(agent) ? showSleeping : showIdle || !isSidebarIdleSession(agent),
+  }), [filter, sortByName, showSleeping, showIdle]);
+  const families = useMemo(() => sidebarSessionFamilies(recent, navigable, familyOptions), [recent, navigable, familyOptions]);
   const searchResults = useMemo(() => searchSidebarItems(agents, projects, projectFolders, searchQuery), [agents, projects, projectFolders, searchQuery]);
   const screens = useMemo(() => sidebarScreens(props.groups, agents, projects, activeAgentId), [props.groups, agents, projects, activeAgentId]);
   const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects]);
-  const sessionFolders = useMemo(() => new Map(navigable.map(agent => {
-    const settings = resolveSessionSettings(agent, navigable, projects);
-    return [agent.id, agent.sshHostId ? settings.remoteFolder || '' : settings.folder];
-  })), [navigable, projects]);
+  const sessionSettings = useMemo(() => new Map(navigable.map(agent => [agent.id, resolveSessionSettings(agent, navigable, projects)])), [navigable, projects]);
   const screenByAgent = new Map(screens.flatMap((screen, index) => screen.members.map(agent => [agent.id, { number: index + 1, groupId: screen.group.id, color: SCREEN_COLORS[index % SCREEN_COLORS.length] }] as const)));
   const labels: Record<SidebarDateGroup, string> = { pinned: text("고정", "Pinned"), today: text("오늘", "Today"), yesterday: text("어제", "Yesterday"), week: text("이번 주", "This week"), older: text("이전 대화", "Earlier") };
   const clearFilters = () => { setScope(null); setFilter("all"); };
@@ -241,21 +264,24 @@ function WorkspaceSidebar(props: SidebarProps) {
     const detached = props.detachedAgentIds.has(agent.id);
     const unread = props.unreadCompletedAgentIds.has(agent.id);
     const project = projectById.get(agent.projectId);
-    const workingFolder = sessionFolders.get(agent.id) || agent.remoteFolder || agent.folder;
-    const projectFolder = project?.sshHostId ? project.remoteFolder || '' : project?.folder || '';
-    const dedicatedFolder = !!agent.sessionHierarchy?.parentId && workingFolder.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase() !== projectFolder.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
-    const locationLabel = dedicatedFolder ? folderTail(workingFolder) : project?.name || text('미분류', 'Uncategorized');
+    const settings = sessionSettings.get(agent.id);
+    const workingFolder = (agent.sshHostId ? settings?.remoteFolder : settings?.folder) || agent.remoteFolder || agent.folder;
     const screen = screenByAgent.get(agent.id);
     const task = taskSessions[agent.id];
     const parent = agent.sessionHierarchy?.parentId ? agentById.get(agent.sessionHierarchy.parentId) : undefined;
-    const model = task?.model || agent.modelSettings;
+    const model = sessionModels[agent.id] ?? task?.model ?? settings?.modelSettings;
+    const modelName = model ? sidebarModelName(agent.aiToolId, model.model)
+      : agent.aiToolId === "codex" || agent.aiToolId === "claude" ? text("모델 미확인", "Model unknown") : undefined;
+    const speed = model?.serviceTier === "ultrafast" ? text("Ultrafast 모드", "Ultrafast mode")
+      : model?.serviceTier === "fast" || model?.serviceTier === "priority" ? text("Fast 모드", "Fast mode") : undefined;
     const attention = familyChildren.filter(child => ['waiting_user', 'waiting_approval', 'failed', 'reconcile_required'].includes(taskSessions[child.id]?.state)).length;
     const familyToggle = !fromSearch && familyChildren.length > 0 ? <button type="button" className="sidebar-icon-button sidebar-family-toggle" aria-expanded={!collapsedFamilies.has(agent.id)} aria-controls={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} aria-label={text(`${agent.name} 하위 세션 ${collapsedFamilies.has(agent.id) ? '펼치기' : '접기'}`, `${collapsedFamilies.has(agent.id) ? 'Expand' : 'Collapse'} ${agent.name} child sessions`)} title={text(`하위 세션 ${familyChildren.length}개 · 확인 필요 ${attention}개`, `${familyChildren.length} child sessions · ${attention} need attention`)} onClick={event => { event.stopPropagation(); setCollapsedFamilies(value => { const next = new Set(value); next.has(agent.id) ? next.delete(agent.id) : next.add(agent.id); return next; }); }}>{collapsedFamilies.has(agent.id) ? '▸' : '▾'}{familyChildren.length}{attention > 0 && <span className="sidebar-family-attention"> · {attention}!</span>}</button> : null;
     const statusTitle = sleeping ? agent.idleResumeSessionId
       ? text("Sleeping · 유휴 자동 중지 · 클릭하면 원래 대화 복원", "Sleeping · suspended while idle · click to resume the original conversation")
       : text("Sleeping · 클릭하면 시작", "Sleeping · click to start")
       : background ? waitingLabel
-      : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed") : agent.status;
+      : agent.status === "question" ? text("질문 · 답변 대기", "Question · answer needed")
+      : agent.status === "waiting" || agent.status === "blocked" ? text("확인 필요", "Attention") : agent.status;
     const accountDetails = agent.id === inspectedSessionId && accountLabel
       ? `${text('Codex 계정', 'Codex account')}: ${accountLabel}` : undefined;
     const inputTokens = agent.aiToolId === "codex" && !agent.sshHostId && isAgentRuntimeActive(agent) ? contextUsage[agent.id] : undefined;
@@ -265,11 +291,16 @@ function WorkspaceSidebar(props: SidebarProps) {
       `${highInput.toLocaleString(language)} input tokens in the latest Codex request (including cached tokens)`,
     );
     const titleWithAccount = (title: string) => accountDetails ? `${title}\n${accountDetails}` : title;
+    const taskState = task && (taskLabels[task.state] || task.state);
+    const details = [agent.name, [project?.name, toolForId(agent.aiToolId).label, project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder].filter(Boolean).join(" · "),
+      [model?.model, model?.effort, speed].filter(Boolean).join(" · "), statusTitle,
+      parent && `${text("상위 세션", "Parent session")}: ${parent.name}`, taskState, contextDetails,
+      detached && (props.detachedLabel || text("사용 중", "In use"))].filter(Boolean).join("\n");
     return <li key={agent.id} data-sidebar-agent-id={agent.id} data-background-wait={background || undefined} data-child-wait={childWait || undefined} data-delegated-wait={delegatedCount || undefined} data-task-state={task?.state} data-sidebar-screen-id={screen?.groupId} style={screen ? { "--screen-color": screen.color } as CSSProperties : undefined} data-sidebar-search-result={fromSearch ? "session" : undefined} data-search-id={fromSearch ? agent.id : undefined} className={`agent-item sidebar-recent-row${nested ? " sidebar-project-session-row" : ""}${activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? " active" : ""}${props.dragState?.fromAgentId === agent.id ? " agent-dragging" : ""}${unread ? " agent-completion-unread" : ""}${detached ? " agent-detached" : ""}${background ? ' has-background-work' : ''}`}
       role="button" tabIndex={detached ? -1 : 0} aria-disabled={detached} aria-current={activeAgentId === agent.id && !props.browserHubActive && !props.organizationActive ? "page" : undefined}
-      aria-label={background || unread ? [agent.name, background ? statusTitle : '', unread ? text('읽지 않은 작업 완료', 'Unread completion') : ''].filter(Boolean).join(' · ') : undefined}
-      aria-description={[accountDetails, contextDetails].filter(Boolean).join("\n") || undefined}
-      title={titleWithAccount(`${agent.name}\n${project?.name || ""} · ${toolForId(agent.aiToolId).label} · ${project?.sshHostId ? `SSH: ${workingFolder}` : workingFolder}\n${statusTitle}`)}
+      aria-label={[agent.name, statusTitle, unread && text("읽지 않은 작업 완료", "Unread completion"), modelName, speed].filter(Boolean).join(" · ")}
+      aria-description={[taskState, accountDetails, contextDetails, detached && (props.detachedLabel || text("사용 중", "In use"))].filter(Boolean).join("\n") || undefined}
+      title={titleWithAccount(details)}
       onPointerEnter={() => setHoveredSessionId(agent.id)}
       onPointerLeave={() => setHoveredSessionId(current => current === agent.id ? null : current)}
       onFocus={event => { if (event.target === event.currentTarget) setFocusedSessionId(agent.id); }}
@@ -281,18 +312,11 @@ function WorkspaceSidebar(props: SidebarProps) {
       <ProviderLogo toolId={agent.aiToolId} />
       <div className="sidebar-session-copy">
         <span className="agent-name">{fromSearch ? highlight(agent.name) : agent.name}</span>
-        {background && <span className="sidebar-background-label">{waitingLabel}</span>}
-        {!nested && <span className="sidebar-session-meta">
-          <span title={titleWithAccount(workingFolder)}>{fromSearch ? highlight(locationLabel) : locationLabel}</span>
-          {project?.sshHostId && <span className="sidebar-ssh-label">SSH</span>}
-          {!task && (agent.status === "question" || agent.status === "waiting" || agent.status === "blocked" ? <span className="sidebar-question-label">{agent.status === "question" ? text("답변 필요", "Answer needed") : text("확인 필요", "Attention")}</span> : sleeping ? <span className="sidebar-sleep-label">{text("휴면", "Sleeping")}</span> : null)}
-        </span>}
-        {parent && <span className="sidebar-session-task-meta" title={titleWithAccount(`${text('상위 세션', 'Parent session')}: ${parent.name}${model ? ` · ${model.model} · ${model.effort || text('기본 effort', 'Default effort')}` : ''}${task ? ` · ${taskLabels[task.state] || task.state}` : ''}`)}>
-          <span>↳ {task && task.role !== 'worker' ? task.role : parent.name}{model?.effort ? ` · ${model.effort}` : ''}</span>
-          {task && <span className="sidebar-task-state">{taskLabels[task.state] || task.state}</span>}
+        {modelName && <span className="sidebar-session-model">
+          <span className="sidebar-session-model-name">{modelName}</span>
+          {speed && <span className="sidebar-session-fast" title={speed} aria-hidden="true"><SidebarIcon name="bolt" /></span>}
         </span>}
       </div>
-      {highInput !== null && <span className="sidebar-context-tokens" title={contextDetails} aria-hidden="true">{Math.round(highInput / 1_000)}k</span>}
       {familyToggle}
       <div className="sidebar-session-trailing">
       {screen && <span className="agent-screen-badge" title={text(`Screen ${screen.number} 분할 그룹`, `Screen ${screen.number} split group`)}>S{screen.number}</span>}
@@ -302,7 +326,6 @@ function WorkspaceSidebar(props: SidebarProps) {
         {isAgentRuntimeActive(agent) && <button className="sidebar-icon-button sidebar-session-close" aria-label={text(`${agent.name} 세션 끄기`, `Stop ${agent.name} session`)} title={text("세션 끄기 (대화 기록 유지)", "Stop session (keep conversation history)")} onClick={event => { event.stopPropagation(); pointerCleanupRef.current?.(); props.onDeactivate(agent.id); }}><SidebarIcon name="close" /></button>}
       </div>}
       </div>
-      {detached && <span className="agent-detached-badge">{props.detachedLabel || text("사용 중", "In use")}</span>}
     </li>;
   };
 
@@ -310,7 +333,10 @@ function WorkspaceSidebar(props: SidebarProps) {
     const children = tree.children.get(agent.id) || [];
     return <Fragment key={agent.id}>{renderAgent(agent, nested, false, children)}{!collapsedFamilies.has(agent.id) && children.length > 0 && <li className="sidebar-session-children" data-sidebar-parent-id={agent.id} role="presentation"><ul id={`sidebar-session-children-${nested ? 'project' : 'recent'}-${agent.id}`} className="sidebar-recent-list">{children.map(child => renderFamily(child, nested, tree))}</ul></li>}</Fragment>;
   };
-  const renderProjectFamilies = (members: Agent[]) => { const tree = sidebarSessionFamilies(members, navigable, { includeDescendants: filter === 'active', respectInactiveChildrenVisibility: true, sortByName }); return tree.roots.map(agent => renderFamily(agent, true, tree)); };
+  const renderProjectFamilies = (members: Agent[]) => {
+    const tree = sidebarSessionFamilies(members, navigable, familyOptions);
+    return tree.roots.map(agent => renderFamily(agent, true, tree));
+  };
 
   return <>
     <aside ref={sidebarRef} className={`sidebar sidebar-workspace${collapsed ? " sidebar-workspace-collapsed" : ""}`} aria-label={text("작업 공간 탐색", "Workspace navigation")} onKeyDownCapture={searchKeyDown}>
@@ -365,10 +391,30 @@ function WorkspaceSidebar(props: SidebarProps) {
         {projectsOpen && <SidebarProjectTree {...props} agents={navigable} navigationOnly navigationSearch="" navigationFilter={filter} revealProject={revealProject} renderProjectSessions={renderProjectFamilies} activeProjectId={scope} onSelectProject={id => { setScope(id); props.onSelectProject(id); props.onShowSessions?.(); }} />}
       </section>
       {screens.length > 0 && <section className="sidebar-section screen-groups"><header className="sidebar-section-head"><button className="sidebar-section-toggle" aria-expanded={screensOpen} onClick={() => setScreensOpen(value => !value)}><SidebarIcon name="chevron" />{text("분할 화면", "Split views")}</button><span className="sidebar-section-count">{screens.length}</span></header>{screensOpen && <div className="sidebar-screen-list">{screens.map((screen, index) => <div className="sidebar-screen-item" key={screen.group.id} data-sidebar-screen-id={screen.group.id} style={{ "--screen-color": SCREEN_COLORS[index % SCREEN_COLORS.length] } as CSSProperties}><button className={`screen-group-row${screen.group.id === activeGroupId ? " screen-group-row-active" : ""}`} title={screen.members.map(agent => `${projectById.get(agent.projectId)?.name} / ${agent.name}`).join("\n")} onClick={() => props.onSelectScreen(screen.group.id, screen.targetAgentId)} onContextMenu={event => { event.preventDefault(); props.onScreenContextMenu?.(screen.group.id, event.clientX, event.clientY); }}><SidebarIcon name="split" /><span className="screen-group-name">{screen.name}</span><span className="sidebar-section-count">{screen.members.length}</span><span className="sidebar-screen-number" aria-label={`Screen ${index + 1}`}>S{index + 1}</span></button><button className="sidebar-icon-button sidebar-row-menu" title={text("분할 화면 메뉴", "Split view menu")} aria-label={text(`${screen.name} 분할 화면 메뉴`, `${screen.name} split view menu`)} aria-haspopup="menu" onClick={event => props.onScreenContextMenu?.(screen.group.id, ...menuPosition(event))}>···</button></div>)}</div>}</section>}
-      <section className="sidebar-section sidebar-recents"><header className="sidebar-section-head"><span className="sidebar-recent-heading">{scope ? projectById.get(scope)?.name : text("최근 대화", "Recent conversations")}</span>{scope && <button className="sidebar-scope-reset" onClick={() => setScope(null)}>{text("전체로", "All")}</button>}<button className="sidebar-icon-button sidebar-sort" aria-label={sortByName ? text("정렬: 이름순", "Sort: name") : text("정렬: 최근 사용 순", "Sort: recently opened")} title={sortByName ? text("이름순 · 최근 사용 순으로 변경", "Name · switch to recently opened") : text("최근 사용 순 · 이름순으로 변경", "Recently opened · switch to name")} onClick={() => setSortByName(value => !value)}><SidebarIcon name="sort" /></button></header>
-        <div className="sidebar-session-filters" role="group" aria-label={text("대화 상태 필터", "Conversation status filter")}>{(["all", "active", "sleeping"] as const).map(value => <button key={value} className="sidebar-session-filter" data-session-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}><span className="sidebar-session-filter-label">{value === "all" ? text("전체", "All") : value === "active" ? text("활성", "Active") : text("휴면", "Sleeping")}</span><span className="sidebar-session-filter-count">{counts[value]}</span></button>)}</div>
+      <section className="sidebar-section sidebar-recents">
+        <header className="sidebar-section-head">
+          <span className="sidebar-recent-heading">{scope ? projectById.get(scope)?.name : text("최근 대화", "Recent conversations")}</span>
+          {scope && <button className="sidebar-scope-reset" onClick={() => setScope(null)}>{text("전체로", "All")}</button>}
+          <button type="button" className="sidebar-icon-button sidebar-visibility-toggle" aria-pressed={showSleeping}
+            aria-label={text("휴면 세션 표시", "Show sleeping sessions")}
+            title={showSleeping ? text("휴면 세션 숨기기", "Hide sleeping sessions") : text("휴면 세션 표시", "Show sleeping sessions")}
+            onClick={() => { if (showSleeping && filter === "sleeping") setFilter("all"); setShowSleeping(!showSleeping); }}>
+            <SidebarIcon name="moon" />
+          </button>
+          <button type="button" className="sidebar-icon-button sidebar-visibility-toggle" aria-pressed={showIdle}
+            aria-label={text("대기 세션 표시", "Show idle sessions")}
+            title={showIdle ? text("대기 세션 숨기기", "Hide idle sessions") : text("대기 세션 표시", "Show idle sessions")}
+            onClick={() => setShowIdle(value => !value)}><SidebarIcon name="pause" /></button>
+          <button className="sidebar-icon-button sidebar-sort" aria-label={sortByName ? text("정렬: 이름순", "Sort: name") : text("정렬: 최근 사용 순", "Sort: recently opened")} title={sortByName ? text("이름순 · 최근 사용 순으로 변경", "Name · switch to recently opened") : text("최근 사용 순 · 이름순으로 변경", "Recently opened · switch to name")} onClick={() => setSortByName(value => !value)}><SidebarIcon name="sort" /></button>
+        </header>
+        <div className="sidebar-session-filters" role="group" aria-label={text("대화 상태 필터", "Conversation status filter")}>{(["all", "active", "sleeping"] as const).map(value => <button key={value} className="sidebar-session-filter" data-session-filter={value} aria-pressed={filter === value} onClick={() => { if (value === "sleeping") setShowSleeping(true); setFilter(value); }}><span className="sidebar-session-filter-label">{value === "all" ? text("전체", "All") : value === "active" ? text("활성", "Active") : text("휴면", "Sleeping")}</span><span className="sidebar-session-filter-count">{counts[value]}</span></button>)}</div>
         {sortByName ? <><span className="sidebar-date-label">{text("이름순", "By name")}</span><ul className="sidebar-recent-list">{families.roots.map(agent => renderFamily(agent))}</ul></> : (["pinned", "today", "yesterday", "week", "older"] as const).map(bucket => { const members = families.roots.filter(agent => sidebarDateGroup(agent, today) === bucket); return members.length > 0 ? <Fragment key={bucket}><span className="sidebar-date-label">{bucket === "pinned" && <SidebarIcon name="pin" />}{labels[bucket]}</span><ul className="sidebar-recent-list">{members.map(agent => renderFamily(agent))}</ul></Fragment> : null; })}
-        {!recent.length && <div className="sidebar-empty"><p>{filter === "sleeping" ? text("휴면 대화가 없습니다.", "No sleeping conversations.") : filter === "active" ? text("활성 대화가 없습니다.", "No active conversations.") : text("대화를 시작해 보세요.", "Start a conversation.")}</p>{filter !== "all" || scope ? <button onClick={clearFilters}>{text("필터 초기화 · 전체 보기", "Clear filters · show all")}</button> : <button onClick={newSession}>{text("새 대화", "New conversation")}</button>}</div>}
+        {!families.roots.length && <div className="sidebar-empty">
+          <p>{recent.length ? text("현재 표시 설정에 맞는 대화가 없습니다.", "No conversations match the visibility settings.") : filter === "sleeping" ? text("휴면 대화가 없습니다.", "No sleeping conversations.") : filter === "active" ? text("활성 대화가 없습니다.", "No active conversations.") : text("대화를 시작해 보세요.", "Start a conversation.")}</p>
+          {filter !== "all" || scope || !showSleeping || !showIdle
+            ? <button onClick={() => { clearFilters(); setShowSleeping(true); setShowIdle(true); }}>{text("필터 초기화 · 전체 보기", "Clear filters · show all")}</button>
+            : <button onClick={newSession}>{text("새 대화", "New conversation")}</button>}
+        </div>}
       </section></div></div>
       {archived.length > 0 && (
         <footer className="sidebar-workspace-footer">

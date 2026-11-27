@@ -113,6 +113,10 @@ export class SessionModelMemory {
   lastSettings(entry) {
     return normalizeSessionModel(this.#accountRecord(entry)?.settings);
   }
+  currentSettings(entry) {
+    if (!supported(entry)) return undefined;
+    return rememberedModel(entry, this.record(entry)?.settings || entry.modelSettings);
+  }
   #accountRecord(entry) {
     const record = this.records.get(entry?.id);
     return supported(entry) && record?.scope.startsWith(`${entry.aiToolId}:${selectedAccountId(entry)}:`) ? record : undefined;

@@ -29,7 +29,7 @@ export type RuntimeCommand =
   | "attach_terminal" | "detach_terminal" | "terminal_session_action"
   | "write_pty" | "submit_chat_message" | "resize_pty" | "kill_pty" | "confirm_close"
   | "show_main_window" | "open_new_app_window" | "get_detached_agents"
-  | "get_agent_window_usage" | "get_active_codex_context_usage" | "claim_agent_for_window" | "set_desktop_pet_enabled"
+  | "get_agent_window_usage" | "get_active_codex_context_usage" | "get_sidebar_session_models" | "claim_agent_for_window" | "set_desktop_pet_enabled"
   | "update_desktop_pet" | "desktop_pet_snapshot" | "reset_desktop_pet_position"
   | "show_open_dialog" | "open_external_url" | "open_store_product" | "open_local_path"
   | "open_folder_path" | "reveal_local_path" | "list_markdown_files"
@@ -608,6 +608,10 @@ export type RuntimeCommandContract = {
   get_active_codex_context_usage: {
     args: Record<string, never>;
     result: Record<string, number>;
+  };
+  get_sidebar_session_models: {
+    args: Record<string, never>;
+    result: Record<string, import("../../electron/shared/session-model.mjs").SessionModel>;
   };
   session_notes_save: {
     args: { id: string; text: string; revision: number };

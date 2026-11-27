@@ -20,6 +20,15 @@ function fixture() {
 }
 
 describe("per-session native model memory", () => {
+  it("can show the native model and explicit speed without persisting a new record", () => {
+    const f = fixture();
+    const entry = f.start({ model: "gpt-6.1-sol", effort: "high", serviceTier: "fast" });
+    const before = fs.readFileSync(f.file, "utf8");
+    entry.filter = { viewportText: () => "› Ask Codex\nGPT-6.2-Sol xhigh standard · G:\\Project" };
+    expect(f.memory.currentSettings(entry)).toEqual({ model: "gpt-6.2-sol", effort: "xhigh", serviceTier: "default" });
+    expect(f.memory.currentSettings({ ...entry, ssh: true })).toBeUndefined();
+    expect(fs.readFileSync(f.file, "utf8")).toBe(before);
+  });
   it('keeps remembered model, effort, Fast and pending choices across a registered-folder relocation', () => {
     const f = fixture(), settings = { model: 'gpt-6.1-sol', effort: 'xhigh', serviceTier: 'fast' };
     f.start(settings);

@@ -5822,6 +5822,16 @@ async function invokeCommand(event, command, rawArgs) {
     case "get_active_codex_context_usage":
       if (!runtimeByWebContents.get(event.sender.id)?.workspace_window) return {};
       return readActiveCodexContextUsage();
+    case "get_sidebar_session_models": {
+      if (!runtimeByWebContents.get(event.sender.id)?.workspace_window) return {};
+      const agents = Array.isArray(monitorService.state?.agents) ? monitorService.state.agents : savedBoardCatalog.agents;
+      return Object.fromEntries(agents.flatMap(agent => {
+        if (agent.sidebarArchived || agent.sshHostId) return [];
+        const entry = ptys.get(agent.id);
+        const settings = entry ? sessionModelMemory.currentSettings(entry) : sessionModelMemory.lastSettings(agent);
+        return settings ? [[agent.id, settings]] : [];
+      }));
+    }
     case "claim_agent_for_window": {
       const runtime = runtimeByWebContents.get(event.sender.id);
       if (!runtime?.workspace_window) {

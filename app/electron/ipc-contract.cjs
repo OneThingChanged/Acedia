@@ -42,6 +42,7 @@ const INVOKE_COMMANDS = Object.freeze([
   "get_detached_agents",
   "get_agent_window_usage",
   "get_active_codex_context_usage",
+  "get_sidebar_session_models",
   "claim_agent_for_window",
   "set_desktop_pet_enabled",
   "update_desktop_pet",
@@ -333,6 +334,9 @@ function assertInvokeRequest(command, rawArgs) {
       break;
     case "get_active_codex_context_usage":
       if (Object.keys(args).length) throw new TypeError("Unexpected context usage arguments");
+      break;
+    case "get_sidebar_session_models":
+      if (Object.keys(args).length) throw new TypeError("Unexpected sidebar model arguments");
       break;
     case 'project_board_ack':
     case 'project_board_ack_results':

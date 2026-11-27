@@ -13,6 +13,9 @@ const paths = {
   pin: <path d="m15 3 6 6-4 1-4 6-5-5 6-4Z M8 16l-5 5" />,
   archive: <><rect x="3" y="3" width="18" height="5" rx="1" /><path d="M5 8v12h14V8M10 12h4" /></>,
   sort: <path d="M4 6h16M4 12h11M4 18h6m9-8v10m-3-3 3 3 3-3" />,
+  moon: <path d="M20.8 15.1A9 9 0 0 1 8.9 3.2 9 9 0 1 0 20.8 15.1Z" />,
+  pause: <><circle cx="12" cy="12" r="9" /><path d="M10 8.5v7m4-7v7" /></>,
+  bolt: <path d="m13 2-8 12h6l-1 8 9-12h-7l1-8Z" />,
   close: <path d="m6 6 12 12M6 18 18 6" />,
 } as const;
 

@@ -1,7 +1,7 @@
 import type { Agent, Group, LayoutNode, Project, ProjectFolder } from "../types";
 import { toolForId } from "../types";
 import { collectAgentIdsInOrder } from "./layout";
-import { isAgentRuntimeActive } from "./agentActivity";
+import { isAgentRuntimeActive, runtimeStatusOf } from "./agentActivity";
 import { isStandbySession } from "./sessionStandby";
 import { matchesSessionSearch, normalizeSessionSearch } from "./sessionSearch";
 import { repairSessionHierarchy } from './sessionHierarchy';
@@ -25,7 +25,7 @@ function inactiveChildrenVisible(agent: Agent, byId: ReadonlyMap<string, Agent>)
   return false;
 }
 
-export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: { includeDescendants?: boolean; respectInactiveChildrenVisibility?: boolean; sortByName?: boolean } = {}) {
+export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: { includeDescendants?: boolean; respectInactiveChildrenVisibility?: boolean; sortByName?: boolean; isVisible?: (agent: Agent) => boolean } = {}) {
   const catalog = repairSessionHierarchy(all), byId = new Map(catalog.map(a => [a.id, a]));
   const included = new Map(visible.map(a => [a.id, byId.get(a.id) || a]));
   if (options.includeDescendants) {
@@ -62,7 +62,12 @@ export function sidebarSessionFamilies(visible: Agent[], all: Agent[], options: 
       }
     }
   }
-  for (const agent of visible) {
+  if (options.isVisible) {
+    for (const [id, agent] of included) if (!options.isVisible(agent)) included.delete(id);
+  }
+  // Keep the actual parent chain of each remaining session, even when an
+  // ancestor would be hidden on its own.
+  for (const agent of options.isVisible ? [...included.values()] : visible) {
     let current = byId.get(agent.id);
     while (current?.sessionHierarchy?.parentId) {
       const parent = byId.get(current.sessionHierarchy.parentId);
@@ -85,6 +90,8 @@ export type SidebarFilter = "all" | "active" | "sleeping";
 export type SidebarDateGroup = "pinned" | "today" | "yesterday" | "week" | "older";
 export const LS_SIDEBAR_WIDTH = "multiagent.sidebarWidth.v1";
 export const LS_SIDEBAR_FILTER = "multiagent.sessionFilter.v1";
+export const LS_SIDEBAR_SHOW_SLEEPING = "multiagent.sidebarShowSleeping.v1";
+export const LS_SIDEBAR_SHOW_IDLE = "multiagent.sidebarShowIdle.v1";
 export const LS_SIDEBAR_COLLAPSED_FAMILIES = "multiagent.sidebarCollapsedSessionFamilies.v1";
 export const SIDEBAR_DEFAULT_WIDTH = 286;
 
@@ -115,6 +122,14 @@ export function loadSidebarFilter(): SidebarFilter {
 
 export function matchesSidebarFilter(agent: Agent, filter: SidebarFilter): boolean {
   return filter === "all" || (filter === "sleeping" ? isStandbySession(agent) : !isStandbySession(agent) && isAgentRuntimeActive(agent));
+}
+
+export function isSidebarIdleSession(agent: Agent): boolean {
+  const runtime = runtimeStatusOf(agent);
+  if (runtime === "idle") return true;
+  if (runtime !== "running" || (agent.status !== "running" && agent.status !== "idle")) return false;
+  const work = agent.activity?.workStatus;
+  return !work || work === "idle" || work === "unknown";
 }
 
 export function sidebarSessionTime(agent: Agent): number {

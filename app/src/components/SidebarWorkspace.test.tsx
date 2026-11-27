@@ -4,8 +4,11 @@ import { Sidebar } from "./Sidebar";
 import type { Agent } from "../types";
 import { useDelegatedWait } from '../hooks/useDelegatedWait';
 import { useCodexContextUsage } from "../hooks/useCodexContextUsage";
+import { useSidebarSessionModels } from "../hooks/useSidebarSessionModels";
+import { LS_SIDEBAR_FILTER, LS_SIDEBAR_SHOW_IDLE, LS_SIDEBAR_SHOW_SLEEPING } from "../lib/sidebarNavigation";
 vi.mock('../hooks/useDelegatedWait', () => ({ useDelegatedWait: vi.fn(() => ({})) }));
 vi.mock("../hooks/useCodexContextUsage", () => ({ useCodexContextUsage: vi.fn(() => ({})) }));
+vi.mock("../hooks/useSidebarSessionModels", () => ({ useSidebarSessionModels: vi.fn(() => ({})) }));
 
 const project = { id: "p", name: "Acedia", folder: "C:/Acedia", createdAt: 1 };
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, projectId: "p", name: id, folder: project.folder, aiToolId: "codex", aiLabel: "Codex", dangerous: false, status: "idle", createdAt: 1, ...extra });
@@ -15,7 +18,7 @@ function render(agents: Agent[], extra: Partial<Parameters<typeof Sidebar>[0]> =
 }
 
 describe("workspace sidebar", () => {
-  it("shows large recent Codex requests in both sidebar lists and hides the indicator after compaction", () => {
+  it("keeps large Codex input counts in row details and removes them after compaction", () => {
     vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.sidebarExpandedProjects.v1" ? '["p"]' : null, setItem: vi.fn() });
     const agents = [
       agent("large", { status: "working", runtimeStatus: "running" }),
@@ -24,12 +27,30 @@ describe("workspace sidebar", () => {
     ];
     vi.mocked(useCodexContextUsage).mockReturnValueOnce({ large: 430_449, small: 199_999, offline: 400_000 });
     const before = render(agents);
-    expect(before.match(/class="sidebar-context-tokens"/g)).toHaveLength(2);
-    expect(before).toContain(">430k</span>");
+    expect(before).not.toContain("sidebar-context-tokens");
     expect(before).toContain("최근 Codex 요청의 입력 토큰 430,449개 (캐시 포함)");
 
     vi.mocked(useCodexContextUsage).mockReturnValueOnce({ large: 23_799, small: 199_999, offline: 400_000 });
-    expect(render(agents)).not.toContain("sidebar-context-tokens");
+    expect(render(agents)).not.toContain("최근 Codex 요청의 입력 토큰");
+  });
+  it("shows current models and Fast icons in both sidebar lists, with saved models as the fallback", () => {
+    vi.stubGlobal("localStorage", { getItem: (key: string) => key === "multiagent.sidebarExpandedProjects.v1" ? '["p"]' : null, setItem: vi.fn() });
+    vi.mocked(useSidebarSessionModels).mockReturnValueOnce({
+      current: { model: "gpt-6.2-sol", serviceTier: "priority" },
+      standard: { model: "gpt-6.2-sol", serviceTier: "default" },
+    });
+    const html = render([
+      agent("current", { status: "running", modelSettings: { model: "gpt-6.1-sol" } }),
+      agent("standard", { status: "running", modelSettings: { model: "gpt-6.1-sol", serviceTier: "fast" } }),
+      agent("child", { sessionHierarchy: { parentId: "current", inheritModel: true } }),
+      agent("review", { aiToolId: "claude", modelSettings: { model: "fable" } }),
+      agent("unknown"),
+    ]);
+    expect(html.match(/sidebar-session-model-name">GPT-6\.2-Sol</g)).toHaveLength(4);
+    expect(html.match(/sidebar-session-model-name">GPT-6\.1-Sol</g)).toHaveLength(2);
+    expect(html.match(/sidebar-session-model-name">Claude Fable</g)).toHaveLength(2);
+    expect(html.match(/sidebar-session-model-name">모델 미확인</g)).toHaveLength(2);
+    expect(html.match(/class="sidebar-session-fast" title="Fast 모드"/g)).toHaveLength(2);
   });
   it('shows the same purple waiting border and count in project and recent rows while preserving unread results', () => {
     vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'multiagent.sidebarExpandedProjects.v1' ? '["p"]' : null, setItem: vi.fn() });
@@ -50,10 +71,10 @@ describe("workspace sidebar", () => {
     expect(html).toContain('status-background'); expect(html).toContain('백그라운드 2개 대기');
     expect(html).toContain('agent-completion-unread'); expect(html).not.toContain('sidebar-question-label');
   });
-  it('labels child sessions with their dedicated effective folder rather than a stale parent-project folder', () => {
+  it('keeps the child’s effective folder in its tooltip details', () => {
     const html = render([agent('parent'), agent('child', { folder: 'C:/stale', sessionHierarchy: { parentId: 'parent', inheritFolder: false, folderOverride: 'D:/AI2/PCGLab' } })]);
-    expect(html).toContain('title="D:/AI2/PCGLab"');
-    expect(html).toContain('.../AI2/PCGLab'); expect(html).not.toContain('C:/stale');
+    expect(html).toMatch(/title="child\n[^\n]+D:\/AI2\/PCGLab/);
+    expect(html).not.toContain('.../AI2/PCGLab'); expect(html).not.toContain('C:/stale');
     expect(html).toContain('상위 세션: parent');
   });
   it('defaults to hiding sleeping and stopped children in both Active lists while preserving active children and counts', () => {
@@ -94,6 +115,46 @@ describe("workspace sidebar", () => {
     expect(html).not.toContain('data-sidebar-agent-id="unrelated"');
     expect(html).toMatch(/data-session-filter="active" aria-pressed="true"[^]*?sidebar-session-filter-count">1</);
     expect(html).toMatch(/data-session-filter="sleeping" aria-pressed="false"[^]*?sidebar-session-filter-count">2</);
+  });
+  it.each([[false, true], [true, false], [false, false]])('restores independent Sleeping (%s) and Idle (%s) icon choices in both lists', (sleeping, idle) => {
+    const saved: Record<string, string> = { [LS_SIDEBAR_SHOW_SLEEPING]: String(sleeping), [LS_SIDEBAR_SHOW_IDLE]: String(idle), 'multiagent.sidebarExpandedProjects.v1': '["p"]' };
+    vi.stubGlobal('localStorage', { getItem: (key: string) => saved[key] ?? null, setItem: vi.fn() });
+    const html = render([
+      agent('sleep', { deferredStart: true, resumeEligible: true }), agent('idle'),
+      agent('live-idle', { status: 'running', runtimeStatus: 'running' }),
+      agent('stopped', { status: 'exited', runtimeStatus: 'exited' }),
+      agent('working', { status: 'working', runtimeStatus: 'running' }),
+      agent('question', { status: 'question', runtimeStatus: 'running' }),
+    ]);
+    expect(html).toMatch(new RegExp(`최근 대화</span><button[^>]+aria-pressed="${sleeping}" aria-label="휴면 세션 표시"`));
+    expect(html).toContain(`aria-pressed="${idle}" aria-label="대기 세션 표시"`);
+    const count = (id: string) => html.split(`data-sidebar-agent-id="${id}"`).length - 1;
+    expect(count('sleep')).toBe(sleeping ? 2 : 0);
+    for (const id of ['idle', 'live-idle']) expect(count(id)).toBe(idle ? 2 : 0);
+    for (const id of ['stopped', 'working', 'question']) expect(count(id)).toBe(2);
+  });
+  it('keeps the ancestors of visible work but filters out other inactive children in Active', () => {
+    const saved: Record<string, string> = { [LS_SIDEBAR_FILTER]: 'active', [LS_SIDEBAR_SHOW_SLEEPING]: 'false', [LS_SIDEBAR_SHOW_IDLE]: 'false' };
+    vi.stubGlobal('localStorage', { getItem: (key: string) => saved[key] ?? null, setItem: vi.fn() });
+    const html = render([
+      agent('lead', { status: 'working', runtimeStatus: 'running', sidebarShowInactiveChildren: true }),
+      agent('sleep-with-work', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'lead' } }),
+      agent('active-child', { status: 'working', runtimeStatus: 'running', sessionHierarchy: { parentId: 'sleep-with-work' } }),
+      agent('sleep-without-work', { deferredStart: true, resumeEligible: true, sessionHierarchy: { parentId: 'lead' } }),
+      agent('idle-child', { sessionHierarchy: { parentId: 'lead' } }),
+    ]);
+    expect(html).toContain('data-sidebar-parent-id="sleep-with-work"');
+    expect(html).toContain('data-sidebar-agent-id="active-child"');
+    expect(html).not.toContain('data-sidebar-agent-id="sleep-without-work"');
+    expect(html).not.toContain('data-sidebar-agent-id="idle-child"');
+  });
+  it('restores a usable tab and reset action when saved visibility hides the Sleeping tab results', () => {
+    const saved: Record<string, string> = { [LS_SIDEBAR_FILTER]: 'sleeping', [LS_SIDEBAR_SHOW_SLEEPING]: 'false' };
+    vi.stubGlobal('localStorage', { getItem: (key: string) => saved[key] ?? null, setItem: vi.fn() });
+    const html = render([agent('sleep', { deferredStart: true, resumeEligible: true })]);
+    expect(html).toContain('data-session-filter="all" aria-pressed="true"');
+    expect(html).toContain('현재 표시 설정에 맞는 대화가 없습니다.');
+    expect(html).toContain('필터 초기화 · 전체 보기');
   });
   it('renders reparented Shader sessions once under RnDHub with their current parent label', () => {
     const children=['ShaderLevelUp','ShaderNoiseBall','ShaderSkinner'].map(id=>agent(id,{sessionHierarchy:{parentId:'RnDHub',createdById:'AIHub'}}));
@@ -168,9 +229,9 @@ describe("workspace sidebar", () => {
     expect(html).toContain("고정"); expect(html).toContain("보관한 대화");
     expect(html).not.toContain("deactivate-btn");
   });
-  it("shows textual question state, unread completion, and marks foreign sessions unavailable", () => {
+  it("keeps question state and unread completion accessible and marks foreign sessions unavailable", () => {
     const html = render([agent("question", { status: "question", runtimeStatus: "running" }), agent("foreign")], { detachedAgentIds: new Set(["foreign"]), unreadCompletedAgentIds: new Set(["question"]) });
-    expect(html).toContain("답변 필요"); expect(html).toContain("읽지 않은 작업 완료");
+    expect(html).toContain("질문 · 답변 대기"); expect(html).toContain("읽지 않은 작업 완료");
     expect(html).not.toContain('agent-completion-badge');
     expect(html).toMatch(/data-sidebar-agent-id="foreign"[^>]+tabindex="-1" aria-disabled="true"/);
     expect(html).not.toContain('aria-label="foreign 대화 메뉴"');

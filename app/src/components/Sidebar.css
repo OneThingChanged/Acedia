@@ -6,6 +6,8 @@
   position: relative; width: var(--sidebar-width, 286px); min-width: 0; min-height: 0;
   --sidebar-selected: color-mix(in srgb, var(--app-accent) 14%, var(--app-panel));
   --completion-color: #3fb950;
+  --sidebar-tree-indent: 12px;
+  --sidebar-tree-gutter: 3px;
   background: color-mix(in srgb, var(--app-bg) 55%, var(--app-panel)); color: var(--app-text);
 }
 .app-desktop > .sidebar-workspace { width: 100%; }
@@ -87,9 +89,7 @@
 .sidebar-project-new-session .sidebar-icon { width: 14px; height: 14px; }
 .sidebar-project-navigation .project-row:hover .sidebar-project-new-session,
 .sidebar-project-navigation .project-row:focus-within .sidebar-project-new-session { opacity: 1; }
-.sidebar-project-navigation .project-session-list { list-style: none; margin: 2px 0 5px 17px; padding: 0 0 0 6px; border-left: 1px solid var(--app-border); }
-.sidebar-workspace .sidebar-recent-row.sidebar-project-session-row { min-height: 31px; padding: 3px 4px 3px 8px; gap: 7px; }
-.sidebar-workspace .sidebar-recent-row.sidebar-project-session-row .agent-name { font-size: 11px; }
+.sidebar-project-navigation .project-session-list { list-style: none; margin: 2px 0 5px var(--sidebar-tree-indent); padding: 0 0 0 var(--sidebar-tree-gutter); border-left: 1px solid var(--app-border); }
 .sidebar-project-navigation .project-empty-hint { display: grid; gap: 3px; padding: 7px 8px; text-align: left; }
 .sidebar-project-empty-action { width: fit-content; padding: 0; border: 0; background: none; color: var(--app-accent) !important; font-size: 10px; }
 .sidebar-project-navigation .project-folder-node { margin: 2px 0; }
@@ -107,8 +107,7 @@
 .sidebar-session-actions { display: flex; align-items: center; flex-shrink: 0; }
 .sidebar-workspace .sidebar-session-actions > button { width: 24px; height: 26px; margin-right: 0; }
 .sidebar-workspace .sidebar-session-actions .sidebar-row-menu { opacity: 1; }
-.sidebar-session-trailing { display: none; align-items: center; gap: 9px; flex: 0 0 auto; }
-.sidebar-project-session-row .sidebar-session-trailing { gap: 7px; }
+.sidebar-session-trailing { display: none; align-items: center; gap: 7px; flex: 0 0 auto; }
 .sidebar-workspace .sidebar-recent-row:is(:hover, :focus-visible, :has(:focus-visible)) .sidebar-session-trailing { display: flex; }
 @media (hover: none) {
   .sidebar-workspace .sidebar-recent-row .sidebar-session-trailing { display: flex; }
@@ -123,6 +122,9 @@
 .sidebar-workspace .screen-group-row-active { background: color-mix(in srgb, var(--screen-color) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--screen-color) 45%, transparent); }
 .sidebar-screen-number { color: var(--screen-ink); font-size: 9px; font-weight: 600; }
 .sidebar-recent-heading { min-width: 0; flex: 1; font-size: 11px; color: var(--app-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-visibility-toggle { position: relative; }
+.sidebar-visibility-toggle[aria-pressed="true"] { background: var(--app-button-bg); color: var(--app-accent) !important; }
+.sidebar-visibility-toggle[aria-pressed="false"]::after { content: ""; position: absolute; left: 50%; top: 50%; width: 15px; height: 1px; border-radius: 1px; background: currentColor; transform: translate(-50%, -50%) rotate(-45deg); }
 .sidebar-scope-reset { border: 0; background: transparent; color: var(--app-accent) !important; font-size: 10px; padding: 0 3px; }
 .sidebar-workspace .sidebar-session-filters { margin: 5px 2px 12px; padding: 3px; gap: 2px; border: 0; border-radius: 7px; background: var(--app-bg); }
 .sidebar-workspace .sidebar-session-filter { min-height: 25px; gap: 5px; padding: 3px 5px; border: 0; border-radius: 5px; background: none; font-size: 10px; color: var(--app-muted); }
@@ -131,7 +133,7 @@
 .sidebar-date-label { display: flex; align-items: center; gap: 5px; margin: 10px 8px 4px; font-size: 9px; color: var(--app-soft-text); }
 .sidebar-date-label .sidebar-icon { width: 11px; height: 11px; }
 .sidebar-recent-list { padding: 0; margin: 0; list-style: none; }
-.sidebar-workspace .sidebar-recent-row { position: relative; display: flex; flex-direction: row; align-items: center; gap: 9px; margin: 2px 0; padding: 8px 8px 8px 10px; border: 0; border-radius: 7px; background: transparent; min-height: 45px; cursor: grab; }
+.sidebar-workspace .sidebar-recent-row { position: relative; display: flex; flex-direction: row; align-items: center; gap: 7px; margin: 2px 0; padding: 3px 4px 3px 8px; border: 0; border-radius: 7px; background: transparent; min-height: 38px; cursor: grab; }
 .sidebar-workspace .sidebar-recent-row:hover { background: var(--app-panel-hover); }
 .sidebar-workspace .sidebar-recent-row.active { background: var(--sidebar-selected); }
 .sidebar-workspace .sidebar-recent-row[data-sidebar-screen-id] { --screen-ink: var(--screen-color); box-shadow: inset 2px 0 var(--screen-color); }
@@ -143,31 +145,14 @@
 @media (prefers-reduced-motion: reduce) { .sidebar-workspace .sidebar-recent-row.agent-completion-unread::after { animation: none; } }
 .sidebar-workspace .sidebar-recent-row .status { flex: 0 0 5px; width: 5px; height: 5px; margin: 0; }
 .sidebar-session-copy { min-width: 0; flex: 1; }
-.sidebar-context-tokens {
-  flex: 0 0 auto;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--app-warning) 13%, transparent);
-  color: var(--app-warning);
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.sidebar-workspace .sidebar-recent-row .agent-name { display: block; color: var(--app-heading); font-size: 12px; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-session-meta { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--app-soft-text); font-size: 9px; line-height: 1.5; white-space: nowrap; }
-.sidebar-session-meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-question-label { color: var(--app-warning); margin-left: auto; }
-.sidebar-sleep-label { color: var(--app-accent); margin-left: auto; }
-.sidebar-ssh-label { font-size: 8px; opacity: .75; }
-.sidebar-session-task-meta { display: flex; align-items: center; gap: 5px; margin-top: 3px; color: var(--app-soft-text); font-size: 9px; min-width: 0; }
-.sidebar-session-task-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.sidebar-task-state { flex-shrink: 0; margin-left: auto; color: var(--app-accent); }
-.sidebar-recent-row[data-task-state=waiting_user] .sidebar-task-state, .sidebar-recent-row[data-task-state=waiting_approval] .sidebar-task-state, .sidebar-recent-row[data-task-state=failed] .sidebar-task-state, .sidebar-recent-row[data-task-state=reconcile_required] .sidebar-task-state { color: var(--app-warning); }
-.sidebar-recent-row[data-task-state=completed] .sidebar-task-state { color: var(--completion-color, #69ba88); }
+.sidebar-workspace .sidebar-recent-row .agent-name { display: block; color: var(--app-heading); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-session-model { display: flex; align-items: center; gap: 4px; color: var(--app-muted); font-size: 11px; line-height: 14px; }
+.sidebar-session-model-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-session-fast { display: inline-flex; flex: 0 0 auto; color: var(--app-warning); }
+.sidebar-session-fast .sidebar-icon { width: 12px; height: 12px; }
 .sidebar-workspace .sidebar-family-toggle { width: auto; min-width: 28px; padding: 2px 4px; font-size: 9px; white-space: nowrap; }
 .sidebar-family-attention { color: var(--app-warning); }
-.sidebar-session-children { list-style: none; margin-left: 12px; border-left: 1px solid var(--app-border); padding-left: 3px; }
+.sidebar-session-children { list-style: none; margin-left: var(--sidebar-tree-indent); border-left: 1px solid var(--app-border); padding-left: var(--sidebar-tree-gutter); }
 .sidebar-workspace .agent-screen-badge { padding: 1px 4px; border-color: var(--screen-ink); background: color-mix(in srgb, var(--screen-color) 10%, transparent); color: var(--screen-ink); font-size: 9px; }
 .sidebar-empty { padding: 18px 10px; font-size: 11px; text-align: center; color: var(--app-muted); }
 .sidebar-empty p { margin: 0; }
