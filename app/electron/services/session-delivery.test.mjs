@@ -3,9 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
-import { deliveryComposerReady, deliveryEvidence, deliverySummary, SessionDeliveries } from './session-delivery.mjs';
+import { codexDeliveryDraftReady, deliveryComposerReady, deliveryEvidence, deliverySummary, SessionDeliveries } from './session-delivery.mjs';
 import { sessionMessageNotification } from './session-messages.mjs';
 import { CodexScrollbackFilter } from './terminal-stream.mjs';
+import { PTY_DRAFT_TIMEOUT_MS, submitPtyMessage } from './pty-submit.mjs';
 
 const cleanups = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); });
@@ -268,4 +269,30 @@ it('accepts an empty composer/gray placeholder and rejects existing drafts, queu
   await screen('› \x1b[2;1HQueued follow-up inputs\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(false);
   await screen('› \x1b[2;1Hesc to interrupt\x1b[1;3H'); expect(deliveryComposerReady(entry)).toBe(false);
   expect(deliveryComposerReady(entry, { allowWorking: true })).toBe(true);
+});
+
+it.each([false, true])('submits a wrapped handoff once only if the entire draft matches (appended input: %s)', async appended => {
+  const filter = new CodexScrollbackFilter(10, 45);
+  cleanups.push(() => filter.dispose());
+  const message = 'Acedia handoff from 한글 관리자 with an original inbox message identifier';
+  const entry = { filter };
+  const draft = appended ? message + ' previous notification' : message;
+  await new Promise(resolve => filter.shadow.write('› ' + draft, resolve));
+
+  let clock = 0, repaint;
+  const write = vi.fn();
+  const operation = submitPtyMessage({
+    ptyProcess: { write, onData: listener => { repaint = listener; return { dispose() {} }; } },
+    message, forceBracketedPaste: true, draftReady: () => codexDeliveryDraftReady(entry, message),
+    now: () => clock, wait: async delay => { clock += delay; repaint('footer update'); },
+  });
+  const paste = `\x1b[200~${message}\x1b[201~`;
+  if (appended) {
+    await expect(operation).rejects.toThrow('draft could not be verified');
+    expect(clock).toBe(PTY_DRAFT_TIMEOUT_MS);
+    expect(write.mock.calls).toEqual([[paste]]);
+  } else {
+    await expect(operation).resolves.toBe(true);
+    expect(write.mock.calls).toEqual([[paste], ['\r']]);
+  }
 });

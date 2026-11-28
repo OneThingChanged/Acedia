@@ -423,25 +423,31 @@ export function ProjectBoardPage({ initialSnapshot, hierarchyTarget, startInOffi
     else if (editingHierarchy) { e.stopPropagation(); setEditingHierarchy(null); }
     else if (!showRelations && (selected || selectedReference)) { e.stopPropagation(); back(); }
   } }} onPointerDown={e => { if (menu && !(e.target as Element).closest('.wb-context-menu')) setMenu(null); }}>
-    <header className="wb-header"><div className="wb-brand"><BoardIcon name="board"/><div><h1>{text('프로젝트 보드', 'Project board')}</h1></div></div>
-      <nav className="wb-view-tabs" aria-label={text('현황 표시 방식', 'Overview view')}>
-        {([['board', '업무 보드', 'Work board'], ['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['office', 'Pixel Office', 'Pixel Office']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={!showRelations && viewMode === mode} onClick={() => { requestedView.current = mode; setMenu(null); cancelProjectDrag(); setShowRelations(false); setViewMode(mode); }}>{text(ko, en)}</button>)}
-        {renderRelations ? <button aria-pressed={showRelations} onClick={() => { setMenu(null); cancelProjectDrag(); setEditingHierarchy(null); setShowRelations(true); }}>{text('계층', 'Hierarchy')}</button>
-          : <button onClick={() => manageProject({ action: 'hierarchy', ...(projectId ? { id: projectId } : {}) })}>{text('계층 편집', 'Edit hierarchy')}</button>}
-      </nav>
-      {!showRelations && viewMode === 'board' && <label className="wb-line-style">{text('연결선', 'Connections')} <select aria-label={text('연결선 모양', 'Connection style')} value={edgeStyle} onChange={e => setEdgeStyle(e.target.value === 'curved' ? 'curved' : 'orthogonal')}><option value="curved">{text('곡선', 'Curved')}</option><option value="orthogonal">{text('직선', 'Straight')}</option></select></label>}
-      <label className="wb-project-picker" hidden={showRelations || viewMode === 'office'}><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      <input type="search" hidden={showRelations || viewMode === 'office'} value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
-      <div className="wb-visibility" hidden={showRelations || undefined} role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
-        <button role="switch" aria-checked={activeOnly} aria-label={text('활성 세션만 표시', 'Show active sessions only')} title={text('실행 중인 세션만 표시합니다. Sleeping을 켜면 활성 부모의 sleeping 자식도 표시합니다.', 'Show running sessions. Sleeping also shows sleeping descendants of active parents.')}
-          onClick={() => { const next = !activeOnly; cancelProjectDrag(); setActiveOnly(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, activeOnly: next }); }}>{text('Active만', 'Active only')} <span className="wb-switch-track"/></button>
-        <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. Active만 보기에서는 활성 부모 아래의 자식만 표시합니다.', 'Show sleeping sessions. In Active only, include only descendants of active parents.')}
-          onClick={() => { const next = !showSleeping; cancelProjectDrag(); setShowSleeping(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showSleeping: next }); }}>Sleeping <span className="wb-switch-track"/></button>
-        <button role="switch" aria-checked={showStopped} aria-label={text('대기·정지 세션 표시', 'Show idle and stopped sessions')} title={text('Idle·일시정지·중단·종료 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide idle, paused, interrupted and stopped sessions. Parents of visible children stay.')}
-          onClick={() => { const next = !showStopped; cancelProjectDrag(); setShowStopped(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>
+    <header className="wb-header">
+      <div className="wb-header-nav">
+        <div className="wb-brand"><BoardIcon name="board"/><h1>{text('프로젝트 보드', 'Project board')}</h1></div>
+        <nav className="wb-view-tabs" aria-label={text('현황 표시 방식', 'Overview view')}>
+          {([['board', '업무 보드', 'Work board'], ['sessions', '세션', 'Sessions'], ['transfers', '업무 전달', 'Handoffs'], ['office', 'Pixel Office', 'Pixel Office']] as const).map(([mode, ko, en]) => <button key={mode} aria-pressed={!showRelations && viewMode === mode} onClick={() => { requestedView.current = mode; setMenu(null); cancelProjectDrag(); setShowRelations(false); setViewMode(mode); }}>{text(ko, en)}</button>)}
+          {renderRelations ? <button aria-pressed={showRelations} onClick={() => { setMenu(null); cancelProjectDrag(); setEditingHierarchy(null); setShowRelations(true); }}>{text('계층', 'Hierarchy')}</button>
+            : <button onClick={() => manageProject({ action: 'hierarchy', ...(projectId ? { id: projectId } : {}) })}>{text('계층 편집', 'Edit hierarchy')}</button>}
+        </nav>
       </div>
-      {!showRelations && viewMode === 'office' && motionSwitch}
-      {!showRelations && <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button>}</header>
+      {!showRelations && <div className="wb-header-tools">
+        <label className="wb-project-picker" hidden={viewMode === 'office'}><span className="wb-sr-only">{text('프로젝트 선택', 'Select project')}</span><select value={projectId} onChange={e => { setProject(e.target.value); setSelected(null); }}><option value="">{text('전체 프로젝트', 'All projects')}</option>{data?.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <input type="search" hidden={viewMode === 'office'} value={query} onChange={e => setQuery(e.target.value)} placeholder={text('세션·작업·경로 검색', 'Search sessions, work or paths')} aria-label={text('보드 검색', 'Search board')}/>
+        {viewMode === 'board' && <label className="wb-line-style">{text('연결선', 'Connections')} <select aria-label={text('연결선 모양', 'Connection style')} value={edgeStyle} onChange={e => setEdgeStyle(e.target.value === 'curved' ? 'curved' : 'orthogonal')}><option value="curved">{text('곡선', 'Curved')}</option><option value="orthogonal">{text('직선', 'Straight')}</option></select></label>}
+        <div className="wb-visibility" role="group" aria-label={text('세션 표시 옵션', 'Session visibility')}>
+          <button role="switch" aria-checked={activeOnly} aria-label={text('활성 세션만 표시', 'Show active sessions only')} title={text('실행 중인 세션만 표시합니다. Sleeping을 켜면 활성 부모의 sleeping 자식도 표시합니다.', 'Show running sessions. Sleeping also shows sleeping descendants of active parents.')}
+            onClick={() => { const next = !activeOnly; cancelProjectDrag(); setActiveOnly(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, activeOnly: next }); }}>{text('Active만', 'Active only')} <span className="wb-switch-track"/></button>
+          <button role="switch" aria-checked={showSleeping} aria-label={text('Sleeping 세션 표시', 'Show sleeping sessions')} title={text('Sleeping 세션 표시·숨김. Active만 보기에서는 활성 부모 아래의 자식만 표시합니다.', 'Show sleeping sessions. In Active only, include only descendants of active parents.')}
+            onClick={() => { const next = !showSleeping; cancelProjectDrag(); setShowSleeping(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showSleeping: next }); }}>Sleeping <span className="wb-switch-track"/></button>
+          <button role="switch" aria-checked={showStopped} aria-label={text('대기·정지 세션 표시', 'Show idle and stopped sessions')} title={text('Idle·일시정지·중단·종료 세션 표시·숨김. 보이는 자식의 부모는 유지합니다.', 'Show or hide idle, paused, interrupted and stopped sessions. Parents of visible children stay.')}
+            onClick={() => { const next = !showStopped; cancelProjectDrag(); setShowStopped(next); setRevealedSession(null); resetView.current = true; savePlacement({ projectPositions, sessionOrder, showStopped: next }); }}>{text('대기·정지', 'Idle / stopped')} <span className="wb-switch-track"/></button>
+        </div>
+        {viewMode === 'office' && motionSwitch}
+        <button className="wb-refresh" onClick={() => { void refreshRef.current(); }}>{text('새로고침', 'Refresh')}</button>
+      </div>}
+    </header>
 
     {(placementError || error || data?.storageError) && <div role="alert" className="wb-error">{placementError || error || data?.storageError}</div>}
     {showRelations && renderRelations && <div className="wb-relations">{renderRelations()}</div>}

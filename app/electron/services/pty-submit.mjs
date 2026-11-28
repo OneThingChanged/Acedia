@@ -16,9 +16,9 @@ export function encodeConptyUnicode(input) {
   return input.replace(/[^\x00-\x7f]/g, char => `\x1b[0;0;${char.charCodeAt(0)};1;0;1_`);
 }
 
-export function preparePtySubmission(message) {
+export function preparePtySubmission(message, forceBracketedPaste = false) {
   const value = String(message ?? "");
-  if (!/[\r\n]/.test(value)) return value;
+  if (!forceBracketedPaste && !/[\r\n]/.test(value)) return value;
   const normalized = value.replace(/\r\n|\r|\n/g, "\r");
   return `${BRACKETED_PASTE_START}${normalized}${BRACKETED_PASTE_END}`;
 }
@@ -29,6 +29,7 @@ export async function submitPtyMessage({
   encodeInput = value => value,
   writeInput = value => ptyProcess.write(value),
   waitForOutputQuiet = true,
+  forceBracketedPaste = false,
   draftReady = null,
   confirm = null,
   confirmTimeoutMs = 8000,
@@ -38,7 +39,7 @@ export async function submitPtyMessage({
 }) {
   const value = String(message ?? "");
   if (!ptyProcess || !value.trim() || !isCurrent() || pending.has(ptyProcess)) return false;
-  const bracketedPaste = /[\r\n]/.test(value);
+  const bracketedPaste = forceBracketedPaste || /[\r\n]/.test(value);
   pending.add(ptyProcess);
   let subscription;
   try {
@@ -48,18 +49,12 @@ export async function submitPtyMessage({
     subscription = ptyProcess.onData?.(() => { lastOutput = now(); sawOutput = true; });
     // A terminal paste is one ordered input event. The explicit closing marker
     // lets Codex/Claude finish a multiline paste before the discrete Enter.
-    writeInput(encodeInput(preparePtySubmission(value)));
+    writeInput(encodeInput(preparePtySubmission(value, forceBracketedPaste)));
     const started = now();
     await wait(PTY_SUBMIT_DELAY_MS);
-    // A single-line prompt can be held by the TUI without repainting until
-    // Enter. Only bracketed multiline paste needs a visible settled render.
-    // An ongoing turn repaints its spinner continuously; that output cannot
-    // establish paste quietness. Steering still waits through the paste-burst
-    // window and requires a visible multiline render, but ignores the spinner.
-    // Single-line input has no bracketed-paste render to settle. Footer/clock
-    // repaints can continue indefinitely even at an idle prompt; waiting for
-    // all output to stop leaves the text parked without its Enter.
-    while (bracketedPaste && ((observesOutput && !sawOutput) || (waitForOutputQuiet && now() - lastOutput < PTY_SUBMIT_QUIET_MS))) {
+    // For verified handoffs, the draft itself is the readiness signal.
+    // Footer repaints can continue even after the full paste is visible.
+    while (bracketedPaste && !draftReady && ((observesOutput && !sawOutput) || (waitForOutputQuiet && now() - lastOutput < PTY_SUBMIT_QUIET_MS))) {
       if (!isCurrent() || now() - started >= PTY_SUBMIT_TIMEOUT_MS) {
         throw new Error("Terminal changed or paste did not settle; submission outcome unknown.");
       }

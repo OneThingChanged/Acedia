@@ -1156,7 +1156,7 @@ const sessionDeliveries = new SessionDeliveries({
     capacityRetry.cancel(id);
     const previous = entry.firstMessageSubmitted;
     entry.firstMessageSubmitted = true;
-    const submitted = await submitPtyMessage({ ptyProcess: entry.process, message, isCurrent, draftReady,
+    const submitted = await submitPtyMessage({ ptyProcess: entry.process, message, isCurrent, draftReady, forceBracketedPaste: !!draftReady,
       encodeInput: process.platform === 'win32' ? encodeConptyUnicode : undefined });
     if (!submitted && ptys.get(id) === entry) entry.firstMessageSubmitted = previous;
     return submitted;

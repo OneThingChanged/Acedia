@@ -255,6 +255,7 @@ function normalizedCursorKeyData(event: KeyboardEvent) {
 }
 
 const terminalsWithImePreview = new WeakSet<Terminal>();
+const composingTerminals = new WeakSet<Terminal>();
 
 export function installImeCompositionPreview(entry: TerminalEntry) {
   const { term, el } = entry;
@@ -270,7 +271,6 @@ export function installImeCompositionPreview(entry: TerminalEntry) {
   preview.setAttribute("aria-hidden", "true");
   el.appendChild(preview);
 
-  let isComposing = false;
   let composingText = "";
 
   const hidePreview = () => {
@@ -280,7 +280,7 @@ export function installImeCompositionPreview(entry: TerminalEntry) {
   };
 
   const positionPreview = () => {
-    if (!isComposing || !composingText) return;
+    if (!composingTerminals.has(term) || !composingText) return;
 
     const screen = el.querySelector<HTMLElement>(".xterm-screen");
     if (!screen || term.cols < 1 || term.rows < 1) return;
@@ -321,26 +321,22 @@ export function installImeCompositionPreview(entry: TerminalEntry) {
   };
 
   const onCompositionStart = (event: CompositionEvent) => {
-    isComposing = true;
+    composingTerminals.add(term);
     showPreview(event.data ?? "");
   };
   const onCompositionUpdate = (event: CompositionEvent) => {
-    isComposing = true;
+    composingTerminals.add(term);
     showPreview(event.data ?? "");
   };
   const onCompositionEnd = () => {
-    isComposing = false;
-    hidePreview();
-  };
-  const onBlur = () => {
-    isComposing = false;
+    composingTerminals.delete(term);
     hidePreview();
   };
 
   textarea.addEventListener("compositionstart", onCompositionStart);
   textarea.addEventListener("compositionupdate", onCompositionUpdate);
   textarea.addEventListener("compositionend", onCompositionEnd);
-  textarea.addEventListener("blur", onBlur);
+  textarea.addEventListener("blur", onCompositionEnd);
 
   term.onRender(positionPreview);
   term.onResize(positionPreview);
@@ -1079,6 +1075,20 @@ export function createEntry(
   });
 
   term.attachCustomKeyEventHandler((event) => {
+    if (event.type === "keydown" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      const escape = event.key === "Escape" || event.code === "Escape";
+      const imeTab = event.code === "Tab" && isImeCompositionKey(event);
+      if (escape || imeTab) {
+        // Windows IMEs can report Process/229 for physical control keys even
+        // when there is no text composition. Send those keys as terminal input.
+        if (event.isComposing || composingTerminals.has(term)) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        term.input(escape ? "\x1b" : event.shiftKey ? "\x1b[Z" : "\t");
+        return false;
+      }
+    }
+
     if (event.type === "keydown" && isImeCompositionKey(event)) {
       // During Korean/Japanese/Chinese IME composition, WebView2 can emit
       // transient keydown data before the IME commits the final text. Let the

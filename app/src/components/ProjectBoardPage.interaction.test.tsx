@@ -127,6 +127,26 @@ it('edits the selected hierarchy in the work board and switches display modes wi
   expect(hooks.invoke).not.toHaveBeenCalled();
 });
 
+it('keeps the title and all view buttons in a shared navigation row as mode controls change', () => {
+  const data = fixture();
+  const view = () => render(data, { renderRelations: () => <div>관계 캔버스</div> });
+  const modes = ['업무 보드', '계층', '세션', '업무 전달', 'Pixel Office'];
+  const navRow = (tree: ReactNode) => elements(tree).find(e => e.props.className === 'wb-header-nav')!;
+
+  for (const mode of modes) {
+    elements(navRow(view())).find(e => e.type === 'button' && content(e) === mode)!.props.onClick();
+    const tree = view();
+    const navigation = elements(navRow(tree));
+    expect(navigation.find(e => e.type === 'h1')?.props.children).toBe('프로젝트 보드');
+    expect(navigation.filter(e => e.type === 'button').map(content)).toEqual(['업무 보드', '세션', '업무 전달', 'Pixel Office', '계층']);
+    expect(navigation.filter(e => e.props['aria-pressed'] === true).map(content)).toEqual([mode]);
+    expect(navigation.some(e => e.type === 'input' || e.type === 'select' || e.props.role === 'switch')).toBe(false);
+    const tools = elements(tree).find(e => e.props.className === 'wb-header-tools');
+    expect(!!tools).toBe(mode !== '계층');
+    expect(elements(tools).some(e => e.props['aria-label'] === '연결선 모양')).toBe(mode === '업무 보드');
+  }
+});
+
 it('shows lifecycle actions only on context request and lights only actual outstanding assignment edges', () => {
   const data = fixture(); data.delegations = [{ id: 'job', from: 'a', to: 'b' }];
   let tree = render(data);

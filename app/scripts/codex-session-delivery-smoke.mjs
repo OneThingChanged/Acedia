@@ -132,7 +132,7 @@ try {
     submit: (_id, _entry, message, isCurrent, draftReady) => {
       submissions++;
       entry.firstMessageSubmitted = true;
-      return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, draftReady, encodeInput: encodeConptyUnicode });
+      return submitPtyMessage({ ptyProcess: terminal, message, isCurrent, draftReady, forceBracketedPaste: !!draftReady, encodeInput: encodeConptyUnicode });
     } };
   service = new SessionDeliveries(options);
   const readiness = new SessionReadiness({ context: options.context, read, freshRead: options.freshRead, ready: options.ready });
